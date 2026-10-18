@@ -1,0 +1,217 @@
+.project-browser {
+  container: project-files / inline-size;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.project-launcher {
+  container: project-files / inline-size;
+  overflow: auto;
+  height: 100%;
+}
+.project-register-form {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  margin-block: 12px;
+}
+.project-launcher label {
+  display: grid;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+.project-launcher input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.project-list {
+  display: grid;
+  gap: 6px;
+  margin-block: 12px;
+}
+.project-list .ns-button {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.project-location {
+  padding: 6px 8px;
+  border-block: 1px solid #777;
+  max-height: 35%;
+  overflow: auto;
+  flex-shrink: 0;
+}
+.project-location-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  overflow-wrap: anywhere;
+}
+.project-location-summary span {
+  color: #333;
+}
+.project-location details {
+  margin-top: 4px;
+}
+.project-location summary {
+  cursor: pointer;
+}
+.project-location code {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.project-content {
+  display: grid;
+  grid-template-columns: minmax(150px, 28%) minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+.project-directory {
+  overflow: auto;
+  background: #ddd;
+  border-right: 1px solid #666;
+}
+.project-directory ul {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.project-directory li button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: transparent;
+  width: 100%;
+  min-height: 32px;
+  text-align: left;
+  padding: 5px;
+  font: inherit;
+  color: inherit;
+}
+.project-directory li button span {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.project-directory li button:hover {
+  background: #c0c0c0;
+}
+.project-directory li button.is-selected {
+  background: #222;
+  color: white;
+}
+.project-directory li button:disabled {
+  color: #666;
+}
+.project-directory li button:focus-visible {
+  outline: 2px solid #16577d;
+  outline-offset: -2px;
+}
+.project-preview {
+  overflow: auto;
+  min-width: 0;
+  background: #f5f3e9;
+  padding: 10px;
+}
+.project-preview:focus-visible,
+.project-directory:focus-visible {
+  outline: 2px solid #16577d;
+  outline-offset: -2px;
+}
+.project-back {
+  display: none;
+  margin-bottom: 8px;
+}
+.project-preview-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 8px;
+  border-bottom: 1px solid #aaa;
+  padding-bottom: 8px;
+}
+.project-preview-heading code {
+  overflow-wrap: anywhere;
+}
+.project-source {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 12px/1.5 var(--ns-mono);
+}
+.project-error,
+.project-feedback {
+  margin: 0;
+  padding: 6px 8px;
+  background: #f3e6c6;
+}
+.project-pagination {
+  padding: 5px;
+}
+.project-browser > .app-toolbar {
+  flex-wrap: wrap;
+}
+.project-folder-chooser {
+  border-block: 1px solid #888;
+  margin-block: 12px;
+  padding-block: 12px;
+}
+.project-folder-chooser h2 {
+  font-size: 14px;
+  margin: 0 0 8px;
+}
+.project-launcher .project-folder-path {
+  display: block;
+  margin-block: 8px;
+}
+.project-folder-navigation {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.project-host-folders {
+  display: grid;
+  align-content: start;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid #777;
+  background: #ddd;
+  margin-block: 8px;
+}
+.project-host-folders .ns-button {
+  justify-content: start;
+  overflow-wrap: anywhere;
+  text-align: left;
+  min-height: 32px;
+}
+.project-folder-current {
+  display: block;
+  overflow-wrap: anywhere;
+}
+@container project-files (max-width: 599px) {
+  .project-content {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .project-content.is-reading > .project-directory,
+  .project-content:not(.is-reading) > .project-preview {
+    display: none;
+  }
+  .project-back {
+    display: inline-flex;
+  }
+  .project-register-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .project-location-summary {
+    display: grid;
+  }
+  .project-preview {
+    padding: 8px;
+  }
+}

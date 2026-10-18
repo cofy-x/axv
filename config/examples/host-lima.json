@@ -1,0 +1,30 @@
+{
+  "dataDir": "/Users/YOUR_USER/.axv-c",
+  "socket": "/Users/YOUR_USER/.axv-host/control.sock",
+  "capacity": {
+    "cpus": 8,
+    "memoryMiB": 8192,
+    "diskGiB": 100,
+    "machines": 10,
+    "workers": 2
+  },
+  "lima": {
+    "binary": "/opt/homebrew/bin/limactl",
+    "version": "2.2.1"
+  },
+  "images": [
+    {
+      "id": "axv-lima-arm64-v1",
+      "name": "AXV lima arm64",
+      "provider": "lima",
+      "arch": "arm64",
+      "rootfs": "/Users/YOUR_USER/.axv-images/axv-lima-arm64-v1/root.qcow2",
+      "rootfsSHA256": "REPLACE_WITH_ACTUAL_SHA256",
+      "guest": {
+        "imageVersion": 1,
+        "protocolVersion": 3,
+        "capabilities": ["exec", "terminals", "ssh", "network"]
+      }
+    }
+  ]
+}

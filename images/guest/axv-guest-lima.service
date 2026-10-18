@@ -1,0 +1,17 @@
+[Unit]
+Description=AXV guest execution service
+After=local-fs.target
+ConditionPathExists=/etc/axv/guest.json
+
+[Service]
+User=axv
+Group=axv
+RuntimeDirectory=axv
+RuntimeDirectoryMode=0700
+ExecStart=/usr/local/bin/axv-guest --config /etc/axv/guest.json --listen unix:/run/axv/guest.sock
+Restart=on-failure
+RestartSec=2
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target

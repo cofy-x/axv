@@ -1,0 +1,24 @@
+# Firecracker rootfs builder. Lima keeps a bootable cloud disk; build-lima.sh
+# applies the same dependency installer to that disk offline.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+ARG AXV_GUEST_PACKAGE_SOURCE=preserve
+COPY configure-package-sources /usr/local/lib/axv/configure-package-sources
+COPY install-base.sh /usr/local/lib/axv/install-base
+RUN AXV_GUEST_PACKAGE_SOURCE="$AXV_GUEST_PACKAGE_SOURCE" sh /usr/local/lib/axv/install-base \
+    && rm /usr/local/lib/axv/install-base \
+    && printf 'axv ALL=(root) NOPASSWD: /sbin/poweroff\n' > /etc/sudoers.d/axv-poweroff \
+    && chmod 0440 /etc/sudoers.d/axv-poweroff
+COPY axv-guest /usr/local/bin/axv-guest
+COPY image.json /usr/share/axv/image.json
+COPY prepare-guest.sh /usr/local/lib/axv/prepare-guest
+COPY prepare-ssh /usr/local/lib/axv/prepare-ssh
+COPY axv-ssh.service /etc/systemd/system/
+COPY axv-prepare.service axv-guest.service /etc/systemd/system/
+RUN chmod 0755 /usr/local/bin/axv-guest /usr/local/lib/axv/prepare-guest /usr/local/lib/axv/prepare-ssh \
+    && mkdir -p /etc/systemd/system/axv-ssh.service.d \
+    && printf '[Unit]\nRequires=axv-prepare.service\nAfter=axv-prepare.service\n' > /etc/systemd/system/axv-ssh.service.d/prepare.conf \
+    && systemctl enable axv-prepare.service axv-guest.service axv-ssh.service \
+    && systemctl mask ssh.service ssh.socket systemd-networkd.service systemd-resolved.service \
+    && systemctl set-default multi-user.target
+CMD ["/sbin/init"]

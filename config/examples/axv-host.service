@@ -1,0 +1,20 @@
+[Unit]
+Description=AXV experimental Firecracker host service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/axv/bin/axv host --config /etc/axv/host.json
+Restart=on-failure
+RestartSec=5
+User=root
+Group=root
+UMask=0077
+# The host controller must delegate cgroups to independently managed microVMs.
+Delegate=yes
+KillMode=process
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

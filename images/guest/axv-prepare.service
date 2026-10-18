@@ -1,0 +1,13 @@
+[Unit]
+Description=Prepare AXV project volume and guest identity
+After=local-fs.target systemd-udev-settle.service
+Wants=systemd-udev-settle.service
+Before=axv-guest.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/axv/prepare-guest
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

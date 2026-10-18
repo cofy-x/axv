@@ -1,0 +1,224 @@
+import { captureWorkArea, expectRect } from './work-area-helpers';
+import {
+  encoded,
+  marker,
+  openTerminal,
+  output,
+  run,
+  terminalAction,
+} from './terminal-helpers';
+import { mkdir } from 'node:fs/promises';
+import { resolve } from 'node:path';
+
+import {
+  bounds,
+  actionMenu,
+  createEntry,
+  editorWindow,
+  expect,
+  filesWindow,
+  menuItem,
+  test,
+} from './helpers';
+
+test('touch can navigate columns, inspect, edit and switch workspaces without right click', async ({
+  page,
+  request,
+  isMobile,
+}, info) => {
+  test.skip(
+    !isMobile,
+    'This scenario runs in the explicit Chromium and WebKit touch projects.',
+  );
+  const folder = await createEntry(request, 'E2E Touch folder', 'folder');
+  const document = await createEntry(
+    request,
+    'E2E Touch.txt',
+    'file',
+    folder.id,
+    'A touch-accessible document.',
+  );
+  await page.reload();
+  const files = filesWindow(page);
+  await files.getByRole('option', { name: folder.name, exact: true }).tap();
+  const column = files.getByRole('listbox', {
+    name: `${folder.name} column`,
+    exact: true,
+  });
+  await expect(column).toBeVisible();
+  const file = column.getByRole('option', {
+    name: document.name,
+    exact: true,
+  });
+  await file.tap();
+  await file.tap();
+  await expect(files).toBeVisible();
+  await expect(file).toHaveAttribute('aria-selected', 'true');
+  await expect(editorWindow(page, document.id)).toHaveCount(0);
+  await files.getByRole('button', { name: 'Inspect', exact: true }).tap();
+  const inspector = page.locator('[data-app-id="inspector"]');
+  await expect(inspector.getByTestId('inspector-name')).toHaveText(
+    document.name,
+  );
+  await actionMenu(page, inspector, 'More inspector actions', 'Rename', true);
+  const rename = page.getByRole('dialog', { name: 'Rename', exact: true });
+  await expect(
+    rename.getByRole('textbox', { name: 'Name', exact: true }),
+  ).toHaveValue(document.name);
+  await rename.getByRole('button', { name: 'Cancel', exact: true }).tap();
+  await expect(rename).toBeHidden();
+  await expect(inspector.getByTestId('inspector-name')).toHaveText(
+    document.name,
+  );
+  await inspector.getByRole('button', { name: 'Open', exact: true }).tap();
+  const editor = editorWindow(page, document.id);
+  await editor
+    .getByRole('textbox', { name: 'Document text' })
+    .fill('A touch draft survives workspace switching.');
+  await page.getByRole('button', { name: 'Next workspace', exact: true }).tap();
+  await expect(editor).toBeHidden();
+  await page
+    .getByRole('button', { name: 'Previous workspace', exact: true })
+    .tap();
+  await expect(
+    editor.getByRole('textbox', { name: 'Document text' }),
+  ).toHaveValue('A touch draft survives workspace switching.');
+  await editor.getByRole('button', { name: /^Shade / }).tap();
+  await expect(
+    editor.getByRole('textbox', { name: 'Document text' }),
+  ).toBeHidden();
+  await editor.getByRole('button', { name: /^Unshade / }).tap();
+  await editor.getByRole('button', { name: /^Window menu for / }).tap();
+  await menuItem(page, 'Add to Clip').tap();
+  await page.getByRole('button', { name: /^Workspace 1:/ }).tap();
+  await menuItem(page, 'Shortcuts').tap();
+  await menuItem(page, document.name).tap();
+  await menuItem(page, 'Open').tap();
+  await expect(editor).toBeVisible();
+  await expect(
+    editor.getByRole('textbox', { name: 'Document text' }),
+  ).toHaveValue('A touch draft survives workspace switching.');
+  await editor.getByRole('button', { name: 'Save', exact: true }).tap();
+  await expect(editor.getByTestId('save-status')).toHaveText('Saved');
+  await editor.getByRole('button', { name: /^Miniaturize / }).tap();
+  await expect(editor).toBeHidden();
+  await page
+    .getByRole('button', { name: `Restore ${document.name}`, exact: true })
+    .tap();
+  await expect(
+    editor.getByRole('button', { name: /^Close / }),
+  ).toBeInViewport();
+  const screenshotDir = resolve('screenshots', `final-${info.project.name}`);
+  await mkdir(screenshotDir, { recursive: true });
+  const path = resolve(screenshotDir, '390x844-touch-editor.png');
+  await page.screenshot({ path, fullPage: true });
+  await info.attach('touch-editor', { path, contentType: 'image/png' });
+});
+
+test('touch Terminal supports input, explicit controls and workspace restoration', async ({
+  page,
+  isMobile,
+}, info) => {
+  test.skip(!isMobile, 'Runs in the explicit touch projects.');
+  test.skip(
+    process.platform === 'win32',
+    'These commands use POSIX shell syntax.',
+  );
+  const terminal = await openTerminal(page, true);
+  const input = terminal.getByLabel('Host terminal input');
+  await terminal.getByTestId('terminal-screen').tap();
+  await expect(input).toBeFocused();
+  await marker(terminal, 'touch-shell-ready');
+  await run(terminal, `printf '${encoded('touch-cat')}\\n'; cat`);
+  await expect(output(terminal)).toContainText('touch-cat');
+  await terminal.getByRole('button', { name: 'Interrupt', exact: true }).tap();
+  await marker(terminal, 'touch-interrupt-ok');
+  await terminalAction(page, terminal, 'Clear', true);
+  await expect(output(terminal)).not.toContainText('touch-cat');
+  await page.getByRole('button', { name: 'Next workspace', exact: true }).tap();
+  await expect(terminal).toBeHidden();
+  await page
+    .getByRole('button', { name: 'Previous workspace', exact: true })
+    .tap();
+  await expect(terminal).toBeVisible();
+  await marker(terminal, 'touch-shell-retained');
+  await run(terminal, 'exit');
+  await expect(terminal.getByTestId('terminal-status')).toHaveAttribute(
+    'data-state',
+    'ended',
+  );
+  await terminal
+    .getByRole('button', { name: 'New Session', exact: true })
+    .tap();
+  await expect(terminal.getByTestId('terminal-status')).toHaveAttribute(
+    'data-state',
+    'connected',
+  );
+  await marker(terminal, 'touch-fresh-session');
+  await expect(
+    terminal.getByRole('button', { name: /^Close / }),
+  ).toBeInViewport();
+  const screenshotDir = resolve('screenshots', `final-${info.project.name}`);
+  await mkdir(screenshotDir, { recursive: true });
+  const path = resolve(screenshotDir, '390x844-touch-terminal.png');
+  await page.screenshot({ path, fullPage: true });
+  await info.attach('touch-terminal', { path, contentType: 'image/png' });
+  await terminal.getByRole('button', { name: /^Close / }).tap();
+  const dialog = page.getByRole('dialog', { name: 'End host shell?' });
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).tap();
+  await marker(terminal, 'touch-cancel-keeps-shell');
+  await terminal.getByRole('button', { name: /^Close / }).tap();
+  await dialog.getByRole('button', { name: 'End Session', exact: true }).tap();
+  await expect(terminal).toHaveCount(0);
+});
+
+test('touch work area releases the miniwindow row while keeping the Dock and window controls usable', async ({
+  page,
+  isMobile,
+}, info) => {
+  test.skip(!isMobile, 'Runs in the explicit touch projects.');
+  const files = filesWindow(page);
+  const welcome = page.locator('[data-app-id="welcome"]');
+  const fullArea = { x: 4, y: 90, width: 382, height: 682 };
+  const reservedArea = { ...fullArea, height: 606 };
+  await expectRect(files, fullArea);
+  const dockGap = async () => {
+    const frame = await bounds(files);
+    const dock = await bounds(page.locator('.ns-dock'));
+    return dock.y - frame.y - frame.height;
+  };
+  await expect.poll(dockGap).toBe(4);
+  await files.getByRole('button', { name: /^Window menu for / }).tap();
+  await menuItem(page, 'All Workspaces').tap();
+  await captureWorkArea(page, info, 'without-reserve');
+  await page
+    .getByRole('button', { name: 'Welcome Dock options', exact: true })
+    .tap();
+  await menuItem(page, 'Welcome').tap();
+  await welcome.getByRole('button', { name: /^Miniaturize / }).tap();
+  await expectRect(files, reservedArea);
+  await expect.poll(dockGap).toBe(80);
+  const miniature = page.getByRole('button', {
+    name: 'Restore Welcome',
+    exact: true,
+  });
+  await expect(miniature).toBeInViewport();
+  await expect(files.getByRole('button', { name: /^Close / })).toBeInViewport();
+  await captureWorkArea(page, info, 'with-miniwindow');
+  await page.getByRole('button', { name: 'Next workspace', exact: true }).tap();
+  await expectRect(files, fullArea);
+  await expect(miniature).toHaveCount(0);
+  await expect.poll(dockGap).toBe(4);
+  await page
+    .getByRole('button', { name: 'Previous workspace', exact: true })
+    .tap();
+  await expectRect(files, reservedArea);
+  await miniature.tap();
+  await expectRect(welcome, fullArea);
+  await welcome.getByRole('button', { name: /^Close / }).tap();
+  await expectRect(files, fullArea);
+  await expect(
+    page.getByRole('button', { name: 'Files Dock options', exact: true }),
+  ).toBeInViewport();
+  await expect(files.getByRole('button', { name: /^Close / })).toBeInViewport();
+});

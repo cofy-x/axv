@@ -1,0 +1,13 @@
+@import '../shared/styles/apps.css';
+@import '../features/files/files.css';
+@import '../features/inspector/inspector.css';
+@import '../features/notes/notes.css';
+@import '../features/terminal/terminal.css';
+@import '../features/codex/codex.css';
+@import '../features/welcome/welcome.css';
+@import '../features/appearance/appearance.css';
+@import '../features/trash/trash.css';
+@import '../features/image-viewer/image-viewer.css';
+@import '../features/gallery/gallery.css';
+@import '../features/machines/machines.css';
+@import './app.css';

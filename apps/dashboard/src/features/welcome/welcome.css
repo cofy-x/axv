@@ -1,0 +1,114 @@
+.welcome-app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: #bcbcbc;
+}
+.welcome-banner {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 18px;
+  padding: 23px 22px;
+  background: #242424;
+  color: #f0f0f0;
+  border-bottom: 3px ridge #ddd;
+}
+.welcome-banner strong {
+  display: block;
+  font-size: 19px;
+  font-weight: 500;
+  letter-spacing: -0.4px;
+}
+.welcome-banner span {
+  display: block;
+  font-size: 11px;
+  color: #bbb;
+  margin-top: 7px;
+}
+.welcome-copy {
+  padding: 14px 17px;
+  overflow: auto;
+  flex: 1;
+}
+.welcome-copy > p {
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 0 0 14px;
+}
+.welcome-links {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.welcome-link {
+  display: flex;
+  text-align: left;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 7px;
+  background: #c6c6c6;
+  color: #111;
+  border: 1px solid #555;
+  box-shadow:
+    inset 1px 1px #fff,
+    inset -1px -1px #888;
+  font: inherit;
+  min-width: 0;
+}
+.welcome-link:hover {
+  background: #d3d3d3;
+}
+.welcome-link:active {
+  box-shadow: inset 1px 1px #555;
+}
+.welcome-link strong {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.welcome-link small {
+  font-size: 10px;
+  line-height: 1.3;
+  display: block;
+  color: #444;
+}
+.welcome-footer {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.welcome-utilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.about-app {
+  height: 100%;
+  overflow: auto;
+  text-align: center;
+}
+.about-app > .brand-mark {
+  display: block;
+  margin: 8px auto;
+}
+.about-app h1 {
+  font-size: 20px;
+  letter-spacing: -0.4px;
+}
+@media (max-width: 599px) {
+  .welcome-banner {
+    padding: 15px;
+    gap: 10px;
+  }
+  .welcome-banner strong {
+    font-size: 16px;
+  }
+  .welcome-links {
+    gap: 6px;
+  }
+  .welcome-link {
+    padding: 6px;
+    gap: 5px;
+  }
+}

@@ -1,0 +1,17 @@
+[Unit]
+Description=AXV private guest SSH service
+After=local-fs.target
+ConditionPathExists=/etc/ssh/axv/sshd_config
+
+[Service]
+RuntimeDirectory=axv-ssh
+RuntimeDirectoryMode=0755
+ExecStartPre=/usr/bin/install -d -o root -g root -m 0755 /run/sshd
+ExecStartPre=/usr/sbin/sshd -t -f /etc/ssh/axv/sshd_config
+ExecStart=/usr/sbin/sshd -D -e -f /etc/ssh/axv/sshd_config
+Restart=on-failure
+RestartSec=2
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target

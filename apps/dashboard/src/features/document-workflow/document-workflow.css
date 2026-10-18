@@ -1,0 +1,174 @@
+.document-workflow {
+  height: 100%;
+  overflow: auto;
+  box-sizing: border-box;
+}
+/* Explicit window and pane state avoids stale inherited visibility in WebKit
+   when a retained pane and its window become visible together. */
+.ns-window:not([aria-hidden='true']):not(.is-shaded)
+  .document-task-pane:not([hidden]) {
+  visibility: visible;
+}
+.ns-window[aria-hidden='true'] .document-task-pane,
+.ns-window.is-shaded .document-task-pane,
+.document-task-pane[hidden] {
+  visibility: hidden;
+}
+.document-workflow section {
+  border-top: 1px solid #888;
+  margin-top: 12px;
+  padding-top: 8px;
+}
+.document-workflow h2 {
+  font-size: 13px;
+  margin: 0 0 8px;
+}
+.document-workflow p {
+  font-size: 12px;
+  line-height: 1.4;
+}
+.document-workflow code,
+.document-digest {
+  overflow-wrap: anywhere;
+}
+.document-workflow label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  margin-block: 9px;
+}
+.document-workflow input,
+.document-workflow select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.document-workflow-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+.document-link-list {
+  list-style: none;
+  padding: 0;
+}
+.document-link-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-block: 5px;
+  overflow-wrap: anywhere;
+}
+.document-delivery {
+  padding: 8px;
+  border: 1px solid #888;
+  margin-block: 8px;
+  overflow-wrap: anywhere;
+}
+.document-delivery ul {
+  padding-left: 18px;
+}
+.document-run-id {
+  display: block;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.document-related {
+  border-top: 1px solid #888;
+  padding: 6px;
+  max-height: 140px;
+  overflow: auto;
+  flex-shrink: 0;
+}
+.document-related summary {
+  cursor: pointer;
+  font-size: 12px;
+}
+.document-related p {
+  font-size: 12px;
+}
+.document-related-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-block: 4px;
+}
+.document-workflow .ns-button {
+  flex-shrink: 0;
+}
+.document-workflow-heading > strong {
+  min-width: 0;
+}
+.document-workflow-heading > span {
+  flex-shrink: 0;
+  font-size: 11px;
+}
+.document-task-tabs {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--ns-mid);
+}
+.document-task-tabs [aria-pressed='true'] {
+  box-shadow: var(--ns-recessed);
+  background: var(--ns-light);
+}
+.document-workflow .document-hint {
+  margin-block: 6px;
+}
+.document-target-summary {
+  overflow-wrap: anywhere;
+  margin-block: 6px;
+}
+.document-action-result {
+  margin-block: 10px;
+}
+.document-action-result p[role='alert'],
+.document-attachment-composer p[role='alert'] {
+  padding: 6px;
+  border-left: 3px solid var(--ns-shadow);
+}
+.document-detail-group,
+.document-history,
+.document-version-preview-details {
+  margin-block: 10px;
+}
+.document-workflow summary {
+  cursor: pointer;
+  padding-block: 4px;
+}
+.document-detail-group {
+  border-top: 1px solid var(--ns-mid);
+  padding-top: 6px;
+}
+.document-version-preview {
+  max-height: 240px;
+  overflow: auto;
+  padding: 10px;
+  background: var(--ns-light);
+  box-shadow: var(--ns-recessed);
+}
+.document-version-preview pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--ns-mono);
+}
+.document-add-section > .ns-button {
+  margin-top: 8px;
+}
+.document-link-list li > span {
+  min-width: 0;
+}
+.document-delivery .ns-button {
+  max-width: 100%;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+@media (pointer: coarse) {
+  .document-workflow summary {
+    min-height: 40px;
+    padding-block: 8px;
+  }
+}

@@ -1,0 +1,38 @@
+.gallery-controls {
+  display: grid;
+  gap: 12px;
+  padding: 4px;
+}
+.gallery-controls > .ns-button {
+  justify-self: start;
+}
+.gallery-controls > label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.gallery-controls input[type='radio'] {
+  accent-color: #222;
+}
+.gallery-controls fieldset {
+  margin: 0;
+  display: flex;
+  gap: 14px;
+  padding: 8px;
+}
+.gallery-controls progress {
+  height: 15px;
+  accent-color: #222;
+}
+.icon-gallery {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px 10px;
+}
+.icon-gallery > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+}

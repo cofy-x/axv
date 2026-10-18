@@ -1,0 +1,38 @@
+{
+  "dataDir": "/var/lib/axv",
+  "socket": "/run/axv-host/control.sock",
+  "socketGroup": 1000,
+  "capacity": {
+    "cpus": 32,
+    "memoryMiB": 49152,
+    "diskGiB": 800,
+    "machines": 100,
+    "workers": 4
+  },
+  "firecracker": {
+    "binary": "/opt/axv/bin/firecracker",
+    "jailer": "/opt/axv/bin/jailer",
+    "version": "1.17.0",
+    "uid": 60000,
+    "gid": 60000,
+    "subnet": "172.30.0.0/22",
+    "dns": "1.1.1.1"
+  },
+  "images": [
+    {
+      "id": "axv-firecracker-amd64-v1",
+      "name": "AXV firecracker amd64",
+      "provider": "firecracker",
+      "arch": "amd64",
+      "rootfs": "/opt/axv/images/ubuntu-2404-amd64-v1/root.ext4",
+      "rootfsSHA256": "REPLACE_WITH_ACTUAL_SHA256",
+      "kernel": "/opt/axv/images/ubuntu-2404-amd64-v1/vmlinux",
+      "kernelSHA256": "REPLACE_WITH_ACTUAL_SHA256",
+      "guest": {
+        "imageVersion": 1,
+        "protocolVersion": 3,
+        "capabilities": ["exec", "terminals", "ssh", "network"]
+      }
+    }
+  ]
+}

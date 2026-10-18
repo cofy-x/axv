@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "types": ["node", "vite/client"],
+    "paths": { "@cofy-x/axv-nextstep": ["./packages/nextstep/src/index.ts"] }
+  },
+  "include": [
+    "apps/dashboard/src",
+    "apps/dashboard/vite.config.ts",
+    "packages/nextstep/src",
+    "tests",
+    "playwright.config.ts",
+    "vitest.config.ts"
+  ]
+}

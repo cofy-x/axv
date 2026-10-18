@@ -1,0 +1,326 @@
+import { useCallback, useRef, useState } from 'react';
+import { Button, Field, Select } from '@cofy-x/axv-nextstep';
+import type { AppWindowProps } from '@cofy-x/axv-nextstep';
+import { useResource } from '../../shared/api/useResource';
+import { RequestIdentity } from '../../shared/api/request-identity';
+import { projectsAPI } from '../project-files/api';
+import { projectLabel } from '../project-files/presentation';
+import { openProjectFile } from '../project-files/navigation';
+import { projectName, sessionTitle } from '../codex/api';
+import { contextAPI, contextStatusLabel } from '../codex/context-api';
+import { useDraftNamespace } from '../../shared/drafts/context';
+import { loadDocumentActions } from './data';
+import { contextRunKey, readyContextRun, selectedContextRun } from './state';
+import { DocumentDetails } from './DocumentDetails';
+import { SavedVersionPicker } from './SavedVersionPicker';
+import { useSavedVersion, versionInfo } from './useSavedVersion';
+
+export function DocumentWorkflow({ window, desktop }: AppWindowProps) {
+  const entryId = window.params.entryId;
+  const requestedTask = window.viewState.task || window.params.task;
+  const task =
+    requestedTask === 'attach' || requestedTask === 'export'
+      ? requestedTask
+      : 'details';
+  const [revision, refresh] = useState(0);
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+  const [feedback, setFeedback] = useState('');
+  const [resultTask, setResultTask] = useState(task);
+  const [projectId, setProjectId] = useState('');
+  const [exportPath, setExportPath] = useState('');
+  const [runSelection, setRunSelection] = useState('');
+  const version = useSavedVersion(entryId);
+  const { databaseId } = useDraftNamespace();
+  const exportRequest = useRef(
+    new RequestIdentity(`${databaseId}:document-export:${entryId}`),
+  );
+  const attachRequest = useRef(
+    new RequestIdentity(`${databaseId}:document-context:${entryId}`),
+  );
+  const load = useCallback(() => loadDocumentActions(entryId), [entryId]);
+  const { data, error: loadError } = useResource(
+    `${entryId}:${revision}`,
+    load,
+  );
+
+  async function perform(label: string, work: () => Promise<void>) {
+    if (busy) return;
+    setResultTask(task);
+    setBusy(label);
+    setError('');
+    setFeedback('');
+    try {
+      await work();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy('');
+    }
+  }
+
+  const selectedRun = selectedContextRun(data?.sessions || [], runSelection);
+  const selectedProject = data?.projects.find(
+    (project) => project.id === projectId,
+  );
+  const savedAvailable =
+    !!version.data?.entry?.editable && !version.data.entry.trashedAt;
+  return (
+    <div className="document-workflow app-pad">
+      <div className="document-workflow-heading">
+        <strong>
+          {version.data?.entry?.name ||
+            (version.choice && versionInfo(version.choice).name) ||
+            window.title}
+        </strong>
+        <Button
+          disabled={!!busy}
+          onClick={() => {
+            refresh((value) => value + 1);
+            version.reload();
+          }}
+        >
+          Refresh
+        </Button>
+      </div>
+      <div
+        className="app-toolbar document-task-tabs"
+        aria-label="Document actions"
+      >
+        {(['attach', 'export', 'details'] as const).map((item) => (
+          <Button
+            key={item}
+            aria-pressed={task === item}
+            disabled={!!busy}
+            onClick={() => {
+              desktop.updateWindowState(window.id, { task: item });
+              setError('');
+              setFeedback('');
+            }}
+          >
+            {item === 'attach'
+              ? 'Attach'
+              : item === 'export'
+                ? 'Export'
+                : 'Details'}
+          </Button>
+        ))}
+      </div>
+      {loadError && <p role="alert">{loadError}</p>}
+      {data?.warnings.map((warning) => (
+        <p role="alert" key={warning}>
+          {warning}
+        </p>
+      ))}
+      <SavedVersionPicker version={version} disabled={!!busy} />
+      <div
+        className="document-task-pane"
+        hidden={task !== 'attach'}
+        inert={task !== 'attach'}
+      >
+        <Select
+          label="Running conversation"
+          value={selectedRun ? runSelection : ''}
+          disabled={!!busy}
+          onChange={(event) => {
+            setRunSelection(event.target.value);
+            setError('');
+            setFeedback('');
+          }}
+        >
+          <option value="">Choose a running conversation</option>
+          {data?.sessions.filter(readyContextRun).map((session) => (
+            <option value={contextRunKey(session)} key={contextRunKey(session)}>
+              {sessionTitle(session)} · run {session.runId.slice(0, 8)} ·{' '}
+              {projectName(session.projectPath)}
+            </option>
+          ))}
+        </Select>
+        {selectedRun && (
+          <p className="document-target-summary">
+            {selectedRun.projectPath} · run {selectedRun.runId.slice(0, 8)}
+          </p>
+        )}
+        {runSelection && !selectedRun ? (
+          <p role="status">
+            The selected run is no longer available. Choose a running
+            conversation again.
+          </p>
+        ) : (
+          data &&
+          !data.sessions.some(readyContextRun) && (
+            <p>No ready conversation. Start or continue Codex, then refresh.</p>
+          )
+        )}
+        <p className="document-hint">
+          Included with your next submitted message in this run.
+        </p>
+      </div>
+      <div
+        className="document-task-pane"
+        hidden={task !== 'export'}
+        inert={task !== 'export'}
+      >
+        <Select
+          label="Destination project"
+          value={selectedProject ? projectId : ''}
+          disabled={!!busy}
+          onChange={(event) => {
+            setProjectId(event.target.value);
+            setError('');
+            setFeedback('');
+          }}
+        >
+          <option value="">Choose a host project</option>
+          {data?.projects.map((project) => (
+            <option value={project.id} key={project.id}>
+              {projectLabel(project, data.projects)} · {project.rootPath}
+            </option>
+          ))}
+        </Select>
+        {selectedProject && (
+          <p className="document-target-summary">
+            Host · {selectedProject.rootPath}
+          </p>
+        )}
+        {data?.projects.length === 0 && (
+          <Button onClick={() => desktop.openApp('project-files')}>
+            Open Project
+          </Button>
+        )}
+        <Field
+          label="New file path"
+          placeholder="docs/task-brief.md"
+          value={exportPath}
+          disabled={!!busy}
+          onChange={(event) => {
+            setExportPath(event.target.value);
+            setError('');
+            setFeedback('');
+          }}
+        />
+        <p className="document-hint">
+          Creates an independent copy. Existing files aren't replaced.
+        </p>
+      </div>
+      <div className="document-action-result">
+        {resultTask === task && error && <p role="alert">{error}</p>}
+        {resultTask === task && feedback && <p role="status">{feedback}</p>}
+        {task === 'attach' && (
+          <Button
+            primary
+            disabled={
+              !!busy || version.loading || !version.choice || !selectedRun
+            }
+            onClick={() =>
+              void perform('Adding…', async () => {
+                const session = selectedRun;
+                if (!session) throw new Error('Choose a ready conversation.');
+                const snapshot = await version.resolve();
+                const snapshotIds = [snapshot.id];
+                const requestId = attachRequest.current.for({
+                  sessionId: session.id,
+                  runId: session.runId,
+                  snapshotIds,
+                });
+                const { batch } = await contextAPI.attach(
+                  session.id,
+                  session.runId,
+                  requestId,
+                  snapshotIds,
+                );
+                if (
+                  batch.status !== 'unknown' &&
+                  !attachRequest.current.complete(requestId)
+                )
+                  setError(
+                    'The attachment was queued, but its retry identity could not be cleared in this browser.',
+                  );
+                setFeedback(contextStatusLabel[batch.status]);
+                desktop.openApp('conversation-context', {
+                  sessionId: session.id,
+                  runId: session.runId,
+                });
+              })
+            }
+          >
+            {busy || 'Add'}
+          </Button>
+        )}
+        {task === 'export' && (
+          <Button
+            primary
+            disabled={
+              !!busy ||
+              version.loading ||
+              !version.choice ||
+              !selectedProject ||
+              !exportPath.trim()
+            }
+            onClick={() =>
+              void perform('Exporting…', async () => {
+                const snapshot = await version.resolve();
+                const payload = {
+                  snapshotId: snapshot.id,
+                  path: exportPath.trim(),
+                };
+                const requestId = exportRequest.current.for({
+                  projectId,
+                  ...payload,
+                });
+                const result = await projectsAPI.export(projectId, {
+                  ...payload,
+                  requestId,
+                });
+                if (!exportRequest.current.complete(requestId))
+                  setError(
+                    'The export succeeded, but its retry identity could not be cleared in this browser.',
+                  );
+                setFeedback(`Exported to ${result.path}.`);
+                openProjectFile(
+                  desktop,
+                  projectId,
+                  result.path,
+                  selectedProject
+                    ? projectLabel(selectedProject, data?.projects || [])
+                    : undefined,
+                );
+              })
+            }
+          >
+            {busy || 'Export file'}
+          </Button>
+        )}
+        {task === 'details' && (
+          <Button
+            disabled={
+              !!busy || version.loading || !savedAvailable || !version.choice
+            }
+            onClick={() =>
+              void perform('Keeping…', async () => {
+                const snapshot = await version.resolve();
+                version.reload();
+                setFeedback(`Kept revision ${snapshot.revision}.`);
+              })
+            }
+          >
+            {busy || 'Keep version'}
+          </Button>
+        )}
+      </div>
+      <div
+        className="document-task-pane"
+        hidden={task !== 'details'}
+        inert={task !== 'details'}
+      >
+        <DocumentDetails
+          entryId={entryId}
+          data={data}
+          savedAvailable={savedAvailable}
+          desktop={desktop}
+          onRefresh={() => refresh((value) => value + 1)}
+        />
+      </div>
+    </div>
+  );
+}

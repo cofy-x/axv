@@ -1,0 +1,95 @@
+package guest
+
+import (
+	"crypto/subtle"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os/exec"
+	"strings"
+
+	"github.com/cofy-x/axv/apps/server/internal/guest/image"
+	"github.com/cofy-x/axv/apps/server/internal/guest/protocol"
+)
+
+func (s *service) handler() http.Handler {
+	mux := http.NewServeMux()
+	s.access.Register(mux)
+	mux.HandleFunc("GET /v1/health", func(w http.ResponseWriter, r *http.Request) {
+		health := protocol.Health{Version: protocol.Version, MachineID: s.config.MachineID, BootID: s.bootID}
+		health.SSHAvailable = image.Has(s.capabilities, "ssh") && s.access.Info(r.Context()).Available
+		health.Capabilities = []string{}
+		for _, capability := range image.Capabilities() {
+			if image.Has(s.capabilities, capability) && (capability != "ssh" || health.SSHAvailable) {
+				health.Capabilities = append(health.Capabilities, capability)
+			}
+		}
+		if err := s.projectReady(); err != nil {
+			health.Reason = err.Error()
+		} else {
+			health.Ready = true
+		}
+		respond(w, http.StatusOK, health)
+	})
+	mux.HandleFunc("POST /v1/exec", s.execute)
+	mux.HandleFunc("GET /v1/terminals", s.terminals.list)
+	mux.HandleFunc("POST /v1/terminals", s.terminals.create)
+	mux.HandleFunc("GET /v1/terminals/{id}", s.terminals.info)
+	mux.HandleFunc("DELETE /v1/terminals/{id}", s.terminals.end)
+	mux.HandleFunc("GET /v1/terminals/{id}/attach", s.terminals.attach)
+	mux.HandleFunc("POST /v1/shutdown", func(w http.ResponseWriter, r *http.Request) {
+		cmd := exec.Command("sudo", "-n", "/sbin/poweroff")
+		if err := cmd.Start(); err != nil {
+			fail(w, http.StatusServiceUnavailable, "shutdown_failed", err)
+			return
+		}
+		go func() { _ = cmd.Wait() }()
+		respond(w, http.StatusAccepted, map[string]bool{"accepted": true})
+	})
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		if subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+s.config.Token)) != 1 {
+			fail(w, http.StatusForbidden, "forbidden", fmt.Errorf("guest authentication failed"))
+			return
+		}
+		capability := ""
+		switch {
+		case r.URL.Path == "/v1/exec":
+			capability = "exec"
+		case strings.HasPrefix(r.URL.Path, "/v1/terminals"):
+			capability = "terminals"
+		case strings.HasPrefix(r.URL.Path, "/v1/ssh"):
+			capability = "ssh"
+		case strings.HasPrefix(r.URL.Path, "/v1/network"):
+			capability = "network"
+		}
+		if capability != "" && !image.Has(s.capabilities, capability) {
+			fail(w, http.StatusNotImplemented, "unsupported", fmt.Errorf("guest capability %s is not declared by this image", capability))
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})
+}
+
+func respond(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(value)
+}
+
+func fail(w http.ResponseWriter, status int, code string, err error) {
+	respond(w, status, map[string]string{"code": code, "error": err.Error()})
+}
+
+func decode(w http.ResponseWriter, r *http.Request, target any) error {
+	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
+	d.DisallowUnknownFields()
+	if err := d.Decode(target); err != nil {
+		return err
+	}
+	if d.Decode(new(any)) != io.EOF {
+		return fmt.Errorf("expected one JSON object")
+	}
+	return nil
+}

@@ -1,0 +1,52 @@
+.wallpaper-options {
+  display: flex;
+  gap: 10px;
+}
+.wallpaper-swatch {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  padding: 2px;
+  background: transparent;
+  font: inherit;
+  font-size: 10px;
+  cursor: default;
+}
+.wallpaper-swatch .swatch-preview {
+  display: block;
+  height: 55px;
+  width: 100%;
+  border: 1px solid #262626;
+  box-shadow:
+    inset 1px 1px #999,
+    1px 1px #fff;
+  margin-bottom: 5px;
+  background-color: #777;
+}
+.wallpaper-swatch.slate .swatch-preview {
+  background-color: #52626b;
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent 0 7px,
+    #ffffff13 7px 8px
+  );
+}
+.wallpaper-swatch.dither .swatch-preview {
+  background-image:
+    linear-gradient(#999 1px, transparent 1px),
+    linear-gradient(90deg, #999 1px, transparent 1px);
+  background-size: 3px 3px;
+}
+.wallpaper-swatch.chosen {
+  outline: 2px solid #111;
+  outline-offset: 1px;
+}
+.settings-app .ns-checkbox {
+  display: flex;
+  margin-bottom: 8px;
+}
+@media (max-width: 599px) {
+  .wallpaper-options {
+    gap: 7px;
+  }
+}

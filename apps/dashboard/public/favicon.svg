@@ -1,0 +1,13 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 32 32"
+  shape-rendering="crispEdges"
+>
+  <title>AXV</title>
+  <path fill="#111" d="M0 0h32v32H0z" />
+  <path fill="#ccc" d="M1 1h30v30H1z" />
+  <path fill="#fff" d="M1 1h30v2H3v28H1z" />
+  <path fill="#666" d="M29 3h2v28H3v-2h26z" />
+  <path fill="#242424" d="M5 5h22v22H5z" />
+  <path fill="#f0f0f0" d="M8 8h4l4 5 4-5h4l-6 8 6 8h-4l-4-5-4 5H8l6-8z" />
+</svg>

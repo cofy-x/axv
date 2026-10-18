@@ -1,0 +1,16 @@
+[Unit]
+Description=AXV guest execution service
+Requires=axv-prepare.service
+After=axv-prepare.service
+
+[Service]
+User=axv
+Group=axv
+WorkingDirectory=/projects
+ExecStart=/usr/local/bin/axv-guest --config /etc/axv/guest.json --listen vsock
+Restart=on-failure
+RestartSec=2
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target

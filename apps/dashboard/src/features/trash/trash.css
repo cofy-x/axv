@@ -1,0 +1,28 @@
+.trash-list {
+  flex: 1;
+  overflow: auto;
+  background: #eee;
+}
+.trash-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 7px;
+  background: #eee;
+  border: 0;
+  border-bottom: 1px solid #fff;
+  border-radius: 0;
+  color: #262626;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+  padding: 4px 9px;
+}
+.trash-row > small {
+  margin-left: auto;
+  font-size: 10px;
+}
+.trash-row.selected {
+  background: #222;
+  color: #fff;
+}

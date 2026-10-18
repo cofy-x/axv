@@ -1,0 +1,45 @@
+{
+  "name": "@cofy-x/axv",
+  "description": "A personal cloud workstation.",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.16.0",
+    "pnpm": "12.11.2"
+  },
+  "packageManager": "pnpm@12.11.2",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "pnpm --filter ./apps/dashboard build",
+    "build:production": "node scripts/build.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix --max-warnings 0",
+    "lint:fix:format": "pnpm run lint:fix && pnpm run format",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test:e2e": "node scripts/test-e2e.mjs",
+    "smoke:production": "node scripts/smoke-production.mjs",
+    "verify:codex-live": "node scripts/verify-codex-live.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.64.1",
+    "@stylistic/eslint-plugin": "5.10.0",
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "eslint": "10.12.0",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "16.5.0",
+    "prettier": "3.9.10",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.71.2",
+    "vite": "8.3.4",
+    "vitest": "5.0.4"
+  }
+}
