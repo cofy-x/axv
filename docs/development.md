@@ -11,7 +11,7 @@ make deps
 make dev
 ```
 
-`make deps` installs locked JavaScript dependencies and downloads Go modules. `make dev` builds the development server, then starts Vite on available loopback ports. Open the printed Vite URL. Explicit occupied ports fail instead of reusing another server.
+`make deps` installs locked JavaScript dependencies and downloads the server module's declared Go dependencies with `GOWORK=off`. This limits prefetching to the module's requirements instead of downloading unrelated upstream development-tool archives and adding their checksums to `go.work.sum`. Builds and tests use the repository workspace normally. `make dev` builds the development server, then starts Vite on available loopback ports. Open the printed Vite URL. Explicit occupied ports fail instead of reusing another server.
 
 Each checkout has a persistent profile at `~/.axv/dev/<checkout-id>`, where the ID is the first 12 hexadecimal characters of SHA-256 over the checkout's canonical absolute path. Symlinked paths to the same checkout share the profile; distinct worktrees do not. Desktop data lives in its `data/`. `AXV_DEV_HOME` selects a different final profile root directly, without appending another identifier. Previous checkout-local development data is not migrated.
 
