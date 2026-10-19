@@ -4,6 +4,10 @@ This guide owns installation, updates, CLI workflows, service operation, configu
 
 VMs run on the computer where AXV is deployed. Its operating system determines the VM runtime: Lima on macOS or Firecracker/KVM on Linux. The browser's operating system does not choose the execution machine.
 
+## Execution identity
+
+AXV runs as the operating-system user that launches it, including root, without an additional flag. Host Terminal and coding agents inherit that user's permissions; provider tools retain their own approval and sandbox policies. Default profile paths use that user's home directory. AXV does not switch users or migrate another user's profiles, provider configuration or history. The [local access rules](api/README.md#access-and-identity-boundaries) apply to every launch identity.
+
 ## Installation and updates
 
 From a checkout with the [pinned toolchain](../README.md#install-and-use):
@@ -144,9 +148,11 @@ Guest enhancements require preinstalled services from the [image build recipes](
 
 Provision Firecracker as an administrator-managed system service on the same Linux computer where AXV runs, using the [host example](../config/examples/host-firecracker.json), [systemd unit](../config/examples/axv-host.service) and [guest image recipe](../images/guest). Replace digest placeholders and choose local paths, capacity, subnet and jail UID/GID ranges; the example cannot launch unchanged. Automatic Linux provisioning is not implemented.
 
-The host requires KVM, cgroup v2 with `cgroup.kill`, pinned Firecracker/jailer binaries, `ip`, `nft`, `cp`, `mkfs.ext4` and `resize2fs`. Enable IPv4 forwarding separately and choose a short host data path and non-overlapping guest subnet. [VM architecture](vm-platform.md) owns provider and network boundaries.
+The host requires KVM, TUN, cgroup v2 with `cgroup.kill` and delegated `cpu`, `memory` and `pids` controllers, pinned Firecracker/jailer binaries, `ip`, `nft`, `cp`, `mkfs.ext4` and `resize2fs`. Enable IPv4 forwarding separately and choose a short host data path and non-overlapping guest subnet. Existing host firewalls must also authorize guest forwarding; [VM networking](vm-platform.md#host-firewall-integration) owns coexistence with Docker and other firewall managers.
 
-Start AXV as the ordinary desktop user on that computer, then open **Virtual Machines** to configure and check the service's local Unix socket or readable host configuration. A successful connection becomes available in the current desktop without a restart. Missing permissions or an unavailable service show diagnostics and a check-again action; AXV never starts or stops the administrator's system service.
+Set `firecracker.cgroupParent` to the service's delegated cgroup path relative to `/sys/fs/cgroup`, for example `system.slice/axv-host.service`. The example unit requires systemd 254 or newer: `Delegate=yes` delegates that subtree, and `DelegateSubgroup=controller` places the host process in its own leaf so VM resource controllers can be enabled beside it. AXV configures only its owned descendants inside that delegation. It does not enable controllers in global ancestor cgroups. Keep the unit name and configured parent stable while its VMs exist; `KillMode=process` preserves guests across controller restarts. Alternative supervisors must provide the equivalent writable, empty delegated parent and place the controller outside that parent or in a separate leaf.
+
+Start AXV with the intended desktop account on that computer, then open **Virtual Machines** to configure and check the service's local Unix socket or readable host configuration. A successful connection becomes available in the current desktop without a restart. Missing permissions or an unavailable service show diagnostics and a check-again action; AXV never starts or stops the administrator's system service. Running the desktop as root does not change Firecracker's independent service ownership or enable managed Firecracker hosting.
 
 The equivalent CLI configuration is:
 
@@ -154,7 +160,7 @@ The equivalent CLI configuration is:
 axv setup --socket /run/axv-host/control.sock
 ```
 
-Alternatively, `setup --host-config /etc/axv/host.json` reads a host configuration and saves its local Unix socket. The desktop stays unprivileged and needs existing socket access. This separation defines process ownership and privileges within one computer.
+Alternatively, `setup --host-config /etc/axv/host.json` reads a host configuration and saves its local Unix socket. The desktop needs existing socket access.
 
 ## Configuration and storage
 

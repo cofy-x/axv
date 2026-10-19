@@ -8,14 +8,74 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/cofy-x/axv/apps/server/internal/app/launch"
 	"github.com/cofy-x/axv/apps/server/internal/compute"
 	"github.com/cofy-x/axv/apps/server/internal/config"
 	guestimage "github.com/cofy-x/axv/apps/server/internal/guest/image"
+	"github.com/cofy-x/axv/apps/server/internal/jsonfile"
 	"github.com/cofy-x/axv/apps/server/internal/profile"
 )
+
+func TestResolveKeepsSelectedProfileAndLaunchingEnvironment(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "uninitialized-profile")
+	userHome := t.TempDir()
+	t.Setenv("AXV_COMPUTE_SOCKET", "")
+	t.Setenv("HOME", userHome)
+	t.Setenv("USER", "launching-user")
+	t.Setenv("LOGNAME", "launching-user")
+	t.Setenv("CODEX_HOME", filepath.Join(userHome, "codex"))
+	desktop := config.Config{
+		Addr: "127.0.0.1:0", Home: home,
+		DataDir: filepath.Join(home, "data"), ConfigPath: filepath.Join(home, "config.json"),
+		WorkspaceDir: filepath.Join(userHome, "projects"),
+	}
+	uid, gid := os.Geteuid(), os.Getegid()
+	s, err := Resolve(profile.Profile{Home: home}, desktop)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Home != home || s.Desktop != desktop {
+		t.Fatal("resolution changed the selected profile or desktop settings")
+	}
+	for _, key := range []string{"HOME", "USER", "LOGNAME", "CODEX_HOME"} {
+		if s.Environment[key] != os.Getenv(key) {
+			t.Fatalf("resolution replaced the launching %s", key)
+		}
+	}
+	if os.Geteuid() != uid || os.Getegid() != gid {
+		t.Fatal("resolution changed the launching process identity")
+	}
+	if _, err := os.Stat(home); !os.IsNotExist(err) {
+		t.Fatalf("resolution initialized the selected profile: %v", err)
+	}
+}
+
+func TestResolveDesktopRequiresIndependentFirecrackerHost(t *testing.T) {
+	t.Setenv("AXV_COMPUTE_SOCKET", "")
+	s, c := runtimeFixture(t)
+	c.Lima = nil
+	c.Firecracker = &compute.FirecrackerConfig{Binary: "/test/firecracker"}
+	path := filepath.Join(s.Home, "host.json")
+	if err := jsonfile.Write(path, c, 0600); err != nil {
+		t.Fatal(err)
+	}
+	p := profile.Profile{Home: s.Home, Compute: profile.Compute{Mode: "managed", HostConfig: path}}
+	resolved, err := Resolve(p, s.Desktop)
+	if err != nil {
+		t.Fatalf("unavailable compute blocked the desktop: %v", err)
+	}
+	if resolved.Host != nil || !strings.Contains(resolved.ComputeError, "independently administered Linux service") {
+		t.Fatalf("desktop accepted managed Firecracker: %#v", resolved.ComputeSettings)
+	}
+	p.Compute = profile.Compute{Mode: "external", Socket: c.Socket}
+	resolved, err = Resolve(p, s.Desktop)
+	if err != nil || resolved.Host != nil || resolved.ComputeError != "" || resolved.Compute != p.Compute {
+		t.Fatalf("independent host resolution: %#v %v", resolved.ComputeSettings, err)
+	}
+}
 
 func TestDesktopFingerprintPreservesExistingIdentity(t *testing.T) {
 	s := Settings{

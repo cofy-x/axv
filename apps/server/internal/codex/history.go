@@ -2,6 +2,7 @@ package codex
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"time"
 
 	"github.com/cofy-x/axv/apps/server/internal/codex/runner"
 	"github.com/cofy-x/axv/apps/server/internal/storage"
@@ -77,6 +79,39 @@ func (m *Manager) runDirectory(runID string) string {
 	return filepath.Join(m.settings.DataDir, "codex-runs", runID)
 }
 
+func (m *Manager) ownershipPath(sessionID string) string {
+	return filepath.Join(m.settings.DataDir, "codex-owners", fmt.Sprintf("%x.lock", sha256.Sum256([]byte(sessionID))))
+}
+
+// The terminal can disappear before its runner finishes stopping the provider.
+// Observe the runner's conversation lock before publishing completion or
+// starting another run; provider-owned history files are outside this boundary.
+func (m *Manager) awaitRunnerCleanup(ctx context.Context, sessionID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	path := m.ownershipPath(sessionID)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return failure(Unavailable, "codex_ownership_unavailable", "The Codex conversation ownership directory is unavailable. Check the AXV data directory and its permissions.")
+	}
+	wait, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	lock, err := runner.AcquireOwnership(wait, path)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if wait.Err() != nil {
+			return failure(Unavailable, "codex_cleanup_pending", "The previous Codex run is still stopping its managed processes. Retry after cleanup completes.")
+		}
+		return failure(Unavailable, "codex_ownership_unavailable", "The Codex conversation ownership could not be verified. Check the AXV data directory and its permissions.")
+	}
+	if lock.Close() != nil {
+		return failure(Unavailable, "codex_ownership_unavailable", "The Codex conversation ownership could not be released. Check the AXV data directory.")
+	}
+	return ctx.Err()
+}
+
 func (m *Manager) prepareRunner(info Info, session storage.CodexSession) ([]string, error) {
 	dir := m.runDirectory(session.RunID)
 	path := filepath.Join(dir, "manifest.json")
@@ -94,7 +129,11 @@ func (m *Manager) prepareRunner(info Info, session storage.CodexSession) ([]stri
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
-	manifest := runner.Manifest{SessionID: session.ID, RunID: session.RunID, ProjectPath: session.ProjectPath, CodexPath: info.CodexPath, HistoryHome: session.HistoryHome, SocketRoot: socketRoot, Mode: session.RunMode()}
+	ownershipPath := m.ownershipPath(session.ID)
+	if err := os.MkdirAll(filepath.Dir(ownershipPath), 0700); err != nil {
+		return nil, err
+	}
+	manifest := runner.Manifest{SessionID: session.ID, RunID: session.RunID, ProjectPath: session.ProjectPath, CodexPath: info.CodexPath, HistoryHome: session.HistoryHome, SocketRoot: socketRoot, OwnershipPath: ownershipPath, Mode: session.RunMode()}
 	if session.RunMode() == "resume" {
 		manifest.ThreadID = session.ConversationID
 	}

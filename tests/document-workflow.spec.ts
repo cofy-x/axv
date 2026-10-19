@@ -1,5 +1,3 @@
-import { mkdir } from 'node:fs/promises';
-import { resolve } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 import type { Page } from '@playwright/test';
 import {
@@ -75,13 +73,8 @@ for (const width of [1440, 390]) {
       'Touch projects cover the narrow flow.',
     );
     await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
-    const screenshots = resolve(
-      '.data/test/document-workflow',
-      info.project.name,
-    );
-    await mkdir(screenshots, { recursive: true, mode: 0o700 });
     const captureScene = async (name: string) => {
-      const path = resolve(screenshots, `${width}-${name}.png`);
+      const path = info.outputPath(`${width}-${name}.png`);
       await page.screenshot({ path, fullPage: true });
       await info.attach(name, { path, contentType: 'image/png' });
     };

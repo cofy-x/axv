@@ -35,13 +35,27 @@ func Run(manifestPath string) error {
 		writeFailure(statePath, starting, code)
 		return ErrUnavailable
 	}
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGHUP, syscall.SIGTERM)
+	signalContext, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGHUP, syscall.SIGTERM)
+	defer stopSignals()
+	ctx, cancel := context.WithCancel(signalContext)
 	defer cancel()
 	// While the TUI normally consumes Ctrl-C as raw terminal input, a signal
 	// during startup must not make its wrapper abandon owned child processes.
 	interrupts := make(chan os.Signal, 1)
 	signal.Notify(interrupts, os.Interrupt)
 	defer signal.Stop(interrupts)
+	acquiring, stopAcquiring := context.WithTimeout(ctx, 20*time.Second)
+	ownership, err := AcquireOwnership(acquiring, manifest.OwnershipPath)
+	stopAcquiring()
+	if err != nil {
+		return fail("codex_ownership_unavailable")
+	}
+	// tmux can disappear before the app-server has finished releasing its
+	// history writer. Release ownership only after every process stop defer.
+	defer ownership.Close()
+	if ctx.Err() != nil {
+		return nil
+	}
 	socketPath, cleanupSocket, err := createSocketPath(manifest.SocketRoot)
 	if err != nil {
 		return fail("codex_start_failed")

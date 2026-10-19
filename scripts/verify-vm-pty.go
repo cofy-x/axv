@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -25,12 +26,24 @@ import (
 )
 
 func main() {
-	if err := verify(); err != nil {
+	args := os.Args[1:]
+	ptyOnly := len(args) > 0 && args[0] == "--pty-only"
+	if ptyOnly {
+		args = args[1:]
+	}
+	if len(args) != 2 {
+		fmt.Fprintln(os.Stderr, "usage: verify-vm-pty [--pty-only] <axv executable> <machine ID>")
+		os.Exit(1)
+	}
+	if err := verify(args[0], args[1]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 	fmt.Println("SSH PTY allocation and resize passed (24x80 to 41x113).")
-	if err := verifyInterruption(); err != nil {
+	if ptyOnly {
+		return
+	}
+	if err := verifyInterruption(args[0], args[1]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -54,17 +67,84 @@ func (b *synchronizedBuffer) String() string {
 	return b.b.String()
 }
 
-func verifyInterruption() error {
+// Both the CLI and its proxy descendants belong to this probe's process group.
+// Wait after escalation too; an unobserved SIGKILL is not completed cleanup.
+func stopProbeGroup(pid int, done <-chan struct{}) error {
+	return stopProbeGroupWith(pid, done, runtime.GOOS, syscall.Kill, 2*time.Second)
+}
+
+func stopProbeGroupWith(pid int, done <-chan struct{}, platform string, kill func(int, syscall.Signal) error, grace time.Duration) error {
+	var permissionError error
+	signalGroup := func(signal syscall.Signal) (bool, error) {
+		err := kill(-pid, signal)
+		if errors.Is(err, syscall.ESRCH) {
+			return false, nil
+		}
+		if platform == "darwin" && errors.Is(err, syscall.EPERM) {
+			// Darwin can report EPERM while an exited child is being reaped.
+			// Observe within the existing bound; permission never authorizes escalation.
+			permissionError = err
+			return true, nil
+		}
+		return err == nil, err
+	}
+	for _, step := range []struct {
+		signal syscall.Signal
+		limit  time.Duration
+	}{{syscall.SIGTERM, grace}, {syscall.SIGKILL, grace}} {
+		alive, err := signalGroup(step.signal)
+		if err != nil {
+			return err
+		}
+		if !alive {
+			select {
+			case <-done:
+				return nil
+			case <-time.After(time.Second):
+				return errors.New("probe exited without being reaped")
+			}
+		}
+		deadline := time.Now().Add(step.limit)
+		for time.Now().Before(deadline) {
+			alive, err := signalGroup(0)
+			if err != nil {
+				return err
+			}
+			if !alive {
+				select {
+				case <-done:
+					return nil
+				case <-time.After(time.Second):
+					return errors.New("probe exited without being reaped")
+				}
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		if permissionError != nil {
+			return permissionError
+		}
+	}
+	return fmt.Errorf("owned SSH probe process group %d did not stop", pid)
+}
+
+func verifyInterruption(executable, machine string) (result error) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	ctx, timeout := context.WithTimeout(ctx, 2*time.Minute)
 	defer timeout()
-	executable, machine := os.Args[1], os.Args[2]
 	run := func(args ...string) ([]byte, error) {
 		cmd := exec.CommandContext(ctx, executable, args...)
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM) }
+		cmd.WaitDelay = time.Second
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
 		output, err := cmd.Output()
+		if cmd.Process != nil {
+			done := make(chan struct{})
+			close(done)
+			err = errors.Join(err, stopProbeGroup(cmd.Process.Pid, done))
+		}
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w\n%s\n%s", strings.Join(args, " "), err, stderr.String(), output)
 		}
@@ -100,19 +180,7 @@ func verifyInterruption() error {
 	done := make(chan struct{})
 	var streamError error
 	go func() { streamError = stream.Wait(); close(done) }()
-	defer func() {
-		select {
-		case <-done:
-			return
-		default:
-		}
-		_ = syscall.Kill(-stream.Process.Pid, syscall.SIGTERM)
-		select {
-		case <-done:
-		case <-time.After(2 * time.Second):
-			_ = syscall.Kill(-stream.Process.Pid, syscall.SIGKILL)
-		}
-	}()
+	defer func() { result = errors.Join(result, stopProbeGroup(stream.Process.Pid, done)) }()
 	ready := time.NewTimer(30 * time.Second)
 	defer ready.Stop()
 	tick := time.NewTicker(50 * time.Millisecond)
@@ -166,16 +234,13 @@ func verifyInterruption() error {
 	return nil
 }
 
-func verify() error {
-	if len(os.Args) != 3 {
-		return errors.New("usage: verify-vm-pty <axv executable> <machine ID>")
-	}
+func verify(executable, machine string) (result error) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	ctx, timeout := context.WithTimeout(ctx, 45*time.Second)
 	defer timeout()
 	command := "stty size; trap 'stty size; exit 0' WINCH; printf 'AXV_PTY_READY\\n'; while :; do sleep 1; done"
-	cmd := exec.Command(os.Args[1], "vm", "ssh", "-t", "-t", os.Args[2], "--", command)
+	cmd := exec.Command(executable, "vm", "ssh", "-t", "-t", machine, "--", command)
 	terminal, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 24, Cols: 80})
 	if err != nil {
 		return err
@@ -187,20 +252,7 @@ func verify() error {
 		processError = cmd.Wait()
 		close(done)
 	}()
-	defer func() {
-		select {
-		case <-done:
-			return
-		default:
-		}
-		// pty starts a new session, so this group contains only this probe's children.
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
-		select {
-		case <-done:
-		case <-time.After(2 * time.Second):
-			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		}
-	}()
+	defer func() { result = errors.Join(result, stopProbeGroup(cmd.Process.Pid, done)) }()
 	var mu sync.Mutex
 	var output strings.Builder
 	changed := make(chan struct{}, 1)

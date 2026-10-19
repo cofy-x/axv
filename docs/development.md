@@ -4,6 +4,8 @@ Use the [pinned toolchain](../README.md#install-and-use) and follow [AGENTS.md](
 
 ## Local development
 
+Install dependencies and run development as the same account, with write access to the checkout and dependency/Vite caches. The [startup identity rules](startup.md#execution-identity) apply:
+
 ```bash
 make deps
 make dev
@@ -94,7 +96,7 @@ The guest service keeps Linux boot, mount and vsock setup separate from portable
 
 `make test` runs Go and Vitest tests, including install and development-launcher helpers. After a production build, `AXV_TEST_PRODUCTION_INSTALL=1 pnpm exec vitest run scripts/install.test.mjs` also verifies repeated installation and execution in a temporary Go binary directory; pass the build's `VERSION` for custom versions.
 
-`make test-e2e` installs Chromium, Firefox and WebKit, builds production assets and runs against a fresh database and dedicated server. The [Playwright configuration](../playwright.config.ts) owns browser, display-scale and touch projects; [visual tests](../tests/visual.spec.ts) own the shared viewport scenarios. For focused iteration:
+On a fresh Linux host, an administrator must first run `pnpm exec playwright install-deps chromium firefox webkit` to install the required system libraries. Then run `make test-e2e`: it downloads Chromium, Firefox and WebKit binaries, builds production assets and runs against a fresh database and dedicated server. The [Playwright configuration](../playwright.config.ts) owns browser, display-scale and touch projects; [visual tests](../tests/visual.spec.ts) own the shared viewport scenarios. For focused iteration:
 
 ```bash
 make test-e2e E2E_ARGS="--project=chromium"
@@ -117,6 +119,8 @@ The shared [temporary-directory helper](../scripts/test-temp.mjs) creates a miss
 
 Go checks use `make test-go` or `node scripts/test-go.mjs [go test arguments]`; direct `go test` does not load the environment adapter. For ad hoc `go run` or diagnostic helpers, explicitly set `TMPDIR` and `GOTMPDIR` to an owned directory under the selected test root. Do not put generated host executables, fixtures or scratch profiles in global `/tmp` or `/var` directories. Unix sockets and provider runtime state may use an explicitly owned short directory when platform limits require it, with separate cleanup; generated executables remain under the test root.
 
+Run the full Go suite and desktop smoke/browser checks with the identity being verified. Run privileged Linux VM and network acceptance separately as root. Each identity needs its own private test root and compiler cache; keep overridden test-root paths short enough for Unix sockets.
+
 When a child process is killed, use bounded diagnostics to record its actual executable, ProxyCommand when applicable, working directory and temporary paths before retrying. Keep executable test artifacts under the repository test root and investigate the reported paths; do not disable or bypass host security controls.
 
 Browser and production smoke tests require tmux on macOS/Linux. They use a deterministic Codex fixture, with no installed Codex CLI, login or model request required. Their [shell fixture](../scripts/shell-fixture.mjs) gives the server a private `HOME`, selects `/bin/sh`, and clears `ENV` and `BASH_ENV`: Host Terminal still starts a login shell, without loading the user's home profile or inherited startup hooks. This fixture does not change the invoking shell or explicit native acceptance's user home and shared-cache behavior.
@@ -133,13 +137,15 @@ After `make build`, run `node scripts/smoke-daemon.mjs` in a macOS GUI login or 
 
 ## Real Codex acceptance
 
-`make verify-codex-live` is an explicit real-model check, separate from automated fixtures. First build AXV and install Chromium with `pnpm exec playwright install chromium`. It requires a signed-in Codex CLI, tmux and an already trusted project; complete sign-in and trust in a host terminal beforehand.
+`make verify-codex-live` is an explicit real-model check, separate from automated fixtures. First build AXV and install Chromium with `pnpm exec playwright install chromium`. Run it with the intended desktop account and its existing provider sign-in. It requires a Codex CLI executable by that account, tmux and an already trusted project; complete sign-in and trust in a host terminal beforehand.
 
 The default project is this repository; `pnpm verify:codex-live /absolute/project` selects another. The check sends two short requests using existing model and approval settings to verify live continuity and saved-context continuation.
 
 The check isolates AXV data, profile and tmux routing, inherits proxy configuration, and writes a credential-free result to `.cache/codex-live/last-run.json` without a transcript. It uses your model access; run it only when that acceptance is intended. The [script](../scripts/verify-codex-live.mjs) owns the detailed assertions.
 
 ## Native VM preparation acceptance
+
+### macOS Lima
 
 On a macOS host with VZ support, run the basic cache and lifecycle check:
 
@@ -164,6 +170,33 @@ Native acceptance uses `AXV_TEST_TMPDIR` for its profile, installed executable, 
 For explicit failure diagnosis, `AXV_VM_VERIFY_KEEP_FAILURE=1` stops owned probes/services but preserves that run's VMs and profile after a failed check. Follow its printed commands to recover original requests, delete the exact owned VMs and stop the host before removing the retained directory. Normal runs clean up automatically, retaining a profile only when cleanup is uncertain.
 
 The [enhanced acceptance script](../scripts/verify-vm-preparation.mjs) installs AXV temporarily, prepares Lima and the selected bundle in an isolated profile, and creates two task VMs with only one running at a time. It checks desktop/CLI service transitions, guest continuity and real OpenSSH access, transfers and forwarding. Before cleanup, it recovers uncertain creation using the original request and host identity; uncertain cleanup retains the profile with diagnostics. Detailed assertions belong to the script. Current platform and validation claims belong to [project status](../README.md#project-status).
+
+### Linux Firecracker
+
+Use a Linux KVM host as root, with the [host prerequisites and delegated cgroup setup](startup.md#linux-privilege-boundary), systemd 254 or newer, system OpenSSH tools, and an enhanced native Firecracker bundle from the [image recipe](../images/guest/README.md#firecracker-root-filesystem). Supply reviewed Firecracker/jailer executables of the same pinned version and a separately verified compatible kernel:
+
+```sh
+node scripts/verify-vm-firecracker.mjs --yes \
+  --image-bundle /absolute/bundle/manifest.json \
+  --kernel /absolute/vmlinux --kernel-sha256 <reviewed-sha256> \
+  --firecracker /absolute/firecracker --jailer /absolute/jailer \
+  --version 1.17.0 --subnet <unused-private-/22>
+```
+
+The [Linux acceptance script](../scripts/verify-vm-firecracker.mjs) builds an isolated executable and verifies real lifecycle, guest execution, Guest Terminal detach/replay/resize/End, SSH/file transfers, SSH PTY resize and local/remote TCP forwarding, Internet egress, host isolation, controller recovery, retained project data and task expiry. It creates a dedicated transient system service with delegated cgroups, independent profile and owned short `/tmp/axv-fc-*` runtime directory. It verifies image/kernel digests and removes only its own VMs, volumes, service, TAPs, firewall table and directories. Interrupted submissions retain their original request IDs; uncertain cleanup preserves the profile with recovery commands. `AXV_VM_VERIFY_KEEP_FAILURE=1` explicitly retains failed-run state. Inputs are never downloaded or provisioned automatically.
+
+On a Docker host using the iptables backend and a restrictive forwarding policy, explicitly add `--docker-uplink <interface>` to authorize two temporary `DOCKER-USER` rules scoped to this run's TAP prefix, guest subnet and uplink. Cleanup removes their exact owner-comment handles, including when preserving failed VMs. It does not change chain policies. Other firewalls require administrator integration as described in [VM networking](vm-platform.md#host-firewall-integration).
+
+For the native kernel firewall regression without building a VM image:
+
+```sh
+AXV_TEST_FIRECRACKER_NETWORK=1 node scripts/test-go.mjs -race \
+  -run TestNativeFirewallIPv4Egress -v ./apps/server/internal/compute/provider/firecracker
+```
+
+It requires root, `unshare`, `nsenter`, `ip`, `nft`, `ping` and `sleep`. Its routes, forwarding sysctls and packet probes live in isolated network namespaces; it verifies allowed egress, address spoofing and host/private/guest isolation, plus coexistence with a later forwarding denial. It complements the real VM acceptance.
+
+### Local OpenSSH fixture
 
 For a focused SSH transport check without VMs, enable the optional native OpenSSH fixture:
 

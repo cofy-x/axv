@@ -29,7 +29,7 @@ BASE_IMAGE=ubuntu:24.04@sha256:<reviewed-native-image-digest> \
   bash images/guest/build-rootfs.sh /absolute/new-firecracker-bundle
 ```
 
-The recipe creates a fresh ext4 root with the common dependencies, guest/SSH services and seed initializer. It removes only its own temporary container, image tag and build directory. Supply and verify a compatible kernel separately in the administrator's host configuration; this recipe does not fetch one. Firecracker/KVM native acceptance remains incomplete.
+The recipe creates a fresh ext4 root with the common dependencies, guest/SSH services and seed initializer. It removes only its own temporary container, image tag and build directory. Supply and verify a compatible kernel separately in the administrator's host configuration; this recipe does not fetch one. Run the separate [Linux native acceptance](../../docs/development.md#linux-firecracker) against the completed bundle; [project status](../../README.md#project-status) owns validated platforms and release availability.
 
 ## Per-machine initialization and release work
 

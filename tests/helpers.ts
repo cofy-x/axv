@@ -52,6 +52,14 @@ export async function readContent(request: APIRequestContext, id: string) {
   return (await response.json()).content as string;
 }
 
+export function expectedDownloadFilename(name: string, browserName: string) {
+  // Browsers compute the final filename; Linux WebKit replaces spaces.
+  // https://playwright.dev/docs/api/class-download#download-suggested-filename
+  return process.platform === 'linux' && browserName === 'webkit'
+    ? name.replaceAll(' ', '_')
+    : name;
+}
+
 export function menuItem(page: Page, name: string | RegExp) {
   return page
     .getByRole('menuitem', { name, exact: typeof name === 'string' })

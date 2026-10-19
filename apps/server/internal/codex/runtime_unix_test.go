@@ -45,6 +45,7 @@ while IFS= read -r line; do
   fail) printf 'FIXTURE_FAILED\n'; exit 7 ;;
   size) printf 'SIZE='; stty size ;;
   env) printf 'ENV=%s OLD=%s CODEX_HOME=%s\n' "$AXV_TEST_ENV" "$AXV_TEST_OLD" "$CODEX_HOME" ;;
+  state) printf '%s\000%s\000' "$(pwd -P)" "$AXV_TEST_ENV" > "$AXV_TEST_STATE_FILE"; printf 'STATE_WRITTEN\n' ;;
   scroll) i=0; while [ "$i" -lt 70 ]; do printf 'HISTORY_%s\n' "$i"; i=$((i+1)); done ;;
   *) printf 'ACK=%s\n' "$line" ;;
  esac
@@ -257,14 +258,22 @@ func TestRealCodexPathsEnvironmentScrollAndNaturalExit(t *testing.T) {
 	}
 	t.Setenv("AXV_TEST_ENV", "first")
 	t.Setenv("AXV_TEST_OLD", "removed")
+	stateFile := filepath.Join(home, "literal-state")
+	t.Setenv("AXV_TEST_STATE_FILE", stateFile)
 	session := createSession(t, server, "special-path", project)
-	actual, err := m.tmux(context.Background(), executable("tmux"), "display-message", "-p", "-t", paneTarget(session), "#{pane_current_path}")
-	canonical, _ := filepath.EvalSymlinks(project)
-	if err != nil || actual != canonical {
-		t.Fatalf("cwd parsed as tmux syntax: %q want %q (%v)", actual, canonical, err)
-	}
 	conn := connectSession(t, server, session)
 	outputUntil(t, conn, "FIXTURE_READY")
+	input(t, conn, "state\r")
+	outputUntil(t, conn, "STATE_WRITTEN")
+	// tmux 3.4 escapes display-message output. Verify the child process's
+	// actual working directory instead of treating display text as raw data.
+	canonical, err := filepath.EvalSymlinks(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual, err := os.ReadFile(stateFile); err != nil || string(actual) != canonical+"\x00first\x00" {
+		t.Fatalf("child working directory or environment changed: %q (%v)", actual, err)
+	}
 	input(t, conn, "scroll\r")
 	outputUntil(t, conn, "HISTORY_69")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -291,6 +300,12 @@ func TestRealCodexPathsEnvironmentScrollAndNaturalExit(t *testing.T) {
 	input(t, conn, "after-scroll\r")
 	outputUntil(t, conn, "ACK=after-scroll")
 	input(t, conn, "fail\r")
+	t.Cleanup(func() {
+		if t.Failed() {
+			details, err := m.sessionTmux(context.Background(), executable("tmux"), session, "display-message", "-p", "-t", paneTarget(session), "#{pane_dead}:#{pane_dead_status}:#{pane_dead_signal}:#{pane_pid}")
+			t.Logf("tmux exit details: %q %v", details, err)
+		}
+	})
 	eventually(t, func() bool {
 		status, data := jsonRequest(t, server, "GET", "/api/host/codex/sessions/"+session.ID, nil)
 		return status == 200 && strings.Contains(string(data), `"status":"failed"`) && strings.Contains(string(data), "status 7")
@@ -563,6 +578,8 @@ func TestRealCodexSharedServerPreservesUnrelatedStateAndOwnsItsEnvironment(t *te
 	}
 	value := "quotes'\" $HOME #{session_name};\nsecond\\line\t世界"
 	t.Setenv("AXV_TEST_ENV", value)
+	stateFile := filepath.Join(home, "literal-state")
+	t.Setenv("AXV_TEST_STATE_FILE", stateFile)
 	t.Setenv("AXV_TEST_OLD", "")
 	if err := os.Unsetenv("AXV_TEST_OLD"); err != nil {
 		t.Fatal(err)
@@ -570,9 +587,6 @@ func TestRealCodexSharedServerPreservesUnrelatedStateAndOwnsItsEnvironment(t *te
 	session := createSession(t, server, "shared", home)
 	if !strings.HasPrefix(session.TmuxSession, m.namePrefix+"-") || !filepath.IsAbs(session.TmuxSocket) {
 		t.Fatalf("runtime identity not exposed: %+v", session)
-	}
-	if actual, err := m.sessionTmux(context.Background(), path, session, "show-environment", "-t", target(session), "AXV_TEST_ENV"); err != nil || actual != "AXV_TEST_ENV="+value {
-		t.Fatal("stdin environment transfer changed a literal value")
 	}
 	if actual, err := m.sessionTmux(context.Background(), path, session, "show-environment", "-t", target(session), "AXV_TEST_OLD"); err != nil || actual != "-AXV_TEST_OLD" {
 		t.Fatal("new session inherited stale shared-server environment")
@@ -582,6 +596,15 @@ func TestRealCodexSharedServerPreservesUnrelatedStateAndOwnsItsEnvironment(t *te
 	}
 	conn := connectSession(t, server, session)
 	outputUntil(t, conn, "FIXTURE_READY")
+	input(t, conn, "state\r")
+	outputUntil(t, conn, "STATE_WRITTEN")
+	canonical, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual, err := os.ReadFile(stateFile); err != nil || string(actual) != canonical+"\x00"+value+"\x00" {
+		t.Fatalf("stdin environment transfer changed the child process's literal value: %q (%v)", actual, err)
+	}
 	_ = conn.CloseNow()
 	eventually(t, func() bool { m.mu.Lock(); defer m.mu.Unlock(); return len(m.connections[session.RunID]) == 0 })
 	if _, err := m.sessionTmux(context.Background(), path, session, "has-session", "-t", target(session)); err != nil {

@@ -267,6 +267,9 @@ func (m *Manager) reconcile(ctx context.Context, session storage.CodexSession) (
 			}
 			status, reason := "lost", "The persistent tmux run no longer exists. Continue its saved conversation when available."
 			if session.Status == "stopping" {
+				if err := m.awaitRunnerCleanup(ctx, session.ID); err != nil {
+					return session, err
+				}
 				status, reason = "ended", "Session ended."
 			}
 			return m.store.UpdateCodexRun(ctx, session.RunID, status, reason)
@@ -282,11 +285,41 @@ func (m *Manager) reconcile(ctx context.Context, session storage.CodexSession) (
 		if _, err := m.sessionTmux(ctx, path, session, "kill-session", "-t", target(session)); err != nil {
 			return session, failure(Unavailable, "session_unavailable", "The interrupted end operation could not be completed. Try again.")
 		}
+		if err := m.awaitRunnerCleanup(ctx, session.ID); err != nil {
+			return session, err
+		}
 		return m.store.UpdateCodexRun(ctx, session.RunID, "ended", "Session ended.")
 	}
 	if strings.HasPrefix(output, "1:") {
+		exit, signal := strings.TrimPrefix(output, "1:"), ""
+		if !confirmedExitOutcome(exit, signal) {
+			// tmux closes the pane PTY before waitpid necessarily publishes
+			// its outcome. An empty status alone is not evidence of failure.
+			for attempt := 0; attempt < 5; attempt++ {
+				detail, inspectErr := m.sessionTmux(ctx, path, session, "display-message", "-p", "-t", runtimeTarget(session).PaneTarget(), "#{pane_dead_status}:#{pane_dead_signal}")
+				if inspectErr != nil {
+					return session, failure(Unavailable, "session_unavailable", "The tmux exit status could not be inspected. Try again.")
+				}
+				if status, cause, ok := strings.Cut(detail, ":"); ok && confirmedExitOutcome(status, cause) {
+					exit, signal = status, cause
+					break
+				}
+				if attempt < 4 {
+					select {
+					case <-ctx.Done():
+						return session, ctx.Err()
+					case <-time.After(20 * time.Millisecond):
+					}
+				}
+			}
+			if !confirmedExitOutcome(exit, signal) {
+				// Older supported tmux versions do not expose signal status.
+				// Keep uncertainty explicit and leave exact-run End available.
+				return session, failure(Unavailable, "session_exit_unconfirmed", "The terminal closed, but tmux has not confirmed its exit status. Try again or choose End Session.")
+			}
+		}
 		status, reason := "ended", "Codex exited."
-		if exit := strings.TrimPrefix(output, "1:"); exit != "0" {
+		if exit != "0" || signal != "" {
 			status, reason = "failed", "Codex exited unexpectedly. Check the host CLI before continuing its saved conversation."
 			if exit != "" {
 				reason = "Codex exited with status " + exit + ". Check the host CLI before continuing its saved conversation."
@@ -319,6 +352,31 @@ func (m *Manager) reconcile(ctx context.Context, session storage.CodexSession) (
 		return m.store.StartCodexRun(ctx, session.RunID)
 	}
 	return session, nil
+}
+
+func confirmedExitOutcome(status, signal string) bool {
+	if status != "" {
+		code, err := strconv.Atoi(status)
+		return signal == "" && err == nil && code >= 0 && code <= 255 && strconv.Itoa(code) == status
+	}
+	if signal == "" {
+		return false
+	}
+	// tmux reports a signal number on Linux and a signal name on BSD.
+	if number, err := strconv.Atoi(signal); err == nil {
+		maximum := 64 // Linux includes realtime signals through SIGRTMAX.
+		if runtime.GOOS == "darwin" {
+			maximum = 31
+		}
+		return number > 0 && number <= maximum && strconv.Itoa(number) == signal
+	}
+	// A syntactically alphabetic placeholder is still an unknown result. These
+	// are the conventional signal names on the supported Linux/macOS hosts.
+	switch strings.TrimPrefix(strings.ToUpper(signal), "SIG") {
+	case "HUP", "INT", "QUIT", "ILL", "TRAP", "ABRT", "IOT", "EMT", "FPE", "KILL", "BUS", "SEGV", "SYS", "PIPE", "ALRM", "TERM", "URG", "STOP", "TSTP", "CONT", "CHLD", "TTIN", "TTOU", "IO", "POLL", "XCPU", "XFSZ", "VTALRM", "PROF", "WINCH", "INFO", "USR1", "USR2", "PWR", "STKFLT":
+		return true
+	}
+	return false
 }
 
 func supportedTmux(version string) bool {

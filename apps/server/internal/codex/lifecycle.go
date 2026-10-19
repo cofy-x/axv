@@ -121,6 +121,9 @@ func (m *Manager) Resume(ctx context.Context, id string, request ResumeInput) (S
 	if session.ConversationID == "" || session.HistoryHome == "" {
 		return Session{}, failure(Conflict, "history_unavailable", "The official conversation identity was not recorded for this session.")
 	}
+	if err := m.awaitRunnerCleanup(ctx, session.ID); err != nil {
+		return Session{}, err
+	}
 	in.ProjectPath, err = hostdir.CanonicalDirectory(session.ProjectPath)
 	if err != nil {
 		return Session{}, err
@@ -277,6 +280,9 @@ func (m *Manager) End(ctx context.Context, id, runID string) (Session, error) {
 	output, killErr := m.sessionTmux(m.ctx, path, session, "kill-session", "-t", target(session))
 	if killErr != nil && !missingRuntime(output) {
 		return Session{}, failure(Unavailable, "end_failed", "The Codex run could not be ended. Try again.")
+	}
+	if err := m.awaitRunnerCleanup(ctx, session.ID); err != nil {
+		return m.describe(session), err
 	}
 	session, err = m.store.UpdateCodexRun(m.ctx, session.RunID, "ended", "Session ended.")
 	if err == nil {

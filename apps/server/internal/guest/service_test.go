@@ -26,7 +26,7 @@ func testService(t *testing.T, capabilities ...string) *service {
 	}
 	s := newService(context.Background(), protocol.Config{
 		MachineID: "vm-test", Token: strings.Repeat("a", 32), ProjectRoot: root,
-	}, "boot-test", capabilities, func() error { return nil })
+	}, "boot-test", capabilities, func() error { return nil }, func(context.Context) error { return nil })
 	t.Cleanup(s.close)
 	return s
 }
@@ -93,6 +93,31 @@ func TestHealthReportsInjectedIdentityReadinessAndCapabilities(t *testing.T) {
 		if strings.Join(health.Capabilities, ",") != "exec,network" || health.SSHAvailable || (!ready && health.Reason == "") {
 			t.Fatalf("unexpected capabilities or readiness reason: %s", w.Body)
 		}
+	}
+}
+
+func TestShutdownAuthenticatesAndReportsCommandFailure(t *testing.T) {
+	s := testService(t)
+	calls := 0
+	s.shutdown = func(ctx context.Context) error {
+		calls++
+		if _, ok := ctx.Deadline(); !ok {
+			t.Fatal("shutdown request has no deadline")
+		}
+		return errors.New("guest supervisor rejected shutdown")
+	}
+	r := httptest.NewRequest("POST", "/v1/shutdown", nil)
+	w := httptest.NewRecorder()
+	s.handler().ServeHTTP(w, r)
+	assertProblem(t, w, http.StatusForbidden, "forbidden")
+	if calls != 0 {
+		t.Fatal("unauthenticated request invoked shutdown")
+	}
+	assertProblem(t, guestRequest(s, "POST", "/v1/shutdown", ""), http.StatusServiceUnavailable, "shutdown_failed")
+	s.shutdown = func(context.Context) error { calls++; return nil }
+	w = guestRequest(s, "POST", "/v1/shutdown", "")
+	if calls != 2 || w.Code != http.StatusAccepted || !strings.Contains(w.Body.String(), `"accepted":true`) {
+		t.Fatalf("shutdown result was not confirmed: calls=%d status=%d body=%s", calls, w.Code, w.Body)
 	}
 }
 

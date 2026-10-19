@@ -107,9 +107,7 @@ func (m *Manager) QueueContext(ctx context.Context, id, runID string, input Cont
 			return batch, replayErr
 		}
 	}
-	if err == nil {
-		session, err = m.reconcile(ctx, session)
-	}
+	session, err = m.reconcile(ctx, session)
 	if err != nil {
 		return ContextBatch{}, err
 	}

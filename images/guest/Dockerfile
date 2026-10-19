@@ -7,8 +7,8 @@ COPY configure-package-sources /usr/local/lib/axv/configure-package-sources
 COPY install-base.sh /usr/local/lib/axv/install-base
 RUN AXV_GUEST_PACKAGE_SOURCE="$AXV_GUEST_PACKAGE_SOURCE" sh /usr/local/lib/axv/install-base \
     && rm /usr/local/lib/axv/install-base \
-    && printf 'axv ALL=(root) NOPASSWD: /sbin/poweroff\n' > /etc/sudoers.d/axv-poweroff \
-    && chmod 0440 /etc/sudoers.d/axv-poweroff
+    && printf 'axv ALL=(root) NOPASSWD: /sbin/reboot\n' > /etc/sudoers.d/axv-shutdown \
+    && chmod 0440 /etc/sudoers.d/axv-shutdown
 COPY axv-guest /usr/local/bin/axv-guest
 COPY image.json /usr/share/axv/image.json
 COPY prepare-guest.sh /usr/local/lib/axv/prepare-guest

@@ -73,7 +73,11 @@ func TestHostEndpointsRejectAccessBeforeInspection(t *testing.T) {
 }
 
 func TestInstanceNamespace(t *testing.T) {
-	if instanceID("database", "/a") != instanceID("database", "/a") || instanceID("database", "/a") == instanceID("database", "/b") || instanceID("database", "/a") == instanceID("other", "/a") {
+	namespace := instanceID("database", "/a")
+	if namespace != "d55c38d8b58b0998ead51c9b" {
+		t.Fatalf("socket identity changed: %q", namespace)
+	}
+	if namespace == instanceID("database", "/b") || namespace == instanceID("other", "/a") {
 		t.Fatal("socket identity is unstable or shared")
 	}
 }

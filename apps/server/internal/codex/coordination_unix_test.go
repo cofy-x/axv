@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -233,11 +234,84 @@ func TestRuntimeSignalExitKeepsAReadableFailure(t *testing.T) {
 			if arg == "list-panes" {
 				return run.TmuxSession + "\t0\t1:", nil
 			}
+			if arg == "display-message" {
+				return ":TERM", nil
+			}
 		}
 		return "", nil
 	}
 	current, err := m.reconcile(context.Background(), run)
 	if err != nil || current.Status != "failed" || !strings.HasPrefix(current.Reason, "Codex exited unexpectedly.") {
 		t.Fatalf("signal exit did not keep a readable failure: %+v %v", current, err)
+	}
+}
+
+func TestRuntimeWaitsForConfirmedExitOutcome(t *testing.T) {
+	if executable("tmux") == "" {
+		t.Skip("requires tmux discovery")
+	}
+	largestSignal := "64"
+	if runtime.GOOS == "darwin" {
+		largestSignal = "31"
+	}
+	for _, tc := range []struct {
+		name, outcome, want string
+	}{
+		{"clean exit", "0:", "ended"},
+		{"failed exit", "7:", "failed"},
+		{"numeric signal", ":15", "failed"},
+		{"largest platform signal", ":" + largestSignal, "failed"},
+		{"status unavailable", ":", "running"},
+		{"contradictory outcome", "7:TERM", "running"},
+		{"invalid status", "unknown:", "running"},
+		{"out of range status", "256:", "running"},
+		{"invalid signal", ":TERM:extra", "running"},
+		{"unknown signal name", ":unknown", "running"},
+		{"invalid extended signal name", ":TERMextra", "running"},
+		{"out of range signal", ":200", "running"},
+		{"zero signal", ":0", "running"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := testManager(t)
+			run := reservedRunning(t, m, "exit-outcome")
+			killed := false
+			inspections := 0
+			m.run = func(_ context.Context, _ string, args ...string) (string, error) {
+				for _, arg := range args {
+					switch arg {
+					case "list-panes":
+						return run.TmuxSession + "\t0\t1:", nil
+					case "display-message":
+						inspections++
+						if inspections == 1 {
+							return ":", nil
+						}
+						return tc.outcome, nil
+					case "kill-session":
+						killed = true
+					}
+				}
+				return "", nil
+			}
+			current, err := m.reconcile(context.Background(), run)
+			if tc.want == "running" {
+				var unavailable *Error
+				if !errors.As(err, &unavailable) || unavailable.Code != "session_exit_unconfirmed" || killed {
+					t.Fatalf("unknown exit outcome was finalized: %+v %v killed=%t", current, err, killed)
+				}
+			} else if err != nil || current.Status != tc.want || !killed {
+				t.Fatalf("confirmed outcome was lost: %+v %v killed=%t", current, err, killed)
+			}
+			saved, readErr := m.store.CodexRunByID(context.Background(), run.RunID)
+			if readErr != nil || saved.Status != tc.want {
+				t.Fatalf("exit outcome persisted incorrectly: %+v %v", saved, readErr)
+			}
+			if tc.want == "running" {
+				ended, endErr := m.End(context.Background(), run.ID, run.RunID)
+				if endErr != nil || ended.Status != "ended" || !killed {
+					t.Fatalf("uncertain exit blocked exact-run End: %+v %v", ended, endErr)
+				}
+			}
+		})
 	}
 }

@@ -1,13 +1,14 @@
 package guest
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/cofy-x/axv/apps/server/internal/guest/image"
 	"github.com/cofy-x/axv/apps/server/internal/guest/protocol"
@@ -39,12 +40,12 @@ func (s *service) handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/terminals/{id}", s.terminals.end)
 	mux.HandleFunc("GET /v1/terminals/{id}/attach", s.terminals.attach)
 	mux.HandleFunc("POST /v1/shutdown", func(w http.ResponseWriter, r *http.Request) {
-		cmd := exec.Command("sudo", "-n", "/sbin/poweroff")
-		if err := cmd.Start(); err != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+		defer cancel()
+		if err := s.shutdown(ctx); err != nil {
 			fail(w, http.StatusServiceUnavailable, "shutdown_failed", err)
 			return
 		}
-		go func() { _ = cmd.Wait() }()
 		respond(w, http.StatusAccepted, map[string]bool{"accepted": true})
 	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

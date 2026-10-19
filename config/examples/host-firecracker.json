@@ -13,6 +13,7 @@
     "binary": "/opt/axv/bin/firecracker",
     "jailer": "/opt/axv/bin/jailer",
     "version": "1.17.0",
+    "cgroupParent": "system.slice/axv-host.service",
     "uid": 60000,
     "gid": 60000,
     "subnet": "172.30.0.0/22",

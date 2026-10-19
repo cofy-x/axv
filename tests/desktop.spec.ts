@@ -8,6 +8,7 @@ import {
   editorWindow,
   entries,
   expect,
+  expectedDownloadFilename,
   filesWindow,
   launch,
   menuItem,
@@ -237,6 +238,7 @@ test('workspaces and Clip retain mounted drafts, focus, sticky windows and renam
 test('columns, Inspector and file import/edit/move/recycle/download share one filesystem', async ({
   page,
   request,
+  browserName,
 }) => {
   const files = filesWindow(page);
   await newFileItem(page, files, 'New Folder');
@@ -317,7 +319,9 @@ test('columns, Inspector and file import/edit/move/recycle/download share one fi
   await activate(page, inspector);
   await actionMenu(page, inspector, 'More inspector actions', 'Download');
   const download = await downloadPromise;
-  expect(download.suggestedFilename()).toBe('E2E Final.txt');
+  expect(download.suggestedFilename()).toBe(
+    expectedDownloadFilename('E2E Final.txt', browserName),
+  );
   expect((await readFile((await download.path())!)).toString()).toBe(
     'Edited through the shared filesystem.\n第二行。',
   );

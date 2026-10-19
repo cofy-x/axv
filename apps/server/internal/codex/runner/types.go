@@ -32,14 +32,15 @@ var (
 // Manifest contains no credentials or transcript. The server creates one
 // private manifest for each runtime attempt, before launching it in tmux.
 type Manifest struct {
-	SessionID   string `json:"sessionId"`
-	RunID       string `json:"runId"`
-	ProjectPath string `json:"projectPath"`
-	CodexPath   string `json:"codexPath"`
-	HistoryHome string `json:"historyHome"`
-	SocketRoot  string `json:"socketRoot"`
-	Mode        string `json:"mode"`
-	ThreadID    string `json:"threadId,omitempty"`
+	SessionID     string `json:"sessionId"`
+	RunID         string `json:"runId"`
+	ProjectPath   string `json:"projectPath"`
+	CodexPath     string `json:"codexPath"`
+	HistoryHome   string `json:"historyHome"`
+	SocketRoot    string `json:"socketRoot"`
+	OwnershipPath string `json:"ownershipPath"`
+	Mode          string `json:"mode"`
+	ThreadID      string `json:"threadId,omitempty"`
 }
 
 // State is the only information the runner publishes to the AXV server.
@@ -71,6 +72,7 @@ func readManifest(path string) (Manifest, error) {
 	}
 	if manifest.RunID == "" || manifest.SessionID == "" ||
 		!filepath.IsAbs(manifest.CodexPath) || !filepath.IsAbs(manifest.ProjectPath) || !filepath.IsAbs(manifest.HistoryHome) || ValidateSocketRoot(manifest.SocketRoot) != nil ||
+		!filepath.IsAbs(manifest.OwnershipPath) || filepath.Clean(manifest.OwnershipPath) != manifest.OwnershipPath || strings.ContainsRune(manifest.OwnershipPath, '\x00') ||
 		(manifest.Mode != ModeNew && manifest.Mode != ModeResume) ||
 		(manifest.Mode == ModeNew && manifest.ThreadID != "") ||
 		(manifest.Mode == ModeResume && !threadIDPattern.MatchString(manifest.ThreadID)) {

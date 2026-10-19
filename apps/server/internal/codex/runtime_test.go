@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -59,6 +60,49 @@ func TestProbeOutputIsBounded(t *testing.T) {
 	}
 	if _, err := fmt.Fprint(&output, "more"); err != nil || output.Len() != 64<<10 {
 		t.Fatal("output exceeded limit")
+	}
+}
+
+func TestConfirmedExitOutcomeRequiresValidWaitResult(t *testing.T) {
+	for _, tc := range []struct {
+		status, signal string
+		confirmed      bool
+	}{
+		{status: "0", confirmed: true},
+		{status: "7", confirmed: true},
+		{status: "255", confirmed: true},
+		{signal: "15", confirmed: true},
+		{signal: "31", confirmed: true},
+		{signal: "64", confirmed: runtime.GOOS != "darwin"},
+		{signal: "TERM", confirmed: true},
+		{signal: "term", confirmed: true},
+		{signal: "SIGTERM", confirmed: true},
+		{signal: "USR1", confirmed: true},
+		{signal: "INFO", confirmed: true},
+		{signal: "EMT", confirmed: true},
+		{},
+		{status: "256"},
+		{status: "-1"},
+		{status: "+0"},
+		{status: "00"},
+		{status: "unknown"},
+		{status: "999999999999999999999"},
+		{status: "0", signal: "TERM"},
+		{signal: "0"},
+		{signal: "01"},
+		{signal: "256"},
+		{signal: "65"},
+		{signal: "127"},
+		{signal: "200"},
+		{signal: "TERM:extra"},
+		{signal: "unknown"},
+		{signal: "garbage"},
+		{signal: "TERMextra"},
+		{signal: "TERM\n"},
+	} {
+		if got := confirmedExitOutcome(tc.status, tc.signal); got != tc.confirmed {
+			t.Errorf("confirmedExitOutcome(%q, %q) = %t, want %t", tc.status, tc.signal, got, tc.confirmed)
+		}
 	}
 }
 

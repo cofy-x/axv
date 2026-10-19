@@ -14,14 +14,19 @@ import (
 
 const SupportedLimaVersion = "2.2.1"
 
+// Firecracker's adapter supports the 32-vCPU machine contract supplied by the
+// reviewed releases. Larger host capacities can still admit several machines.
+const MaxFirecrackerVCPUs = 32
+
 type FirecrackerConfig struct {
-	Binary  string `json:"binary"`
-	Jailer  string `json:"jailer"`
-	Version string `json:"version"`
-	UID     int    `json:"uid"`
-	GID     int    `json:"gid"`
-	Subnet  string `json:"subnet"`
-	DNS     string `json:"dns"`
+	Binary       string `json:"binary"`
+	Jailer       string `json:"jailer"`
+	Version      string `json:"version"`
+	CgroupParent string `json:"cgroupParent"`
+	UID          int    `json:"uid"`
+	GID          int    `json:"gid"`
+	Subnet       string `json:"subnet"`
+	DNS          string `json:"dns"`
 }
 
 type LimaConfig struct {
@@ -122,7 +127,13 @@ func (c Config) ValidateRequest(r CreateRequest) error {
 	if err != nil {
 		return err
 	}
-	return ValidateSpec(r.Spec, c.Capacity, image.MinRootGiB)
+	if err = ValidateSpec(r.Spec, c.Capacity, image.MinRootGiB); err != nil {
+		return err
+	}
+	if r.Spec.Provider == "firecracker" && r.Spec.Resources.CPUs > MaxFirecrackerVCPUs {
+		return Problem("invalid_request", "This Firecracker adapter supports up to %d vCPUs per machine.", MaxFirecrackerVCPUs)
+	}
+	return nil
 }
 
 // Fingerprint identifies effective host settings when a launcher reuses a service.

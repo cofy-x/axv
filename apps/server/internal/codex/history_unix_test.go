@@ -215,6 +215,8 @@ func TestRunnerReadinessRecordsRecentProjectBeforeImmediateEndOrExit(t *testing.
 			status, data := jsonRequest(t, server, method, endpoint, nil)
 			ended := decodedRun(t, status, data)
 			if ended.Status != "ended" || ended.ConversationID == "" {
+				details, detailErr := m.sessionTmux(context.Background(), executable("tmux"), run, "display-message", "-p", "-t", paneTarget(run), "#{pane_dead}:#{pane_dead_status}:#{pane_dead_signal}:#{pane_pid}")
+				t.Logf("tmux exit details: %q %v", details, detailErr)
 				t.Fatalf("readiness was lost before end: %+v", ended)
 			}
 			projects, err := m.store.CodexProjects(context.Background())

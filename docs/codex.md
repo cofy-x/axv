@@ -72,6 +72,8 @@ The bridge forwards protocol content without storing transcripts. Private state 
 
 The desktop supplies its fixed executable for each AXV runner. Run manifests and state live under the desktop data directory; the runner's private bridge socket lives in an owned short directory beneath `AXV_HOME/run/codex`. Socket paths are checked before launch and never silently moved to another profile or the system temporary directory. Ending a run removes only its own socket directory. Provider history and credentials remain in the official CLI's history home.
 
+A private AXV-owned conversation lock stays held until the runner has stopped and reaped its TUI and app-server. End waits for that ownership to be released before reporting completion, and explicit continuation waits before verifying history or reserving a new run. This prevents a disappearing tmux session from allowing another provider writer to overlap cleanup. An unconfirmed End remains stopping with a visible error; coordination never reads or changes provider-owned lock files. See [runner ownership](../apps/server/internal/codex/runner/ownership_unix.go) and [lifecycle](../apps/server/internal/codex/lifecycle.go).
+
 ## Document context
 
 Documents remain virtual SQLite entries. Explicit delivery resolves immutable snapshot IDs through the storage owner, verifies the source database and content digest, and records the destination's session ID, run ID and verified provider thread ID. The client cannot supply attachment text or choose a provider thread. Later edits, source deletion and a newer run do not change a queued snapshot or redirect its destination. Snapshot persistence belongs to [document storage](storage.md); delivery requests and limits belong to the [context API](api/host-codex.md#document-context).
@@ -102,6 +104,7 @@ Cancellation wins only while a batch is pending under the same queue lock. Once 
 - Resume retains names/archive state and saved conversation context, not PTYs, scrollback or interrupted commands. `expectedRunId` must match the predecessor; unknown outcomes retain their request identity. Cancelling the confirmation creates nothing.
 - List/detail reads never launch a provider process; reload, reconnect and service restart never continue history. Open Running Session opens a separate view; the old window stays bound to its original run.
 - Reconciliation reads fresh durable state under the run gate. Startup grace protects reservations during bounded launch; inspection failure is availability uncertainty, not an ended/lost verdict. Final runs never resurrect; interrupted ending remains retryable.
+- A closed tmux pane can precede its published exit outcome. Reconciliation briefly retries the exact pane; an unconfirmed or malformed outcome preserves the run and reports availability uncertainty. End Session remains available for that exact run.
 
 ## Storage and concurrency
 

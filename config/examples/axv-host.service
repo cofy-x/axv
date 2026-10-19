@@ -13,6 +13,7 @@ Group=root
 UMask=0077
 # The host controller must delegate cgroups to independently managed microVMs.
 Delegate=yes
+DelegateSubgroup=controller
 KillMode=process
 TimeoutStopSec=30
 

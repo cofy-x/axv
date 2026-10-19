@@ -64,7 +64,7 @@ Disconnect detaches; DELETE ends the process group. Output backlog can close an 
 
 ## Boundaries
 
-Private guest shutdown is used only by the host lifecycle controller and is not exposed by the gateway. [Virtual-document routes](files.md) and their opaque entry IDs retain their separate contract. The command and terminal HTTP routes do not provide project-file browsing or editing.
+Private guest `POST /v1/shutdown` is used only by the host lifecycle controller and is not exposed by the gateway. It requires guest authentication and returns `202 { accepted: true }` after the guest's supervisor command succeeds; command failure or its three-second deadline returns `503 shutdown_failed`. Acceptance does not confirm that the VM has exited: the host still observes provider shutdown. [VM ownership](../vm-platform.md#guest-execution) describes provider-specific shutdown. [Virtual-document routes](files.md) and their opaque entry IDs retain their separate contract. The command and terminal HTTP routes do not provide project-file browsing or editing.
 
 See [VM architecture](../vm-platform.md) for guest ownership and restart behavior. [Host Terminal](host-terminal.md) and [host Codex](host-codex.md) run on the host and use different process-lifetime contracts.
 

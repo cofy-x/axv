@@ -5,6 +5,7 @@ import {
   createEntry,
   editorWindow,
   entries,
+  expectedDownloadFilename,
   menuItem,
   openDocument,
 } from './helpers';
@@ -324,6 +325,7 @@ test('attachment replay feedback reflects accepted cancelled and unknown receipt
 test('project download reports API failures inline and preserves the original file bytes', async ({
   page,
   request,
+  browserName,
 }) => {
   const { entry, snapshot, project } = await seed(
     request,
@@ -380,7 +382,9 @@ test('project download reports API failures inline and preserves the original fi
   const downloaded = page.waitForEvent('download');
   await downloadButton.click();
   const download = await downloaded;
-  expect(download.suggestedFilename()).toBe(path);
+  expect(download.suggestedFilename()).toBe(
+    expectedDownloadFilename(path, browserName),
+  );
   const saved = await download.path();
   expect(saved).not.toBeNull();
   expect(await readFile(saved!)).toEqual(

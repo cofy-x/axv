@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -63,7 +64,11 @@ func RunOptions(options Options, output io.Writer) error {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	s := newService(ctx, config, strings.TrimSpace(string(boot)), installedImage.Guest.Capabilities, func() error { return projectVolumeReady(config.ProjectRoot) })
+	s := newService(ctx, config, strings.TrimSpace(string(boot)), installedImage.Guest.Capabilities, func() error { return projectVolumeReady(config.ProjectRoot) }, func(ctx context.Context) error {
+		return shutdownGuest(ctx, installedImage.Provider, func(ctx context.Context, program string, args ...string) error {
+			return exec.CommandContext(ctx, program, args...).Run()
+		})
+	})
 	defer s.close()
 	listener, err := listenGuest(options.Listen)
 	if err != nil {
@@ -74,4 +79,21 @@ func RunOptions(options Options, output io.Writer) error {
 
 func listenVSOCK() (net.Listener, error) {
 	return vsock.Listen(protocol.Port, nil)
+}
+
+func shutdownGuest(ctx context.Context, provider string, run func(context.Context, string, ...string) error) error {
+	command := "/sbin/poweroff"
+	switch provider {
+	case "firecracker":
+		// Firecracker exits on a guest reset. Poweroff can leave the vCPUs
+		// halted indefinitely, forcing the host to kill an otherwise clean VM.
+		command = "/sbin/reboot"
+	case "lima":
+	default:
+		return fmt.Errorf("unsupported guest shutdown provider %q", provider)
+	}
+	if err := run(ctx, "sudo", "-n", command); err != nil {
+		return fmt.Errorf("request guest shutdown: %w", err)
+	}
+	return nil
 }

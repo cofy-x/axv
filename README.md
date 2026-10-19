@@ -9,10 +9,10 @@ AXV is a personal cloud workstation for virtual machines and coding-agent sessio
 - **Desktop:** Working windows, four desktop workspaces, Dock, menus, Inspector, and responsive layouts; PWA installation is not implemented
 - **Documents:** Local virtual filesystem, Markdown editing/preview, explicit saves, revision checks and draft recovery; project/VM/conversation links, immutable saved snapshots and explicit exchange with registered host projects. Project Files browses host directories on macOS/Linux; VM project-file browsing is not implemented
 - **Terminal:** Local host shells; disconnecting ends the shell, with no persistent session recovery
-- **VM management (experimental):** Desktop and CLI lifecycle, configuration, images, volumes and task TTL; shared verified download cache with independent profiles. The default pinned Ubuntu base supports basic VM management during the transition to enhanced AXV images; official AXV image publication is pending. Shared-cache preparation and basic VM lifecycle are validated on macOS ARM64 with independent profiles; Linux/scale remain unvalidated
-- **Guest enhancements (experimental):** Protocol- and capability-gated execution, Guest Terminal, local SSH, SCP/SFTP, PTY and TCP forwarding. The prebuilt image contract awaits published AXV images and native enhanced-guest acceptance
-- **Startup:** Installable `axv` command, configuration-only `init`, background launch/reopen, one profile for persistent data, isolated development profiles, foreground `serve` and independent VM host activation; native Linux supervision unvalidated
-- **Coding agents:** Host Codex conversation recovery, names, archives and recent projects on macOS/Linux; saved document snapshots can accompany the next submitted message in an exact run, with delivery receipts. Claude Code and AXV's agent-to-VM tooling/Skill integration are not implemented
+- **VM management (experimental):** Desktop and CLI lifecycle, configuration, images, volumes and task TTL; shared verified download cache with independent profiles. The default pinned Ubuntu base supports basic VM management during the transition to enhanced AXV images; official AXV image publication is pending. Shared-cache preparation and basic VM lifecycle are validated on macOS ARM64 with independent profiles. Native Linux amd64 Firecracker lifecycle, controller recovery, project retention, task TTL and network isolation are validated with a locally built image; scale remains unvalidated
+- **Guest enhancements (experimental):** Protocol- and capability-gated execution, Guest Terminal, local SSH, SCP/SFTP, PTY and TCP forwarding. Native enhanced-guest acceptance is validated on Linux amd64 with a locally built Firecracker image; published AXV images and macOS enhanced-guest acceptance remain pending
+- **Startup:** Installable `axv` command, configuration-only `init`, background launch/reopen, one profile for persistent data, isolated development profiles, foreground `serve` and independent VM host activation; native Linux amd64 desktop supervision validated in a systemd user session
+- **Coding agents:** Host Codex conversation recovery, names, archives and recent projects on macOS/Linux; real-model continuity and saved-history recovery validated on Linux amd64. Saved document snapshots can accompany the next submitted message in an exact run, with delivery receipts. Claude Code and AXV's agent-to-VM tooling/Skill integration are not implemented
 - **Remote access:** Unavailable; authentication, authorization, remote session transport and Tailscale integration are not implemented
 - **Cross-platform:** Browser and host-terminal adapters exist; VM adapters are implemented for Linux/macOS; Windows VM hosting unavailable
 
@@ -31,14 +31,14 @@ Installation builds the complete production executable and puts it in Go's binar
 
 ## Start developing
 
-Use the same pinned toolchain:
+Use the same pinned toolchain from a writable checkout:
 
 ```bash
 make deps
 make dev
 ```
 
-Open the Vite URL printed by the launcher. Development allocates independent loopback ports and uses a separate profile at `~/.axv/dev/<checkout-id>`. See the [development guide](docs/development.md) for `AXV_DEV_HOME`, builds and verification.
+Open the Vite URL printed by the launcher. Development allocates independent loopback ports and uses a separate profile at `~/.axv/dev/<checkout-id>`. See the [development guide](docs/development.md#local-development) for prerequisites, `AXV_DEV_HOME`, builds and verification.
 
 ## Build and run
 

@@ -43,6 +43,9 @@ func TestRunnerUsesFixedExecutableAndExplicitProfileSocketRoot(t *testing.T) {
 	if manifest.SocketRoot != filepath.Join(base.settings.ProfileHome, "run", "codex") || manifest.HistoryHome != session.HistoryHome {
 		t.Fatalf("manifest changed profile or provider ownership: %+v", manifest)
 	}
+	if manifest.OwnershipPath != manager.ownershipPath(session.ID) || filepath.Dir(manifest.OwnershipPath) != filepath.Join(base.settings.DataDir, "codex-owners") {
+		t.Fatalf("manifest lacks stable conversation ownership: %+v", manifest)
+	}
 }
 
 func TestRunnerRequiresFixedExecutableWithoutDynamicFallback(t *testing.T) {

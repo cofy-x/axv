@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/cofy-x/axv/apps/server/internal/filelock"
 )
 
 func TestMain(main *testing.M) {
@@ -48,6 +50,18 @@ func TestMain(main *testing.M) {
 
 func fixtureServer() int {
 	directory := os.Getenv("AXV_RUNNER_FIXTURE_DIR")
+	if os.Getenv("AXV_RUNNER_DELAY_CLEANUP") == "1" {
+		signal.Ignore(syscall.SIGTERM)
+		defer func() {
+			_ = os.WriteFile(filepath.Join(directory, "server-cleaning"), nil, 0o600)
+			for {
+				if _, err := os.Stat(filepath.Join(directory, "allow-server-exit")); err == nil {
+					return
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		}()
+	}
 	_ = os.WriteFile(filepath.Join(directory, "server.pid"), []byte(strconv.Itoa(os.Getpid())), 0o600)
 	if os.Getenv("AXV_RUNNER_DESCENDANT") == "1" {
 		child := exec.Command(os.Args[0], "axv-test-descendant")
@@ -313,7 +327,7 @@ func TestRunOwnsTUIAndServerDescendants(t *testing.T) {
 		t.Run(ending, func(t *testing.T) {
 			directory, executable, environment := runnerFixture(t)
 			socketRoot := filepath.Join(shortSocketHome(t), "run", "codex")
-			manifest := Manifest{SessionID: "session", RunID: "run", ProjectPath: directory, CodexPath: executable, HistoryHome: directory, SocketRoot: socketRoot, Mode: ModeNew}
+			manifest := Manifest{SessionID: "session", RunID: "run", ProjectPath: directory, CodexPath: executable, HistoryHome: directory, SocketRoot: socketRoot, OwnershipPath: filepath.Join(directory, "ownership", "conversation.lock"), Mode: ModeNew}
 			data, _ := json.Marshal(manifest)
 			manifestPath := filepath.Join(directory, "manifest.json")
 			if err := os.WriteFile(manifestPath, data, 0o600); err != nil {
@@ -388,5 +402,101 @@ func TestRunOwnsTUIAndServerDescendants(t *testing.T) {
 				t.Fatalf("nonzero TUI exit not recorded: state=%+v error=%v", state, process.err)
 			}
 		})
+	}
+}
+
+func TestRunKeepsConversationOwnershipUntilServerStops(t *testing.T) {
+	firstDir, executable, environment := runnerFixture(t)
+	secondDir, _, secondEnvironment := runnerFixture(t)
+	ownershipPath := filepath.Join(firstDir, "ownership", "conversation.lock")
+	start := func(directory string, environment []string, runID, mode string) (*ownedProcess, io.WriteCloser, <-chan string) {
+		t.Helper()
+		manifest := Manifest{SessionID: "session", RunID: runID, ProjectPath: directory, CodexPath: executable, HistoryHome: firstDir, SocketRoot: filepath.Join(shortSocketHome(t), "run", "codex"), OwnershipPath: ownershipPath, Mode: mode}
+		if mode == ModeResume {
+			manifest.ThreadID = testThreadID
+		}
+		data, _ := json.Marshal(manifest)
+		manifestPath := filepath.Join(directory, "manifest.json")
+		if err := os.WriteFile(manifestPath, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		command := exec.Command(executable, "axv-test-run", manifestPath)
+		command.Env = environment
+		configureServerProcess(command)
+		stdin, err := command.StdinPipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		stdout, err := command.StdoutPipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		process, err := startProcess(command, stdin, stdout, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(process.stop)
+		ready := make(chan string, 1)
+		go func() { line, _ := bufio.NewReader(stdout).ReadString('\n'); ready <- strings.TrimSpace(line) }()
+		return process, stdin, ready
+	}
+	waitFile := func(path string) {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Second)
+		for {
+			if _, err := os.Stat(path); err == nil {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("fixture did not publish %s", path)
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	waitReady := func(ready <-chan string) {
+		t.Helper()
+		select {
+		case line := <-ready:
+			if line != "READY" {
+				t.Fatalf("runner did not become ready: %q", line)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("runner readiness timed out")
+		}
+	}
+	first, _, ready := start(firstDir, append(environment, "AXV_RUNNER_DELAY_CLEANUP=1"), "first", ModeNew)
+	waitReady(ready)
+	serverPID := fixturePID(t, firstDir, "server")
+	if err := first.cmd.Process.Signal(syscall.SIGHUP); err != nil {
+		t.Fatal(err)
+	}
+	waitFile(filepath.Join(firstDir, "server-cleaning"))
+	// A second terminal hangup during cleanup must not restore the default
+	// signal handler and abandon the app-server or release ownership early.
+	if err := first.cmd.Process.Signal(syscall.SIGHUP); err != nil {
+		t.Fatal(err)
+	}
+	lock, err := filelock.TryLock(ownershipPath)
+	if lock != nil {
+		lock.Close()
+	}
+	if !contextLockContended(err) {
+		t.Fatalf("ownership released before provider exit: %v", err)
+	}
+	second, input, resumed := start(secondDir, secondEnvironment, "second", ModeResume)
+	waitFile(filepath.Join(secondDir, "state.json"))
+	if _, err := os.Stat(filepath.Join(secondDir, "server.pid")); !os.IsNotExist(err) {
+		t.Fatalf("new provider started before predecessor cleanup: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(firstDir, "allow-server-exit"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitReady(resumed)
+	assertStopped(t, serverPID)
+	_, _ = fmt.Fprintln(input, "quit")
+	select {
+	case <-second.done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("resumed runner did not stop")
 	}
 }

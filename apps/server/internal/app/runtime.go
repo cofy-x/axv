@@ -35,9 +35,6 @@ func Resolve(p profile.Profile, desktop config.Config) (Settings, error) {
 	s.ComputeOverride = os.Getenv("AXV_COMPUTE_SOCKET")
 	s.ComputeError = p.ComputeError
 	s = resolveCompute(s)
-	if runtime.GOOS != "windows" && os.Geteuid() == 0 {
-		return s, fmt.Errorf("run the AXV desktop as your normal user; administer the privileged compute host separately")
-	}
 	return s, nil
 }
 

@@ -36,6 +36,7 @@ export default defineConfig(
     '**/data/**',
     '**/.data/**',
     '**/.cache/**',
+    '**/.e2e/**',
   ]),
   {
     files: ['**/*.{js,mjs,cjs,ts,tsx}'],

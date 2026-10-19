@@ -51,11 +51,30 @@ func New(root, owner string, config compute.FirecrackerConfig) (compute.Driver, 
 	if err != nil || !subnet.Addr().Is4() || !subnet.Addr().IsPrivate() || subnet != subnet.Masked() || subnet.Bits() < 16 || subnet.Bits() > 22 {
 		return nil, fmt.Errorf("Firecracker subnet must be a private, aligned IPv4 /16–/22 network")
 	}
-	if dns, err := netip.ParseAddr(config.DNS); err != nil || !dns.Is4() || !dns.IsGlobalUnicast() || dns.IsPrivate() {
+	if dns, err := netip.ParseAddr(config.DNS); err != nil || !compute.IsPublicIPv4(dns) {
 		return nil, fmt.Errorf("configure a public IPv4 DNS resolver for isolated guests")
 	}
-	if !filepath.IsAbs(config.Binary) || !filepath.IsAbs(config.Jailer) || config.UID <= 0 || config.UID > 2147483547 || config.GID <= 0 || config.Version == "" {
+	if !filepath.IsAbs(config.Binary) || !filepath.IsAbs(config.Jailer) || config.UID <= 0 || config.UID > 2147483547 || config.GID <= 0 || config.GID > 2147483647 || config.Version == "" {
 		return nil, fmt.Errorf("Firecracker requires absolute binary paths, a version pin, and non-root jailer UID/GID")
+	}
+	if len(owner) < 6 || strings.ContainsFunc(owner, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_')
+	}) {
+		return nil, fmt.Errorf("Firecracker requires a valid host ownership identity")
+	}
+	if err = validateCgroupParent(config.CgroupParent); err != nil {
+		return nil, err
+	}
+	// Jailer resolves --exec-file before choosing the jail's directory name.
+	// Pin the same concrete executables so an administrator's symlink cannot
+	// select another jail or silently retarget an existing provider.
+	config.Binary, err = filepath.EvalSymlinks(config.Binary)
+	if err != nil {
+		return nil, fmt.Errorf("resolve Firecracker executable: %w", err)
+	}
+	config.Jailer, err = filepath.EvalSymlinks(config.Jailer)
+	if err != nil {
+		return nil, fmt.Errorf("resolve jailer executable: %w", err)
 	}
 	root = filepath.Join(root, "firecracker")
 	if err = owneddir.Ensure(root, owner); err != nil {
@@ -79,8 +98,14 @@ func (d *Driver) Probe(ctx context.Context) compute.Capability {
 		return c
 	}
 	f.Close()
-	if _, err = os.Stat("/sys/fs/cgroup/cgroup.controllers"); err != nil {
-		c.Reason = "The host must use cgroup v2."
+	f, err = os.OpenFile("/dev/net/tun", os.O_RDWR, 0)
+	if err != nil {
+		c.Reason = "TUN/TAP is unavailable: " + err.Error()
+		return c
+	}
+	f.Close()
+	if err = checkCgroupParent("/sys/fs/cgroup", d.config.CgroupParent); err != nil {
+		c.Reason = err.Error()
 		return c
 	}
 	forward, err := os.ReadFile("/proc/sys/net/ipv4/ip_forward")
@@ -111,14 +136,51 @@ func (d *Driver) jail(m compute.Machine) string {
 	return filepath.Join(d.root, "jails", filepath.Base(d.config.Binary), m.ID, "root")
 }
 func (d *Driver) cgroup(m compute.Machine) string {
-	return filepath.Join("/sys/fs/cgroup", d.prefix, m.ID)
+	return filepath.Join("/sys/fs/cgroup", d.cgroupParent(), m.ID)
 }
+func (d *Driver) cgroupParent() string         { return filepath.Join(d.config.CgroupParent, "axv-"+d.owner) }
 func (d *Driver) tap(m compute.Machine) string { return fmt.Sprintf("%s%03d", d.prefix, m.Slot) }
+
+// Only a missing directory proves absence. A missing marker in an existing
+// directory is damaged ownership metadata, never permission to adopt or delete.
+func checkManagedDirectory(path, owner string) (bool, error) {
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !info.IsDir() {
+		return true, fmt.Errorf("runtime path is not a real directory: %s", path)
+	}
+	if err = owneddir.Check(path, owner); err != nil {
+		return true, fmt.Errorf("verify runtime ownership at %s: %v", path, err)
+	}
+	return true, nil
+}
+
+func (d *Driver) checkMachineDirectory(m compute.Machine) (bool, error) {
+	exists, err := checkManagedDirectory(d.directory(m), d.owner+":"+m.ID)
+	if exists || err != nil {
+		return exists, err
+	}
+	for _, path := range []string{filepath.Dir(d.jail(m)), d.cgroup(m)} {
+		if _, err = os.Lstat(path); err == nil {
+			return false, fmt.Errorf("machine ownership metadata is missing while provider resources remain at %s", path)
+		} else if !os.IsNotExist(err) {
+			return false, err
+		}
+	}
+	return false, nil
+}
 
 func (d *Driver) load(m compute.Machine) (state, error) {
 	var st state
-	if err := owneddir.Check(d.directory(m), d.owner+":"+m.ID); err != nil {
+	if exists, err := d.checkMachineDirectory(m); err != nil {
 		return st, err
+	} else if !exists {
+		return st, os.ErrNotExist
 	}
 	err := jsonfile.Read(filepath.Join(d.directory(m), "state.json"), &st)
 	if err == nil && st.MachineID != m.ID {
@@ -127,7 +189,50 @@ func (d *Driver) load(m compute.Machine) (state, error) {
 	return st, err
 }
 
+func (d *Driver) checkStateCreation(m compute.Machine) error {
+	if info, err := os.Lstat(filepath.Join(d.directory(m), "state.json")); err == nil {
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("machine state is not a regular file")
+		}
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	// A first preparation may have committed only ownership/image metadata or
+	// left an unpublished atomic-write file. Disk preparation follows state.json.
+	entries, err := os.ReadDir(d.directory(m))
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.Name() == ".axv-owner" || entry.Name() == "image.json" || strings.HasPrefix(entry.Name(), ".axv-write-") && entry.Type().IsRegular() {
+			continue
+		}
+		return fmt.Errorf("machine state is missing while prepared resources remain; refusing to replace its identity")
+	}
+	for _, path := range []string{filepath.Dir(d.jail(m)), d.cgroup(m)} {
+		if _, err := os.Lstat(path); err == nil {
+			return fmt.Errorf("machine state is missing while runtime resources remain; refusing to replace its identity")
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
+}
+
 func (d *Driver) Ensure(ctx context.Context, m compute.Machine, image compute.Image, v compute.Volume) error {
+	// Check before creating the metadata directory: otherwise missing metadata
+	// could hide an existing jail/cgroup and authorize replacement state/disks.
+	if exists, err := d.checkMachineDirectory(m); err != nil {
+		return err
+	} else if exists {
+		if err = d.checkStateCreation(m); err != nil {
+			return err
+		}
+	}
+	if err := d.checkProjectVolume(m, v.ID); err != nil {
+		return err
+	}
 	if cap := d.Probe(ctx); !cap.Available {
 		return fmt.Errorf("%s", cap.Reason)
 	}
@@ -157,15 +262,12 @@ func (d *Driver) Ensure(ctx context.Context, m compute.Machine, image compute.Im
 	}
 	if _, err = os.Stat(filepath.Join(d.directory(m), "prepared")); err == nil {
 		for _, name := range []string{"root.ext4", "kernel", "project.ext4", "seed.ext4"} {
-			if _, err = os.Stat(filepath.Join(d.jail(m), name)); err != nil {
+			if _, err = os.Stat(filepath.Join(d.directory(m), name)); err != nil {
 				return fmt.Errorf("prepared machine artifact %s is missing; refusing to replace it: %w", name, err)
 			}
 		}
 		return nil
 	} else if !os.IsNotExist(err) {
-		return err
-	}
-	if err = os.MkdirAll(d.jail(m), 0700); err != nil {
 		return err
 	}
 	if len(filepath.Join(d.jail(m), "vsock.sock")) > 100 {
@@ -174,7 +276,7 @@ func (d *Driver) Ensure(ctx context.Context, m compute.Machine, image compute.Im
 	if err = d.ensureVolume(ctx, v); err != nil {
 		return err
 	}
-	root := filepath.Join(d.jail(m), "root.ext4")
+	root := filepath.Join(d.directory(m), "root.ext4")
 	if _, err = os.Stat(root); os.IsNotExist(err) {
 		info, err := os.Stat(image.Rootfs)
 		if err != nil {
@@ -198,18 +300,18 @@ func (d *Driver) Ensure(ctx context.Context, m compute.Machine, image compute.Im
 	} else if err != nil {
 		return err
 	}
-	if _, err = os.Stat(filepath.Join(d.jail(m), "kernel")); os.IsNotExist(err) {
-		if _, err = providerutil.Command(ctx, "cp", "--", image.Kernel, filepath.Join(d.jail(m), "kernel.partial")); err != nil {
+	if _, err = os.Stat(filepath.Join(d.directory(m), "kernel")); os.IsNotExist(err) {
+		if _, err = providerutil.Command(ctx, "cp", "--", image.Kernel, filepath.Join(d.directory(m), "kernel.partial")); err != nil {
 			return err
 		}
-		if err = atomicfile.Commit(filepath.Join(d.jail(m), "kernel.partial"), filepath.Join(d.jail(m), "kernel")); err != nil {
+		if err = atomicfile.Commit(filepath.Join(d.directory(m), "kernel.partial"), filepath.Join(d.directory(m), "kernel")); err != nil {
 			return err
 		}
 	} else if err != nil {
 		return err
 	}
 	project := filepath.Join(d.root, "volumes", v.ID, "disk.ext4")
-	link := filepath.Join(d.jail(m), "project.ext4")
+	link := filepath.Join(d.directory(m), "project.ext4")
 	if err = os.Link(project, link); os.IsExist(err) {
 		a, aerr := os.Stat(project)
 		b, berr := os.Stat(link)
@@ -229,11 +331,11 @@ func (d *Driver) Ensure(ctx context.Context, m compute.Machine, image compute.Im
 	if err = os.Chown(filepath.Join(seedDir, "guest.json"), 1000, 1000); err != nil {
 		return err
 	}
-	if err = disk(ctx, filepath.Join(d.jail(m), "seed.ext4"), 8<<20, "axv-seed", seedDir); err != nil {
+	if err = disk(ctx, filepath.Join(d.directory(m), "seed.ext4"), 8<<20, "axv-seed", seedDir); err != nil {
 		return err
 	}
 	for _, name := range []string{"root.ext4", "project.ext4", "seed.ext4", "kernel"} {
-		if err = os.Chown(filepath.Join(d.jail(m), name), d.config.UID+m.Slot, d.config.GID); err != nil {
+		if err = os.Chown(filepath.Join(d.directory(m), name), d.config.UID+m.Slot, d.config.GID); err != nil {
 			return err
 		}
 	}
@@ -269,19 +371,141 @@ func disk(ctx context.Context, path string, size int64, label, source string) er
 
 func (d *Driver) ensureVolume(ctx context.Context, v compute.Volume) error {
 	dir := filepath.Join(d.root, "volumes", v.ID)
+	if v.Revision > 1 {
+		if exists, err := checkManagedDirectory(dir, d.owner+":"+v.ID); err != nil {
+			return err
+		} else if !exists {
+			return fmt.Errorf("existing project volume %s storage is missing; refusing to recreate it", v.ID)
+		}
+	}
 	if err := owneddir.Ensure(dir, d.owner+":"+v.ID); err != nil {
 		return err
 	}
-	if _, err := os.Stat(filepath.Join(dir, "created")); err == nil {
-		_, err = os.Stat(filepath.Join(dir, "disk.ext4"))
-		return err
+	if data, err := os.ReadFile(filepath.Join(dir, "created")); err == nil {
+		if string(data) != v.ID {
+			return fmt.Errorf("project volume creation identity mismatch")
+		}
+		info, err := os.Lstat(filepath.Join(dir, "disk.ext4"))
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("project volume disk is not a regular file")
+		}
+		return nil
 	} else if !os.IsNotExist(err) {
 		return err
+	}
+	if v.Revision > 1 {
+		return fmt.Errorf("existing project volume %s creation metadata is missing; refusing to recreate it", v.ID)
 	}
 	if err := disk(ctx, filepath.Join(dir, "disk.ext4"), v.SizeGiB<<30, "axv-project", ""); err != nil {
 		return err
 	}
 	return atomicfile.Write(filepath.Join(dir, "created"), []byte(v.ID), 0600)
+}
+
+func (d *Driver) checkProjectVolume(m compute.Machine, volumeID string) error {
+	for _, path := range []string{filepath.Join(d.directory(m), "project.ext4"), filepath.Join(d.jail(m), "project.ext4")} {
+		project, err := os.Lstat(path)
+		if os.IsNotExist(err) {
+			continue // Initial preparation may not have linked a project disk yet.
+		}
+		if err != nil {
+			return err
+		}
+		if !project.Mode().IsRegular() || volumeID == "" {
+			return fmt.Errorf("machine project disk has an invalid volume identity")
+		}
+		volume, err := d.projectVolumeDisk(volumeID)
+		if err != nil {
+			return err
+		}
+		if !os.SameFile(project, volume) {
+			return fmt.Errorf("machine project disk does not match its owned project volume")
+		}
+	}
+	return nil
+}
+
+func (d *Driver) checkRetainedProjectDeletion(m compute.Machine) error {
+	if err := d.checkProjectVolume(m, m.Spec.VolumeID); err != nil {
+		return err
+	}
+	if _, err := os.Lstat(filepath.Join(d.directory(m), "prepared")); err == nil {
+		// Preparation proves that a project disk existed, even if both machine
+		// links have since disappeared. Its retained volume must still be valid.
+		_, err = d.projectVolumeDisk(m.Spec.VolumeID)
+		return err
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	// No project link and no completed preparation is an initial failure.
+	// Deleting this runtime leaves any volume staging files untouched.
+	return nil
+}
+
+func (d *Driver) projectVolumeDisk(volumeID string) (os.FileInfo, error) {
+	if volumeID == "" {
+		return nil, fmt.Errorf("machine has no project volume identity")
+	}
+	dir := filepath.Join(d.root, "volumes", volumeID)
+	if exists, err := checkManagedDirectory(dir, d.owner+":"+volumeID); err != nil {
+		return nil, err
+	} else if !exists {
+		return nil, fmt.Errorf("project volume %s storage is missing; preserve any linked project disk until its volume is recovered", volumeID)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "created"))
+	if err != nil {
+		return nil, fmt.Errorf("verify project volume creation identity: %w", err)
+	}
+	if string(data) != volumeID {
+		return nil, fmt.Errorf("project volume creation identity mismatch")
+	}
+	volume, err := os.Lstat(filepath.Join(dir, "disk.ext4"))
+	if err != nil {
+		return nil, fmt.Errorf("project volume %s disk is missing; preserve any linked project disk until its volume is recovered: %w", volumeID, err)
+	}
+	if !volume.Mode().IsRegular() {
+		return nil, fmt.Errorf("project volume disk is not a regular file")
+	}
+	return volume, nil
+}
+
+// prepareJail is called only after inspection confirms the VM is stopped.
+// Jailer creates devices, PID files and architecture-specific files exclusively,
+// so each launch needs a fresh jail. Durable disks stay outside that directory.
+func (d *Driver) prepareJail(m compute.Machine) error {
+	if exists, err := d.checkMachineDirectory(m); err != nil {
+		return err
+	} else if !exists {
+		return fmt.Errorf("machine ownership metadata is missing")
+	}
+	names := []string{"root.ext4", "project.ext4", "seed.ext4", "kernel"}
+	for _, name := range names {
+		info, err := os.Lstat(filepath.Join(d.directory(m), name))
+		if err != nil {
+			return fmt.Errorf("prepared machine artifact %s is unavailable: %w", name, err)
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("prepared machine artifact %s is not a regular file", name)
+		}
+	}
+	if err := owneddir.Ensure(filepath.Dir(d.jail(m)), d.owner+":"+m.ID); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(d.jail(m)); err != nil {
+		return err
+	}
+	if err := os.Mkdir(d.jail(m), 0700); err != nil {
+		return err
+	}
+	for _, name := range names {
+		if err := os.Link(filepath.Join(d.directory(m), name), filepath.Join(d.jail(m), name)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (d *Driver) Start(ctx context.Context, m compute.Machine, _ compute.Image, _ compute.Volume) error {
@@ -297,6 +521,12 @@ func (d *Driver) Start(ctx context.Context, m compute.Machine, _ compute.Image, 
 	}
 	if o.Status != "stopped" {
 		return fmt.Errorf("runtime is not confirmed stopped: %s", o.Status)
+	}
+	if err = d.prepareJail(m); err != nil {
+		return err
+	}
+	if err = d.prepareCgroup(m); err != nil {
+		return err
 	}
 	if err = d.ensureNetwork(ctx, m); err != nil {
 		return err
@@ -320,18 +550,10 @@ func (d *Driver) Start(ctx context.Context, m compute.Machine, _ compute.Image, 
 	if err = jsonfile.Write(filepath.Join(d.jail(m), "machine.json"), config, 0644); err != nil {
 		return err
 	}
-	// These are known sockets inside a stopped, owned jail. Preserve all disks.
-	for _, name := range []string{"api.sock", "vsock.sock"} {
-		if err = os.Remove(filepath.Join(d.jail(m), name)); err != nil && !os.IsNotExist(err) {
-			return err
-		}
-	}
-	args := []string{"--id", m.ID, "--exec-file", d.config.Binary, "--uid", strconv.Itoa(d.config.UID + m.Slot), "--gid", strconv.Itoa(d.config.GID), "--chroot-base-dir", filepath.Join(d.root, "jails"), "--cgroup-version", "2", "--parent-cgroup", d.prefix,
-		"--cgroup", fmt.Sprintf("memory.max=%d", (m.Spec.Resources.MemoryMiB+128)<<20), "--cgroup", fmt.Sprintf("cpu.max=%d 100000", m.Spec.Resources.CPUs*100000), "--cgroup", "pids.max=128", "--new-pid-ns", "--daemonize", "--", "--api-sock", "/api.sock", "--config-file", "/machine.json"}
 	if err = jsonfile.Write(filepath.Join(d.directory(m), "launch.json"), map[string]time.Time{"at": time.Now().UTC()}, 0600); err != nil {
 		return err
 	}
-	if _, err = providerutil.Command(ctx, d.config.Jailer, args...); err != nil {
+	if _, err = providerutil.Command(ctx, d.config.Jailer, d.jailerArgs(m)...); err != nil {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -349,6 +571,13 @@ func (d *Driver) Start(ctx context.Context, m compute.Machine, _ compute.Image, 
 		case <-tick.C:
 		}
 	}
+}
+
+func (d *Driver) jailerArgs(m compute.Machine) []string {
+	// With no --cgroup properties, jailer only joins this prepared leaf.
+	// Its property-writing mode recursively enables controllers in ancestors,
+	// which would cross the administrator's delegated cgroup boundary.
+	return []string{"--id", m.ID, "--exec-file", d.config.Binary, "--uid", strconv.Itoa(d.config.UID + m.Slot), "--gid", strconv.Itoa(d.config.GID), "--chroot-base-dir", filepath.Join(d.root, "jails"), "--cgroup-version", "2", "--parent-cgroup", filepath.Join(d.cgroupParent(), m.ID), "--new-pid-ns", "--daemonize", "--", "--api-sock", "/api.sock", "--config-file", "/machine.json"}
 }
 
 func (d *Driver) api(ctx context.Context, m compute.Machine, method, path string, body any, target any) error {
@@ -382,10 +611,10 @@ func (d *Driver) api(ctx context.Context, m compute.Machine, method, path string
 }
 
 func (d *Driver) Inspect(ctx context.Context, m compute.Machine) (compute.Observation, error) {
-	if err := owneddir.Check(d.directory(m), d.owner+":"+m.ID); os.IsNotExist(err) {
-		return compute.Observation{Status: "absent"}, nil
-	} else if err != nil {
+	if exists, err := d.checkMachineDirectory(m); err != nil {
 		return compute.Observation{}, err
+	} else if !exists {
+		return compute.Observation{Status: "absent"}, nil
 	}
 	var info struct {
 		ID    string `json:"id"`
@@ -421,19 +650,19 @@ func (d *Driver) Inspect(ctx context.Context, m compute.Machine) (compute.Observ
 }
 
 func (d *Driver) Stop(ctx context.Context, m compute.Machine) error {
-	if err := owneddir.Check(d.directory(m), d.owner+":"+m.ID); os.IsNotExist(err) {
-		return nil
-	} else if err != nil {
+	if exists, err := d.checkMachineDirectory(m); err != nil {
 		return err
+	} else if !exists {
+		return nil
 	}
 	procs, err := os.ReadFile(filepath.Join(d.cgroup(m), "cgroup.procs"))
 	if os.IsNotExist(err) {
-		return nil
+		return d.confirmStopped(m)
 	} else if err != nil {
 		return err
 	}
 	if strings.TrimSpace(string(procs)) == "" {
-		return nil
+		return d.confirmStopped(m)
 	}
 	// Ask the guest to shut down; an explicit stop has a bounded force-stop fallback.
 	if token, tokenErr := d.GuestToken(m); tokenErr == nil {
@@ -450,7 +679,7 @@ func (d *Driver) Stop(ctx context.Context, m compute.Machine) error {
 	for time.Now().Before(deadline) {
 		procs, err = os.ReadFile(filepath.Join(d.cgroup(m), "cgroup.procs"))
 		if os.IsNotExist(err) || (err == nil && strings.TrimSpace(string(procs)) == "") {
-			return nil
+			return d.confirmStopped(m)
 		}
 		if err != nil {
 			return err
@@ -468,7 +697,7 @@ func (d *Driver) Stop(ctx context.Context, m compute.Machine) error {
 	for {
 		procs, err = os.ReadFile(filepath.Join(d.cgroup(m), "cgroup.procs"))
 		if os.IsNotExist(err) || (err == nil && strings.TrimSpace(string(procs)) == "") {
-			return nil
+			return d.confirmStopped(m)
 		}
 		if err != nil {
 			return err
@@ -481,6 +710,16 @@ func (d *Driver) Stop(ctx context.Context, m compute.Machine) error {
 	}
 }
 
+func (d *Driver) confirmStopped(m compute.Machine) error {
+	// A confirmed stop supersedes startup's grace period, including a fast
+	// stop/start or restart immediately after the first successful launch.
+	err := os.Remove(filepath.Join(d.directory(m), "launch.json"))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
+}
+
 func (d *Driver) Delete(ctx context.Context, m compute.Machine) error {
 	o, err := d.Inspect(ctx, m)
 	if err != nil {
@@ -491,6 +730,14 @@ func (d *Driver) Delete(ctx context.Context, m compute.Machine) error {
 	}
 	if o.Status != "stopped" {
 		return fmt.Errorf("cannot delete an active VM")
+	}
+	if _, err = checkManagedDirectory(filepath.Dir(d.jail(m)), d.owner+":"+m.ID); err != nil {
+		return err
+	}
+	if m.Spec.RetainVolume {
+		if err = d.checkRetainedProjectDeletion(m); err != nil {
+			return err
+		}
 	}
 	if err = d.removeNetwork(ctx, m); err != nil {
 		return err
@@ -506,10 +753,10 @@ func (d *Driver) Delete(ctx context.Context, m compute.Machine) error {
 
 func (d *Driver) DeleteVolume(_ context.Context, v compute.Volume) error {
 	dir := filepath.Join(d.root, "volumes", v.ID)
-	if err := owneddir.Check(dir, d.owner+":"+v.ID); os.IsNotExist(err) {
-		return nil
-	} else if err != nil {
+	if exists, err := checkManagedDirectory(dir, d.owner+":"+v.ID); err != nil {
 		return err
+	} else if !exists {
+		return nil
 	}
 	return os.RemoveAll(dir)
 }

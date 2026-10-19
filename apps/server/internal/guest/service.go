@@ -24,15 +24,16 @@ type service struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	projectReady func() error
+	shutdown     func(context.Context) error
 }
 
 // newService assembles request handling independently of guest boot discovery,
 // project-mount verification and listener creation.
-func newService(ctx context.Context, config protocol.Config, bootID string, capabilities []string, projectReady func() error) *service {
+func newService(ctx context.Context, config protocol.Config, bootID string, capabilities []string, projectReady func() error, shutdown func(context.Context) error) *service {
 	ctx, cancel := context.WithCancel(ctx)
 	s := &service{
 		config: config, bootID: bootID, capabilities: append([]string(nil), capabilities...),
-		executions: make(chan struct{}, 8), ctx: ctx, cancel: cancel, projectReady: projectReady,
+		executions: make(chan struct{}, 8), ctx: ctx, cancel: cancel, projectReady: projectReady, shutdown: shutdown,
 	}
 	s.access = access.New(ctx, config.MachineID, bootID)
 	s.terminals = newTerminals(s)
