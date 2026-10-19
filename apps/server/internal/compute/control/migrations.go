@@ -13,7 +13,7 @@ import (
 //go:embed migrations/*.sql
 var migrationFiles embed.FS
 
-const databaseApplicationID = 0x41584331 // AXC1
+const databaseApplicationID = 0x41584332 // AXC2
 
 func (s *Store) migrate() error {
 	ctx := context.Background()

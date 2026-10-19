@@ -50,7 +50,7 @@ export function Welcome({ desktop, window }: AppWindowProps) {
               app: 'project-files',
               icon: 'project' as const,
               name: 'Project Files',
-              text: 'Browse host project files.',
+              text: 'Browse host files or edit VM projects.',
             },
           ].map((link) => (
             <button
@@ -126,7 +126,8 @@ export function About() {
         <dd>cofy-x</dd>
       </dl>
       <p className="fine-print">
-        Documents and desktop layout stay on the AXV host.
+        Documents and desktop layout stay on the AXV host. VM project files stay
+        on their retained volumes.
       </p>
     </div>
   );

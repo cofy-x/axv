@@ -19,7 +19,7 @@ func (s *Store) Update(ctx context.Context, c compute.Config, id string, req com
 		ID      string
 		Request compute.UpdateRequest
 	}{id, req})
-	err = s.transaction(ctx, func(tx *sql.Tx) error {
+	err = s.resourceTransaction(ctx, []string{id}, func(tx *sql.Tx) error {
 		op, exists, err := replay(ctx, tx, req.RequestID, hash)
 		if err != nil {
 			return err
@@ -44,6 +44,11 @@ func (s *Store) Update(ctx context.Context, c compute.Config, id string, req com
 		}
 		if err = c.ValidateRequest(compute.CreateRequest{Spec: req.Spec}); err != nil {
 			return err
+		}
+		if !req.Spec.RetainVolume && m.Spec.VolumeID != "" {
+			if err := protectProjectVolume(ctx, tx, m.Spec.VolumeID); err != nil {
+				return err
+			}
 		}
 		if err = checkMachineNames(ctx, tx, compute.Machine{ID: m.ID, Spec: req.Spec}); err != nil {
 			return err

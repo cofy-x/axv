@@ -29,7 +29,7 @@ type Contract struct {
 // caller receives its own slice so image construction cannot mutate runtime
 // capability negotiation.
 func Capabilities() []string {
-	return []string{"exec", "terminals", "ssh", "network"}
+	return []string{"exec", "terminals", "ssh", "network", "project-files"}
 }
 
 func Has(capabilities []string, name string) bool {

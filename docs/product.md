@@ -37,7 +37,22 @@ VMs provide the development environment for VM projects: project code, Git workt
 
 For a VM workflow, the authoritative project code and Git worktrees belong on its persistent project volume. The host agent operates on that copy through AXV tools. Existing host projects remain independent workflows; AXV does not automatically migrate, mount or synchronize them with VM projects.
 
-The intended agent-to-VM integration provides stable operations for commands, project files, task status and development services, with an AXV Skill guiding host agents in their use. These are capability goals; tool interfaces and protocols remain undecided. A Skill does not redirect an agent's built-in host tools or change its permissions. [Guest API](api/guest.md) documents the current execution interface and its limits.
+The agent-to-VM integration uses explicit AXV interfaces for project files, commands, task status and development services. The [VM project CLI](startup.md#vm-project-files) supplies the first project-file interface; persistent project tasks, development services and an AXV Skill remain goals. A Skill does not redirect an agent's built-in host tools or change its permissions. [Guest API](api/guest.md) documents the current execution interface and its limits.
+
+### VM project workspace constraints
+
+VM project workspaces are the next development workflow. Build the persistent project and file-access boundary first, then persistent tasks and resource/recovery protection, before development-service preview. Keep these constraints throughout:
+
+1. **Project, environment and task identities are distinct.** A project identifies a retained volume and a root directory on that volume, independently of the current VM. Changing the VM, remounting a volume or explicitly restoring data invalidates old environment bindings. Git common metadata and worktrees stay on the volume; replacement must preserve valid worktree paths. Recovery into another volume requires an explicit new binding, never silent adoption.
+2. **Project tasks require durable acceptance.** Dependency installation, builds and tests need persistent request identity, task status, logs and execution supervision. An uncertain response is recovered by querying the original submission; repeated submission must not start duplicate work. The current synchronous guest exec interface is not that task system.
+3. **Recovery preserves execution attempts.** Browser/desktop disconnects should not stop accepted tasks. A lost guest executor or VM produces a visible interrupted/unknown outcome; an explicit retry creates another attempt. Cancellation targets the original VM, attempt and child processes and must not affect replacement or unrelated work.
+4. **File writes check the reviewed version inside the guest.** File access stays within the registered project and rejects stale environment/root identity, unsafe paths and conflicting changes. Conflicts and draft replacement require a caller choice. File API confinement does not sandbox arbitrary guest commands or isolate multiple projects sharing a VM.
+5. **Resource protection reports actual enforcement.** Show configured CPU, memory, disk, I/O and network limits separately from observed use and actual enforcement; expose unsupported capabilities. Task timeout, process count, log capacity and real disk availability need explicit protection alongside logical admission budgets.
+6. **Backup acceptance includes restoration.** Start with stopped writers/tasks and a verifiable project-volume copy. Restore into another volume, explicitly choose the resulting binding and verify files, uncommitted changes and Git state. A VM snapshot alone is not a complete project backup.
+
+Project business interfaces must remain provider independent. QEMU/KVM can be introduced as a separate provider later; device, snapshot and hotplug differences belong in provider capability declarations, and clients offer only supported actions. Host-agent permissions remain an independent sandbox/authorization boundary even when AXV routes every requested project operation into a VM.
+
+The complete acceptance workflow creates a VM and retained volume containing a real Git repository, modifies files through AXV, installs dependencies, builds and tests, reconnects after browser/AXV restart to the original task results, cancels one exact task without affecting others, replaces the VM while preserving code/Git state, and exercises disk exhaustion, runaway tasks and executor failure with visible errors and successful recovery. It must also reject stale write/cancel bindings after replacement or restore and prove that duplicate submissions cannot duplicate tasks. [Development](development.md#vm-project-workspace-acceptance) owns how implemented portions are checked; this full workflow remains the completion target.
 
 Conversations outlive views. Closing a view, ending a process and continuing saved context are separate user choices. Failed recovery must be visible rather than silently starting unrelated work. Naming and archiving organize conversations without changing process lifetime. [Codex architecture](codex.md) owns run identity and recovery mechanisms; [usage](usage.md#codex) owns the corresponding actions.
 
@@ -77,7 +92,7 @@ Official versioned AXV enhanced images are the intended long-term default prepar
 
 ## Decisions still open
 
-- The tool interface and Skill integration for VM commands and project-file operations, including Git/worktree management on the project volume.
+- The remaining tool/Skill integration for VM commands, project tasks and Git/worktree management on the project volume.
 - Long-running task identity, status, logs, cancellation and recovery; automatic session supervision after host boot and recovery after VM replacement.
 - Development-service discovery, access and preview.
 - Provider-specific session integration, including Claude Code and structured agent interfaces.

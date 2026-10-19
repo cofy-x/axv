@@ -104,6 +104,32 @@ axv vm operation wait --request-id <original-request-id> --host-id <original-hos
 
 An unknown request ID is not proof that submission failed; `operation wait --request-id` continues checking until it finds a final result or times out. Keep the original `AXV_HOME` and pass the receipt's `--host-id` to operation get/wait so recovery fails if the host was replaced. `--json` produces machine-readable stdout while diagnostics remain on stderr. Inspect and operation get/wait already return JSON by default. Exit codes are **0** for success, **1** for operation failure, **2** for usage errors and **130** for interruption; SSH also preserves the remote command's exit status.
 
+### VM project files
+
+`axv vm project` is the explicit host-agent interface for projects on retained VM volumes. First put a real Git repository and its worktree metadata on the VM's project volume using [guest SSH](#ssh-file-transfer-and-forwarding). Then register its existing volume-relative directory while that VM is running with the `project-files` capability:
+
+```bash
+axv vm volumes --json
+axv vm project register --machine dev --volume <volume-id> --root repo --name 'My project' --json
+axv vm project list --json
+axv vm project binding <project-id> > project-binding.json
+axv vm project files <project-id> '' --binding-file project-binding.json
+axv vm project read <project-id> src/main.go --binding-file project-binding.json
+axv vm project write <project-id> src/main.go --binding-file project-binding.json \
+  --expected-sha256 <sha256-from-read> --file /absolute/reviewed-main.go
+axv vm project mkdir <project-id> notes --binding-file project-binding.json
+printf 'Project notes\n' | axv vm project write <project-id> notes/README.md \
+  --binding-file project-binding.json --create
+```
+
+Omit `--root` to register the volume root. Registration reads the selected volume's revision and submits that exact machine/volume/root; the host rejects concurrent attachment changes. It prints the host/machine/volume/revision/request receipt to stderr; `--request-id` can preserve a caller-chosen registration identity. If a response is lost, inspect `project list --json` before replaying. For an exact replay, provide `--host-id <original-host-id>`, the receipt's immutable machine ID, `--volume-revision <original-revision>` and the same request ID, volume, root and name. These recovery flags must be supplied together; recovery verifies the original host and submits the original payload without looking up the current VM or volume, so a committed registration remains recoverable after VM removal. Never resolve a replacement VM name or substitute a newer revision. Registration is synchronous and does not create an operation-wait record.
+
+Binding and file commands return JSON by default; `--json` is also accepted. The binding file must contain the full `{ project, binding }` object returned by `binding`. All file commands require that original file and never refresh it automatically. After a VM replacement, restart or guest-service change, explicitly capture a new binding only after reviewing the new environment. Old commands fail even if another VM now mounts the same volume. A missing guest never redirects work to the host. Binding files select an execution environment and contain no guest authentication token.
+
+File paths are relative to the project; the empty path lists its root. `files` accepts `--limit` and the returned `--cursor`. `read` returns UTF-8 content and its SHA-256; `write` requires exactly one of `--expected-sha256` or `--create`, reads stdin by default (`--file -`) and accepts up to 1 MiB. Writes reject stale versions and preserve existing files on create-only conflicts. Errors do not retry, replace the binding or fetch a new hash. If a write/mkdir response is uncertain, inspect that original path before deciding what to do. [Compute project API](api/compute.md#vm-projects) owns limits and concurrency guarantees.
+
+Projects retain their identity through desktop/controller restart and replacement of a VM using the same retained volume. This interface does not provide persistent install/build/test tasks, restore-to-copy rebinding, automatic Git cloning/worktree repair or a host-agent sandbox. Existing synchronous guest commands and SSH retain their [separate lifetimes](api/guest.md).
+
 ### SSH, file transfer and forwarding
 
 Use the installed system OpenSSH client for standard guest sessions:

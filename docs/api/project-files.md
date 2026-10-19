@@ -2,7 +2,7 @@
 
 [API index](README.md)
 
-These local routes address explicitly registered host projects and immutable document snapshots. They do not expose VM project volumes or replace the [virtual-file API](files.md). [Document storage](../storage.md) owns persistence and transaction mechanisms; [Host Codex](host-codex.md) owns attaching a snapshot to an agent conversation.
+These local routes address explicitly registered host projects and immutable document snapshots. [Compute project routes](compute.md#vm-projects) separately address VM project volumes; neither replaces the [virtual-file API](files.md). [Document storage](../storage.md) owns persistence and transaction mechanisms; [Host Codex](host-codex.md) owns attaching a snapshot to an agent conversation.
 
 All routes follow the shared [local-access policy](README.md#access-and-identity-boundaries), including Origin on mutations. JSON requests contain one object with no unknown fields, use `application/json`, and are limited to **64 KiB**. Responses disable caching and MIME sniffing.
 

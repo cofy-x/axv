@@ -35,7 +35,7 @@ func (s *Store) CreateVolume(ctx context.Context, c compute.Config, req compute.
 	if err = compute.ValidateResourceName(req.Name); err != nil {
 		return
 	}
-	err = s.transaction(ctx, func(tx *sql.Tx) error {
+	err = s.resourceTransaction(ctx, []string{req.SourceVolumeID}, func(tx *sql.Tx) error {
 		op, exists, err := replay(ctx, tx, req.RequestID, fingerprint(req))
 		if err != nil {
 			return err
@@ -105,7 +105,7 @@ func (s *Store) VolumeAction(ctx context.Context, c compute.Config, id string, r
 		ID      string
 		Request compute.VolumeRequest
 	}{id, req})
-	err = s.transaction(ctx, func(tx *sql.Tx) error {
+	err = s.resourceTransaction(ctx, []string{id}, func(tx *sql.Tx) error {
 		op, exists, err := replay(ctx, tx, req.RequestID, hash)
 		if err != nil {
 			return err
@@ -137,6 +137,11 @@ func (s *Store) VolumeAction(ctx context.Context, c compute.Config, id string, r
 			}
 			target.Name = req.Name
 		case "retain":
+			if !req.Retain {
+				if err := protectProjectVolume(ctx, tx, id); err != nil {
+					return err
+				}
+			}
 			target.Retain = req.Retain
 			if machineID != "" {
 				m, err := machine(ctx, tx, machineID)

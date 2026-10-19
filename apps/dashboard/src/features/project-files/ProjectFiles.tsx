@@ -17,16 +17,21 @@ import { projectsAPI } from './api';
 import { projectLabel } from './presentation';
 import { HostFolderChooser } from './HostFolderChooser';
 import { projectFileLocation } from './navigation';
+import { VMProjectLauncher } from './VMProjectLauncher';
+import { VMProjectFiles } from './VMProjectFiles';
 
 export function ProjectFiles(props: AppWindowProps) {
-  return props.window.params.projectId ? (
+  return props.window.params.vmProjectId ? (
+    <VMProjectFiles {...props} />
+  ) : props.window.params.projectId ? (
     <ProjectBrowser {...props} />
   ) : (
     <ProjectLauncher {...props} />
   );
 }
 
-function ProjectLauncher({ desktop }: AppWindowProps) {
+function ProjectLauncher(props: AppWindowProps) {
+  const { desktop } = props;
   const [root, setRoot] = useState('');
   const [choosingFolder, setChoosingFolder] = useState(false);
   const [pickerPath, setPickerPath] = useState('');
@@ -77,7 +82,7 @@ function ProjectLauncher({ desktop }: AppWindowProps) {
         <PixelIcon name="project" />
         <div>
           <strong>Project Files</strong>
-          <p>Browse files in a host folder.</p>
+          <p>Browse host folders or edit projects inside a VM.</p>
         </div>
         <IconButton
           icon="refresh"
@@ -150,6 +155,7 @@ function ProjectLauncher({ desktop }: AppWindowProps) {
           </Button>
         ))}
       </div>
+      <VMProjectLauncher {...props} />
     </div>
   );
 }

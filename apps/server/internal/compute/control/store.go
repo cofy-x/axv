@@ -17,8 +17,9 @@ import (
 )
 
 type Store struct {
-	db     *sql.DB
-	HostID string
+	db            *sql.DB
+	HostID        string
+	projectLeases resourceLeases
 }
 
 type querier interface {
@@ -146,6 +147,13 @@ func fingerprint(v any) string {
 }
 
 func replay(ctx context.Context, tx *sql.Tx, requestID, hash string) (operationRecord, bool, error) {
+	var projectRequest bool
+	if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM project_requests WHERE request_id=?)", requestID).Scan(&projectRequest); err != nil {
+		return operationRecord{}, false, err
+	}
+	if projectRequest {
+		return operationRecord{}, false, compute.Problem("idempotency_conflict", "This requestId already belongs to a project registration.")
+	}
 	var raw, savedHash string
 	err := tx.QueryRowContext(ctx, "SELECT data,fingerprint FROM operations WHERE request_id=?", requestID).Scan(&raw, &savedHash)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -274,7 +282,7 @@ func (s *Store) Create(ctx context.Context, config compute.Config, req compute.C
 	if err = compute.ValidateRequestID(req.RequestID); err != nil {
 		return
 	}
-	err = s.transaction(ctx, func(tx *sql.Tx) error {
+	err = s.resourceTransaction(ctx, []string{req.Spec.VolumeID}, func(tx *sql.Tx) error {
 		op, exists, err := replay(ctx, tx, req.RequestID, fingerprint(req))
 		if err != nil {
 			return err
@@ -374,7 +382,7 @@ func (s *Store) Action(ctx context.Context, c compute.Capacity, id string, req c
 		ID      string
 		Request compute.ActionRequest
 	}{id, req})
-	err = s.transaction(ctx, func(tx *sql.Tx) error {
+	err = s.resourceTransaction(ctx, []string{id}, func(tx *sql.Tx) error {
 		op, exists, err := replay(ctx, tx, req.RequestID, hash)
 		if err != nil {
 			return err
@@ -454,7 +462,7 @@ func (s *Store) DeleteVolume(ctx context.Context, id, requestID string, revision
 		return
 	}
 	hash := fingerprint([]any{"delete-volume", id, revision})
-	err = s.transaction(ctx, func(tx *sql.Tx) error {
+	err = s.resourceTransaction(ctx, []string{id}, func(tx *sql.Tx) error {
 		var exists bool
 		op, exists, err = replay(ctx, tx, requestID, hash)
 		if err != nil || exists {
@@ -469,6 +477,9 @@ func (s *Store) DeleteVolume(ctx context.Context, id, requestID string, revision
 		}
 		if revision != v.Revision {
 			return compute.Problem("revision_conflict", "The volume changed. Refresh before deleting it.")
+		}
+		if err := protectProjectVolume(ctx, tx, id); err != nil {
+			return err
 		}
 		v.Status = "deleting"
 		v.Revision++

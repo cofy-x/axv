@@ -136,6 +136,7 @@ func Handler(service *control.Service) http.Handler {
 	mux.HandleFunc("/v1/machines/{id}/guest/{path...}", func(w http.ResponseWriter, r *http.Request) { proxyGuest(service, w, r) })
 	registerImages(mux, service)
 	registerGuestSSH(mux, service)
+	registerProjects(mux, service)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		mux.ServeHTTP(w, r)
@@ -171,16 +172,24 @@ func reply(w http.ResponseWriter, value any, err error) {
 func failure(w http.ResponseWriter, err error) {
 	status, code, message := 500, compute.ErrorCode(err), err.Error()
 	switch code {
-	case "invalid_request":
+	case "invalid_request", "invalid_path", "invalid_content", "invalid_directory", "invalid_cursor", "not_file":
 		status = 400
 	case "not_found":
 		status = 404
-	case "binding_changed", "revision_conflict", "operation_conflict", "idempotency_conflict", "volume_conflict", "image_conflict", "configuration_conflict", "name_conflict", "unavailable":
+	case "binding_changed", "boot_changed", "instance_changed", "project_changed", "file_changed", "file_conflict", "revision_conflict", "operation_conflict", "idempotency_conflict", "volume_conflict", "image_conflict", "configuration_conflict", "name_conflict", "unavailable":
 		status = 409
 	case "capacity_exceeded":
 		status = 429
-	case "unsupported", "host_unavailable":
+	case "unsupported", "host_unavailable", "guest_unavailable", "guest_identity_mismatch", "storage_unavailable", "project_unavailable", "file_unavailable":
 		status = 503
+	case "file_too_large":
+		status = 413
+	case "insufficient_storage", "disk_full":
+		status = 507
+	case "file_forbidden":
+		status = 403
+	case "not_text":
+		status = 415
 	default:
 		log.Printf("compute API: %v", err)
 		message = "The compute operation could not be completed. Check the host service log."

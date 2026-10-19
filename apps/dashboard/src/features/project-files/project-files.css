@@ -197,7 +197,43 @@
   display: block;
   overflow-wrap: anywhere;
 }
+.vm-project-launcher {
+  border-top: 1px solid var(--ns-mid);
+  margin-top: 18px;
+  padding-top: 12px;
+}
+.vm-project-register-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  align-items: end;
+}
+.vm-project-register-form select {
+  width: 100%;
+  min-width: 0;
+}
+.vm-project-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.vm-project-editor textarea {
+  flex: 1;
+  min-height: 140px;
+  width: 100%;
+  box-sizing: border-box;
+  resize: none;
+  font: 13px/1.5 var(--ns-mono);
+  tab-size: 2;
+}
+.project-recovery {
+  max-height: 50%;
+  overflow: auto;
+}
 @container project-files (max-width: 599px) {
+  .vm-project-register-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .project-content {
     grid-template-columns: minmax(0, 1fr);
   }

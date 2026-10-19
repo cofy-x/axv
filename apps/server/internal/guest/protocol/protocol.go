@@ -17,6 +17,7 @@ type Health struct {
 	Version      int      `json:"version"`
 	MachineID    string   `json:"machineId"`
 	BootID       string   `json:"bootId"`
+	InstanceID   string   `json:"instanceId"`
 	Ready        bool     `json:"ready"`
 	Reason       string   `json:"reason,omitempty"`
 	SSHAvailable bool     `json:"sshAvailable"`
