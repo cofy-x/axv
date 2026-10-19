@@ -24,7 +24,9 @@ VERSION=0.1.0-rc.1 node scripts/package-release.mjs
 
 Run all required [verification](development.md#verification) for the selected commit before approving a release. The candidate workflow covers build and smoke, while normal CI covers unit, static and browser checks. Explicit native daemon, VM and real-Codex checks remain separate and apply to the capabilities claimed in that release.
 
-The packager uses [the production build](development.md#production-build), verifies the binary's version, production tag, target, CGO setting and pinned Go version, and writes a new directory at `dist/release/<version>/`. It refuses to overwrite an existing candidate directory. After reviewing or moving an older candidate, remove only that generated version directory explicitly if you need to rebuild it. Temporary assembly and helper execution use this checkout's [test isolation](development.md#test-isolation-and-diagnostics).
+The packager uses [the production build](development.md#production-build), verifies the binary's version, production tag, target, CGO setting and pinned Go version, and writes a new directory at `dist/release/<version>/`. It requires a clean Git checkout, including tracked and untracked source files, and rejects missing VCS metadata, a binary from a different `HEAD`, or `vcs.modified` other than `false`. It checks the checkout again after assembly; ordinary ignored build output is allowed. The workflow also checks source cleanliness after dependency installation, so changed dependency checksums must be reviewed and committed before building a candidate. Never hide these changes or disable VCS stamping.
+
+The packager refuses to overwrite an existing candidate directory. After reviewing or moving an older candidate, remove only that generated version directory explicitly if you need to rebuild it. Temporary assembly and helper execution use this checkout's [test isolation](development.md#test-isolation-and-diagnostics).
 
 | Output | Contents |
 | --- | --- |

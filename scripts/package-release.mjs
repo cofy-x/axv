@@ -41,6 +41,49 @@ export async function validateReleaseVersion(version) {
   return version;
 }
 
+export async function readReleaseSource(directory = root) {
+  const revision = (
+    await captureCommand('git', ['rev-parse', '--verify', 'HEAD'], {
+      cwd: directory,
+    })
+  ).stdout.trim();
+  const status = (
+    await captureCommand(
+      'git',
+      ['status', '--porcelain=v1', '--untracked-files=all'],
+      { cwd: directory },
+    )
+  ).stdout;
+  return { revision, status };
+}
+
+export function validateReleaseSource(buildInfo, source) {
+  if (typeof source?.status !== 'string' || source.status !== '')
+    throw new Error(
+      `Release packaging requires a clean Git checkout. Review tracked and untracked changes before rebuilding.\n${source?.status ?? ''}`,
+    );
+  if (
+    typeof source.revision !== 'string' ||
+    !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(source.revision)
+  )
+    throw new Error('Release packaging requires a committed Git HEAD.');
+  const required = new Map();
+  for (const key of ['vcs', 'vcs.revision', 'vcs.modified']) {
+    const matches = buildInfo?.Settings?.filter((entry) => entry.Key === key);
+    if (!matches || matches.length !== 1)
+      throw new Error(`The binary must record exactly one ${key} setting.`);
+    required.set(key, matches[0].Value);
+  }
+  if (
+    required.get('vcs') !== 'git' ||
+    required.get('vcs.revision') !== source.revision ||
+    required.get('vcs.modified') !== 'false'
+  )
+    throw new Error(
+      'Rebuild the release binary from this clean Git HEAD; its VCS revision and clean-source flag must match.',
+    );
+}
+
 async function packageRelease(version) {
   if (process.platform !== 'linux' || process.arch !== 'x64')
     throw new Error(
@@ -50,6 +93,7 @@ async function packageRelease(version) {
   const buildInfo = JSON.parse(
     (await captureCommand(go, ['version', '-m', '-json', binary])).stdout,
   );
+  validateReleaseSource(buildInfo, await readReleaseSource());
   const settings = Object.fromEntries(
     buildInfo.Settings.map(({ Key, Value }) => [Key, Value]),
   );
@@ -120,6 +164,9 @@ async function packageRelease(version) {
     temporary.directory,
     name,
   ]);
+  // Notice collection also reads module sources. Refuse publication if it or
+  // another writer changed the checkout during assembly.
+  validateReleaseSource(buildInfo, await readReleaseSource());
   const digest = createHash('sha256')
     .update(await readFile(join(temporary.directory, archive)))
     .digest('hex');

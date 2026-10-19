@@ -587,10 +587,14 @@ func (d *Driver) DialGuest(ctx context.Context, m compute.Machine) (net.Conn, er
 	cmd := exec.Command(d.config.Binary, "--tty=false", "shell", "--workdir=/", name, "--", "socat", "STDIO", "UNIX-CONNECT:/run/axv/guest.sock")
 	cmd.Dir = d.root
 	cmd.Env = d.environment()
-	reader, err := cmd.StdoutPipe()
+	// Wait must reap the relay without closing buffered guest responses. Unlike
+	// StdoutPipe, this read end belongs to the connection until EOF or Close.
+	reader, output, err := os.Pipe()
 	if err != nil {
 		return nil, err
 	}
+	defer output.Close()
+	cmd.Stdout = output
 	writer, err := cmd.StdinPipe()
 	if err != nil {
 		reader.Close()
