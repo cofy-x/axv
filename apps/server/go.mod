@@ -9,7 +9,7 @@ require (
 	github.com/mattn/go-isatty v0.0.24
 	github.com/mdlayher/vsock v1.3.0
 	github.com/spf13/cobra v1.10.2
-	github.com/spf13/pflag v1.0.9
+	github.com/spf13/pflag v1.0.10
 	golang.org/x/crypto v0.58.0
 	golang.org/x/sys v0.49.0
 	modernc.org/sqlite v1.60.1
