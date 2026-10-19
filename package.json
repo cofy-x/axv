@@ -3,6 +3,15 @@
   "description": "A personal cloud workstation.",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cofy-x/axv.git"
+  },
+  "homepage": "https://github.com/cofy-x/axv#readme",
+  "bugs": {
+    "url": "https://github.com/cofy-x/axv/issues"
+  },
   "type": "module",
   "engines": {
     "node": "24.16.0",

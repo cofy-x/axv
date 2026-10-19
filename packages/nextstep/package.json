@@ -2,6 +2,16 @@
   "name": "@cofy-x/axv-nextstep",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cofy-x/axv.git",
+    "directory": "packages/nextstep"
+  },
+  "homepage": "https://github.com/cofy-x/axv#readme",
+  "bugs": {
+    "url": "https://github.com/cofy-x/axv/issues"
+  },
   "type": "module",
   "exports": {
     ".": "./src/index.ts",

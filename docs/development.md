@@ -107,6 +107,25 @@ Use `E2E_SKIP_BUILD=1` only when the existing production binary includes the cha
 
 The [production smoke](../scripts/smoke-production.mjs) exercises the embedded binary from an unrelated directory: CLI validation, listener isolation, persistence across restart and session lifecycles. Its assertions are the coverage source; extend them for changed production behavior instead of maintaining a second checklist here.
 
+## GitHub CI and dependency maintenance
+
+The [CI workflow](../.github/workflows/ci.yml) runs for every pull request, pushes to `main`, and manual dispatches. Both jobs use Ubuntu 24.04 hosted runners and the pinned Go, Node.js and pnpm versions from `.go-version`, `.node-version` and `package.json`. There are no path filters; documentation changes also receive both checks. A newer run on the same ref cancels the previous run.
+
+| Check | Coverage |
+| --- | --- |
+| `checks` | Locked dependency installation, formatting, Go and Vitest tests, typecheck, lint, production build, production smoke and temporary production installation |
+| `e2e` | Locked dependencies and browser system libraries, then the full `make test-e2e` browser, display-scale and touch matrix |
+
+The jobs install tmux and use deterministic Codex fixtures without provider credentials or model requests. They run the existing launchers as the runner user with the repository's private `.data/test` root. The workflow caches only the pnpm store and Go module/compiler caches. It retains failed browser reports, screenshots and traces for seven days; AXV profiles and test roots are excluded from uploaded artifacts. `GOTOOLCHAIN=local` keeps checks on the selected Go version instead of downloading a newer toolchain to satisfy a dependency.
+
+Hosted CI covers the commands above. Native daemon, VM, network and real-Codex acceptance still require their explicit environments and procedures below. Passing CI does not establish native VM support or replace visual/interaction acceptance.
+
+Maintain `main` protection with the GitHub Actions checks `checks` and `e2e` required, the branch up to date before merging, and review conversations resolved. Disable force pushes and branch deletion. The baseline does not require approval from a second maintainer, so a sole maintainer can merge a verified pull request. Configure these repository settings after both check names have appeared in a successful run; workflow files do not configure branch protection.
+
+The [Dependabot configuration](../.github/dependabot.yml) checks GitHub Actions, the root pnpm workspace through the `npm` ecosystem, and Go modules under `apps/server` every Monday. Each ecosystem groups minor and patch updates and permits at most five open version-update pull requests; major updates remain separate. Security alerts and security-update pull requests depend on the repository's GitHub settings and are not limited to the weekly version-update schedule. Dependabot does not merge pull requests automatically.
+
+Review dependency changes with their lockfiles and run the same verification matrix. For pnpm updates, check the workspace manifests, overrides and frozen-lockfile installation together; confirm the first hosted Dependabot update can use the repository's pinned pnpm version before relying on automated JavaScript maintenance. Keep Action references pinned to full commit SHAs and verify replacement SHAs against the upstream release. Upgrade Go, Node.js and pnpm deliberately in one change, keeping the version files, manifests, Makefile, Go workspace/modules, README and lockfiles aligned. The npm configuration excludes `node` and `pnpm` updates; a dependency that requires a newer toolchain needs this coordinated upgrade before it can pass CI.
+
 ## Test isolation and diagnostics
 
 Repository verification uses `.data/test` by default for generated host executables, helper fixtures, profiles and temporary files. Set `AXV_TEST_TMPDIR` to choose another private root; relative overrides resolve from the invoking working directory:
