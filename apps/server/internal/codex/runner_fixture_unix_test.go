@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -25,30 +26,55 @@ func TestCodexRunnerFixtureProcess(t *testing.T) {
 	if os.Getenv("AXV_TEST_RUNNER") != "1" {
 		return
 	}
-	path := os.Args[len(os.Args)-1]
+	os.Exit(runCodexRunnerFixture())
+}
+
+func runCodexRunnerFixture() int {
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGHUP, syscall.SIGTERM)
+	defer cancel()
+	gate := ""
+	for _, arg := range os.Args {
+		if strings.HasPrefix(arg, "--fixture-gate=") {
+			if gate != "" {
+				return 18
+			}
+			gate = strings.TrimPrefix(arg, "--fixture-gate=")
+		}
+	}
+	if gate == "" && os.Getenv("AXV_TEST_RUNNER_GATE_REQUIRED") == "1" {
+		return 18
+	}
+	if gate != "" {
+		return runWithFixtureWriter(ctx, gate, func() int {
+			return runOwnedCodexRunnerFixture(ctx, os.Args[len(os.Args)-1])
+		})
+	}
+	return runOwnedCodexRunnerFixture(ctx, os.Args[len(os.Args)-1])
+}
+
+func runOwnedCodexRunnerFixture(ctx context.Context, path string) int {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		os.Exit(11)
+		return 11
 	}
 	var manifest runner.Manifest
 	if json.Unmarshal(data, &manifest) != nil {
-		os.Exit(12)
+		return 12
 	}
 	thread := manifest.ThreadID
 	if thread == "" {
 		id := manifest.RunID
 		thread = id[:8] + "-" + id[8:12] + "-" + id[12:16] + "-" + id[16:20] + "-" + id[20:]
 	}
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGHUP, syscall.SIGTERM)
-	defer cancel()
 	ownership, err := runner.AcquireOwnership(ctx, manifest.OwnershipPath)
 	if err != nil {
-		os.Exit(15)
+		return 15
 	}
 	state := runner.State{RunID: manifest.RunID, ThreadID: thread, HistoryHome: manifest.HistoryHome, Status: runner.StatusReady}
 	data, _ = json.Marshal(state)
 	if os.WriteFile(filepath.Join(filepath.Dir(path), "state.json"), data, 0600) != nil {
-		os.Exit(13)
+		_ = ownership.Close()
+		return 13
 	}
 	child := exec.CommandContext(ctx, manifest.CodexPath, "--cd", manifest.ProjectPath, "--no-alt-screen", "--no-daemon")
 	child.Stdin, child.Stdout, child.Stderr = os.Stdin, os.Stdout, os.Stderr
@@ -72,13 +98,13 @@ func TestCodexRunnerFixtureProcess(t *testing.T) {
 	}
 	if err := ownership.Close(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(16)
+		return 16
 	}
 	if err := runner.RecordExit(path, code); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(17)
+		return 17
 	}
-	os.Exit(code)
+	return code
 }
 
 func TestCodexRunnerFixtureRecordsActualChildExitAfterReleasingOwnership(t *testing.T) {
