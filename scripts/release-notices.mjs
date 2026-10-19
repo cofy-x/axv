@@ -32,11 +32,8 @@ async function captureJSON(executable, args, options) {
   return JSON.parse((await captureCommand(executable, args, options)).stdout);
 }
 
-/** Retain original texts; package metadata alone is not a license notice. */
-export async function writeReleaseNotices(output, buildInfo) {
-  const inventory = [];
-
-  async function collect(kind, name, version, directory, metadata = {}, files) {
+function noticeCollector(output, inventory) {
+  return async (kind, name, version, directory, metadata = {}, files) => {
     files ??= await findNoticeFiles(directory);
     if (
       !files.some((file) =>
@@ -53,8 +50,13 @@ export async function writeReleaseNotices(output, buildInfo) {
       retained.push(target);
     }
     inventory.push({ kind, name, version, ...metadata, files: retained });
-  }
+  };
+}
 
+/** Collect only the toolchain and modules actually linked into this binary. */
+export async function collectGoNotices(output, buildInfo) {
+  const inventory = [];
+  const collect = noticeCollector(output, inventory);
   const toolchain = await captureJSON(go, [
     'env',
     '-json',
@@ -83,27 +85,64 @@ export async function writeReleaseNotices(output, buildInfo) {
     },
     goFiles,
   );
-  for (const dependency of buildInfo.Deps ?? []) {
+  const dependencies = buildInfo.Deps ?? [];
+  for (const dependency of dependencies) {
     if (dependency.Replace)
       throw new Error(
         `Review replaced Go module ${dependency.Path} before packaging.`,
       );
-    const module = await captureJSON(go, [
-      'mod',
-      'download',
-      '-json',
-      `${dependency.Path}@${dependency.Version}`,
-    ]);
+  }
+  const moduleOptions = {
+    cwd: join(root, 'apps', 'server'),
+    env: { ...process.env, GOWORK: 'off', GOTOOLCHAIN: 'local' },
+  };
+  const graph = new Set(
+    (
+      await captureCommand(
+        go,
+        [
+          'list',
+          '-m',
+          '-f',
+          '{{if not .Replace}}{{.Path}}@{{.Version}}{{end}}',
+          'all',
+        ],
+        moduleOptions,
+      )
+    ).stdout.split(/\r?\n/),
+  );
+  const sources = [];
+  for (const dependency of dependencies) {
+    if (!graph.has(`${dependency.Path}@${dependency.Version}`))
+      throw new Error(
+        `Rebuild with this checkout's Go module versions: ${dependency.Path}.`,
+      );
+    const module = await captureJSON(
+      go,
+      ['mod', 'download', '-json', `${dependency.Path}@${dependency.Version}`],
+      moduleOptions,
+    );
     if (!module.Dir || module.Sum !== dependency.Sum)
       throw new Error(
         `Module source does not match binary: ${dependency.Path}.`,
       );
+    sources.push({ dependency, module });
+  }
+  // download reports cached checksums; verify rehashes the extracted files.
+  await captureCommand(go, ['mod', 'verify'], moduleOptions);
+  for (const { dependency, module } of sources) {
     await collect('go', dependency.Path, dependency.Version, module.Dir, {
       source: `https://pkg.go.dev/${dependency.Path}@${dependency.Version}`,
       checksum: dependency.Sum,
     });
   }
+  return inventory;
+}
 
+/** Retain original texts; package metadata alone is not a license notice. */
+export async function writeReleaseNotices(output, buildInfo) {
+  const inventory = await collectGoNotices(output, buildInfo);
+  const collect = noticeCollector(output, inventory);
   const packages = await captureJSON('pnpm', [
     'licenses',
     'list',

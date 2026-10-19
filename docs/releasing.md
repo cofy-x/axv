@@ -47,7 +47,7 @@ On macOS, use `shasum -a 256 -c SHA256SUMS` to inspect the checksum; this Linux 
 
 ## License review
 
-[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) owns distribution boundaries and upstream sources. The [collector](../scripts/release-notices.mjs) takes linked Go modules from `go version -m -json`, verifies their source checksums and retains original notice files. It includes Go's license and bundled-library notices, uses `pnpm licenses list --prod --json --recursive` for the installed JavaScript production dependency graph, and preserves Vite/Rolldown notices for generated runtime helpers. [pnpm documents this inventory command](https://pnpm.io/cli/licenses); [Go documents binary module inspection](https://go.dev/ref/mod#go-version-m).
+[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) owns distribution boundaries and upstream sources. The [collector](../scripts/release-notices.mjs) reads linked Go modules from the executable, requires their versions to match the current server module graph, verifies source checksums and rehashes cached sources with `go mod verify` before retaining notices. It includes Go's license and bundled-library notices, the installed JavaScript production graph from `pnpm licenses list --prod --json --recursive`, and Vite/Rolldown notices for generated runtime helpers. [pnpm documents the inventory command](https://pnpm.io/cli/licenses); [Go documents cache verification](https://go.dev/ref/mod#go-mod-verify).
 
 Review the generated `licenses/manifest.json`, the original notices and relevant source-file terms before publication. Pay attention to inherited third-party notices, new or unknown licenses, and changes to compiled versus external dependencies. Missing license text or module-checksum mismatches stop packaging. Do not label the whole archive, upstream tools or guest OS as MIT.
 
@@ -64,6 +64,6 @@ For a draft through GitHub's web interface, follow [managing releases](https://d
 
 ## VM image publication
 
-Application packaging does not publish VM images or promote the current upstream bases to AXV releases. Follow [image recipes](../images/guest/README.md#per-machine-initialization-and-release-work) for each actual provider and architecture. Before publication, retain the base URL/digest or OCI digest, package inventory, exact guest-service source and image manifest, rootfs/kernel checksums and applicable upstream notices/corresponding source. Verify the image contains no machine identity, host keys, tokens or user data, then complete native lifecycle, enhanced-guest and SSH acceptance for that exact bundle.
+Application packaging does not publish VM images or promote upstream bases to AXV releases. The [image recipes](../images/guest/README.md#per-machine-initialization-and-release-work) own generated guest notices, OS package inventories, source/provenance review, identity cleanup and native acceptance. Keep their exported `distribution/` materials with each exact provider/architecture bundle; guest and OS components retain their own terms. A completed builder run does not approve an image for publication.
 
 Publish only those provider/architecture artifacts that have passed their own checks. A reviewed versioned catalog entry must reference the actual immutable artifacts and digests. Update availability in the README and affected references only when the artifacts exist.

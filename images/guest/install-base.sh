@@ -46,6 +46,8 @@ id axv >/dev/null 2>&1 || useradd --uid 1000 --gid axv --create-home --shell /bi
 passwd --lock root
 usermod --password '*NP*' axv
 install -d -m 0755 /etc/axv /projects /usr/share/axv /usr/local/lib/axv /var/lib/dbus
+install -d -m 0755 /usr/share/doc/axv-guest
+sh /usr/local/lib/axv/package-inventory /usr/share/doc/axv-guest
 truncate -s 0 /etc/machine-id
 rm -f /var/lib/dbus/machine-id
 ln -s /etc/machine-id /var/lib/dbus/machine-id

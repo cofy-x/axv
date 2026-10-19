@@ -8,7 +8,7 @@ AXV is a personal cloud workstation for virtual machines and coding-agent sessio
 
 ## Project status
 
-AXV is unreleased and experimental. Interfaces and AXV-owned development data may change; review the [storage baseline policy](docs/storage.md#desktop-database-baseline) before updating an existing profile. [Product direction](docs/product.md) describes the goals and open decisions; feature work is tracked in [Issues](https://github.com/cofy-x/axv/issues).
+AXV is unreleased and experimental. Interfaces and AXV-owned development data may change; review the [storage baseline policy](docs/storage.md#desktop-database-baseline) before updating an existing profile. [Product direction](docs/product.md) describes the goals and open decisions; propose and discuss feature work in [Issues](https://github.com/cofy-x/axv/issues).
 
 - **Desktop:** Working windows, four desktop workspaces, Dock, menus, Inspector, and responsive layouts; PWA installation is not implemented
 - **Documents:** Local virtual filesystem, Markdown editing/preview, explicit saves, revision checks and draft recovery; project/VM/conversation links, immutable saved snapshots and explicit exchange with registered host projects. Project Files browses host directories on macOS/Linux; VM project-file browsing is not implemented
@@ -22,7 +22,7 @@ AXV is unreleased and experimental. Interfaces and AXV-owned development data ma
 
 ## Install and use
 
-Build from source with **Go 1.26.8**, **Node 24.16.0**, and **pnpm 12.11.2**:
+Build from source with **Go 1.26.9**, **Node 24.16.0**, and **pnpm 12.11.2**. Background startup needs a macOS GUI login or a Linux systemd user manager (254 or newer); see [startup requirements](docs/startup.md#daily-commands). Otherwise, use `axv serve` after installation:
 
 ```bash
 make install
@@ -31,7 +31,7 @@ axv
 
 Installation builds the complete production executable and puts it in Go's binary directory (`GOBIN`, otherwise the first `GOPATH` entry's `bin`). Follow the printed PATH guidance if needed. The installed command works outside the repository without Node: `axv` starts or reopens the background workstation and opens its verified browser address. Configuration and AXV-managed data default to `~/.axv`.
 
-[Startup and background services](docs/startup.md) covers installation, updates, VM preparation, VM CLI and SSH usage, storage and service commands. [Using AXV](docs/usage.md) covers desktop applications and their session lifecycles.
+[Startup and background services](docs/startup.md) covers installation, updates, [uninstallation](docs/startup.md#uninstallation), VM preparation, VM CLI and SSH usage, storage and service commands. [Using AXV](docs/usage.md) covers desktop applications and their session lifecycles.
 
 ## Start developing
 
@@ -63,7 +63,7 @@ Follow [verification](docs/development.md#verification) for required commands, d
 
 ## Contributing and support
 
-Read [Contributing](CONTRIBUTING.md) for the contribution workflow and the [Support guide](SUPPORT.md) for bug reports, feature requests and usage questions. Report vulnerabilities privately through the [Security policy](SECURITY.md). Community participation follows the [cofy-x Code of Conduct](https://github.com/cofy-x/.github/blob/main/CODE_OF_CONDUCT.md).
+Read [Contributing](CONTRIBUTING.md) for the contribution workflow and the [Support guide](SUPPORT.md) for bug reports, feature requests and usage questions. Report vulnerabilities privately through the [Security policy](SECURITY.md). The [Code of Conduct](CODE_OF_CONDUCT.md) applies the organization's community rules and supplies AXV's incident-reporting channels.
 
 [Release preparation](docs/releasing.md) covers release checks, artifacts and third-party notices.
 

@@ -12,7 +12,7 @@ Search existing issues first, then use the appropriate [issue form](https://gith
 - **Feature Request:** describe the problem, intended workflow, proposed behavior and alternatives. Check the [product direction](docs/product.md) for existing decisions.
 - **Usage Question:** explain what you are trying to do, the instructions you followed and where you became stuck.
 
-Suspected vulnerabilities belong in the private channel described in [SECURITY.md](SECURITY.md).
+Suspected vulnerabilities belong in the private channel described in [SECURITY.md](SECURITY.md). Community conduct concerns follow the [Code of Conduct](CODE_OF_CONDUCT.md), including its private incident-reporting channel.
 
 ## Sharing diagnostics
 

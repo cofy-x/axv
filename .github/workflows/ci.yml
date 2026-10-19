@@ -18,8 +18,8 @@ env:
   GOTOOLCHAIN: local
 
 jobs:
-  checks:
-    name: checks
+  verification:
+    name: Linux verification
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -50,13 +50,95 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes tmux
       - name: Install locked dependencies
-        run: make deps
+        run: make deps PNPM=pnpm
+      - name: Check committed dependency files
+        run: |
+          dependency_status="$(git status --porcelain=v1 --untracked-files=all -- \
+            .go-version .node-version .nvmrc .npmrc Makefile \
+            package.json pnpm-lock.yaml pnpm-workspace.yaml go.work go.work.sum \
+            ':(glob)**/package.json' ':(glob)**/go.mod' ':(glob)**/go.sum')"
+          if [ -n "$dependency_status" ]; then
+            printf '%s\n' "$dependency_status"
+            exit 1
+          fi
       - name: Check formatting, unit tests, types, lint and production build
-        run: make format-check test typecheck lint build
+        run: make format-check test typecheck lint build PNPM=pnpm
       - name: Check production behavior
-        run: make smoke-production
+        run: make smoke-production PNPM=pnpm
       - name: Check production installation
         run: AXV_TEST_PRODUCTION_INSTALL=1 pnpm exec vitest run scripts/install.test.mjs
+
+  native:
+    name: macOS native
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .go-version
+          cache-dependency-path: |
+            go.work
+            apps/server/go.mod
+            apps/server/go.sum
+      - name: Install host test prerequisite
+        run: |
+          if ! command -v tmux >/dev/null; then
+            brew install tmux
+          fi
+          tmux -V
+      - name: Download Go modules
+        working-directory: apps/server
+        run: go mod download
+      - name: Check committed dependency files
+        run: |
+          dependency_status="$(git status --porcelain=v1 --untracked-files=all -- \
+            .go-version .node-version .nvmrc .npmrc Makefile \
+            package.json pnpm-lock.yaml pnpm-workspace.yaml go.work go.work.sum \
+            ':(glob)**/package.json' ':(glob)**/go.mod' ':(glob)**/go.sum')"
+          if [ -n "$dependency_status" ]; then
+            printf '%s\n' "$dependency_status"
+            exit 1
+          fi
+      - name: Check native host adapters
+        run: |
+          node scripts/test-go.mjs -race \
+            ./apps/server/internal/profile/... \
+            ./apps/server/internal/terminal/... \
+            ./apps/server/internal/codex/... \
+            ./apps/server/internal/compute/provider/lima
+      - name: Build native server
+        run: make build-go
+
+  security:
+    name: Security
+    uses: ./.github/workflows/security.yml
+
+  checks:
+    name: checks
+    needs: [verification, native, security]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - name: Require Linux, macOS and security checks to pass
+        env:
+          VERIFICATION_RESULT: ${{ needs.verification.result }}
+          NATIVE_RESULT: ${{ needs.native.result }}
+          SECURITY_RESULT: ${{ needs.security.result }}
+        run: |
+          test "$VERIFICATION_RESULT" = success
+          test "$NATIVE_RESULT" = success
+          test "$SECURITY_RESULT" = success
 
   browsers:
     name: browser (${{ matrix.project }})
@@ -106,7 +188,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes tmux
       - name: Install locked dependencies
-        run: make deps
+        run: make deps PNPM=pnpm
       - name: Install browser and system dependencies
         env:
           PLAYWRIGHT_BROWSER: ${{ matrix.browser }}
