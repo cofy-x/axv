@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button } from '@cofy-x/axv-nextstep';
+import { IconButton } from '@cofy-x/axv-nextstep';
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
 import type { CodexSessionRecord } from './api';
 import { sessionTitle } from './api';
@@ -15,9 +15,7 @@ function SessionDetails({ session }: { session: CodexSessionRecord }) {
       setFeedback('Attach command copied.');
     } catch {
       setCopyFailed(true);
-      setFeedback(
-        'Clipboard access was denied. Select and copy the command above.',
-      );
+      setFeedback('Clipboard access denied. Select and copy the command.');
     }
   };
   return (
@@ -27,7 +25,7 @@ function SessionDetails({ session }: { session: CodexSessionRecord }) {
         <dd>{sessionTitle(session)}</dd>
         <dt>List</dt>
         <dd>{session.archivedAt ? 'Archived' : 'Unarchived'}</dd>
-        <dt>Execution target</dt>
+        <dt>Target</dt>
         <dd>Host</dd>
         <dt>Project</dt>
         <dd>
@@ -45,10 +43,9 @@ function SessionDetails({ session }: { session: CodexSessionRecord }) {
         <dd>
           {session.continuation.reason ||
             {
-              available:
-                'Saved conversation is available to continue in a new run.',
-              active: 'This conversation already has an active run.',
-              unavailable: 'Saved conversation history is unavailable.',
+              available: 'History available for a new run.',
+              active: 'This conversation has an active run.',
+              unavailable: 'Saved history is unavailable.',
             }[session.continuation.state]}
         </dd>
         <dt>tmux session</dt>
@@ -74,20 +71,21 @@ function SessionDetails({ session }: { session: CodexSessionRecord }) {
             <strong>Attach command</strong>
             <code>{session.attachCommand}</code>
           </p>
-          <Button onClick={() => void copy()}>Copy Command</Button>
+          <IconButton
+            icon="copy"
+            label="Copy Command"
+            onClick={() => void copy()}
+          />
           {feedback && <p role={copyFailed ? 'alert' : 'status'}>{feedback}</p>}
         </>
       )}
       {session.reason && <p>{session.reason}</p>}
       <p>
-        Closing a window detaches its connection. End Session stops this run.
-        Continuing a saved conversation starts a separate run. Archiving does
-        not stop it.
+        Closing a Codex run window only detaches. End Session stops its run.
+        Continue starts a new run with saved history. Archiving does not stop
+        runs.
       </p>
-      <p>
-        Each AXV session uses one Codex conversation. Start a new session in AXV
-        for a different conversation.
-      </p>
+      <p>Choose New Session for a different conversation.</p>
     </div>
   );
 }

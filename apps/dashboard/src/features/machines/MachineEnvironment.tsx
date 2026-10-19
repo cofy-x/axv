@@ -208,7 +208,7 @@ export function MachineEnvironment({
         <>
           <p role="status">
             {preparation.loading
-              ? 'Checking the operating system, configuration and local VM service…'
+              ? 'Checking the VM environment…'
               : 'Environment checks could not be completed.'}
           </p>
           {preparation.connectionError && (
@@ -299,12 +299,12 @@ export function MachineEnvironment({
               )}
               <p className="machines-form-help">
                 {job.committed
-                  ? 'Configuration is saved. Remaining work starts and verifies the local VM service.'
+                  ? 'Configuration saved. Remaining work starts and verifies the VM service.'
                   : running
-                    ? 'You can close this window and return later. Preparation continues in the background; cancellation is available until configuration is saved.'
+                    ? 'Preparation continues after closing this window. Cancel is available until configuration is saved.'
                     : job.status === 'cancelled'
-                      ? 'Preparation was cancelled. Verified downloads remain cached for a later attempt.'
-                      : 'Completed files are kept. Retrying continues this job with the same reviewed settings.'}
+                      ? 'Preparation cancelled. Verified downloads are kept for the next attempt.'
+                      : 'Completed files are kept. Retry continues this job with its reviewed settings.'}
               </p>
               <div className="machines-form-actions">
                 {job.canRetry && (
@@ -467,8 +467,7 @@ export function MachineEnvironment({
               )}
               {expired && (
                 <p className="machines-warning">
-                  This review has expired. Refresh it before preparing the
-                  environment.
+                  Review expired. Refresh before preparing.
                 </p>
               )}
               <div className="machines-form-actions">
@@ -540,8 +539,7 @@ export function MachineEnvironment({
                   {configured ? (
                     <p className="machines-form-help">
                       The existing configuration and storage will be preserved.
-                      Review the actions needed to restore its local VM
-                      connection.
+                      Review how to restore the VM connection.
                     </p>
                   ) : (
                     <ol
@@ -715,14 +713,14 @@ export function MachineEnvironment({
                   )}
                   {failed && (
                     <p className="machines-form-help">
-                      The previous preparation is preserved. Reviewing these
-                      settings creates a new plan using the current environment.
+                      Previous preparation is kept. Review creates a new plan
+                      for the current environment.
                     </p>
                   )}
                   {job?.status === 'cancelled' && (
                     <p className="machines-form-help">
-                      Previous preparation was cancelled. Verified files remain
-                      available for the next plan.
+                      Preparation cancelled. Verified files are kept for the
+                      next plan.
                     </p>
                   )}
                   <div className="machines-form-actions">
@@ -740,7 +738,7 @@ export function MachineEnvironment({
                   </div>
                 </form>
               ) : (
-                <p>VM hosting is available when AXV runs on macOS or Linux.</p>
+                <p>VM hosting requires macOS or Linux.</p>
               )}
             </>
           )}

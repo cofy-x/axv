@@ -28,7 +28,7 @@ export function SnapshotPreview({ window, desktop }: AppWindowProps) {
               desktop.updateWindowState(id, { task: 'details' });
             }}
           >
-            Details
+            Document Details
           </Button>
           <p>
             Captured {new Date(snapshot.createdAt).toLocaleString()}. This copy

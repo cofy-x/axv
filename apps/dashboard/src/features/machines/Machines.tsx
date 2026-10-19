@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   Button,
   Field,
@@ -45,6 +45,7 @@ export function Machines({ window, desktop }: AppWindowProps) {
   const [search, setSearch] = useState('');
   const [stateFilter, setStateFilter] = useState('all');
   const [showHost, setShowHost] = useState(false);
+  const viewNav = useRef<HTMLDivElement>(null);
 
   useEffect(
     () => setTitle(window.id, 'Virtual Machines'),
@@ -127,10 +128,15 @@ export function Machines({ window, desktop }: AppWindowProps) {
           : undefined);
 
   function showActivity(id?: string) {
+    setShowHost(false);
     desktop.updateWindowState(window.id, {
       vmTab: 'operations',
       operationId: id || '',
     });
+    if (configured)
+      viewNav.current
+        ?.querySelector<HTMLButtonElement>('button[data-view="operations"]')
+        ?.focus({ preventScroll: true });
   }
 
   function inspect() {
@@ -258,11 +264,12 @@ export function Machines({ window, desktop }: AppWindowProps) {
         </div>
       ) : (
         <>
-          <div className="machines-tabs" aria-label="VM views">
+          <div className="machines-tabs" aria-label="VM views" ref={viewNav}>
             {(['machines', 'volumes', 'images', 'operations'] as const).map(
               (name) => (
                 <Button
                   key={name}
+                  data-view={name}
                   aria-pressed={tab === name}
                   onClick={() => {
                     setTab(name);
@@ -479,10 +486,7 @@ export function Machines({ window, desktop }: AppWindowProps) {
                   ))}
                   {!data.operations.length && (
                     <tr>
-                      <td colSpan={3}>
-                        No activity yet. VM, image and volume operations appear
-                        here.
-                      </td>
+                      <td colSpan={3}>No activity yet.</td>
                     </tr>
                   )}
                 </tbody>
@@ -498,9 +502,14 @@ export function Machines({ window, desktop }: AppWindowProps) {
               ? `${humanize(operation.action)} · ${humanize(operation.status)}${operation.phase ? ` · ${humanize(operation.phase)}` : ''}`
               : 'Operation accepted.'}
           </span>
-          <Button onClick={() => showActivity(operationId)}>
-            View Activity
-          </Button>
+          {(!configured ||
+            showHost ||
+            tab !== 'operations' ||
+            window.viewState.operationId !== operationId) && (
+            <Button onClick={() => showActivity(operationId)}>
+              View Activity
+            </Button>
+          )}
           <Button onClick={() => setOperationId('')}>Dismiss</Button>
         </div>
       )}

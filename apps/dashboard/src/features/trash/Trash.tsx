@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Button, PixelIcon, StatusBar } from '@cofy-x/axv-nextstep';
+import { useEffect, useRef, useState } from 'react';
+import { Button, IconButton, PixelIcon, StatusBar } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { APIError } from '../../shared/api/http';
 import { filesystemApi } from '../../filesystem/api';
@@ -16,8 +16,18 @@ export function Trash({ desktop }: AppWindowProps) {
     (entry) => entry.trashedAt && !entry.system,
   );
   const [busy, setBusy] = useState(false);
+  const mounted = useRef(false);
+  const current = useRef({ busy, entries });
+  current.current = { busy, entries };
 
-  async function mutate(permanent: boolean, all = false) {
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  async function mutate(permanent: boolean, all = false, ids = selected) {
     if (permanent) {
       const answer = await desktop.dialog({
         title: all ? 'Empty the Recycler?' : 'Delete permanently?',
@@ -34,7 +44,7 @@ export function Trash({ desktop }: AppWindowProps) {
     try {
       if (all) await filesystemApi.emptyTrash();
       else
-        for (const id of selected) {
+        for (const id of ids) {
           // A preceding parent operation may have already restored/deleted this
           // descendant; separately trashed descendants still need their own action.
           const current = (await filesystemApi.entries()).entries.find(
@@ -68,18 +78,34 @@ export function Trash({ desktop }: AppWindowProps) {
         >
           Restore
         </Button>
-        <Button
-          disabled={busy || !selected.length}
-          onClick={() => void runCommand(desktop, () => mutate(true))}
-        >
-          Delete
-        </Button>
-        <Button
+        <IconButton
+          icon="more"
+          label="More recycler actions"
+          aria-haspopup="menu"
           disabled={busy || !entries.length}
-          onClick={() => void runCommand(desktop, () => mutate(true, true))}
-        >
-          Empty Recycler
-        </Button>
+          onClick={(event) => {
+            const ids = [...selected];
+            const invoke = (all: boolean) => () => {
+              if (!mounted.current || current.current.busy) return;
+              if (all && !current.current.entries.length) return;
+              void runCommand(desktop, () => mutate(true, all, ids));
+            };
+            const rect = event.currentTarget.getBoundingClientRect();
+            desktop.contextMenu(
+              [
+                {
+                  label: 'Delete',
+                  disabled: !ids.length,
+                  action: invoke(false),
+                },
+                { separator: true },
+                { label: 'Empty Recycler', action: invoke(true) },
+              ],
+              { x: rect.left, y: rect.bottom },
+              { title: 'Recycler' },
+            );
+          }}
+        />
       </div>
       <div
         className="trash-list"
@@ -117,7 +143,7 @@ export function Trash({ desktop }: AppWindowProps) {
           </div>
         )}
       </div>
-      <StatusBar>{entries.length} items in the Recycler</StatusBar>
+      <StatusBar>{entries.length} items</StatusBar>
     </div>
   );
 }

@@ -7,7 +7,14 @@ import type {
   Operation,
   Volume,
 } from '../apps/dashboard/src/features/machines/api';
-import { activate, expect, launch, menuItem, test } from './helpers';
+import {
+  activate,
+  actionMenu,
+  expect,
+  launch,
+  menuItem,
+  test,
+} from './helpers';
 import { output } from './terminal-helpers';
 
 async function capture(page: Page, info: TestInfo, name: string) {
@@ -287,6 +294,11 @@ test('volume and image forms remain usable with pointer and touch at review size
   await manager
     .getByLabel('Volume name', { exact: true })
     .fill('Draft project');
+  const allocationHelp =
+    'Disk space shares the host budget. Volumes cannot shrink.';
+  await expect(
+    manager.getByText(allocationHelp, { exact: true }),
+  ).toBeVisible();
   for (const width of [1440, 1024, 390]) {
     await page.setViewportSize({
       width,
@@ -304,6 +316,33 @@ test('volume and image forms remain usable with pointer and touch at review size
   await expect(manager.getByLabel('Volume name', { exact: true })).toHaveCount(
     0,
   );
+  await press(
+    manager.getByRole('button', { name: 'Review project', exact: true }),
+  );
+  await press(manager.getByRole('button', { name: 'Copy', exact: true }));
+  await expect(manager.getByLabel('Volume name', { exact: true })).toHaveValue(
+    'Review project copy',
+  );
+  await expect(
+    manager.getByText(allocationHelp, { exact: true }),
+  ).toBeVisible();
+  await expect(
+    manager.getByRole('button', { name: 'Create Copy', exact: true }),
+  ).toBeEnabled();
+  await capture(page, info, 'volume-copy-help');
+  await press(manager.getByRole('button', { name: 'Cancel', exact: true }));
+  await actionMenu(page, manager, 'More volume actions', 'Grow', hasTouch);
+  await expect(
+    manager.getByLabel('New size (GiB)', { exact: true }),
+  ).toHaveValue('1');
+  await expect(
+    manager.getByText(
+      'Disk space shares the host budget. Disks cannot shrink; an attached VM must be stopped before growth. Its filesystem grows on the next boot.',
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await capture(page, info, 'volume-growth-help');
+  await press(manager.getByRole('button', { name: 'Cancel', exact: true }));
   await press(manager.getByRole('button', { name: 'Images', exact: true }));
   await press(manager.getByRole('button', { name: 'Add Image', exact: true }));
   await manager.getByLabel('Image name', { exact: true }).fill('Draft image');
@@ -516,13 +555,27 @@ test('narrow guest terminal menus keep clear and end bound to their original she
     name: 'End guest terminal?',
     exact: true,
   });
+  await expect(confirmation).toContainText(
+    `End “${state.machine.spec.name} — Terminal” and its jobs? Terminal: guest-shell-1. Closing the window only detaches it.`,
+  );
+  await expect(confirmation).not.toContainText('guest-shell-2');
   await expect(
     confirmation.getByRole('button', { name: 'Cancel', exact: true }),
   ).toBeFocused();
+  await capture(page, info, 'guest-terminal-end-confirmation-390');
   await confirmation
     .getByRole('button', { name: 'Cancel', exact: true })
     .click();
   expect(ended).toEqual([]);
+  for (const target of [first, second])
+    await expect(target.getByTestId('terminal-status')).toHaveAttribute(
+      'data-state',
+      'connected',
+    );
+  expect(terminals.map((terminal) => terminal.status)).toEqual([
+    'running',
+    'running',
+  ]);
   await pinned
     .getByRole('menuitem', { name: 'End Session', exact: true })
     .click();

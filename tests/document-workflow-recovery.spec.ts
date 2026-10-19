@@ -2,12 +2,16 @@ import { readFile } from 'node:fs/promises';
 import type { APIRequestContext, Page } from '@playwright/test';
 import {
   activate,
+  actionMenu,
   createEntry,
   editorWindow,
   entries,
   expectedDownloadFilename,
+  filesWindow,
   menuItem,
+  nameDialog,
   openDocument,
+  readContent,
 } from './helpers';
 import type { Entry } from './helpers';
 import {
@@ -95,6 +99,9 @@ test('a permanently deleted document retains selectable snapshots and project ex
   );
   await page.reload();
   const editor = await openDocument(page, entry);
+  const text = editor.getByRole('textbox', { name: 'Document text' });
+  const draft = '# Local deleted draft\n\nPRESERVE_THIS_DRAFT';
+  await text.fill(draft);
   const panel = await openDocumentTask(page, editor, 'export');
   await panel
     .getByRole('combobox', { name: 'Version', exact: true })
@@ -127,6 +134,56 @@ test('a permanently deleted document retains selectable snapshots and project ex
   expect((await file.json()).content).toBe(
     '# Original snapshot\n\nRECOVERED_ORIGINAL',
   );
+  await activate(page, filesWindow(page));
+  await actionMenu(page, filesWindow(page), 'More file actions', 'Refresh');
+  await activate(page, editor);
+  await expect(editor).toContainText('Your draft remains available');
+  await expect(text).toHaveValue(draft);
+  await actionMenu(page, editor, 'More document actions', 'Save Copy');
+  const copyDialog = page.getByRole('dialog', {
+    name: 'Save Copy',
+    exact: true,
+  });
+  await copyDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(copyDialog).toBeHidden();
+  await expect(text).toHaveValue(draft);
+  await expect(editor.getByTestId('save-status')).toHaveText('Unsaved changes');
+  const copiesBefore = await entries(request);
+  await actionMenu(page, editor, 'More document actions', 'Save Copy');
+  const copyName = `E2E preserved-deleted-${entry.id}.md`;
+  await nameDialog(page, copyName);
+  const copy = (await entries(request)).find((item) => item.name === copyName);
+  expect(copy).toBeDefined();
+  expect(copy!.parentId).toBe('documents');
+  expect(await readContent(request, copy!.id)).toBe(draft);
+  expect((await entries(request)).length).toBe(copiesBefore.length + 1);
+  await expect(text).toHaveValue(draft);
+  const copyEditor = editorWindow(page, copy!.id);
+  await expect(
+    copyEditor.getByRole('textbox', { name: 'Document text' }),
+  ).toHaveValue(draft);
+  await copyEditor
+    .getByRole('button', {
+      name: 'More document actions',
+      exact: true,
+    })
+    .click();
+  const staleMenu = page.locator('.ns-menu-layer').getByRole('menu', {
+    name: copyName,
+    exact: true,
+  });
+  await expect(staleMenu).toBeVisible();
+  // Keep the menu open while its original editor is removed.
+  await copyEditor.locator('.ns-close').evaluate((button) => {
+    (button as HTMLButtonElement).click();
+  });
+  await expect(copyEditor).toHaveCount(0);
+  await staleMenu
+    .getByRole('menuitem', { name: 'Save Copy', exact: true })
+    .click();
+  await expect(page.locator('.ns-menu-layer')).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect((await entries(request)).length).toBe(copiesBefore.length + 1);
   await page.reload();
   await activate(page, panel);
   await expect(panel).toContainText(/source document.*unavailable/i);
@@ -332,6 +389,7 @@ test('project download reports API failures inline and preserves the original fi
     'Project download recovery',
   );
   const path = `E2E download-${entry.id}.md`;
+  const expectedFilename = expectedDownloadFilename(path, browserName);
   const exported = await request.post(`/api/projects/${project.id}/export`, {
     headers,
     data: {
@@ -367,24 +425,27 @@ test('project download reports API failures inline and preserves the original fi
     },
     { times: 1 },
   );
-  const downloadButton = browser.getByRole('button', {
-    name: 'Download',
+  const more = browser.getByRole('button', {
+    name: 'More project actions',
     exact: true,
   });
-  await downloadButton.click();
+  await actionMenu(page, browser, 'More project actions', 'Download');
   await expect(browser.getByRole('alert')).toHaveText(
     'This file changed before the download. Refresh and try again.',
   );
   await expect(page).toHaveURL(originalURL);
   await expect(browser).toBeVisible();
-  await expect(downloadButton).toBeEnabled();
+  await expect(more).toBeEnabled();
   expect(downloads).toBe(0);
+  await more.click();
+  const downloadItem = page
+    .locator('.ns-menu-layer')
+    .getByRole('menuitem', { name: 'Download', exact: true });
+  await expect(downloadItem).toBeEnabled();
   const downloaded = page.waitForEvent('download');
-  await downloadButton.click();
+  await downloadItem.click();
   const download = await downloaded;
-  expect(download.suggestedFilename()).toBe(
-    expectedDownloadFilename(path, browserName),
-  );
+  expect(download.suggestedFilename()).toBe(expectedFilename);
   const saved = await download.path();
   expect(saved).not.toBeNull();
   expect(await readFile(saved!)).toEqual(
@@ -393,6 +454,68 @@ test('project download reports API failures inline and preserves the original fi
   expect(downloads).toBe(1);
   await expect(page).toHaveURL(originalURL);
   await expect(browser.getByRole('alert')).toHaveCount(0);
+
+  await page.route(`**/api/projects/${project.id}/file?*`, async (route) => {
+    await route.fulfill({
+      status: 415,
+      json: {
+        code: 'unsupported_file',
+        error: 'This file cannot be previewed.',
+      },
+    });
+  });
+  await browser.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(browser.getByRole('alert')).toHaveText(
+    'This file cannot be previewed.',
+  );
+  await expect(
+    browser.getByRole('button', { name: 'Copy to Documents', exact: true }),
+  ).toBeDisabled();
+  const fallbackDownload = browser.getByRole('button', {
+    name: 'Download',
+    exact: true,
+  });
+  await expect(fallbackDownload).toBeInViewport();
+  const fallbackDownloaded = page.waitForEvent('download');
+  await fallbackDownload.click();
+  const fallback = await fallbackDownloaded;
+  expect(fallback.suggestedFilename()).toBe(expectedFilename);
+  const fallbackPath = await fallback.path();
+  expect(fallbackPath).not.toBeNull();
+  expect(await readFile(fallbackPath!)).toEqual(
+    Buffer.from('# Original snapshot\n\nRECOVERED_ORIGINAL'),
+  );
+  expect(downloads).toBe(2);
+  await expect(browser.getByRole('alert')).toHaveText(
+    'This file cannot be previewed.',
+  );
+
+  await page.evaluate(() => {
+    const attempts: string[] = [];
+    Reflect.set(globalThis, 'closedProjectDownloadRequests', attempts);
+    const fetch = globalThis.fetch;
+    globalThis.fetch = (...args) => {
+      const input = args[0];
+      const url = input instanceof Request ? input.url : String(input);
+      if (url.includes('/download?')) attempts.push(url);
+      return fetch(...args);
+    };
+  });
+  await more.click();
+  await expect(downloadItem).toBeVisible();
+  // Retain the menu while closing its owner to exercise the stale action.
+  await browser.locator('.ns-close').evaluate((button) => {
+    (button as HTMLButtonElement).click();
+  });
+  await expect(browser).toHaveCount(0);
+  await downloadItem.click();
+  await expect(page.locator('.ns-menu-layer')).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      Reflect.get(globalThis, 'closedProjectDownloadRequests'),
+    ),
+  ).toEqual([]);
+  expect(downloads).toBe(2);
 });
 
 test('a fixed-run attachment panel never moves pending context to a continued run', async ({

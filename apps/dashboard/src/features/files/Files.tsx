@@ -549,7 +549,6 @@ export function Files({ window, desktop }: AppWindowProps) {
       </nav>
       <div className="files-sort">
         <span>
-          {folder.name} ·{' '}
           {folderEntries(live, folderId, sort, descending).length} items
         </span>
         <Select
@@ -564,6 +563,7 @@ export function Files({ window, desktop }: AppWindowProps) {
         </Select>
         <Button
           aria-label={descending ? 'Sort ascending' : 'Sort descending'}
+          title={descending ? 'Sort ascending' : 'Sort descending'}
           onClick={() => update({ descending: !descending })}
         >
           {descending ? '▾' : '▴'}

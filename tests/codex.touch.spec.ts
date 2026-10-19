@@ -127,12 +127,17 @@ test('touch Codex supports project selection, history, session organization, pro
   const row = manager.locator(`[data-session-id="${id}"]`);
   const rowAction = async (label: string) => {
     await row
-      .getByRole('button', { name: `Session actions for ${name}`, exact: true })
+      .getByRole('button', {
+        name: `More session actions for ${name}, run ${runId.slice(0, 8)}`,
+        exact: true,
+      })
       .tap();
-    await page
-      .locator('.ns-menu-layer')
-      .getByRole('menuitem', { name: label, exact: true })
-      .tap();
+    const menu = page.getByRole('menu', {
+      name: `Run ${runId.slice(0, 8)} · ${name}`,
+      exact: true,
+    });
+    await expect(menu).toBeVisible();
+    await menu.getByRole('menuitem', { name: label, exact: true }).tap();
   };
   await rowAction('Archive');
   await expect(row).toHaveCount(0);

@@ -2,7 +2,7 @@ import type { DesktopAPI } from '@cofy-x/axv-nextstep';
 
 export async function reportError(desktop: DesktopAPI, error: unknown) {
   await desktop.dialog({
-    title: 'Unable to complete the operation',
+    title: 'Action failed',
     message: error instanceof Error ? error.message : String(error),
     buttons: [{ label: 'OK', value: 'ok', default: true }],
   });

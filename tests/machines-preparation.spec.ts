@@ -505,7 +505,7 @@ test('lost start responses retain the exact request and cancellation only affect
   });
   await expect(
     manager.getByText(
-      'Preparation was cancelled. Verified downloads remain cached for a later attempt.',
+      'Preparation cancelled. Verified downloads are kept for the next attempt.',
       { exact: true },
     ),
   ).toBeVisible();

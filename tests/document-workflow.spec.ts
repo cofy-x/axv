@@ -2,6 +2,7 @@ import { stripVTControlCharacters } from 'node:util';
 import type { Page } from '@playwright/test';
 import {
   activate,
+  actionMenu,
   createEntry,
   editorWindow,
   menuItem,
@@ -116,6 +117,12 @@ for (const width of [1440, 390]) {
     await expect(more).toBeInViewport();
     await more.focus();
     await more.press('Enter');
+    await expect(
+      page.locator('.ns-menu-layer').getByRole('menu', {
+        name: entry.name,
+        exact: true,
+      }),
+    ).toBeVisible();
     for (const label of ['Attach', 'Export', 'Details', 'Save Copy', 'Reload'])
       await expect(
         page
@@ -206,6 +213,7 @@ for (const width of [1440, 390]) {
     await expect(
       folders.getByRole('button', { name: 'Open folder nested', exact: true }),
     ).toBeVisible();
+    await captureScene('host-folder-chooser');
     await choose(
       folders.getByRole('button', { name: 'Use Folder', exact: true }),
       isMobile,
@@ -241,6 +249,10 @@ for (const width of [1440, 390]) {
     });
     const codex = await startCodexInFolder(page, isMobile);
     const panel = await openDocumentTask(page, editor, 'details', isMobile);
+    await expect(panel).toHaveAttribute(
+      'data-window-id',
+      `document-workflow:${entry.id}`,
+    );
     await choose(
       panel.locator('summary').filter({ hasText: /^Related work/ }),
       isMobile,
@@ -391,6 +403,33 @@ for (const width of [1440, 390]) {
       ).toBeHidden();
     }
     await captureScene('project-files');
+    const projectMore = projectBrowser.getByRole('button', {
+      name: 'More project actions',
+      exact: true,
+    });
+    await expect(projectMore).toBeInViewport();
+    await projectMore.focus();
+    await projectMore.press('Enter');
+    for (const label of ['Download', 'Projects'])
+      await expect(
+        page
+          .locator('.ns-menu-layer')
+          .getByRole('menuitem', { name: label, exact: true }),
+      ).toBeInViewport();
+    await captureScene('project-actions-menu');
+    await page.keyboard.press('Escape');
+    await expect(projectMore).toBeFocused();
+    await expect(selectedFile).toHaveAttribute('aria-current', 'true');
+    await actionMenu(
+      page,
+      projectBrowser,
+      'More project actions',
+      'Projects',
+      isMobile,
+    );
+    await expect(launcher).toHaveClass(/is-active/);
+    await activate(page, projectBrowser);
+    await expect(filePreview).toContainText('IMMUTABLE_SNAPSHOT_V1');
     const copied = page.waitForResponse(
       (response) =>
         response.url().endsWith(`/api/projects/${project.id}/import`) &&
@@ -665,6 +704,19 @@ for (const width of [1440, 390]) {
     expect(retainedSnapshot.ok()).toBeTruthy();
     expect((await retainedSnapshot.json()).snapshot.content).toBe(source);
     await captureScene('deleted-source-snapshot');
+    await choose(
+      snapshotWindow.getByRole('button', {
+        name: 'Document Details',
+        exact: true,
+      }),
+      isMobile,
+    );
+    await expect(panel).toHaveClass(/is-active/);
+    await expect(panel).toHaveAttribute(
+      'data-window-id',
+      `document-workflow:${entry.id}`,
+    );
+    await activate(page, snapshotWindow);
     await choose(
       snapshotWindow.getByRole('button', { name: /^Close / }),
       isMobile,

@@ -146,7 +146,7 @@ test('file toolbar menus retain their selection and destination after metadata c
   });
   await menuItem(page, 'Rename').click();
   const error = page.getByRole('dialog', {
-    name: 'Unable to complete the operation',
+    name: 'Action failed',
     exact: true,
   });
   await expect(error).toContainText(/selection changed|no longer available/i);
@@ -204,7 +204,7 @@ test('Inspector actions reject a target recycled while its menu is open', async 
   await expect(inspector).toContainText('This item is in the Recycler.');
   await menuItem(page, 'Rename').click();
   const error = page.getByRole('dialog', {
-    name: 'Unable to complete the operation',
+    name: 'Action failed',
     exact: true,
   });
   await expect(error).toContainText(

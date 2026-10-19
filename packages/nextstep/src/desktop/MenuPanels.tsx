@@ -38,6 +38,7 @@ export function ApplicationMenu({
             type="button"
             className="ns-application-menu-item"
             key={group.id}
+            aria-haspopup="menu"
             onClick={(event) => {
               event.currentTarget.focus();
               const rect = event.currentTarget.getBoundingClientRect();
@@ -161,6 +162,7 @@ function PinnedMenuPanel({
         <button
           type="button"
           aria-label={`Close ${panel.title} menu`}
+          title={`Close ${panel.title} menu`}
           onClick={close}
         >
           ×

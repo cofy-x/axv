@@ -110,6 +110,7 @@ export function WindowFrame({
           type="button"
           className="ns-window-control ns-minimize"
           aria-label={`Miniaturize ${win.title}`}
+          title={`Miniaturize ${win.title}`}
           onClick={() => api.minimizeWindow(win.id)}
         >
           <span aria-hidden="true">▧</span>
@@ -118,6 +119,8 @@ export function WindowFrame({
           type="button"
           className="ns-window-menu"
           aria-label={`Window menu for ${win.title}`}
+          title={`Window menu for ${win.title}`}
+          aria-haspopup="menu"
           onClick={(event) => {
             event.currentTarget.focus();
             const rect = event.currentTarget.getBoundingClientRect();
@@ -131,6 +134,7 @@ export function WindowFrame({
           type="button"
           className="ns-window-control ns-shade"
           aria-label={`${win.shaded ? 'Unshade' : 'Shade'} ${win.title}`}
+          title={`${win.shaded ? 'Unshade' : 'Shade'} ${win.title}`}
           onClick={() => toggleShade(win.id)}
         >
           <span aria-hidden="true">{win.shaded ? '▾' : '▴'}</span>
@@ -139,6 +143,7 @@ export function WindowFrame({
           type="button"
           className="ns-window-control ns-zoom"
           aria-label={`${win.zoomed ? 'Restore' : 'Maximize'} ${win.title}`}
+          title={`${win.zoomed ? 'Restore' : 'Maximize'} ${win.title}`}
           onClick={() => toggleZoom(win.id)}
         >
           <span aria-hidden="true">□</span>
@@ -147,6 +152,7 @@ export function WindowFrame({
           type="button"
           className="ns-window-control ns-close"
           aria-label={`Close ${win.title}`}
+          title={`Close ${win.title}`}
           onClick={(event) => {
             event.currentTarget.focus({ preventScroll: true });
             void api.closeWindow(win.id);

@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { Button, Field, Select } from '@cofy-x/axv-nextstep';
+import { Button, Field, IconButton, Select } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { useResource } from '../../shared/api/useResource';
 import { RequestIdentity } from '../../shared/api/request-identity';
@@ -73,15 +73,15 @@ export function DocumentWorkflow({ window, desktop }: AppWindowProps) {
             (version.choice && versionInfo(version.choice).name) ||
             window.title}
         </strong>
-        <Button
+        <IconButton
+          icon="refresh"
+          label="Refresh"
           disabled={!!busy}
           onClick={() => {
             refresh((value) => value + 1);
             version.reload();
           }}
-        >
-          Refresh
-        </Button>
+        />
       </div>
       <div
         className="app-toolbar document-task-tabs"

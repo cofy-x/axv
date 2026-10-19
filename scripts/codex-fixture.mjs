@@ -521,7 +521,6 @@ async function codexFixtureMain(proxyKeys) {
     prompt();
   });
   input.on('close', () => {
-    socket?.destroy();
     process.exit(0);
   });
   prompt();

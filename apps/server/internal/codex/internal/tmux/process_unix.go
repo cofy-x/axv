@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/creack/pty"
+	"github.com/cofy-x/axv/apps/server/internal/nativepty"
 	"golang.org/x/sys/unix"
 )
 
@@ -26,28 +26,11 @@ type attachment struct {
 func (b Backend) Attach(path string, target Target, cols, rows int) (Process, error) {
 	cmd := exec.Command(path, Arguments(target.Socket, "attach-session", "-E", "-t", target.SessionTarget())...)
 	cmd.Env = Environment(filepath.Dir(path))
-	file, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
+	file, err := nativepty.Start(cmd, uint16(cols), uint16(rows))
 	if err != nil {
 		return nil, fmt.Errorf("start attachment PTY: %w", err)
 	}
-	// Register a nonblocking descriptor with Go's poller on macOS and Linux so
-	// detaching interrupts stalled reads/writes rather than blocking shutdown.
-	fd, err := unix.FcntlInt(file.Fd(), unix.F_DUPFD_CLOEXEC, 0)
-	_ = file.Close()
-	if err != nil {
-		err = fmt.Errorf("duplicate attachment PTY: %w", err)
-	} else if err = unix.SetNonblock(fd, true); err != nil {
-		err = fmt.Errorf("set attachment PTY nonblocking: %w", err)
-	}
-	if err != nil {
-		if fd >= 0 {
-			_ = unix.Close(fd)
-		}
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		return nil, err
-	}
-	p := &attachment{File: os.NewFile(uintptr(fd), "codex-tmux-client"), cmd: cmd, done: make(chan struct{})}
+	p := &attachment{File: file, cmd: cmd, done: make(chan struct{})}
 	go func() { p.err = cmd.Wait(); close(p.done) }()
 	return p, nil
 }

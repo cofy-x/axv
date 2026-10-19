@@ -177,9 +177,11 @@ export function MachineInspector({ desktop, window }: AppWindowProps) {
             setTerminalRefresh((value) => value + 1);
           }}
         />
-        <Button onClick={() => desktop.openApp('machines')}>
-          Virtual Machines
-        </Button>
+        <IconButton
+          icon="back"
+          label="Virtual Machines"
+          onClick={() => desktop.openApp('machines')}
+        />
       </div>
       <div className="app-pad machines-scroll">
         {data.error && (
@@ -300,7 +302,7 @@ export function MachineInspector({ desktop, window }: AppWindowProps) {
               <dd>
                 {machine.expiresAt
                   ? new Date(machine.expiresAt).toLocaleString()
-                  : 'No automatic expiry'}
+                  : 'No expiry'}
               </dd>
             </dl>
             <details className="machines-technical">
@@ -339,7 +341,7 @@ export function MachineInspector({ desktop, window }: AppWindowProps) {
                 <p>
                   {terminalLoading
                     ? 'Loading guest terminals…'
-                    : 'No terminals in this guest boot. Open a new terminal to begin.'}
+                    : 'No terminals in this guest boot. Choose New Terminal.'}
                 </p>
               )}
             </details>

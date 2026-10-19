@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Field, PixelIcon } from '@cofy-x/axv-nextstep';
+import { Button, Field, IconButton, PixelIcon } from '@cofy-x/axv-nextstep';
 import { projectsAPI } from './api';
 import type { HostDirectories } from './api';
 
@@ -52,10 +52,7 @@ export function HostFolderChooser({
       <h2 ref={heading} tabIndex={-1}>
         Choose a host folder
       </h2>
-      <p>
-        Selecting a folder fills the project path. Choose Open Project to
-        register it.
-      </p>
+      <p>Use Folder fills the path. Open Project registers it.</p>
       <form
         className="project-folder-path"
         onSubmit={(event) => {
@@ -76,12 +73,12 @@ export function HostFolderChooser({
           <Button disabled={busy} onClick={() => void browse()}>
             Home
           </Button>
-          <Button
+          <IconButton
+            icon="up"
+            label="Up"
             disabled={busy || !directories?.parentPath}
             onClick={() => void browse(directories?.parentPath || undefined)}
-          >
-            Up
-          </Button>
+          />
         </div>
       </form>
       {error && (
@@ -109,14 +106,11 @@ export function HostFolderChooser({
           ))
         )}
         {!busy && !error && directories?.directories.length === 0 && (
-          <p>No subfolders. You can use this directory.</p>
+          <p>No subfolders.</p>
         )}
       </div>
       {directories?.truncated && (
-        <p>
-          Only part of this folder is listed. Enter a full path to navigate
-          directly.
-        </p>
+        <p>Partial listing. Enter a full path to open another folder.</p>
       )}
       <code className="project-folder-current">
         {directories?.path || 'Choose an accessible directory.'}

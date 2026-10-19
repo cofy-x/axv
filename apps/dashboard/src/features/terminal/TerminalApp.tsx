@@ -131,7 +131,7 @@ export function TerminalApp({
       },
       onInputRejected: () =>
         setFeedback(
-          'Input was not sent because the connection is busy. Wait for it to catch up, then try a smaller paste.',
+          'Input not sent: connection busy. Wait, then try a smaller paste.',
         ),
     });
     session.current = connection;

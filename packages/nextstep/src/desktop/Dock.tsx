@@ -217,6 +217,8 @@ export function Dock({ props, layout, api, setLayout }: DockProps) {
               type="button"
               className="ns-dock-options"
               aria-label={`${app.title} Dock options`}
+              title={`${app.title} Dock options`}
+              aria-haspopup="menu"
               onClick={(event) =>
                 api.contextMenu(appMenu(app), pointFor(event.currentTarget), {
                   title: app.title,
@@ -232,6 +234,8 @@ export function Dock({ props, layout, api, setLayout }: DockProps) {
         type="button"
         className="ns-dock-add"
         aria-label="Add application to Dock"
+        title="Add application to Dock"
+        aria-haspopup="menu"
         onClick={(event) =>
           api.contextMenu(
             props.apps

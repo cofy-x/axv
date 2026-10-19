@@ -51,9 +51,9 @@ export function CodexProvider({ children }: { children: ReactNode }) {
     return () => pending.current?.abort();
   }, [refresh]);
   const status = loading
-    ? 'Checking environment…'
+    ? 'Checking…'
     : error
-      ? 'Environment check failed'
+      ? 'Check failed'
       : info?.ready
         ? 'CLI ready'
         : 'Setup required';

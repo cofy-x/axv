@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Select } from '@cofy-x/axv-nextstep';
+import { Button, IconButton, Select } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { useFilesystemData } from '../../filesystem/context';
 import { isInTrash } from '../../filesystem/tree';
@@ -285,14 +285,14 @@ export function ConversationContext({
         <Button onClick={() => desktop.openApp('codex', { sessionId, runId })}>
           Open Conversation
         </Button>
-        <Button
+        <IconButton
+          icon="refresh"
+          label="Refresh"
           onClick={() => {
             void refresh();
             setMetadataRevision((value) => value + 1);
           }}
-        >
-          Refresh
-        </Button>
+        />
       </div>
       {(error || run.error) && <p role="alert">{error || run.error}</p>}
       {warning && <p role="alert">{warning}</p>}

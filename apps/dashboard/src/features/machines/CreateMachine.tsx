@@ -240,8 +240,8 @@ export function CreateMachine({ desktop, window }: AppWindowProps) {
               setVolume('');
             }}
           >
-            <option value="development">Long-lived development</option>
-            <option value="task">Temporary task</option>
+            <option value="development">Development</option>
+            <option value="task">Task</option>
           </Select>
           <p className="machines-form-help">
             Development VMs have no expiry and keep their project volume. Task
@@ -300,7 +300,7 @@ export function CreateMachine({ desktop, window }: AppWindowProps) {
               }
             }}
           >
-            <option value="">Create a new project volume</option>
+            <option value="">New project volume</option>
             {volumeId && !selectedVolumeAvailable && (
               <option value={volumeId}>
                 {volume?.name || volumeId} · unavailable
@@ -323,7 +323,7 @@ export function CreateMachine({ desktop, window }: AppWindowProps) {
             onChange={(event) => setProject(event.target.value)}
           />
           <Checkbox
-            label="Retain project volume when the VM is deleted"
+            label="Keep project volume after VM deletion"
             checked={retainVolume}
             disabled={kind === 'development' || !!volumeId}
             onChange={(event) => setRetain(event.target.checked)}
@@ -339,7 +339,7 @@ export function CreateMachine({ desktop, window }: AppWindowProps) {
             </Button>
           )}
           <p className="machines-form-help">
-            Project files live on a separate volume. An existing volume must be
+            Project files use a separate volume. Existing volumes must be
             detached, ready and compatible with this VM.
           </p>
         </fieldset>
@@ -356,8 +356,8 @@ export function CreateMachine({ desktop, window }: AppWindowProps) {
               onChange={(event) => setTTL(event.target.value)}
             />
             <p className="machines-form-help">
-              Expiry deletes the VM even if work is still running. Save task
-              results before this deadline. Retained project volumes are kept.
+              Expiry deletes the VM even during active work. Save results before
+              the deadline. Retained project volumes are kept.
             </p>
           </fieldset>
         )}

@@ -353,6 +353,7 @@ export function CodexManager({ desktop, window }: AppWindowProps) {
                   },
                 ],
                 { x: rect.left, y: rect.bottom },
+                { title: 'Codex' },
               );
             }}
           />
@@ -360,7 +361,7 @@ export function CodexManager({ desktop, window }: AppWindowProps) {
       </div>
       <div className="codex-manager-content">
         <p className="codex-default-project">
-          <span>New sessions start in</span>{' '}
+          <span>Default host folder</span>{' '}
           <code data-testid="codex-default-project">
             {info?.defaultProjectPath || '~/.axv/workspace'}
           </code>
@@ -409,7 +410,7 @@ export function CodexManager({ desktop, window }: AppWindowProps) {
             className="codex-section codex-folder-picker"
             aria-label="New Codex session"
           >
-            <h2>New session in a host folder</h2>
+            <h2>Choose a Host Folder</h2>
             <form
               className="codex-path-form"
               onSubmit={(event) => {
@@ -432,16 +433,16 @@ export function CodexManager({ desktop, window }: AppWindowProps) {
               >
                 Home
               </Button>
-              <Button
+              <IconButton
+                icon="up"
+                label="Up"
                 disabled={
                   browsing || creating !== null || !directories?.parentPath
                 }
                 onClick={() =>
                   void browse(directories?.parentPath || undefined)
                 }
-              >
-                Up
-              </Button>
+              />
             </form>
             {directoryError && (
               <p className="app-error" role="alert">
@@ -454,7 +455,7 @@ export function CodexManager({ desktop, window }: AppWindowProps) {
               aria-busy={browsing}
             >
               {browsing ? (
-                <p role="status">Reading host directories…</p>
+                <p role="status">Loading folders…</p>
               ) : (
                 directories?.directories.map((directory) => (
                   <button
@@ -470,13 +471,12 @@ export function CodexManager({ desktop, window }: AppWindowProps) {
                 ))
               )}
               {!browsing && directories?.directories.length === 0 && (
-                <p>No subfolders. You can use this directory.</p>
+                <p>No subfolders.</p>
               )}
             </div>
             {directories?.truncated && (
               <p className="codex-note">
-                Only part of this folder is listed. Enter a full directory path
-                to navigate directly.
+                Some folders are not shown. Enter a full path to browse.
               </p>
             )}
             <div className="codex-project-choice">
@@ -553,9 +553,7 @@ export function CodexManager({ desktop, window }: AppWindowProps) {
                 <div className="codex-session-summary">
                   <strong>{sessionTitle(session)}</strong>
                   <code title={session.projectPath}>{session.projectPath}</code>
-                  <code data-testid="codex-tmux-session">
-                    {session.tmuxSession}
-                  </code>
+                  <code data-testid="codex-run-id">Run {session.runId}</code>
                   <span>
                     {ending === session.id ? 'Ending…' : session.status} ·{' '}
                     {new Date(session.createdAt).toLocaleString()}
@@ -596,7 +594,7 @@ export function CodexManager({ desktop, window }: AppWindowProps) {
                   </Button>
                   <IconButton
                     icon="more"
-                    label={`Session actions for ${sessionTitle(session)}`}
+                    label={`More session actions for ${sessionTitle(session)}, run ${session.runId.slice(0, 8)}`}
                     aria-haspopup="menu"
                     disabled={
                       changingMetadata === session.id || ending === session.id
@@ -641,6 +639,9 @@ export function CodexManager({ desktop, window }: AppWindowProps) {
                           },
                         ],
                         { x: rect.left, y: rect.bottom },
+                        {
+                          title: `Run ${session.runId.slice(0, 8)} · ${sessionTitle(session)}`,
+                        },
                       );
                     }}
                   />

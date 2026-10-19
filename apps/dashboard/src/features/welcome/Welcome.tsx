@@ -1,4 +1,4 @@
-import { Button, PixelIcon } from '@cofy-x/axv-nextstep';
+import { Button, IconButton, PixelIcon } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { useCodexAvailability } from '../codex/CodexContext';
 
@@ -72,12 +72,32 @@ export function Welcome({ desktop, window }: AppWindowProps) {
         </div>
       </div>
       <div className="app-toolbar welcome-footer">
-        <div className="welcome-utilities">
-          <Button onClick={() => desktop.openApp('appearance')}>
-            Preferences
-          </Button>
-          <Button onClick={() => desktop.openApp('about')}>About AXV</Button>
-        </div>
+        <IconButton
+          icon="more"
+          label="More welcome actions"
+          aria-haspopup="menu"
+          onClick={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            desktop.contextMenu(
+              [
+                {
+                  label: 'Preferences',
+                  action: () => {
+                    desktop.openApp('appearance');
+                  },
+                },
+                {
+                  label: 'About AXV',
+                  action: () => {
+                    desktop.openApp('about');
+                  },
+                },
+              ],
+              { x: rect.left, y: rect.bottom },
+              { title: 'Welcome' },
+            );
+          }}
+        />
         <Button primary onClick={() => void desktop.closeWindow(window.id)}>
           Show Desktop
         </Button>

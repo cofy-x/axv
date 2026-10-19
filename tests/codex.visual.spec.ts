@@ -28,7 +28,7 @@ for (const viewport of [
     await expect(
       page
         .locator('[data-app-id="welcome"]')
-        .getByRole('button', { name: 'Check Again', exact: true }),
+        .getByRole('button', { name: 'Refresh', exact: true }),
     ).toHaveCount(0);
     const screenshotDir = resolve('screenshots', `final-${info.project.name}`);
     await mkdir(screenshotDir, { recursive: true });
@@ -50,7 +50,7 @@ for (const viewport of [
     await capture('codex-manager');
     const environment = await openCodexEnvironment(page);
     await expect(
-      environment.getByRole('button', { name: 'Check Again', exact: true }),
+      environment.getByRole('button', { name: 'Refresh', exact: true }),
     ).toBeInViewport();
     expect(
       await environment.evaluate((element) =>
@@ -183,19 +183,22 @@ for (const viewport of [
     await expect(recent).toBeInViewport();
     await capture('codex-recent-projects');
     const row = manager.locator(`[data-session-id="${id}"]`);
-    const rowAction = async (label: string) => {
+    const rowAction = async (label: string, screenshot?: string) => {
       await row
         .getByRole('button', {
-          name: `Session actions for ${name}`,
+          name: `More session actions for ${name}, run ${runId.slice(0, 8)}`,
           exact: true,
         })
         .click();
-      await page
-        .locator('.ns-menu-layer')
-        .getByRole('menuitem', { name: label, exact: true })
-        .click();
+      const menu = page.getByRole('menu', {
+        name: `Run ${runId.slice(0, 8)} · ${name}`,
+        exact: true,
+      });
+      await expect(menu).toBeVisible();
+      if (screenshot) await capture(screenshot);
+      await menu.getByRole('menuitem', { name: label, exact: true }).click();
     };
-    await rowAction('Archive');
+    await rowAction('Archive', 'codex-session-actions-menu');
     await expect(row).toHaveCount(0);
     await manager
       .getByRole('button', { name: 'Archived', exact: true })

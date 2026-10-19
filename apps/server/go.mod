@@ -5,7 +5,7 @@ go 1.26.9
 require (
 	github.com/UserExistsError/conpty v0.1.4
 	github.com/coder/websocket v1.8.15
-	github.com/creack/pty v1.1.24
+	github.com/creack/pty v1.1.25-0.20260601142114-9246436fffe8
 	github.com/mattn/go-isatty v0.0.24
 	github.com/mdlayher/vsock v1.3.0
 	github.com/spf13/cobra v1.10.2

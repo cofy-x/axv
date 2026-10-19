@@ -530,9 +530,9 @@ export function VolumeManager({
                   }
                 />
                 <p className="machines-form-help">
-                  Disk space shares the host budget. Disks cannot shrink; an
-                  attached VM must be stopped before growth. Its filesystem
-                  grows on the next boot.
+                  {editor.kind === 'resize'
+                    ? 'Disk space shares the host budget. Disks cannot shrink; an attached VM must be stopped before growth. Its filesystem grows on the next boot.'
+                    : 'Disk space shares the host budget. Volumes cannot shrink.'}
                 </p>
               </>
             )}

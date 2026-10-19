@@ -467,8 +467,53 @@ for (const resource of ['volume', 'image'] as const) {
   }) => {
     const state = fixture();
     const headers: Record<string, string>[] = [];
+    const resourceId =
+      resource === 'volume' ? state.volumes[0].id : 'image-form-imported';
+    const operation: Operation = {
+      id: `operation-${resource}-original`,
+      machineId: '',
+      action: resource === 'volume' ? 'rename-volume' : 'import-image',
+      ...(resource === 'volume' ? { volumeId: resourceId } : { resourceId }),
+      status: 'queued',
+      createdAt: '2026-10-17T00:01:00Z',
+    };
     const manager = await host(page, state, async (route) => {
       headers.push(route.request().headers());
+      if (headers.length === 3) {
+        state.operations = [
+          {
+            id: `operation-${resource}-other`,
+            machineId: '',
+            action: 'inspect',
+            resourceId: 'unrelated-resource',
+            status: 'succeeded',
+            createdAt: '2026-10-17T00:00:00Z',
+          },
+          operation,
+        ];
+        if (resource === 'volume') {
+          state.volumes[0] = {
+            ...state.volumes[0],
+            revision: state.volumes[0].revision + 1,
+            name: 'Preserved resource draft',
+          };
+          await route.fulfill({
+            status: 202,
+            json: { volume: state.volumes[0], operation },
+          });
+        } else {
+          const image: ImageInfo = {
+            id: resourceId,
+            name: 'Preserved resource draft',
+            provider: 'lima',
+            arch: 'arm64',
+            status: 'importing',
+          };
+          state.images.push(image);
+          await route.fulfill({ status: 202, json: { image, operation } });
+        }
+        return;
+      }
       await route.fulfill({
         status: headers.length === 2 ? 409 : 503,
         json:
@@ -566,5 +611,21 @@ for (const resource of ['volume', 'image'] as const) {
     expect(headers.every((header) => !header['x-axv-compute-generation'])).toBe(
       true,
     );
+    await expect(retry).toHaveCount(0);
+    await manager
+      .getByRole('button', { name: 'View Activity', exact: true })
+      .click();
+    await expect(
+      manager.getByRole('button', { name: 'Activity', exact: true }),
+    ).toBeFocused();
+    const selectedOperation = manager
+      .getByRole('table')
+      .locator('tr[data-selected="true"]');
+    await expect(selectedOperation).toBeVisible();
+    await expect(selectedOperation).toContainText(operation.id);
+    await expect(selectedOperation).toContainText(
+      resource === 'volume' ? 'Preserved resource draft' : resourceId,
+    );
+    await expect(selectedOperation).toContainText('Queued');
   });
 }

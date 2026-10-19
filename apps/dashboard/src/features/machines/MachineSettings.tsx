@@ -243,7 +243,7 @@ export function MachineSettings({
           }}
         >
           <option value="development">Development · no expiry</option>
-          <option value="task">Task · explicit lease</option>
+          <option value="task">Task · lease</option>
         </Select>
         {draft.kind === 'task' && (
           <>
@@ -262,7 +262,7 @@ export function MachineSettings({
               onChange={(event) => setRenewLease(event.target.checked)}
             />
             <Checkbox
-              label="Keep the project volume after VM deletion"
+              label="Keep project volume after VM deletion"
               checked={draft.retainVolume}
               onChange={(event) => change('retainVolume', event.target.checked)}
             />
