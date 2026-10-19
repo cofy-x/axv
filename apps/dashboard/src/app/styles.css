@@ -10,4 +10,5 @@
 @import '../features/image-viewer/image-viewer.css';
 @import '../features/gallery/gallery.css';
 @import '../features/machines/machines.css';
+@import '../features/tailscale/tailscale.css';
 @import './app.css';

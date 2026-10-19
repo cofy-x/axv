@@ -98,7 +98,7 @@ jobs:
           tmux -V
       - name: Download Go modules
         working-directory: apps/server
-        run: go mod download
+        run: GOWORK=off go mod download
       - name: Check committed dependency files
         run: |
           dependency_status="$(git status --porcelain=v1 --untracked-files=all -- \

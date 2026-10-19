@@ -9,7 +9,7 @@ help:
 
 deps:
 	$(PNPM) install --frozen-lockfile
-	cd apps/server && $(GO) mod download
+	cd apps/server && GOWORK=off $(GO) mod download
 
 install: deps
 	$(MAKE) build

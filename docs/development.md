@@ -11,7 +11,7 @@ make deps
 make dev
 ```
 
-`make deps` installs locked JavaScript dependencies and downloads Go modules. `make dev` builds the development server, then starts Vite on available loopback ports. Open the printed Vite URL. Explicit occupied ports fail instead of reusing another server.
+`make deps` installs locked JavaScript dependencies and downloads the server module's declared Go dependencies with `GOWORK=off`. This limits prefetching to the module's requirements instead of downloading unrelated upstream development-tool archives and adding their checksums to `go.work.sum`. Builds and tests use the repository workspace normally. `make dev` builds the development server, then starts Vite on available loopback ports. Open the printed Vite URL. Explicit occupied ports fail instead of reusing another server.
 
 Each checkout has a persistent profile at `~/.axv/dev/<checkout-id>`, where the ID is the first 12 hexadecimal characters of SHA-256 over the checkout's canonical absolute path. Symlinked paths to the same checkout share the profile; distinct worktrees do not. Desktop data lives in its `data/`. `AXV_DEV_HOME` selects a different final profile root directly, without appending another identifier. Previous checkout-local development data is not migrated.
 
@@ -92,6 +92,17 @@ node scripts/test-go.mjs -race \
 
 These checks complement the [native daemon smoke](#native-daemon-smoke) when changing background supervision or captured environment behavior.
 
+For remote transport changes, include the owner binding, certificate/lifecycle, shared request guards and production route composition:
+
+```sh
+node scripts/test-go.mjs -race \
+  ./apps/server/internal/tailnet ./apps/server/internal/remoteaccess \
+  ./apps/server/internal/localaccess ./apps/server/internal/server \
+  ./apps/server/internal/profile ./apps/server/internal/config ./apps/server/internal/cli
+```
+
+These tests use controlled identity/transport fixtures and real local TLS/WebSockets. The production smoke also requires the default-disabled transport to create no node state. Live acceptance must exercise the [production remote desktop](startup.md#remote-access) from an independently authenticated tailnet device, including browser actions and terminal continuity. Use the [host baseline checker](#remote-host-network-verification) to compare DNS, Git access and network fingerprints; fixture tests and an unchanged host baseline do not establish production remote browser acceptance or cross-device behavior.
+
 The guest service keeps Linux boot, mount and vsock setup separate from portable request handling. These unit tests complement the native image and VM acceptance below.
 
 `make test` runs Go and Vitest tests, including install and development-launcher helpers. After a production build, `AXV_TEST_PRODUCTION_INSTALL=1 pnpm exec vitest run scripts/install.test.mjs` also verifies repeated installation and execution in a temporary Go binary directory; pass the build's `VERSION` for custom versions.
@@ -167,6 +178,19 @@ Before removing a failed browser run's private profile, the [diagnostic helper](
 On macOS, a process-group probe can return `EPERM` while exited children await reaping; that error alone does not identify security-software intervention. The launcher keeps observing within its existing cleanup deadline and succeeds only after `ESRCH` confirms the group is absent. A persistent permission error remains a cleanup failure.
 
 Keep generated databases, build outputs, screenshots, traces and browser reports untracked. Formatting covers documentation as well as source; use the repository's Prettier and ESLint configuration.
+
+## Remote host network verification
+
+The Linux [host baseline checker](../scripts/verify-tsnet-host.mjs) independently verifies that remote-access checks preserve host networking. It performs read-only inspection of interfaces, routes, policy rules, firewall rules and resolver configuration, requires system Tailscale to remain inactive/disabled, and checks real DNS resolution and `git ls-remote origin HEAD`. Run it with the pinned Node toolchain and permission to read the host's firewall configuration; missing evidence remains an incomplete check. It never starts a Tailscale node, changes host settings or controls the workstation.
+
+Capture a baseline before an authorized remote-access check, then compare against that same capture while the workstation is remotely available and after the check's owned processes have stopped:
+
+```sh
+node scripts/verify-tsnet-host.mjs capture
+node scripts/verify-tsnet-host.mjs compare --before /absolute/capture.json
+```
+
+Reports are written under this checkout's `.data/test/tsnet` by default (`AXV_TEST_TMPDIR` selects a different test root). Reports retain outcomes and fingerprints, not raw network configuration, DNS answers, Git remote URLs or credentials. Use the printed capture path with `--before` and retain the comparison report when reporting results. This host evidence complements the production transport checks; it does not prove remote authentication, HTTPS or browser behavior.
 
 ## Native daemon smoke
 

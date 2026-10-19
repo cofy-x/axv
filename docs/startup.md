@@ -160,9 +160,43 @@ rm "$vm_config"
 
 Generated configuration binds the profile, host identity, host configuration and stable VM ID. It remains usable after that VM is renamed or restarted, but fails if the host binding changes or the VM is deleted; a new VM with the same name is a different target. Each attachment verifies the current boot before opening the stream. Direct `vm ssh` also fixes the boot selected during preparation. Neither path silently replaces a missing target or starts a stopped VM from a saved configuration.
 
-AXV creates a private Ed25519 client key and known-hosts file under `AXV_HOME/ssh/`. It registers only that profile's public key with the selected guest and pins the guest's key by host and machine identity. A changed host key fails and requires explicit investigation/repair of that exact known-hosts entry. Personal SSH keys, agents and configuration are not imported. SSH uses the guest `axv` account with its normal filesystem permissions; it is separate from detachable browser Guest Terminal and has no AXV session recovery. These commands provide local guest access; remote access to AXV still requires a separate authentication and authorization design.
+AXV creates a private Ed25519 client key and known-hosts file under `AXV_HOME/ssh/`. It registers only that profile's public key with the selected guest and pins the guest's key by host and machine identity. A changed host key fails and requires explicit investigation/repair of that exact known-hosts entry. Personal SSH keys, agents and configuration are not imported. SSH uses the guest `axv` account with its normal filesystem permissions; it is separate from detachable browser Guest Terminal and has no AXV session recovery. These commands provide local guest access; [remote desktop access](#remote-access) uses a separate authenticated HTTPS transport and does not expose guest SSH credentials or raw SSH streams.
 
 See the [Guest API](api/guest.md#ssh-access) for transport and key-registration limits.
+
+## Remote access
+
+Private remote access is optional and disabled by default. AXV embeds its own [tsnet](https://tailscale.com/docs/features/tsnet) node and serves the production desktop over HTTPS on macOS/Linux. The deployment machine does not need the system Tailscale service running: AXV does not use `tailscale up`, change host DNS/routes or install host firewall rules. In particular, keep the system service stopped and disabled on hosts where the tailnet's CGNAT range conflicts with the system DNS servers.
+
+Add a `remote` section to the existing `AXV_HOME/config.json`, preserving its other settings:
+
+```json
+{
+  "remote": {
+    "enabled": true,
+    "hostname": "axv-workstation"
+  }
+}
+```
+
+`hostname` is a lowercase DNS label of 1–63 characters (letters, digits and internal hyphens); the default is `axv`. Each profile owns a separate node, so choose a distinct name for separate workstations. Start `axv serve` or explicitly apply the change with `axv daemon restart`, then run:
+
+```bash
+axv remote status
+axv remote status --json
+```
+
+Local desktop readiness does not wait for remote access. When status is `needs-login`, open its current enrollment URL and authorize the node using the workstation owner's Tailscale account. First enrollment binds the stable owner and node IDs in private state. An optional `remote.owner_user_id` can require a known positive numeric Tailscale user ID before first enrollment. Tagged server/client nodes and other users are rejected. The same owner's authorized devices can access host files, shells, agents and VM controls with this deployment account's permissions; choose the enrolling account accordingly.
+
+Open the desktop's **Tailscale** utility from its desktop icon, **Workspace → Applications** or **Preferences** to inspect AXV's embedded status and the system Tailscale status separately. Local enrollment is available there when needed. A missing/inaccessible system daemon does not prevent embedded tsnet access; the panel never changes host VPN or DNS settings. [Remote desktop usage](usage.md#remote-desktop) owns the panel actions and status meanings.
+
+Enable MagicDNS and HTTPS certificates in the tailnet's [DNS settings](https://login.tailscale.com/admin/dns), and permit your devices to reach this node on TCP 443 in tailnet policy. [Tailscale HTTPS setup](https://tailscale.com/docs/how-to/set-up-https-certificates) explains that certificate issuance publishes the node's `.ts.net` name in certificate transparency logs. This does not make the service public. Missing settings produce `needs-https`; status `error` includes a diagnostic. Recheck status after enrollment/settings changes. In `ready`, open the reported HTTPS URL from another device connected to Tailscale as the bound owner. There is no HTTP fallback or public Funnel.
+
+Node credentials, certificates and the owner binding stay under `AXV_HOME/tailscale/`, independently of desktop documents and the system Tailscale installation. The Tailscale SDK also maintains private diagnostic buffers there and uploads provider diagnostics to Tailscale; these can include enrollment URLs. AXV's own operational log records remote state without enrollment URLs. Normal desktop shutdown keeps that node enrollment for the next launch. Protect this directory as credentials; do not copy it into another profile or silently reset an invalid binding. Changing the enrolled owner or node requires explicit maintenance with the desktop stopped.
+
+AXV renews certificates in the background while continuing to serve a valid cached certificate. Renewal errors appear in local status. If the certificate actually expires, or the enrolled identity/HTTPS domain changes, AXV withdraws the remote entrypoint; resolve the reported cause and explicitly restart the desktop. The local desktop remains available.
+
+To disable remote access, set `remote.enabled` to `false` and explicitly restart the desktop (or stop and relaunch foreground `serve`). Editing the profile alone does not change a running launch. A restart ends ordinary Host Terminal shells and detaches Codex views under the [existing lifecycle rules](#daily-commands); Codex runs, VMs and project volumes survive. `axv remote status` only inspects the running instance and never enables networking. VM preparation and remote configuration remain operations on the AXV deployment machine. The [Tailscale remote access API](api/tailscale.md) owns authorization and route restrictions; [usage](usage.md#remote-desktop) covers browser state across devices.
 
 ## First-time macOS setup
 
@@ -244,6 +278,7 @@ Empty environment variables are unset; explicit flag values cannot be empty. Sta
 | `preparation/` | Preparation task database, plans, progress and private preparation files |
 | `host/control.sock` | Managed host API socket |
 | `ssh/` | Private profile SSH client key and pinned guest known-hosts file |
+| `tailscale/` | Optional embedded Tailscale node credentials, certificates and owner binding |
 | `run/` | Locks, readiness, ownership, immutable configuration snapshots and private Codex sockets |
 | `bin/` | Fixed executable copies |
 | `logs/daemon.log`, `logs/daemon.log.1`–`.5` | Private structured desktop/preparation log and bounded rotated archives |

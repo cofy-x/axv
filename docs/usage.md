@@ -19,9 +19,21 @@ Menus can be fixed as movable panels. A fixed application menu keeps its origina
 | F10                       | Open the workspace menu            |
 | Arrow keys, Enter, Escape | Navigate, select and dismiss menus |
 
-Touch controls expose menus and window actions without requiring a right-click. Text inputs retain selection, clipboard and undo shortcuts. **Preferences** changes desktop appearance and clock settings; **Component Gallery** demonstrates the shared controls.
+Touch controls expose menus and window actions without requiring a right-click. Text inputs retain selection, clipboard and undo shortcuts. **Preferences** changes desktop appearance and clock settings and opens **Tailscale**; **Component Gallery** demonstrates the shared controls.
 
 Welcome keeps **Show Desktop** visible and groups **Preferences** and **About AXV** under **More**.
+
+## Remote desktop
+
+Open **Tailscale** from its desktop icon, **Workspace → Applications** or its button in **Preferences**. The desktop launcher uses the usual selection, opening and drag behavior; it does not indicate connection readiness. The singleton non-modal panel can be kept in the Dock or added to Clip using the usual application and window menus. It checks connections while active and shows **AXV Remote Access** separately from **System Tailscale**. A system connection does not make the AXV remote desktop available; the AXV section reports its own readiness and HTTPS address. When reported, host addresses can be copied. Copy failures and unavailable status remain visible, and **Refresh** checks again. Missing-command detection is not proof that a separate Tailscale GUI app is absent.
+
+On the AXV host, an active panel can show **Authorize** when the embedded node needs enrollment. Remote browsers receive only the connection summary. System Tailscale status is read-only: use the operating system or Tailscale app to manage it.
+
+After [remote setup](startup.md#remote-access) on the AXV host, connect your other device to Tailscale with the workstation owner's account and open the HTTPS URL from `axv remote status`. The desktop operates on the same host documents, projects, agents and VMs. Host directory paths and commands still refer to that host; changing the browser device does not move execution.
+
+Each browser origin/client keeps its own layout and unsaved recovery copies. The local HTTP and remote HTTPS addresses are different origins: explicitly save documents before switching devices or addresses. Shared saved documents remain available, and existing revision-conflict checks still apply. Host Terminal reconnect starts a new shell; Codex and Guest Terminal retain their distinct [session lifetimes](architecture.md#codex-attachment-and-process-lifetime).
+
+VM environment preparation and remote setup require access on the AXV host. Remote errors stay visible; retrying an interrupted operation must preserve its original identity rather than submit replacement work.
 
 ## Files, saving and recovery
 

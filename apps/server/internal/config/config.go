@@ -19,6 +19,7 @@ type Config struct {
 	WorkspaceDir string
 	ProxyURL     string
 	TmuxSocket   string
+	Remote       profile.Remote
 }
 
 // Overrides contains explicit desktop startup options, independently of their
@@ -52,7 +53,13 @@ func Initialize(overrides Overrides, getenv func(string) string, userHomeDir fun
 // Resolve selects and validates all desktop settings from explicit overrides,
 // environment and an already-read profile without creating files or directories.
 func Resolve(overrides Overrides, p profile.Profile, getenv func(string) string, userHomeDir func() (string, error)) (Config, error) {
-	settings := Config{Addr: overrides.Addr, DataDir: overrides.DataDir, Home: p.Home, ConfigPath: filepath.Join(p.Home, "config.json")}
+	settings := Config{Addr: overrides.Addr, DataDir: overrides.DataDir, Home: p.Home, ConfigPath: filepath.Join(p.Home, "config.json"), Remote: p.Remote}
+	if err := profile.ValidateRemote(settings.Remote); err != nil {
+		return Config{}, err
+	}
+	if settings.Remote.Hostname == "" {
+		settings.Remote.Hostname = "axv"
+	}
 	if settings.Addr == "" {
 		settings.Addr = getenv("ADDR")
 	}

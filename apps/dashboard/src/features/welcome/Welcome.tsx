@@ -15,6 +15,10 @@ export function Welcome({ desktop, window }: AppWindowProps) {
         </div>
       </div>
       <div className="welcome-copy">
+        <p className="fine-print">
+          Open Tailscale on the desktop to check private access from your other
+          devices. Setup takes place on the AXV host.
+        </p>
         <div className="welcome-links">
           {[
             {
@@ -127,7 +131,8 @@ export function About() {
       </dl>
       <p className="fine-print">
         Documents and desktop layout stay on the AXV host. VM project files stay
-        on their retained volumes.
+        on their retained volumes. Optional private remote access uses
+        Tailscale.
       </p>
     </div>
   );

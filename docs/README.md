@@ -17,6 +17,7 @@ Before application changes, read [ownership and dependencies](architecture.md#ow
 | VMs, volumes, images or guest execution | [VM architecture](vm-platform.md) | [Compute API](api/compute.md), [Guest API](api/guest.md), [VM CLI](startup.md#vm-command-line) or [image recipes](../images/guest/README.md), according to the changed boundary |
 | VM projects, retained-volume bindings or guest project files | [VM projects](vm-platform.md#vm-projects) | [Compute project API](api/compute.md#vm-projects), [guest file enforcement](api/guest.md#project-file-protocol), [VM project CLI](startup.md#vm-project-files); [product constraints](product.md#vm-project-workspace-constraints) for scope |
 | Installation, uninstallation, configuration, startup or supervision | [Startup](startup.md) | [Runtime identity API](api/desktop.md) for identity contracts |
+| Private remote access, Tailscale enrollment or authorization | [Remote setup](startup.md#remote-access) | [Tailscale remote access API](api/tailscale.md); [shared access boundaries](api/README.md#access-and-identity-boundaries) |
 | Build tooling, tests or acceptance | [Development](development.md) | The affected feature reference |
 | Contributions, bug reports or usage questions | [Contributing](../CONTRIBUTING.md) and [Support](../SUPPORT.md) | [Development](development.md) for verification |
 | Community conduct or sensitive incidents | [Code of Conduct](../CODE_OF_CONDUCT.md) | [Support](../SUPPORT.md) for public channels |

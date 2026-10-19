@@ -74,6 +74,15 @@ export function Appearance({ desktop }: AppWindowProps) {
             </Button>
           </div>
         </fieldset>
+        <fieldset>
+          <legend>Tailscale</legend>
+          <p>View private access and system Tailscale status.</p>
+          <div className="app-actions">
+            <Button onClick={() => desktop.openApp('remote-access')}>
+              Open
+            </Button>
+          </div>
+        </fieldset>
       </div>
       <StatusBar>{status}</StatusBar>
     </div>

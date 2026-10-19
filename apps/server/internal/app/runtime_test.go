@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -22,10 +23,25 @@ func TestDesktopOwnershipAndShutdown(t *testing.T) {
 	previousOutput, previousFlags, previousPrefix := log.Writer(), log.Flags(), log.Prefix()
 	home := t.TempDir()
 	s := Settings{Inputs: launch.Inputs{Home: home, LaunchID: "test-native-launch", Desktop: config.Config{Addr: "127.0.0.1:0", DataDir: filepath.Join(home, "data"), Home: home, ConfigPath: filepath.Join(home, "config.json"), WorkspaceDir: filepath.Join(home, "workspace")}}, ComputeSettings: ComputeSettings{Compute: profile.Compute{Mode: "disabled"}}}
+	client := &http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: 2 * time.Second}
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	done := make(chan error, 1)
-	go func() { done <- ServeContext(ctx, s, &bytes.Buffer{}, false) }()
+	go func() {
+		done <- ServeContext(ctx, s, &bytes.Buffer{}, false)
+		close(done)
+	}()
+	t.Cleanup(func() {
+		client.CloseIdleConnections()
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Error(err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Error("desktop cleanup failed to stop")
+		}
+	})
 	var state launch.State
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
@@ -52,23 +68,30 @@ func TestDesktopOwnershipAndShutdown(t *testing.T) {
 		t.Fatalf("ready runtime executable is unavailable: %v", err)
 	}
 	for _, path := range []string{"/api/compute/info", "/api/host/codex/sessions", "/api/health"} {
-		response, err := http.Get(state.URL + path)
+		response, err := client.Get(state.URL + path)
 		if err != nil {
 			t.Fatal(err)
 		}
+		_, err = io.Copy(io.Discard, response.Body)
 		response.Body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
 		if response.StatusCode != http.StatusOK {
 			t.Fatalf("combined service route %s returned HTTP %d", path, response.StatusCode)
 		}
 	}
-	response, err := http.Get(state.URL + "/api/compute/environment")
+	response, err := client.Get(state.URL + "/api/compute/environment")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(response.Body)
+	response.Body.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
 	var environment computegateway.Environment
-	err = json.NewDecoder(response.Body).Decode(&environment)
-	response.Body.Close()
-	if err != nil {
+	if err := json.Unmarshal(body, &environment); err != nil {
 		t.Fatal(err)
 	}
 	resolvedHome, _ := filepath.EvalSymlinks(home)
@@ -89,6 +112,7 @@ func TestDesktopOwnershipAndShutdown(t *testing.T) {
 	if log.Writer() != serviceOutput {
 		t.Fatal("rejected service startup changed the active diagnostic sink")
 	}
+	client.CloseIdleConnections()
 	cancel()
 	select {
 	case err := <-done:

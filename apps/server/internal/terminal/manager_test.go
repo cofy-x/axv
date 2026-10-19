@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/cofy-x/axv/apps/server/internal/localaccess"
 )
 
 func testServer(t *testing.T, manager *Manager) *httptest.Server {
@@ -150,6 +151,64 @@ func TestAccessRejectsBeforeShellCreation(t *testing.T) {
 	}
 	if starts.Load() != 0 {
 		t.Fatal("rejected request created a shell")
+	}
+}
+
+func TestAuthenticatedAccessDoesNotRewriteTransport(t *testing.T) {
+	const peer = "100.101.102.103:45678"
+	const origin = "https://workstation.example.ts.net"
+	manager := New()
+	defer manager.Close()
+	manager.resolve = func() (shellConfig, error) { return shellConfig{path: "/test/shell"}, nil }
+	r := httptest.NewRequest(http.MethodGet, origin+"/api/terminal/info", nil)
+	r.RemoteAddr = peer
+	w := httptest.NewRecorder()
+	manager.Info(w, r)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("unauthenticated peer bypassed access protection: %d", w.Code)
+	}
+	authenticated, err := localaccess.WithAuthenticatedRemote(r, origin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w = httptest.NewRecorder()
+	manager.Info(w, authenticated)
+	if w.Code != http.StatusOK {
+		t.Fatalf("authenticated peer rejected for info: %d %s", w.Code, w.Body)
+	}
+	manager.resolve = func() (shellConfig, error) {
+		t.Fatal("shell resolved before WebSocket upgrade")
+		return shellConfig{}, nil
+	}
+	w = httptest.NewRecorder()
+	manager.Connect(w, authenticated)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("upgrade without Origin bypassed protection: %d", w.Code)
+	}
+	authenticated.Header.Set("Origin", origin)
+	w = httptest.NewRecorder()
+	manager.Connect(w, authenticated)
+	if w.Code != http.StatusUpgradeRequired || authenticated.RemoteAddr != peer || authenticated.Host != "workstation.example.ts.net" {
+		t.Fatalf("authenticated upgrade changed transport or guard: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestRequestCancellationClosesUpgradedShell(t *testing.T) {
+	manager, started := fakeManager()
+	requestContext, cancelRequest := context.WithCancel(context.Background())
+	defer cancelRequest()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		manager.Connect(w, r.WithContext(requestContext))
+	}))
+	t.Cleanup(func() { manager.Close(); server.Close() })
+	conn := dialTerminal(t, server, "")
+	awaitReady(t, conn)
+	shell := <-started
+	cancelRequest()
+	select {
+	case <-shell.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancelled authenticated request left its shell alive")
 	}
 }
 

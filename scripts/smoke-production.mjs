@@ -131,6 +131,47 @@ async function json(base, path, method = 'GET', body) {
   return value;
 }
 
+async function remoteDisabledSmoke(base) {
+  const runtime = await json(base, '/runtime');
+  const status = await json(base, '/remote/status');
+  assert.deepEqual(status, {
+    instanceId: runtime.instanceId,
+    state: 'disabled',
+  });
+  const home = codex?.env.AXV_HOME || join(dir, 'axv-home');
+  const inspected = await invoke(['remote', 'status', '--json'], {
+    AXV_HOME: home,
+  });
+  assert.equal(inspected.code, 0, inspected.stderr);
+  assert.equal(inspected.stderr, '');
+  assert.deepEqual(JSON.parse(inspected.stdout), status);
+  await assert.rejects(access(join(home, 'tailscale')), { code: 'ENOENT' });
+  const summary = await json(base, '/connection');
+  assert.equal(summary.local, true);
+  assert.equal(summary.remote.state, 'disabled');
+  assert.equal(typeof summary.host.installed, 'boolean');
+  assert.ok(
+    [
+      'not-installed',
+      'unavailable',
+      'connected',
+      'disconnected',
+      'needs-login',
+    ].includes(summary.host.state),
+  );
+  assert.equal(JSON.stringify(summary).includes('authUrl'), false);
+  assert.equal(JSON.stringify(summary).includes('ownerUserId'), false);
+  const foreignSummary = await fetchBounded(`${base}/api/connection`, {
+    headers: { Origin: 'https://outside.invalid' },
+  });
+  assert.equal(foreignSummary.status, 403);
+  const foreign = await fetchBounded(`${base}/api/remote/status`, {
+    headers: { Origin: 'https://outside.invalid' },
+  });
+  assert.equal(foreign.status, 403);
+  assert.equal((await foreign.json()).code, 'remote_local_only');
+}
+
 async function until(check, description, details = () => '') {
   const deadline = Date.now() + 10_000;
   while (!(await check())) {
@@ -657,6 +698,7 @@ try {
   shellEnvironment = await createShellEnvironment(dir);
   codex = await createCodexFixture(dir);
   const first = await start();
+  await remoteDisabledSmoke(first.base);
   const logPath = (await json(first.base, '/compute/environment')).logPath;
   assert.equal(
     typeof logPath,
@@ -834,6 +876,7 @@ try {
       ...updatedProxyEnvironment,
     },
   });
+  await remoteDisabledSmoke(second.base);
   await resumedCodexSmoke(second.base, persistentCodex, updatedNetworkDigest);
   assert.ok(
     !(await readdir(dir)).includes('ignored-data'),
@@ -900,7 +943,7 @@ try {
     );
   await codex?.verifyIsolation();
   console.log(
-    'Production smoke passed: CLI help/version/errors, isolated global configuration, flag precedence, dynamic ports, listener failure, graceful shutdown with active PTYs, host shell input/output/resize/interrupt/session limits/restart, Host Codex workspace/project/tmux identity/redacted proxy diagnostics/environment refresh/idempotent creation and continuation/multiple clients/detach/reattach/session isolation/metadata/recent projects/termination/process persistence across service restart/history context in a new process/old-run isolation, embedded UI, independent cwd, database identity, files, trash, preferences, workspaces, Dock, Clip, panels, and client layouts survive restart.',
+    'Production smoke passed: CLI help/version/errors, disabled remote status and CLI identity without node state, cross-origin remote status rejection, isolated global configuration, flag precedence, dynamic ports, listener failure, graceful shutdown with active PTYs, host shell input/output/resize/interrupt/session limits/restart, Host Codex workspace/project/tmux identity/redacted proxy diagnostics/environment refresh/idempotent creation and continuation/multiple clients/detach/reattach/session isolation/metadata/recent projects/termination/process persistence across service restart/history context in a new process/old-run isolation, embedded UI, independent cwd, database identity, files, trash, preferences, workspaces, Dock, Clip, panels, and client layouts survive restart.',
   );
 } catch (error) {
   console.error('Production smoke failed:', error);

@@ -59,6 +59,8 @@ Applications use the shared title bar, optional toolbar, scrolling content and o
 
 Empty, loading, failed and unsaved states are part of the design. Preserve visible work during recovery and report success only after the action succeeds.
 
+Keep browser/server connectivity, application remote-access readiness and system VPN state distinct. Status lamps need text labels, and a failed status query must not retain a current-looking success lamp. Connection diagnostics use an on-demand non-modal utility panel, reached through existing application launchers or Preferences. Optional Dock and Clip shortcuts follow their existing application roles.
+
 ## Interaction conventions
 
 - **Windows:** Activation raises a window; title dragging moves it and edge dragging resizes it. Title double-click folds it. Folded, minimized and off-workspace content retains state without receiving input. Keep visible menu alternatives for these operations.

@@ -1,0 +1,1 @@
+export { tailscaleApp } from './definition';

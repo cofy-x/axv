@@ -139,7 +139,7 @@ func (h *Handler) handle(handler http.HandlerFunc) http.HandlerFunc {
 }
 
 func allowed(w http.ResponseWriter, r *http.Request, origin bool) bool {
-	if localaccess.Request(r, origin) {
+	if localaccess.AllowRequest(r, origin) {
 		return true
 	}
 	respond(w, nil, requestFailure(403, "host_forbidden", "Host Codex requires a same-origin connection from this computer."))

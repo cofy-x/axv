@@ -68,7 +68,11 @@ describe('host-independent desktop commands', () => {
   it('launches arbitrary registered app IDs through their launch hooks', () => {
     const api = desktopAPI();
     const props: DesktopProps = {
-      apps: [app('inventory'), app('hidden', false), app('reporting')],
+      apps: [
+        app('inventory'),
+        app('hidden', false),
+        { ...app('reporting'), defaultPinned: false },
+      ],
       icons: [],
     };
     const menus = createDesktopContextMenu(props, api, []);

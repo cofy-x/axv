@@ -2,6 +2,10 @@
 
 AXV's own source is licensed under the [MIT License](LICENSE). Dependencies, downloaded tools and VM contents retain their own copyrights and licenses. AXV's MIT license does not relicense them.
 
+## Visual references
+
+The `mesh-network` icon is original AXV artwork under the MIT License. Its node-matrix concept was informed by the [official Tailscale icon](https://github.com/tailscale/tailscale/blob/main/client/web/src/assets/icons/tailscale-logo.svg); AXV includes no upstream SVG paths or artwork files. The referenced source repository declares [BSD-3-Clause](https://github.com/tailscale/tailscale/blob/main/LICENSE); Tailscale's name and logo remain its own marks.
+
 ## Application distributions
 
 The production executable embeds a JavaScript UI and links Go dependencies. Their exact versions belong to [pnpm-lock.yaml](https://github.com/cofy-x/axv/blob/main/pnpm-lock.yaml) and [go.mod](https://github.com/cofy-x/axv/blob/main/apps/server/go.mod), with the Go binary's build information recording the modules actually linked for that platform.

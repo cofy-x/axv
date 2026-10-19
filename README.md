@@ -17,12 +17,12 @@ AXV is unreleased and experimental. Interfaces and AXV-owned development data ma
 - **Guest enhancements (experimental):** Protocol- and capability-gated execution, Guest Terminal, local SSH, SCP/SFTP, PTY, TCP forwarding and retained-volume project registration/file access. VM projects survive VM replacement on the same volume; stale bindings are rejected. Native enhanced-guest and project-file acceptance, including Git/worktree retention and VM replacement, is validated on Linux amd64 with a locally built Firecracker image; published AXV images and macOS enhanced-guest acceptance remain pending
 - **Startup:** Installable `axv` command, configuration-only `init`, background launch/reopen, one profile for persistent data, isolated development profiles, foreground `serve` and independent VM host activation; native Linux amd64 desktop supervision validated in a systemd user session
 - **Coding agents:** Host Codex conversation recovery, names, archives and recent projects on macOS/Linux; real-model continuity and saved-history recovery validated on Linux amd64. Saved document snapshots can accompany the next submitted message in an exact run, with delivery receipts. Host agents can explicitly use `axv vm project` for VM project files; persistent project tasks, resource/recovery protection, Claude Code and AXV Skill integration remain unimplemented
-- **Remote access:** Unavailable; authentication, authorization, remote session transport and Tailscale integration are not implemented
+- **Remote access (experimental):** Optional private HTTPS desktop through embedded Tailscale, with persistent node identity and owner authorization; disabled by default. The Tailscale utility distinguishes AXV's remote node from read-only system Tailscale detection. [Remote setup](docs/startup.md#remote-access) keeps the system Tailscale service independent. Production remote browser acceptance remains pending
 - **Cross-platform:** Browser and host-terminal adapters exist; VM adapters are implemented for Linux/macOS; Windows VM hosting unavailable
 
 ## Install and use
 
-Build from source with **Go 1.26.9**, **Node 24.16.0**, and **pnpm 12.11.2**. Background startup needs a macOS GUI login or a Linux systemd user manager (254 or newer); see [startup requirements](docs/startup.md#daily-commands). Otherwise, use `axv serve` after installation:
+Build from source with **Go 1.27.2**, **Node 24.16.0**, and **pnpm 12.11.2**. Background startup needs a macOS GUI login or a Linux systemd user manager (254 or newer); see [startup requirements](docs/startup.md#daily-commands). Otherwise, use `axv serve` after installation:
 
 ```bash
 make install

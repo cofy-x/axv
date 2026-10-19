@@ -20,6 +20,7 @@ func TestInvalidCommands(t *testing.T) {
 		{"vm", "unknown"}, {"daemon", "unknown"}, {"vm", "operation", "unknown"},
 		{"unknown"}, {"--unknown"}, {"--addr", "127.0.0.1:4000"},
 		{"version", "extra"},
+		{"remote", "unknown"}, {"remote", "status", "extra"}, {"remote", "status", "--unknown"},
 		{"serve", "--unknown"}, {"serve", "--version"}, {"serve", "--help", "--unknown"},
 		{"serve", "--addr"}, {"serve", "--data-dir"},
 		{"serve", "--addr="}, {"serve", "--data-dir="}, {"serve", "--data-dir", "  "},
@@ -76,6 +77,8 @@ func TestInformationalCommandsHaveNoStorageSideEffects(t *testing.T) {
 		{[]string{"setup", "--help"}, "axv setup [flags]"},
 		{[]string{"daemon", "--help"}, "axv daemon"},
 		{[]string{"daemon", "start", "--help"}, "axv daemon"},
+		{[]string{"remote", "--help"}, "axv remote"},
+		{[]string{"remote", "status", "--help"}, "axv remote status"},
 		{[]string{"version"}, appName + " test-version\n"},
 		{[]string{"--version"}, appName + " test-version\n"},
 	} {
@@ -172,6 +175,7 @@ func TestSharedProfileAndSnapshotRetainAgentSettings(t *testing.T) {
 		"compute":         map[string]string{"mode": "external", "socket": filepath.Join(home, "host.sock")},
 		"workspace_dir":   filepath.Join(home, "host-projects"),
 		"proxy_url":       "http://127.0.0.1:7891",
+		"remote":          map[string]any{"enabled": true, "hostname": "axv-snapshot", "owner_user_id": "123456"},
 		"future":          map[string]bool{"preserve": true},
 	}
 	original, _ := json.Marshal(profile)
@@ -200,6 +204,14 @@ func TestSharedProfileAndSnapshotRetainAgentSettings(t *testing.T) {
 	}
 	if restored.Environment["CODEX_HOME"] != filepath.Join(home, "codex-config") || restored.Environment["HTTPS_PROXY"] != os.Getenv("HTTPS_PROXY") || restored.Fingerprint() != settings.Fingerprint() {
 		t.Fatal("runtime snapshot lost its environment or identity")
+	}
+	if !restored.Desktop.Remote.Enabled || restored.Desktop.Remote.Hostname != "axv-snapshot" || restored.Desktop.Remote.OwnerUserID != "123456" {
+		t.Fatal("runtime snapshot lost remote access configuration")
+	}
+	changed := restored
+	changed.Desktop.Remote.OwnerUserID = "987654"
+	if changed.Fingerprint() == settings.Fingerprint() {
+		t.Fatal("a changed remote owner retained the desktop launch identity")
 	}
 	after, err := os.ReadFile(path)
 	if err != nil || !bytes.Equal(after, original) {
