@@ -115,9 +115,11 @@ Cancellation wins only while a batch is pending under the same queue lock. Once 
 
 ## Terminal attachments
 
-The frontend owns xterm, bounded queues, sizing, scrolling and reconnect backoff. Closing the window, losing its connection or stopping the desktop service disposes attachment clients without ending the managed run. End Session terminates only the exact recorded run. Reconnect targets that original run and discards unsent input.
+The frontend owns xterm, bounded queues, sizing, scrolling and reconnect backoff. An explicit `attach_failed` control uses the same bounded backoff as a transient disconnect, revalidating the original session/run pair before each attachment. Persistent failures remain visible with an explicit Reconnect action; access rejection, a different run or a final run stops recovery. Closing the window, losing its connection or stopping the desktop service disposes attachment clients without ending the managed run. End Session terminates only the exact recorded run. Reconnect targets that original run and discards unsent input.
 
 `PrepareAttachment` validates the exact run and reserves capacity before transport upgrade. `Open` restores live input and starts the PTY client after upgrade. Parent cancellation and `Detach` interrupt native I/O; `Close` releases the reservation only after the transport drains its forwarding workers. Ordinary Go callers also close their leases explicitly. Attachment inspection reports runtime uncertainty directly, while list/detail views preserve known identities with a transient reason.
+
+PTY startup failures retain the failing stage (start, descriptor duplication or nonblocking setup) and native cause in the private diagnostic logger, with the exact run ID and executable. Browser messages remain safe and do not include native diagnostics. Logs use the shared sanitizer and contain no terminal streams, provider configuration or environment snapshots; see [service diagnostics](startup.md#configuration-and-storage).
 
 `--no-alt-screen` retains tmux history; reattachment/fresh input leave copy mode. History scrolling sends scroll commands, never composer keystrokes. Hidden input, focus and owner-bound commands follow [desktop contracts](desktop.md).
 

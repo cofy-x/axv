@@ -368,6 +368,10 @@ export class CodexConnection {
         const control: unknown = JSON.parse(data);
         if (!control || typeof control !== 'object') throw new Error();
         if ('error' in control && typeof control.error === 'string') {
+          if ('code' in control && control.code === 'attach_failed') {
+            this.retry(control.error);
+            return;
+          }
           this.fail(
             control.error,
             !(

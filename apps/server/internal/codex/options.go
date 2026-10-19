@@ -1,5 +1,7 @@
 package codex
 
+import "github.com/cofy-x/axv/apps/server/internal/diagnostics"
+
 // Options contains resolved inputs supplied by the desktop composition root.
 // Codex does not resolve profiles or depend on desktop listener configuration.
 type Options struct {
@@ -10,4 +12,5 @@ type Options struct {
 	ProxyURL         string
 	TmuxSocket       string
 	RunnerExecutable string
+	Logger           *diagnostics.Logger
 }
