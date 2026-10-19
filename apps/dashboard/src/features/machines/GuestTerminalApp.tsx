@@ -137,7 +137,7 @@ export function GuestTerminalApp({
       },
       onInputRejected: () =>
         setFeedback(
-          'Input was not sent because the connection is busy. Wait for it to catch up, then try a smaller paste.',
+          'Input not sent: connection busy. Wait, then try a smaller paste.',
         ),
     });
     session.current = connection;
@@ -352,8 +352,7 @@ export function GuestTerminalApp({
   const endSession = useCallback(async () => {
     const answer = await desktop.dialog({
       title: 'End guest terminal?',
-      message:
-        'End this shell and its jobs? Closing the window only detaches it.',
+      message: `End “${window.title}” and its jobs? Terminal: ${terminalId}. Closing the window only detaches it.`,
       buttons: [
         { label: 'Cancel', value: 'cancel', default: true, cancel: true },
         { label: 'End Session', value: 'end' },
@@ -370,7 +369,7 @@ export function GuestTerminalApp({
       setFeedback(error instanceof Error ? error.message : String(error));
       return false;
     }
-  }, [desktop, machineId, terminalId, hostId]);
+  }, [desktop, window.title, machineId, terminalId, hostId]);
 
   useEffect(() => {
     const unregister = [

@@ -133,6 +133,7 @@ export function Gallery({ desktop }: AppWindowProps) {
                         },
                       ],
                       { x: rect.left, y: rect.bottom },
+                      { title: 'Actions' },
                     );
                   }}
                 />

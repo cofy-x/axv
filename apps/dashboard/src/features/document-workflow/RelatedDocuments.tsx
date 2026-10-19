@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Button } from '@cofy-x/axv-nextstep';
+import { Button, IconButton } from '@cofy-x/axv-nextstep';
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
 import { documentsAPI } from '../../filesystem/documents';
 import { useFilesystemData } from '../../filesystem/context';
@@ -26,12 +26,11 @@ export function RelatedDocuments({
     <details className="document-related">
       <summary>Related documents ({data?.links.length ?? '…'})</summary>
       {error && <p role="alert">{error}</p>}
-      <Button
-        aria-label="Refresh documents"
+      <IconButton
+        icon="refresh"
+        label="Refresh documents"
         onClick={() => refresh((value) => value + 1)}
-      >
-        Refresh
-      </Button>
+      />
       {data?.links.length === 0 && <p>No documents linked to this target.</p>}
       {data?.links.map((link) => {
         const entry = files.entries.find((item) => item.id === link.entryId);

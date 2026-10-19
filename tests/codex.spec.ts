@@ -131,10 +131,11 @@ test('Codex selects a real project and preserves the same process through close,
     .toBe(0);
   expect((await session(request, id)).status).toBe('running');
   const manager = await openCodexManager(page);
-  await manager
-    .locator(`[data-session-id="${id}"]`)
-    .getByRole('button', { name: 'Open', exact: true })
-    .click();
+  const row = manager.locator(
+    `[data-session-id="${id}"][data-run-id="${runId}"]`,
+  );
+  await expect(row.getByTestId('codex-run-id')).toHaveText(`Run ${runId}`);
+  await row.getByRole('button', { name: 'Open', exact: true }).click();
   const resumed = codexWindow(page, id, runId);
   await expect(resumed.getByTestId('codex-status')).toHaveAttribute(
     'data-state',
@@ -410,9 +411,7 @@ test('closing the Codex picker cancels pending directory loading and reopening i
       .getByLabel('Project directory', { exact: true })
       .fill(selected);
     await reopened.getByRole('button', { name: 'Go', exact: true }).click();
-    await expect(
-      reopened.getByText('No subfolders. You can use this directory.'),
-    ).toBeVisible();
+    await expect(reopened.getByText('No subfolders.')).toBeVisible();
     releaseResponse();
     await responseReleased;
     await expect.poll(() => canceled).toBe(true);
@@ -476,7 +475,7 @@ test('Codex reports a missing dependency and refreshes availability without star
     .click();
   const environment = page.locator('[data-app-id="codex-environment"]');
   await environment
-    .getByRole('button', { name: 'Check Again', exact: true })
+    .getByRole('button', { name: 'Refresh', exact: true })
     .click();
   await expect(environment.getByRole('status')).toHaveText('CLI ready');
   await environment.getByRole('button', { name: /^Close / }).click();
@@ -540,7 +539,7 @@ test('Codex hides all launchers until installed and restores them after reloadin
   });
   await activate(page, welcome);
   await expect(
-    welcome.getByRole('button', { name: 'Check Again', exact: true }),
+    welcome.getByRole('button', { name: 'Refresh', exact: true }),
   ).toHaveCount(0);
   await expect(welcomeLauncher).toHaveCount(0);
   await expect(

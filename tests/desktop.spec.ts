@@ -625,7 +625,7 @@ test('image previews and file-size errors use real imported data', async ({
     buffer: Buffer.alloc(10 * 1024 * 1024 + 1),
   });
   const dialog = page.getByRole('dialog', {
-    name: 'Unable to complete the operation',
+    name: 'Action failed',
     exact: true,
   });
   await expect(dialog).toContainText('10 MiB');

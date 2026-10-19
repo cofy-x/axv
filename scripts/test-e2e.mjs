@@ -2,6 +2,7 @@ import { initializeTestTemp } from './test-temp.mjs';
 import { basename, join } from 'node:path';
 import { createCodexFixture } from './codex-fixture.mjs';
 import { createShellEnvironment } from './shell-fixture.mjs';
+import { reportRuntimeDiagnostics } from './test-e2e-diagnostics.mjs';
 import {
   command,
   exitAfterCleanup,
@@ -15,6 +16,7 @@ import {
 initializeTestTemp({ isolatedCache: true });
 
 const dir = await scratch();
+let profileHome = join(dir, 'axv-home');
 let stopping = false;
 let codex;
 let server;
@@ -39,6 +41,7 @@ async function shutdown(code = 0) {
     console.error(error);
     code = 1;
   }
+  if (code !== 0) await reportRuntimeDiagnostics(profileHome);
   await exitAfterCleanup(code, dir);
 }
 
@@ -52,9 +55,10 @@ try {
     });
   codex = await createCodexFixture(dir);
   const shellEnvironment = await createShellEnvironment(dir);
+  profileHome = codex?.env.AXV_HOME || profileHome;
   server = await launchServer({
     cwd: dir,
-    profileHome: codex?.env.AXV_HOME || join(dir, 'axv-home'),
+    profileHome,
     dataDir: join(dir, 'data'),
     addr: `127.0.0.1:${process.env.E2E_PORT || 0}`,
     env: {

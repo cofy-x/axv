@@ -362,10 +362,7 @@ export function Inspector({ window, desktop }: AppWindowProps) {
                       <pre>{currentPreview.text}</pre>
                     )}
                     {entry.size > 8000 && (
-                      <small>
-                        Showing the first 8,000 characters. Open Text Editor to
-                        read the document.
-                      </small>
+                      <small>First 8,000 characters. Open for full text.</small>
                     )}
                   </>
                 ) : (

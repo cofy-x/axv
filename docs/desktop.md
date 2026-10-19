@@ -64,6 +64,10 @@ Folding, minimizing or switching workspaces preserves the emulator and shell. `i
 
 The Go service owns `terminal.Manager` independently of storage. It validates local access and Origin, enforces capacity, and bridges WebSocket bytes to a host shell. Platform adapters in the server terminal package own PTY creation, resizing, exit detection and process cleanup; dependency versions belong to the [Go module](../apps/server/go.mod).
 
+The shared [`nativepty`](../apps/server/internal/nativepty) adapter creates pollable PTY masters for Host Terminal, Codex attachments and Guest Terminal. It preserves nonblocking I/O through `SyscallConn`; each feature retains its own process waiting, termination and detach rules.
+
+On macOS/Linux, the process waiter retains the exit code, signal, duration and requested-close state in [service diagnostics](startup.md#configuration-and-storage), without terminal streams or environment values. It publishes process completion before logging so diagnostics cannot delay session cleanup.
+
 Service shutdown closes ordinary Terminal connections and reaps their shells explicitly: `http.Server.Shutdown` alone does not close upgraded WebSockets. [Codex attachments](codex.md#terminal-attachments) have a separate lifetime. Framing and same-origin checks belong to the [Host Terminal API](api/host-terminal.md); the development proxy must preserve browser Host and Origin.
 
 ### Project terminals

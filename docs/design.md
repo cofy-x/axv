@@ -10,7 +10,7 @@ Use direct action labels, identify the execution target and explain capability l
 
 Keep buttons brief, usually one or two words. Use surrounding context instead of repeating object names. Put consequences in nearby guidance or confirmations, preserving execution targets and lifecycle distinctions.
 
-Keep frequent actions visible and group secondary commands in one accessible menu. Use the shared icon button for familiar actions such as copy, paste and paging; keep lifecycle and destructive actions clearly named. Icon buttons retain accessible names, tooltips, focus feedback and touch hit areas.
+Keep frequent actions visible and group secondary commands in one accessible menu. Name action menus for their view or selected target, including a short identifier when names can repeat. Use the shared icon button for familiar actions such as copy, paste and paging; keep lifecycle and destructive actions clearly named. Icon buttons retain accessible names, tooltips, focus feedback and touch hit areas.
 
 Use short action labels without trailing ellipses, including commands that open a picker, panel or confirmation. Reserve ellipses for loading or in-progress text and actual truncation. The standalone More icon remains a menu affordance.
 

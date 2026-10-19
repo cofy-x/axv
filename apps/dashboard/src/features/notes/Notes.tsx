@@ -66,10 +66,7 @@ function EditorLauncher({ desktop }: AppWindowProps) {
       {drafts.length > 0 && (
         <section aria-label="Recovered drafts">
           <h2>Recovered drafts</h2>
-          <p>
-            These copies are stored in this browser and have not been saved to
-            the server.
-          </p>
+          <p>Stored in this browser. Not saved to the server.</p>
           <div className="editor-document-list">
             {drafts.map((draft) => (
               <button
@@ -168,6 +165,28 @@ function DocumentEditor({
     flushDraft,
     metadataChanged,
   } = note;
+  const mounted = useRef(false);
+  const menuState = useRef({
+    entryId,
+    unavailable,
+    getSnapshot,
+    saveCopy,
+    loadSaved,
+  });
+  menuState.current = {
+    entryId,
+    unavailable,
+    getSnapshot,
+    saveCopy,
+    loadSaved,
+  };
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     desktop.setTitle(window.id, `${entryName}${dirty ? ' *' : ''}`);
@@ -261,6 +280,32 @@ function DocumentEditor({
     if (answer?.button === 'load') await reload();
   }
 
+  function menuAction(
+    kind: 'workflow' | 'copy' | 'reload',
+    work: (current: typeof menuState.current) => void | Promise<void>,
+  ) {
+    return () => {
+      if (!mounted.current) return;
+      void runCommand(desktop, async () => {
+        const current = menuState.current;
+        const state = current.getSnapshot();
+        if (
+          current.entryId !== entryId ||
+          !state.loaded ||
+          (kind !== 'copy' && current.unavailable) ||
+          (kind === 'reload' &&
+            (state.saving ||
+              state.recoveryAvailable ||
+              state.resolvingRecovery))
+        )
+          throw new Error(
+            'This action is no longer available for this document.',
+          );
+        await work(current);
+      });
+    };
+  }
+
   return (
     <div
       className="notes-app"
@@ -333,19 +378,19 @@ function DocumentEditor({
                 ].map(({ task, label }) => ({
                   label,
                   disabled: !loaded || unavailable,
-                  action: () => {
+                  action: menuAction('workflow', () => {
                     const workflowId = desktop.openApp('document-workflow', {
                       entryId,
                       task,
                     });
                     desktop.updateWindowState(workflowId, { task });
-                  },
+                  }),
                 })),
                 { separator: true },
                 {
                   label: 'Save Copy',
                   disabled: !loaded,
-                  action: () => void runCommand(desktop, saveCopy),
+                  action: menuAction('copy', (current) => current.saveCopy()),
                 },
                 {
                   label: 'Reload',
@@ -355,11 +400,13 @@ function DocumentEditor({
                     saving ||
                     note.recoveryAvailable ||
                     note.resolvingRecovery,
-                  action: () => void runCommand(desktop, loadSaved),
+                  action: menuAction('reload', (current) =>
+                    current.loadSaved(),
+                  ),
                 },
               ],
               { x: rect.left, y: rect.bottom },
-              { title: 'Document' },
+              { title: entryName },
             );
           }}
         />

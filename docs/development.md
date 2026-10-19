@@ -162,6 +162,8 @@ The [browser runtime guard](../tests/runtime-errors.ts) collects native `error` 
 
 Each run owns its data, profile, project, listener and explicit tmux socket. On macOS/Linux, build, Go-test, browser and development launchers also own their child process groups. Cleanup waits for all tracked child shutdown attempts before reporting failures; a cleanup failure is visible and makes the launcher exit nonzero even when its checks succeeded. Cleanup may stop only the invocation's resources. Shared launcher and Codex fixture behavior lives in [scripts/lib.mjs](../scripts/lib.mjs) and [scripts/codex-fixture.mjs](../scripts/codex-fixture.mjs).
 
+Before removing a failed browser run's private profile, the [diagnostic helper](../scripts/test-e2e-diagnostics.mjs) reports the final 64 KiB of its daemon log alongside existing Codex pane diagnostics.
+
 On macOS, a process-group probe can return `EPERM` while exited children await reaping; that error alone does not identify security-software intervention. The launcher keeps observing within its existing cleanup deadline and succeeds only after `ESRCH` confirms the group is absent. A persistent permission error remains a cleanup failure.
 
 Keep generated databases, build outputs, screenshots, traces and browser reports untracked. Formatting covers documentation as well as source; use the repository's Prettier and ESLint configuration.

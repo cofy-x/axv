@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/creack/pty"
+	"github.com/cofy-x/axv/apps/server/internal/nativepty"
 	"golang.org/x/sys/unix"
 )
 
@@ -16,26 +16,10 @@ func startTerminal(dir string, cols, rows uint16) (*os.File, *exec.Cmd, error) {
 	cmd := exec.Command("/bin/bash", "-l")
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
-	f, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: cols, Rows: rows})
+	f, err := nativepty.Start(cmd, cols, rows)
 	if err != nil {
 		return nil, nil, err
 	}
-	// Register a nonblocking PTY with Go's poller so deadlines and Close can
-	// interrupt a process that stops reading input or holds the terminal open.
-	fd, err := unix.FcntlInt(f.Fd(), unix.F_DUPFD_CLOEXEC, 0)
-	f.Close()
-	if err == nil {
-		err = unix.SetNonblock(fd, true)
-	}
-	if err != nil {
-		if fd >= 0 {
-			_ = unix.Close(fd)
-		}
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		return nil, nil, err
-	}
-	f = os.NewFile(uintptr(fd), "guest-terminal")
 	return f, cmd, nil
 }
 

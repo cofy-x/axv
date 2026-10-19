@@ -1,6 +1,14 @@
 import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { activate } from './helpers';
+import type { Locator } from '@playwright/test';
+import {
+  actionMenu,
+  activate,
+  createEntry,
+  entries,
+  launch,
+  menuItem,
+} from './helpers';
 import { expect, openCodexManager, test } from './codex-helpers';
 
 for (const viewport of [
@@ -61,9 +69,35 @@ for (const viewport of [
     await capture('codex-integrated');
     await activate(page, welcome);
     await capture('welcome-integrated');
-    await welcome
-      .getByRole('button', { name: 'About AXV', exact: true })
-      .click();
+    const more = welcome.getByRole('button', {
+      name: 'More welcome actions',
+      exact: true,
+    });
+    await more.focus();
+    await more.press('Enter');
+    await expect(menuItem(page, 'Preferences')).toBeInViewport();
+    await expect(menuItem(page, 'About AXV')).toBeInViewport();
+    await capture('welcome-more-menu');
+    await page.keyboard.press('Escape');
+    await expect(more).toBeFocused();
+    await actionMenu(
+      page,
+      welcome,
+      'More welcome actions',
+      'Preferences',
+      info.project.use.hasTouch === true,
+    );
+    const preferences = page.locator('[data-app-id="appearance"]');
+    await expect(preferences).toBeVisible();
+    await preferences.getByRole('button', { name: /^Close / }).click();
+    await activate(page, welcome);
+    await actionMenu(
+      page,
+      welcome,
+      'More welcome actions',
+      'About AXV',
+      info.project.use.hasTouch === true,
+    );
     const about = page.locator('[data-window-id="about:main"]');
     await expect(about).toBeVisible();
     await capture('about-integrated');
@@ -90,3 +124,95 @@ for (const viewport of [
     await expect(codex).toBeAttached();
   });
 }
+
+test('Recycler menus preserve their selection and confirm permanent deletion', async ({
+  page,
+  request,
+  isMobile,
+}, info) => {
+  const choose = (control: Locator) =>
+    isMobile ? control.tap() : control.click();
+  const first = await createEntry(request, 'E2E Recycler original.txt');
+  const second = await createEntry(request, 'E2E Recycler later.txt');
+  for (const entry of [first, second])
+    expect(
+      (await request.post(`/api/entries/${entry.id}/trash`)).ok(),
+    ).toBeTruthy();
+  await page.reload();
+  await launch(page, 'trash');
+  const recycler = page.locator('[data-app-id="trash"]');
+  const original = recycler.getByRole('option', {
+    name: new RegExp(first.name),
+  });
+  const later = recycler.getByRole('option', { name: new RegExp(second.name) });
+  const more = recycler.getByRole('button', {
+    name: 'More recycler actions',
+    exact: true,
+  });
+  await choose(original);
+  await more.focus();
+  await more.press('Enter');
+  await expect(menuItem(page, 'Delete')).toBeEnabled();
+  await expect(menuItem(page, 'Empty Recycler')).toBeInViewport();
+  const screenshotDir = resolve('screenshots', `final-${info.project.name}`);
+  await mkdir(screenshotDir, { recursive: true });
+  const path = resolve(screenshotDir, 'recycler-more-menu.png');
+  await page.screenshot({ path, fullPage: true });
+  await info.attach('recycler-more-menu', { path, contentType: 'image/png' });
+  await page.keyboard.press('Escape');
+  await expect(more).toBeFocused();
+  await actionMenu(page, recycler, 'More recycler actions', 'Delete', isMobile);
+  const confirmation = page.getByRole('dialog', {
+    name: 'Delete permanently?',
+    exact: true,
+  });
+  await choose(
+    confirmation.getByRole('button', { name: 'Cancel', exact: true }),
+  );
+  await expect(original).toBeVisible();
+  await expect(later).toBeVisible();
+
+  await choose(more);
+  // A background selection change must not retarget an already open menu.
+  await later.evaluate((element) => (element as HTMLButtonElement).click());
+  await expect(later).toHaveAttribute('aria-selected', 'true');
+  await choose(menuItem(page, 'Delete'));
+  await choose(
+    confirmation.getByRole('button', { name: 'Delete', exact: true }),
+  );
+  await expect(original).toHaveCount(0);
+  await expect(later).toBeVisible();
+  await expect
+    .poll(async () =>
+      (await entries(request)).some((entry) => entry.id === first.id),
+    )
+    .toBe(false);
+  await expect
+    .poll(async () =>
+      (await entries(request)).some((entry) => entry.id === second.id),
+    )
+    .toBe(true);
+
+  await actionMenu(
+    page,
+    recycler,
+    'More recycler actions',
+    'Empty Recycler',
+    isMobile,
+  );
+  const empty = page.getByRole('dialog', {
+    name: 'Empty the Recycler?',
+    exact: true,
+  });
+  await choose(empty.getByRole('button', { name: 'Cancel', exact: true }));
+  await expect(later).toBeVisible();
+  await actionMenu(
+    page,
+    recycler,
+    'More recycler actions',
+    'Empty Recycler',
+    isMobile,
+  );
+  await choose(empty.getByRole('button', { name: 'Delete', exact: true }));
+  await expect(later).toHaveCount(0);
+});

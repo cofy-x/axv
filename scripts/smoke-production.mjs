@@ -585,7 +585,7 @@ async function terminalSmoke(base) {
   });
   assert.equal(limited.status, 503);
   assert.equal((await limited.json()).code, 'terminal_limit');
-  shellInput(sessions[0], 'exit\r');
+  shellInput(sessions[0], 'exit 17\r');
   await until(() => sessions[0].closed, 'natural shell exit');
   assert.equal(sessions[0].code, 1000);
   for (const closed of sessions.slice(1, 3)) {
@@ -873,17 +873,31 @@ try {
   }
   await stop(second.child);
   assert.equal(second.child.exitCode, 0);
-  await verifyProfileLog(codex?.env.AXV_HOME || join(dir, 'axv-home'), {
-    logPath,
-    minimumDesktopStarts: 2,
-    excluded: [
-      'fixture-password',
-      'next-password',
-      'survives-restart',
-      'production-pty-ready',
-      'Persisted through a restart.',
-    ],
-  });
+  const logRecords = await verifyProfileLog(
+    codex?.env.AXV_HOME || join(dir, 'axv-home'),
+    {
+      logPath,
+      minimumDesktopStarts: 2,
+      excluded: [
+        'fixture-password',
+        'next-password',
+        'survives-restart',
+        'production-pty-ready',
+        'Persisted through a restart.',
+      ],
+    },
+  );
+  if (process.platform !== 'win32')
+    assert.ok(
+      logRecords.some(
+        (record) =>
+          record.event === 'service.diagnostic' &&
+          /^host terminal process exited .*exit_code=17 signal=0 .*close_requested=false /u.test(
+            record.message,
+          ),
+      ),
+      'Host shell exit status must reach the private profile log.',
+    );
   await codex?.verifyIsolation();
   console.log(
     'Production smoke passed: CLI help/version/errors, isolated global configuration, flag precedence, dynamic ports, listener failure, graceful shutdown with active PTYs, host shell input/output/resize/interrupt/session limits/restart, Host Codex workspace/project/tmux identity/redacted proxy diagnostics/environment refresh/idempotent creation and continuation/multiple clients/detach/reattach/session isolation/metadata/recent projects/termination/process persistence across service restart/history context in a new process/old-run isolation, embedded UI, independent cwd, database identity, files, trash, preferences, workspaces, Dock, Clip, panels, and client layouts survive restart.',

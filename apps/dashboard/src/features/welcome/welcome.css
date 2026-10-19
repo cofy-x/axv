@@ -78,11 +78,6 @@
   justify-content: space-between;
   flex-wrap: wrap;
 }
-.welcome-utilities {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
 .about-app {
   height: 100%;
   overflow: auto;

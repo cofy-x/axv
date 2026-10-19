@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Field, PixelIcon, StatusBar } from '@cofy-x/axv-nextstep';
+import {
+  Button,
+  Field,
+  IconButton,
+  PixelIcon,
+  StatusBar,
+} from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { useFilesystemData } from '../../filesystem/context';
 import { useDraftNamespace } from '../../shared/drafts/context';
@@ -67,12 +73,17 @@ function ProjectLauncher({ desktop }: AppWindowProps) {
 
   return (
     <div className="project-launcher app-pad" ref={launcher}>
-      <div className="panel-heading">
+      <div className="panel-heading project-launcher-heading">
         <PixelIcon name="project" />
         <div>
           <strong>Project Files</strong>
           <p>Browse files in a host folder.</p>
         </div>
+        <IconButton
+          icon="refresh"
+          label="Refresh"
+          onClick={() => setRefresh((value) => value + 1)}
+        />
       </div>
       <form
         className="project-register-form"
@@ -119,9 +130,7 @@ function ProjectLauncher({ desktop }: AppWindowProps) {
       )}
       {(error || result.error) && <p role="alert">{error || result.error}</p>}
       {!result.data && !result.error && <p role="status">Loading projects…</p>}
-      {result.data?.projects.length === 0 && (
-        <p>No projects yet. Choose a folder to begin.</p>
-      )}
+      {result.data?.projects.length === 0 && <p>No projects yet.</p>}
       <div className="project-list" aria-label="Registered projects">
         {result.data?.projects.map((project) => (
           <Button
@@ -141,7 +150,6 @@ function ProjectLauncher({ desktop }: AppWindowProps) {
           </Button>
         ))}
       </div>
-      <Button onClick={() => setRefresh((value) => value + 1)}>Refresh</Button>
     </div>
   );
 }
@@ -165,7 +173,10 @@ function ProjectBrowser({ window, desktop, interactive }: AppWindowProps) {
       : !!file;
   const directory = useRef<HTMLElement>(null);
   const preview = useRef<HTMLElement>(null);
+  const previewFocusLocation = useRef<string | null>(null);
   const returnToDirectory = useRef(false);
+  const mounted = useRef(false);
+  const downloadPending = useRef(false);
   const [refresh, setRefresh] = useState(0);
   const [raw, setRaw] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -197,10 +208,23 @@ function ProjectBrowser({ window, desktop, interactive }: AppWindowProps) {
   const selected = content.data;
 
   useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!reading) previewFocusLocation.current = null;
     if (!interactive) return;
-    if (reading && directory.current?.getClientRects().length === 0)
+    if (
+      reading &&
+      previewFocusLocation.current !== file &&
+      directory.current?.getClientRects().length === 0
+    ) {
+      previewFocusLocation.current = file;
       preview.current?.focus({ preventScroll: true });
-    else if (!reading && returnToDirectory.current) {
+    } else if (!reading && returnToDirectory.current) {
       returnToDirectory.current = false;
       const selected = directory.current?.querySelector<HTMLButtonElement>(
         '[aria-current="true"]',
@@ -215,13 +239,15 @@ function ProjectBrowser({ window, desktop, interactive }: AppWindowProps) {
     let compact = directory.current?.getClientRects().length === 0;
     const observer = new ResizeObserver(() => {
       const next = directory.current?.getClientRects().length === 0;
-      if (next && !compact && reading)
+      if (next && !compact && reading) {
+        previewFocusLocation.current = file;
         preview.current?.focus({ preventScroll: true });
+      }
       compact = next;
     });
     observer.observe(surface);
     return () => observer.disconnect();
-  }, [interactive, reading]);
+  }, [interactive, reading, file]);
 
   async function copyToDocuments() {
     if (!selected || busy) return;
@@ -259,50 +285,76 @@ function ProjectBrowser({ window, desktop, interactive }: AppWindowProps) {
     }
   }
 
-  async function download() {
-    if (!file || downloading) return;
+  async function download(path: string) {
+    if (!mounted.current || !path || downloadPending.current) return;
+    downloadPending.current = true;
     setDownloading(true);
     setError('');
     try {
-      await projectsAPI.download(id, file);
+      await projectsAPI.download(id, path);
     } catch (error) {
-      setError(error instanceof Error ? error.message : String(error));
+      if (mounted.current)
+        setError(error instanceof Error ? error.message : String(error));
     } finally {
-      setDownloading(false);
+      downloadPending.current = false;
+      if (mounted.current) setDownloading(false);
     }
   }
 
   return (
     <div className="project-browser">
       <div className="app-toolbar">
-        <Button onClick={() => desktop.openApp('project-files')}>
-          Projects
-        </Button>
-        <Button
+        <IconButton
+          icon="up"
+          label="Up"
           disabled={!folder}
           onClick={() => navigate(folder.split('/').slice(0, -1).join('/'))}
-        >
-          Up
-        </Button>
-        <Button
+        />
+        <IconButton
+          icon="refresh"
+          label="Refresh"
           onClick={() => {
             setRefresh((value) => value + 1);
             setFeedback('');
           }}
-        >
-          Refresh
-        </Button>
+        />
         <Button
           disabled={!selected || busy}
           onClick={() => void copyToDocuments()}
         >
           {busy ? 'Copying…' : 'Copy to Documents'}
         </Button>
-        {file && (
-          <Button disabled={downloading} onClick={() => void download()}>
-            {downloading ? 'Downloading…' : 'Download'}
-          </Button>
-        )}
+        <IconButton
+          icon="more"
+          label="More project actions"
+          aria-haspopup="menu"
+          onClick={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            const path = file;
+            desktop.contextMenu(
+              [
+                ...(path
+                  ? [
+                      {
+                        label: downloading ? 'Downloading…' : 'Download',
+                        disabled: downloading,
+                        action: () => void download(path),
+                      },
+                      { separator: true },
+                    ]
+                  : []),
+                {
+                  label: 'Projects',
+                  action: () => {
+                    if (mounted.current) desktop.openApp('project-files');
+                  },
+                },
+              ],
+              { x: rect.left, y: rect.bottom },
+              { title: path.split('/').pop() || 'Project actions' },
+            );
+          }}
+        />
       </div>
       <div className="project-location">
         <div className="project-location-summary">
@@ -337,6 +389,11 @@ function ProjectBrowser({ window, desktop, interactive }: AppWindowProps) {
       {feedback && (
         <p className="project-feedback" role="status">
           {feedback}
+        </p>
+      )}
+      {downloading && (
+        <p className="project-feedback" role="status">
+          Downloading…
         </p>
       )}
       <div className={`project-content${reading ? ' is-reading' : ''}`}>
@@ -424,10 +481,7 @@ function ProjectBrowser({ window, desktop, interactive }: AppWindowProps) {
             Back
           </Button>
           {!file ? (
-            <p>
-              Select a file to read it. Project files stay in their original
-              directory.
-            </p>
+            <p>Select a file to preview. Originals stay in the host folder.</p>
           ) : (
             <>
               <div className="project-preview-heading">
@@ -439,7 +493,15 @@ function ProjectBrowser({ window, desktop, interactive }: AppWindowProps) {
                 )}
               </div>
               {content.error ? (
-                <p role="alert">{content.error} Try Download.</p>
+                <>
+                  <p role="alert">{content.error}</p>
+                  <Button
+                    disabled={downloading}
+                    onClick={() => void download(file)}
+                  >
+                    {downloading ? 'Downloading…' : 'Download'}
+                  </Button>
+                </>
               ) : !selected ? (
                 <p role="status">Loading file…</p>
               ) : isMarkdownFilename(file) && !raw ? (

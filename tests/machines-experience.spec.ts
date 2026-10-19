@@ -281,12 +281,9 @@ test('delayed discovery leads to platform-specific setup without showing prematu
   };
   await refresh(manager);
   await expect(
-    manager.getByText(
-      'VM hosting is available when AXV runs on macOS or Linux.',
-      {
-        exact: false,
-      },
-    ),
+    manager.getByText('VM hosting requires macOS or Linux.', {
+      exact: false,
+    }),
   ).toBeVisible();
   await expect(
     manager.getByRole('button', { name: 'Copy setup command' }),
@@ -724,7 +721,7 @@ test('Environment and tabs preserve mounted volume and image drafts', async ({
 
 test('an uncertain start can be resolved from the Inspector after inventory advances', async ({
   page,
-}) => {
+}, info) => {
   const state = fixture();
   const original = structuredClone(state.machines[0]!);
   const operation: Operation = {
@@ -828,6 +825,92 @@ test('an uncertain start can be resolved from the Inspector after inventory adva
     manager.getByRole('button', { name: 'Stop', exact: true }),
   ).toBeEnabled();
   expect(state.writes).toEqual([]);
+
+  const stopOperation: Operation = {
+    id: 'operation-activity-stop',
+    machineId: original.id,
+    action: 'stop',
+    status: 'queued',
+    phase: 'waiting-for-shutdown',
+    createdAt: '2026-10-16T00:02:00Z',
+  };
+  await page.route(
+    `**/api/compute/machines/${original.id}/actions`,
+    async (route) => {
+      expect(route.request().postDataJSON()).toMatchObject({ action: 'stop' });
+      state.operations = [stopOperation, operation];
+      await route.fulfill({
+        status: 202,
+        json: { machine: state.machines[0], operation: stopOperation },
+      });
+    },
+  );
+  await manager.getByRole('button', { name: 'Stop', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Stop VM?' })
+    .getByRole('button', { name: 'Stop VM', exact: true })
+    .click();
+  const feedback = manager.locator('.machines-operation-feedback').filter({
+    has: page.getByRole('button', { name: 'Dismiss', exact: true }),
+  });
+  const viewActivity = feedback.getByRole('button', {
+    name: 'View Activity',
+    exact: true,
+  });
+  await expect(feedback).toContainText('Stop · Queued · Waiting for shutdown');
+  await viewActivity.click();
+  await expect(
+    manager.getByRole('button', { name: 'Activity', exact: true }),
+  ).toBeFocused();
+  const selectedOperation = manager.locator('tr[data-selected="true"]');
+  await expect(selectedOperation).toContainText(stopOperation.id);
+  await expect(selectedOperation).toContainText(original.spec.name);
+  await expect(selectedOperation).toContainText('Queued');
+  await expect(viewActivity).toHaveCount(0);
+
+  state.operations[0] = {
+    ...stopOperation,
+    status: 'failed',
+    phase: 'shutdown',
+    error: 'Guest shutdown failed; the VM is still running.',
+  };
+  await refresh(manager);
+  await expect(selectedOperation).toContainText('Failed');
+  await expect(selectedOperation).toContainText(
+    'Guest shutdown failed; the VM is still running.',
+  );
+  await expect(feedback).toContainText('Stop · Failed · Shutdown');
+  await expect(
+    feedback.getByRole('button', { name: 'Dismiss', exact: true }),
+  ).toBeVisible();
+  await captureSizes(page, info, feedback, 'activity-selected-operation');
+  await manager.getByRole('button', { name: 'VMs', exact: true }).click();
+  await expect(viewActivity).toBeVisible();
+  await viewActivity.click();
+  await expect(
+    manager.getByRole('button', { name: 'Activity', exact: true }),
+  ).toBeFocused();
+  await expect(selectedOperation).toContainText(stopOperation.id);
+  await expect(viewActivity).toHaveCount(0);
+  await manager
+    .getByRole('button', { name: 'Environment', exact: true })
+    .click();
+  await expect(viewActivity).toBeVisible();
+  await viewActivity.click();
+  await expect(
+    manager.getByRole('button', { name: 'Environment', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'false');
+  await expect(
+    manager.getByRole('button', { name: 'Activity', exact: true }),
+  ).toBeFocused();
+  await expect(selectedOperation).toBeVisible();
+  await expect(selectedOperation).toContainText(stopOperation.id);
+  await expect(viewActivity).toHaveCount(0);
+  await feedback.getByRole('button', { name: 'Dismiss', exact: true }).click();
+  await expect(feedback).toHaveCount(0);
+  await expect(selectedOperation).toContainText(
+    'Guest shutdown failed; the VM is still running.',
+  );
 });
 
 test('inspectors keep their original host when another host reuses the VM ID', async ({

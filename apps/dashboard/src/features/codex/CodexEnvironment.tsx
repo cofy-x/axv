@@ -1,4 +1,4 @@
-import { Button } from '@cofy-x/axv-nextstep';
+import { IconButton } from '@cofy-x/axv-nextstep';
 import { useCodexAvailability } from './CodexContext';
 
 export function CodexEnvironment() {
@@ -30,9 +30,9 @@ export function CodexEnvironment() {
             {
               {
                 environment: 'Environment proxy',
-                configuration: 'AXV configuration proxy',
+                configuration: 'AXV config proxy',
                 system: 'System proxy',
-                direct: 'Direct connection',
+                direct: 'Direct',
               }[info.network.proxySource]
             }
             {info.network.proxy && <code>{info.network.proxy}</code>}
@@ -47,9 +47,12 @@ export function CodexEnvironment() {
         <span className="toolbar-caption" role="status">
           {status}
         </span>
-        <Button disabled={loading} onClick={() => void refresh()}>
-          Check Again
-        </Button>
+        <IconButton
+          icon="refresh"
+          label="Refresh"
+          disabled={loading}
+          onClick={() => void refresh()}
+        />
       </div>
       <div className="app-pad codex-environment-content" aria-busy={loading}>
         {(error || info?.reason) && (
@@ -58,9 +61,7 @@ export function CodexEnvironment() {
           </p>
         )}
         {error && info && (
-          <p className="codex-note">
-            Details below are from the last successful check.
-          </p>
+          <p className="codex-note">Showing the last successful check.</p>
         )}
         {!error && info && !info.ready && info.guidance.length > 0 && (
           <ul className="codex-environment-guidance">
@@ -72,8 +73,8 @@ export function CodexEnvironment() {
         {details}
         {info && (
           <p className="codex-note">
-            CLI readiness checks local dependencies, not sign-in or model
-            connectivity. Network settings apply to new sessions.
+            Checks local dependencies, not sign-in or model connectivity.
+            Network settings apply to new sessions.
           </p>
         )}
       </div>

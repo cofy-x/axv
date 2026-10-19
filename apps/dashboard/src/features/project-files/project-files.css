@@ -10,6 +10,10 @@
   overflow: auto;
   height: 100%;
 }
+.project-launcher-heading > div {
+  flex: 1;
+  min-width: 0;
+}
 .project-register-form {
   display: flex;
   align-items: end;

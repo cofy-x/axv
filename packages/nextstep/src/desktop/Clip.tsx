@@ -127,6 +127,7 @@ export function Clip({
           type="button"
           className="ns-clip-prev"
           aria-label="Previous workspace"
+          title="Previous workspace"
           onClick={() =>
             api.switchWorkspace(
               api.workspaces[
@@ -141,6 +142,8 @@ export function Clip({
           type="button"
           className="ns-clip-center"
           aria-label={`Workspace ${index + 1}: ${workspace.name}`}
+          title={`Workspace ${index + 1}: ${workspace.name}`}
+          aria-haspopup="menu"
           onPointerDown={(event) => {
             if (event.button !== 0 || mobile) return;
             const button = event.currentTarget;
@@ -187,6 +190,7 @@ export function Clip({
           type="button"
           className="ns-clip-next"
           aria-label="Next workspace"
+          title="Next workspace"
           onClick={() =>
             api.switchWorkspace(
               api.workspaces[(index + 1) % api.workspaces.length].id,
@@ -243,6 +247,8 @@ export function Clip({
                 type="button"
                 className="ns-shortcut-options"
                 aria-label={`Options for Clip shortcut ${shortcut.title}`}
+                title={`Options for Clip shortcut ${shortcut.title}`}
+                aria-haspopup="menu"
                 onClick={(event) =>
                   api.contextMenu(items, point(event.currentTarget), {
                     title: shortcut.title,

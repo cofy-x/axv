@@ -174,7 +174,7 @@ export function CodexTerminal({
       },
       onInputRejected: () =>
         setFeedback(
-          'Input was not sent because the connection is busy. Wait, then try a smaller paste.',
+          'Input not sent: connection busy. Wait, then try a smaller paste.',
         ),
     });
     connection.current = session;
