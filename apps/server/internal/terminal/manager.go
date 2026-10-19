@@ -1,4 +1,4 @@
-// Package terminal owns ephemeral, local-only host shell sessions.
+// Package terminal owns ephemeral host shell sessions.
 package terminal
 
 import (
@@ -29,6 +29,7 @@ type Manager struct {
 	start     func(shellConfig, int, int) (process, error)
 }
 
+// New enforces local access or an explicitly authenticated remote transport.
 func New() *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Manager{ctx: ctx, cancel: cancel, resolve: resolveShell, directory: projectDirectory, start: startProcess}
@@ -98,6 +99,8 @@ func (m *Manager) Connect(w http.ResponseWriter, r *http.Request) {
 	defer conn.CloseNow()
 	ctx, cancel := context.WithCancel(m.ctx)
 	defer cancel()
+	stopRequest := context.AfterFunc(r.Context(), cancel)
+	defer stopRequest()
 	watchDone := make(chan struct{})
 	go func() {
 		defer close(watchDone)
@@ -140,7 +143,7 @@ func jsonResponse(w http.ResponseWriter, status int, value any) {
 }
 
 func localRequest(r *http.Request, requireOrigin bool) bool {
-	return localaccess.Request(r, requireOrigin)
+	return localaccess.AllowRequest(r, requireOrigin)
 }
 
 func validSize(cols, rows int) bool { return cols >= 2 && cols <= 500 && rows >= 1 && rows <= 200 }

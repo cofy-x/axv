@@ -125,7 +125,7 @@ func newRoot(version string) *cobra.Command {
 		_, err = fmt.Fprintf(cmd.OutOrStdout(), "AXV configuration: %s\nRun axv setup to prepare VM hosting, or axv to open the desktop.\n", filepath.Join(home, "config.json"))
 		return err
 	}})
-	root.AddCommand(newServe(), newDaemon(), newSetup(), newVM(), newSSHProxy(), newCache())
+	root.AddCommand(newServe(), newDaemon(), newSetup(), newVM(), newSSHProxy(), newCache(), newRemote())
 	var hostConfig string
 	host := &cobra.Command{Use: "host", Short: "Run the independent VM host service", Args: arguments(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error {
 		if err := nonemptyFlags(cmd, "config"); err != nil {

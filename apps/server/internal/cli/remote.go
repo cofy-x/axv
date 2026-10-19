@@ -1,0 +1,116 @@
+package cli
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/cofy-x/axv/apps/server/internal/app/launch"
+	"github.com/cofy-x/axv/apps/server/internal/profile"
+	"github.com/spf13/cobra"
+)
+
+type remoteStatus struct {
+	InstanceID  string `json:"instanceId,omitempty"`
+	State       string `json:"state"`
+	AuthURL     string `json:"authUrl,omitempty"`
+	URL         string `json:"url,omitempty"`
+	Error       string `json:"error,omitempty"`
+	OwnerUserID string `json:"ownerUserId,omitempty"`
+}
+
+func newRemote() *cobra.Command {
+	cmd := &cobra.Command{
+		Use: "remote", Short: "Inspect private remote access to this workstation",
+		Long: "Remote access is configured in the profile and applied when the desktop starts. Status never starts a Tailscale node or changes the profile.",
+		Args: arguments(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
+	}
+	var asJSON bool
+	status := &cobra.Command{
+		Use: "status", Short: "Show remote access status and any pending authorization URL",
+		Args: arguments(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error {
+			home, err := profile.Home()
+			if err != nil {
+				return err
+			}
+			value, err := readRemoteStatus(cmd.Context(), home)
+			if err != nil {
+				return err
+			}
+			if asJSON {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(value)
+			}
+			var output strings.Builder
+			fmt.Fprintf(&output, "Remote access: %s\n", value.State)
+			for _, entry := range []struct{ label, value string }{
+				{"URL", value.URL}, {"Authorize", value.AuthURL}, {"Owner user ID", value.OwnerUserID}, {"Error", value.Error},
+			} {
+				if entry.value != "" {
+					fmt.Fprintf(&output, "%s: %s\n", entry.label, entry.value)
+				}
+			}
+			_, err = io.WriteString(cmd.OutOrStdout(), output.String())
+			return err
+		},
+	}
+	status.Flags().BoolVar(&asJSON, "json", false, "print machine-readable status")
+	cmd.AddCommand(status)
+	return cmd
+}
+
+func readRemoteStatus(ctx context.Context, home string) (remoteStatus, error) {
+	state, err := launch.ReadState(home)
+	if os.IsNotExist(err) {
+		return remoteStatus{State: "stopped"}, nil
+	}
+	if err != nil {
+		return remoteStatus{}, err
+	}
+	if err := launch.Verify(ctx, state); err != nil {
+		return remoteStatus{}, fmt.Errorf("desktop is unavailable: %w", err)
+	}
+	base, err := launch.LocalDesktopURL(state.URL)
+	if err != nil {
+		return remoteStatus{}, err
+	}
+	client := &http.Client{
+		Timeout: 2 * time.Second, Transport: &http.Transport{Proxy: nil},
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	defer client.CloseIdleConnections()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/api/remote/status", nil)
+	if err != nil {
+		return remoteStatus{}, err
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return remoteStatus{}, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return remoteStatus{}, fmt.Errorf("remote status returned HTTP %d", response.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20+1))
+	if err != nil {
+		return remoteStatus{}, err
+	}
+	if len(body) > 1<<20 {
+		return remoteStatus{}, fmt.Errorf("remote status exceeds 1 MiB")
+	}
+	var value remoteStatus
+	if err := json.Unmarshal(body, &value); err != nil {
+		return remoteStatus{}, fmt.Errorf("invalid remote status: %w", err)
+	}
+	if value.InstanceID != state.InstanceID {
+		return remoteStatus{}, fmt.Errorf("remote status belongs to another desktop instance")
+	}
+	if value.State == "" {
+		return remoteStatus{}, fmt.Errorf("remote status is missing its state")
+	}
+	return value, nil
+}

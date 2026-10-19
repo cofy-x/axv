@@ -23,7 +23,7 @@ func initialize(home string, mode readMode) (Profile, error) {
 	if err := os.MkdirAll(home, 0700); err != nil {
 		return Profile{}, fmt.Errorf("create AXV home: %w", err)
 	}
-	defaults := Profile{RuntimeVersion: 1, Desktop: Desktop{Addr: "127.0.0.1:3001"}, Compute: Compute{Mode: "disabled"}}
+	defaults := Profile{RuntimeVersion: 1, Desktop: Desktop{Addr: "127.0.0.1:3001"}, Remote: Remote{Hostname: "axv"}, Compute: Compute{Mode: "disabled"}}
 	if err := createDefault(filepath.Join(home, "config.json"), defaults); err != nil {
 		return Profile{}, fmt.Errorf("initialize AXV configuration: %w", err)
 	}

@@ -40,8 +40,8 @@ func (s Snapshot) Clone() Snapshot {
 	return s
 }
 
-// Fingerprint keeps the byte representation used by existing running desktops.
-// The empty compute field is part of that identity contract, not live settings.
+// Fingerprint identifies captured desktop inputs independently of runtime state.
+// The empty compute field belongs to the input projection, not live settings.
 func (s Inputs) Fingerprint() string {
 	identity := struct {
 		ComputeOverride string            `json:"computeOverride,omitempty"`

@@ -38,6 +38,17 @@ const viewport = { width: 1024, height: 768 };
 const workArea = windowWorkArea(viewport, false);
 
 describe('application menus', () => {
+  it('keeps optional utility launchers out of a new Dock while preserving explicit user pins', () => {
+    const utility = { ...app, id: 'utility', defaultPinned: false };
+    const apps = [app, utility];
+    const initial = sanitizeLayout(undefined, apps);
+    expect(initial.dock).toEqual([{ appId: app.id, pinned: true }]);
+    const saved = {
+      ...initial,
+      dock: [{ appId: utility.id, pinned: true }],
+    };
+    expect(sanitizeLayout(saved, apps).dock).toEqual(saved.dock);
+  });
   it('replaces built-in menus and inserts app menus without duplicate IDs', () => {
     const defaults = ['desktop', 'file', 'view', 'window'].map((id) => ({
       id,

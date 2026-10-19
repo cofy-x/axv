@@ -31,7 +31,7 @@ func Register(mux *http.ServeMux, store *storage.Store) {
 		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "no-store")
 			w.Header().Set("X-Content-Type-Options", "nosniff")
-			if !localaccess.Request(r, r.Method != http.MethodGet && r.Method != http.MethodHead) {
+			if !localaccess.AllowRequest(r, r.Method != http.MethodGet && r.Method != http.MethodHead) {
 				fail(w, problem("host_forbidden", "Project files require a same-origin connection from this computer."))
 				return
 			}

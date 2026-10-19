@@ -1,6 +1,6 @@
 # AXV API
 
-These pages own routes, request/response shapes, limits, errors and caller retry obligations for AXV's local service. Read only the affected feature page and the shared rules below. [Project status](../../README.md#project-status) owns platform support and validation status; the service has no remote-user authentication layer.
+These pages own routes, request/response shapes, limits, errors and caller retry obligations for AXV's desktop service. Read only the affected feature page and the shared rules below. [Project status](../../README.md#project-status) owns platform support and validation status.
 
 ## Functional reference
 
@@ -12,6 +12,7 @@ These pages own routes, request/response shapes, limits, errors and caller retry
 - [Host Codex](host-codex.md): Conversations, exact process runs and attachments.
 - [Compute](compute.md): Environment preparation, service readiness, machines, volumes, images, durable operations and VM project bindings/files.
 - [Guest execution](guest.md): Guest health, commands, detachable guest terminals, network observation and local SSH access.
+- [Tailscale remote access](tailscale.md): Optional private HTTPS, enrollment identity, owner authorization, route restrictions and local status.
 
 For component ownership and implementation, see [architecture](../architecture.md), [Codex architecture](../codex.md) and [VM architecture](../vm-platform.md). [Startup](../startup.md) owns configuration and service operation instructions.
 
@@ -41,9 +42,11 @@ Request shapes, revision rules, idempotency scope and limits belong to their fun
 
 ## Access and identity boundaries
 
-Desktop-state and virtual-file mutations validate a supplied Origin against the request Host or a loopback development host; they permit an omitted Origin.
+On the local listener, desktop-state and virtual-file mutations validate a supplied Origin against the request Host or a loopback development host; they permit an omitted Origin.
 
-Host Terminal, host-directory, Codex and compute gateway routes use the shared [local-access validator](../../apps/server/internal/localaccess/request.go): a loopback peer, a Host of `localhost` or a loopback address, and an exact scheme/Host match when Origin is supplied. Their WebSocket upgrades and mutations require Origin. Forwarded headers do not bypass these checks. The private compute socket is authorized through OS permissions; this is not remote-user authentication.
+Host Terminal, host-directory, Codex and compute gateway routes use the shared [access validator](../../apps/server/internal/localaccess/request.go): locally, a loopback peer, a Host of `localhost` or a loopback address, and an exact scheme/Host match when Origin is supplied. Their WebSocket upgrades and mutations require Origin. Forwarded headers do not bypass these checks. The private compute socket is authorized through OS permissions.
+
+The optional remote HTTPS listener authenticates every request, including UI assets and document reads, through the embedded node's `WhoIs`. Only the bound owner's untagged nodes are authorized. Its middleware supplies a private request context to the shared feature guards without changing `RemoteAddr` or trusting identity headers. Remote mutations and WebSocket upgrades require the exact HTTPS Origin; supplied Origin must match on reads too. Preparation and the enrollment-bearing `/api/remote/status` remain local-only; `/api/connection` supplies an authenticated, safe desktop summary. See the [Tailscale remote access contract](tailscale.md) for identity binding, route restrictions and failures.
 
 Project-file and document-exchange routes use that same local-access validator, requiring Origin for mutations. Their registered root identity and project-relative paths remain separate from virtual-document IDs and VM project-volume identities.
 

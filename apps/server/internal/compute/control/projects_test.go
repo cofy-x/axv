@@ -215,11 +215,19 @@ func TestProjectFilesForwardOnlyExactScopeAndPreserveGuestErrors(t *testing.T) {
 	}
 	f.mu.Lock()
 	f.file = func(w http.ResponseWriter, r *http.Request) {
-		// Consume the body like the guest before replying: Connection: close
-		// can otherwise reset the connection while request bytes remain unread.
-		if _, err := io.Copy(io.Discard, r.Body); err != nil {
-			t.Errorf("read disk-full request body: %v", err)
-			http.Error(w, "fixture request read failed", http.StatusInternalServerError)
+		// A disk failure occurs after the real guest has consumed the request.
+		// Returning early can reset a connection that is still uploading bytes.
+		data, readErr := io.ReadAll(r.Body)
+		var in protocol.ProjectFileWriteRequest
+		if readErr != nil || json.Unmarshal(data, &in) != nil {
+			t.Error("disk failure fixture did not receive the complete JSON request")
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		wantScope := protocol.ProjectFileScope{Root: b.Project.Root, RootIdentity: b.Project.RootIdentity, BootID: b.Binding.BootID, InstanceID: b.Binding.InstanceID}
+		if r.URL.Path != "/v1/project-files/write" || in.ProjectFileScope != wantScope || in.Path != req.Path || in.Content != req.Content || in.ExpectedSHA256 == nil || *in.ExpectedSHA256 != *req.ExpectedSHA256 {
+			t.Error("disk failure fixture received a changed project file request")
+			http.Error(w, "wrong original scope", http.StatusConflict)
 			return
 		}
 		w.WriteHeader(http.StatusInsufficientStorage)

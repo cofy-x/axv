@@ -470,6 +470,12 @@ select:disabled {
 .ns-dock-tile:hover {
   background: #b8b8b8;
 }
+.ns-dock-tile > .ns-pixel-icon {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+}
 .ns-dock-tile:active,
 .ns-dock-tile.is-active {
   box-shadow:
@@ -1258,6 +1264,10 @@ select:disabled {
   .ns-dock-options {
     width: 24px;
     height: 20px;
+  }
+  .ns-dock-tile > .ns-pixel-icon {
+    width: 36px;
+    height: 36px;
   }
   .ns-select select,
   .ns-field {

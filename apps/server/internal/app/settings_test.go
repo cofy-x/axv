@@ -77,7 +77,7 @@ func TestResolveDesktopRequiresIndependentFirecrackerHost(t *testing.T) {
 	}
 }
 
-func TestDesktopFingerprintPreservesExistingIdentity(t *testing.T) {
+func TestDesktopFingerprintIncludesCapturedInputs(t *testing.T) {
 	s := Settings{
 		Inputs: launch.Inputs{
 			LaunchID: "launch-original", ComputeOverride: "/run/override.sock", Home: "/profile",
@@ -87,20 +87,31 @@ func TestDesktopFingerprintPreservesExistingIdentity(t *testing.T) {
 		ComputeSettings: ComputeSettings{Compute: profile.Compute{Mode: "managed", HostConfig: "/profile/host.json"}, Host: &compute.Config{Socket: "/run/host.sock"}, ComputeError: "runtime problem"},
 		ProcessState:    ProcessState{RunnerExecutable: "/profile/bin/axv-pinned"},
 	}
-	// Captured from the pre-refactor format-4 Settings identity projection.
-	const original = "c1baf83b5cdfc140de1e979d146e33a1b5f4a030559981ed8ac4cb31393bdc53"
-	if s.Fingerprint() != original || s.Snapshot().Fingerprint() != original {
-		t.Fatal("existing desktop identity changed")
+	// The current identity projection includes the default-disabled remote settings.
+	const baseline = "2e08ce5423df3ce0c1c550779275be5e573f2a18374d314d19de8a82ae56d49f"
+	if s.Fingerprint() != baseline || s.Snapshot().Fingerprint() != baseline {
+		t.Fatal("captured desktop identity changed")
 	}
 	next := s
 	next.LaunchID, next.RunnerExecutable = "another-launch", "/another/axv"
 	next.Compute, next.Host, next.ComputeError = profile.Compute{Mode: "external", Socket: "/run/replacement.sock"}, nil, ""
-	if next.Fingerprint() != original {
+	if next.Fingerprint() != baseline {
 		t.Fatal("runtime or live compute settings changed launch identity")
 	}
 	next.ComputeOverride = ""
-	if next.Fingerprint() == original {
+	if next.Fingerprint() == baseline {
 		t.Fatal("immutable socket override was omitted from launch identity")
+	}
+	for name, remote := range map[string]profile.Remote{
+		"enabled":  {Enabled: true},
+		"hostname": {Hostname: "axv-office"},
+		"owner":    {OwnerUserID: "123456"},
+	} {
+		next = s
+		next.Desktop.Remote = remote
+		if next.Fingerprint() == baseline {
+			t.Fatalf("remote %s was omitted from launch identity", name)
+		}
 	}
 	s.Environment = nil
 	next = s
@@ -110,19 +121,22 @@ func TestDesktopFingerprintPreservesExistingIdentity(t *testing.T) {
 	}
 }
 
-func TestDesktopLaunchSnapshotRetainsFormat4WireContract(t *testing.T) {
-	const original = `{"launchId":"launch-original","computeOverride":"/run/override.sock","home":"/profile","environment":{"AXV_CACHE_HOME":"/cache"},"desktop":{"Addr":"127.0.0.1:3001","DataDir":"/profile/data","Home":"/profile","ConfigPath":"/profile/config.json","WorkspaceDir":"/projects","ProxyURL":"","TmuxSocket":"private"},"compute":{"mode":"external","socket":"/run/override.sock"}}`
+func TestDesktopLaunchSnapshotCapturesFormat4Settings(t *testing.T) {
+	const captured = `{"launchId":"launch-original","computeOverride":"/run/override.sock","home":"/profile","environment":{"AXV_CACHE_HOME":"/cache"},"desktop":{"Addr":"127.0.0.1:3001","DataDir":"/profile/data","Home":"/profile","ConfigPath":"/profile/config.json","WorkspaceDir":"/projects","ProxyURL":"","TmuxSocket":"private","Remote":{"enabled":true,"hostname":"axv-office","owner_user_id":"123456"}},"compute":{"mode":"external","socket":"/run/override.sock"}}`
 	var snapshot launch.Snapshot
-	if err := json.Unmarshal([]byte(original), &snapshot); err != nil {
+	if err := json.Unmarshal([]byte(captured), &snapshot); err != nil {
 		t.Fatal(err)
 	}
 	s := SettingsFromSnapshot(snapshot)
 	if s.Home != "/profile" || s.LaunchID != "launch-original" || s.Compute.Socket != "/run/override.sock" || s.Desktop.WorkspaceDir != "/projects" || s.Environment["AXV_CACHE_HOME"] != "/cache" {
 		t.Fatal("captured launch fields were lost")
 	}
+	if s.Desktop.Remote != (profile.Remote{Enabled: true, Hostname: "axv-office", OwnerUserID: "123456"}) {
+		t.Fatal("captured remote settings were lost")
+	}
 	s.RunnerExecutable, s.ComputeError = "/new/runtime/axv", "runtime-only"
 	encoded, err := json.Marshal(s.Snapshot())
-	if err != nil || !bytes.Equal(encoded, []byte(original)) {
+	if err != nil || !bytes.Equal(encoded, []byte(captured)) {
 		t.Fatalf("format-4 snapshot changed: %s, %v", encoded, err)
 	}
 	if s.Fingerprint() != snapshot.Fingerprint() {

@@ -20,7 +20,9 @@ Tests live beside these modules. For cross-layer behavior, start with [`desktop.
 2. Import public controls and types from `@cofy-x/axv-nextstep`. The dashboard [entry point](../apps/dashboard/src/main.tsx) loads the package's `styles.css` once before [feature styles](../apps/dashboard/src/app/styles.css).
 3. Add the definition to the dashboard registry. Dependencies flow from composition into the feature; features never import the registry or startup layer. Generic Nextstep behavior uses host callbacks and capabilities, never hard-coded application IDs.
 
-`launchable` controls launcher visibility. An optional `launch(desktop)` selects or creates a resource before opening its window. Use `kind: 'panel'` for non-modal inspectors and tools. Package naming follows [product identity](product.md#identity).
+`launchable` controls launcher visibility. Independently, `defaultPinned` controls whether a launchable application is pinned when creating an initial Dock; it defaults to true and does not override saved user pinning. Set it to false for utilities that should remain available through Applications and optional Dock pinning. An optional `launch(desktop)` selects or creates a resource before opening its window. Use `kind: 'panel'` for non-modal inspectors and tools. Package naming follows [product identity](product.md#identity).
+
+Tailscale is a launchable singleton utility panel. Its [feature definition](../apps/dashboard/src/features/tailscale/definition.ts) supplies the view and identity; dashboard composition supplies its system desktop icon, and the existing Applications menu, optional Dock pinning and Clip shortcuts supply launch access. Preferences also opens the same panel. The display name is **Tailscale**; its stable application ID remains `remote-access`, preserving saved windows, Dock pins and Clip shortcuts. Connection queries belong to the active panel, and Nextstep owns no Tailscale state or API calls.
 
 ## Window identity and visibility
 

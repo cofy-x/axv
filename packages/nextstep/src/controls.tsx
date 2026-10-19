@@ -207,6 +207,18 @@ export function PixelIcon({
           <path stroke="#fff" d="M10 2h11M2 22h8M22 22h7" />
           <path stroke="#888" d="M12 10h5M3 29h4M23 29h3" />
         </g>
+      ) : name === 'mesh-network' ? (
+        <g {...common} shapeRendering="geometricPrecision">
+          {[6, 16, 26].flatMap((y) =>
+            [6, 16, 26].map((x) => (
+              <g key={`${x}-${y}`} transform={`translate(${x} ${y})`}>
+                <circle r="3.5" fill="#aaa" />
+                <path fill="none" stroke="#eee" d="M-2 0a2 2 0 0 1 2-2" />
+                <path fill="none" stroke="#666" d="M2 0a2 2 0 0 1-2 2" />
+              </g>
+            )),
+          )}
+        </g>
       ) : name === 'save' ? (
         <g {...common}>
           <path fill="#555f5c" d="M3.5 1.5h21l4 4v25h-25z" />

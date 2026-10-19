@@ -1,0 +1,84 @@
+.tailscale-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tailscale-status-dot {
+  display: inline-block;
+  flex: 0 0 7px;
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--ns-shadow);
+  background: var(--ns-face);
+}
+.tailscale-status-dot.is-ready {
+  background: #37804d;
+}
+.tailscale-status-dot.is-pending {
+  background: #b18429;
+}
+.tailscale-status-dot.is-error {
+  background: #a13c35;
+}
+.tailscale-status-dot.is-unknown {
+  background: #999;
+}
+.tailscale-app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.tailscale-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.tailscale-section + .tailscale-section {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--ns-mid);
+  box-shadow: 0 -1px var(--ns-light);
+}
+.tailscale-section h2 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+.tailscale-state {
+  font-weight: bold;
+}
+.tailscale-address,
+.tailscale-url {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+}
+.tailscale-address code,
+.tailscale-url a {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.tailscale-address .ns-icon-button,
+.tailscale-url .ns-icon-button {
+  flex-shrink: 0;
+}
+.tailscale-authorize {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  color: inherit;
+}
+.tailscale-copy-status {
+  padding: 7px;
+  border: 1px solid var(--ns-mid);
+}
+@media (max-width: 599px) {
+  .tailscale-content .info-list {
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 9px;
+  }
+}

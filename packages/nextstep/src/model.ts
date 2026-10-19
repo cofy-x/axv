@@ -496,7 +496,9 @@ export function sanitizeLayout(
   for (const item of raw.version === 2 && Array.isArray(raw.dock)
     ? raw.dock
     : apps
-        .filter((app) => app.launchable !== false)
+        .filter(
+          (app) => app.launchable !== false && app.defaultPinned !== false,
+        )
         .map((app) => ({ appId: app.id, pinned: true }))) {
     const entry = record(item);
     if (

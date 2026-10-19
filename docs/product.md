@@ -25,9 +25,9 @@ This document owns identity, goals and product decisions. The [README](../README
 - Treat access from different devices and native VM hosting on different platforms as separate deliverables. Browser support does not imply hypervisor support.
 - Manage agents and VMs on the machine where AXV is deployed. Setup follows that machine's operating system; users select projects, sessions and VMs within this deployment. Host selection and scheduling across multiple machines are outside this direction.
 - Make the installed `axv` command the normal workstation entry, composing independent desktop and compute services under one profile. Startup and updates must preserve persistent work; development profiles remain separate from daily use. [Startup](startup.md) owns commands, configuration and service operation.
-- Support local VM workflows through both the desktop and `axv vm`, sharing host state and operation rules. Standard SSH, file transfer and forwarding remain local capabilities, independent of a future remote gateway or agent-to-VM tools. [VM CLI workflows](startup.md#vm-command-line) own command behavior.
+- Support local VM workflows through both the desktop and `axv vm`, sharing host state and operation rules. Standard SSH, file transfer and forwarding remain local capabilities, independent of the remote desktop transport and agent-to-VM tools. [VM CLI workflows](startup.md#vm-command-line) own command behavior.
 - Make the desktop useful before VM preparation finishes. Preparation belongs inside Virtual Machines, requires review before installation or downloads, and makes a verified service available without restarting the interface. [Usage](usage.md#virtual-machines) owns the current workflow.
-- Serve one person's workstation, with local access first and Tailscale as the planned private remote-access path. Remote identity, authorization and transport boundaries still need design; network connectivity alone must not bypass local protections.
+- Serve one person's workstation, with local access first and an optional embedded Tailscale transport for private remote access. Enrollment binds the workstation owner; the remote listener authenticates every request and preserves feature authorization and execution identities. Host provisioning and remote configuration remain local operations. [Access boundaries](api/README.md#access-and-identity-boundaries) own the implemented contract.
 
 ## Agent and VM responsibilities
 
@@ -96,6 +96,6 @@ Official versioned AXV enhanced images are the intended long-term default prepar
 - Long-running task identity, status, logs, cancellation and recovery; automatic session supervision after host boot and recovery after VM replacement.
 - Development-service discovery, access and preview.
 - Provider-specific session integration, including Claude Code and structured agent interfaces.
-- PWA delivery and reconnection behavior, plus remote identity, authorization and transport when introducing Tailscale.
+- PWA delivery, cross-device browser acceptance and remote reconnection experience.
 
 Resolve these in focused implementation tasks. Record settled rationale here; change architecture and API references when the behavior exists. Keep task plans and review logs in task/PR history rather than adding a parallel roadmap or audit document.

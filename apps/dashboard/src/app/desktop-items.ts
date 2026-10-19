@@ -59,6 +59,12 @@ export function createDesktopIcons(
       appId: 'project-files',
     },
     {
+      id: 'system:remote-access',
+      label: 'Tailscale',
+      icon: 'mesh-network',
+      appId: 'remote-access',
+    },
+    {
       id: 'system:appearance',
       label: 'Preferences',
       icon: 'appearance',

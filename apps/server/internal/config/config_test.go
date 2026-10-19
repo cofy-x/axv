@@ -37,9 +37,9 @@ func TestResolveCompleteDesktopPrecedenceWithoutSideEffects(t *testing.T) {
 		{name: "named port remains supported", overrides: Overrides{Addr: "localhost:http"}, addr: "localhost:http", data: defaultData},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			profile := profile.Profile{Home: home, Desktop: tc.desktop, WorkspaceDir: "~/projects", ProxyURL: "http://127.0.0.1:7890"}
-			got, err := Resolve(tc.overrides, profile, func(key string) string { return tc.env[key] }, func() (string, error) { return home, nil })
-			want := Config{Addr: tc.addr, DataDir: tc.data, Home: home, ConfigPath: filepath.Join(home, "config.json"), WorkspaceDir: filepath.Join(home, "projects"), ProxyURL: profile.ProxyURL}
+			p := profile.Profile{Home: home, Desktop: tc.desktop, WorkspaceDir: "~/projects", ProxyURL: "http://127.0.0.1:7890"}
+			got, err := Resolve(tc.overrides, p, func(key string) string { return tc.env[key] }, func() (string, error) { return home, nil })
+			want := Config{Addr: tc.addr, DataDir: tc.data, Home: home, ConfigPath: filepath.Join(home, "config.json"), WorkspaceDir: filepath.Join(home, "projects"), ProxyURL: p.ProxyURL, Remote: profile.Remote{Hostname: "axv"}}
 			if err != nil || got != want {
 				t.Fatalf("resolved = %+v, %v; want %+v", got, err, want)
 			}

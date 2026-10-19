@@ -233,6 +233,7 @@ export function Gallery({ desktop }: AppWindowProps) {
                   'gallery',
                   'image',
                   'network',
+                  'mesh-network',
                   'virtual-machines',
                   'virtual-machine',
                   'info',

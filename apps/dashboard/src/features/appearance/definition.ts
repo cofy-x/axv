@@ -6,6 +6,6 @@ export const appearanceApp: AppDefinition = {
   title: 'Preferences',
   icon: 'appearance',
   component: Appearance,
-  defaultSize: { width: 440, height: 360 },
+  defaultSize: { width: 440, height: 500 },
   minSize: { width: 320, height: 320 },
 };

@@ -11,6 +11,7 @@ export type IconName =
   | 'gallery'
   | 'image'
   | 'network'
+  | 'mesh-network'
   | 'virtual-machines'
   | 'virtual-machine'
   | 'info'
@@ -166,6 +167,8 @@ export interface AppDefinition {
   icon: IconName;
   /** Whether to offer this application in the system launcher; defaults to true. */
   launchable?: boolean;
+  /** Pin a launchable application in a new layout's Dock; defaults to true. */
+  defaultPinned?: boolean;
   launch?: (desktop: DesktopAPI) => void | Promise<void>;
   kind?: 'application' | 'panel';
   defaultSize?: Size;

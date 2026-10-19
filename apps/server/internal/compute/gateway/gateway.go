@@ -292,7 +292,7 @@ func (g *Gateway) Close() {
 
 func local(r *http.Request) bool {
 	requiresOrigin := r.Method != "GET" && r.Method != "HEAD" || strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
-	return localaccess.Request(r, requiresOrigin)
+	return localaccess.AllowRequest(r, requiresOrigin)
 }
 
 func write(w http.ResponseWriter, status int, value any) {
