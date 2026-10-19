@@ -43,7 +43,7 @@ type Manifest struct {
 	ThreadID      string `json:"threadId,omitempty"`
 }
 
-// State is the only information the runner publishes to the AXV server.
+// State publishes provider readiness separately from the final Exit proof.
 // Ready means the exact conversation identity has been durably recorded.
 type State struct {
 	RunID          string `json:"runId"`
