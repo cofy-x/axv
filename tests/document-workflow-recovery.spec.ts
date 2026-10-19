@@ -389,6 +389,7 @@ test('project download reports API failures inline and preserves the original fi
     'Project download recovery',
   );
   const path = `E2E download-${entry.id}.md`;
+  const expectedFilename = expectedDownloadFilename(path, browserName);
   const exported = await request.post(`/api/projects/${project.id}/export`, {
     headers,
     data: {
@@ -444,9 +445,7 @@ test('project download reports API failures inline and preserves the original fi
   const downloaded = page.waitForEvent('download');
   await downloadItem.click();
   const download = await downloaded;
-  expect(download.suggestedFilename()).toBe(
-    expectedDownloadFilename(path, browserName),
-  );
+  expect(download.suggestedFilename()).toBe(expectedFilename);
   const saved = await download.path();
   expect(saved).not.toBeNull();
   expect(await readFile(saved!)).toEqual(
@@ -480,7 +479,7 @@ test('project download reports API failures inline and preserves the original fi
   const fallbackDownloaded = page.waitForEvent('download');
   await fallbackDownload.click();
   const fallback = await fallbackDownloaded;
-  expect(fallback.suggestedFilename()).toBe(path);
+  expect(fallback.suggestedFilename()).toBe(expectedFilename);
   const fallbackPath = await fallback.path();
   expect(fallbackPath).not.toBeNull();
   expect(await readFile(fallbackPath!)).toEqual(
