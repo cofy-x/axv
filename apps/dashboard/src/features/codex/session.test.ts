@@ -5,15 +5,14 @@ import type { CodexSocket } from './session';
 import type { CodexSessionRecord } from './api';
 
 class FakeSocket implements CodexSocket {
-  readyState = 0;
+  readyState: CodexSocket['readyState'] = 0;
   bufferedAmount = 0;
   binaryType: BinaryType = 'blob';
   onopen: CodexSocket['onopen'] = null;
   onmessage: CodexSocket['onmessage'] = null;
   onerror: CodexSocket['onerror'] = null;
   onclose: CodexSocket['onclose'] = null;
-  send =
-    vi.fn<(data: string | ArrayBufferLike | Blob | ArrayBufferView) => void>();
+  send = vi.fn<CodexSocket['send']>();
   close = vi.fn((_code?: number, _reason?: string) => {
     this.readyState = 3;
   });

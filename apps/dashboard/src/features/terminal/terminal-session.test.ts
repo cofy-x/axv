@@ -3,15 +3,14 @@ import { TerminalSession } from './terminal-session';
 import type { TerminalInfo, TerminalSocket } from './terminal-session';
 
 class FakeSocket implements TerminalSocket {
-  readyState = 0;
+  readyState: TerminalSocket['readyState'] = 0;
   bufferedAmount = 0;
   binaryType: BinaryType = 'blob';
   onopen: TerminalSocket['onopen'] = null;
   onmessage: TerminalSocket['onmessage'] = null;
   onerror: TerminalSocket['onerror'] = null;
   onclose: TerminalSocket['onclose'] = null;
-  send =
-    vi.fn<(data: string | ArrayBufferLike | Blob | ArrayBufferView) => void>();
+  send = vi.fn<TerminalSocket['send']>();
   close = vi.fn((_code?: number, _reason?: string) => {
     this.readyState = 3;
   });

@@ -66,7 +66,7 @@ export class CodexConnection {
   private cols = 80;
   private rows = 24;
   private resizePending = true;
-  private input: Uint8Array[] = [];
+  private input: Uint8Array<ArrayBuffer>[] = [];
   private inputBytes = 0;
   private output: Uint8Array[] = [];
   private outputBytes = 0;
