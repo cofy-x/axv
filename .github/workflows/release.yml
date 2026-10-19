@@ -45,6 +45,13 @@ jobs:
           sudo apt-get install --yes tmux
       - name: Install locked dependencies
         run: make deps PNPM=pnpm
+      - name: Check source after dependency installation
+        run: |
+          source_status="$(git status --porcelain=v1 --untracked-files=all)"
+          if [ -n "$source_status" ]; then
+            printf '%s\n' "$source_status"
+            exit 1
+          fi
       - name: Build and smoke-test candidate
         run: |
           make build PNPM=pnpm
