@@ -1,6 +1,6 @@
 # Startup and background services
 
-This guide owns installation, updates, CLI workflows, service operation, configuration, paths and environment. AXV-managed configuration, data and runtime records default to `~/.axv`; `AXV_HOME` selects another profile root. See [development](development.md) for builds and tests, and [project status](../README.md#project-status) for platform validation.
+This guide owns installation, updates, uninstallation, CLI workflows, service operation, configuration, paths and environment. AXV-managed configuration, data and runtime records default to `~/.axv`; `AXV_HOME` selects another profile root. See [development](development.md) for builds and tests, and [project status](../README.md#project-status) for platform validation.
 
 VMs run on the computer where AXV is deployed. Its operating system determines the VM runtime: Lima on macOS or Firecracker/KVM on Linux. The browser's operating system does not choose the execution machine.
 
@@ -22,6 +22,18 @@ axv
 Follow the printed PATH guidance if the directory is missing or another `axv` takes precedence. Installation does not edit shell startup files, initialize profiles, start services or prepare VMs. The installed command works outside the checkout and needs no Node at runtime. `make build` only creates `dist/axv`; `make deps` only installs build dependencies.
 
 Reinstalling replaces the global entry without interrupting live services. Both foreground and background desktops capture immutable executable copies under `AXV_HOME/bin` for their host and Codex children. Reopening with `axv` retains the current service version and settings. Use `axv daemon restart` to apply the installed desktop version; explicit stop/start updates both managed desktop and host services. Existing Codex runs keep their original executable and session identity.
+
+## Uninstallation
+
+Use the same operating-system account and `AXV_HOME` as the workstation you intend to remove. Other profiles and independently supervised services have separate lifetimes.
+
+1. Before stopping services, choose **End Session** for each [Codex run](usage.md#codex) you want to terminate, and stop the selected VMs in **Virtual Machines** or with `axv vm stop <name|id>`. If you also want to remove VM storage, use the normal machine and volume deletion controls while the host is available; review [project-volume retention](usage.md#virtual-machines) first.
+2. For managed background jobs, run `axv daemon stop` for this profile. Stop a foreground `axv serve` in its launching terminal with Ctrl+C. Daemon shutdown retains independent Codex runs, VMs and project volumes; an administrator-managed Linux host service requires its own supervisor action. Confirm the intended services have stopped before removing their executable or data.
+3. Remove only the installed `axv` executable (`axv.exe` on Windows) at the destination printed by `make install`. In a POSIX shell, `command -v axv` helps check which entry is on `PATH`; review that path before removing it. Keep the containing Go binary directory and its other programs.
+
+Removing the installed command leaves profile configuration, documents, default workspace, VM storage, logs and fixed executable copies in place. Reinstallation can reuse retained state under the [baseline policy](storage.md#desktop-database-baseline). For optional data cleanup, back up wanted content, stop all affected writers and review the [resolved profile and storage paths](#configuration-and-storage) before selectively removing resources. Existing host projects, provider-owned credentials/history and unrelated tmux sessions remain outside this cleanup; keep run ownership records until their processes have stopped.
+
+The [shared download cache](#shared-download-cache) is independent of a profile. If you want to reclaim cached downloads, use `axv cache list` and `axv cache remove <full-sha256>` before removing the command. Do not recursively remove the entire default `~/.axv`: it also contains that cache and independent development profiles. Separately installed Codex, tmux, OpenSSH and administrator-managed VM runtimes are maintained through their own installation methods.
 
 ## Daily commands
 

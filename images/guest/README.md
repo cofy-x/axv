@@ -8,7 +8,7 @@ The installed manifest includes provider, architecture and a `guest` object with
 
 ## Lima cloud disk
 
-Use a dedicated native Linux builder with the pinned Go toolchain, `libguestfs`/`virt-customize`, `qemu-img` and Ubuntu cloud-image support. Select a reviewed native Ubuntu base with the shared CLI cache, then build a separate disk:
+Use a dedicated native Linux builder with the pinned Go and Node.js toolchains, the libguestfs tools `virt-customize` and `virt-copy-out`, `qemu-img` and Ubuntu cloud-image support. The builder reports a missing tool before changing the image. Frontend dependencies are not required. Select a reviewed native Ubuntu base with the shared CLI cache, then build a separate disk:
 
 ```sh
 axv cache fetch ubuntu-arm64 --output /absolute/build-input/base.img
@@ -22,7 +22,7 @@ Select the finished bundle explicitly with `axv setup --image-source bundle --im
 
 ## Firecracker root filesystem
 
-Use a dedicated native Linux builder with Docker, the pinned Go toolchain, ext4 utilities and a separately verified Ubuntu OCI image digest. Run this recipe as **root** so the exported root filesystem retains its file ownership:
+Use a dedicated native Linux builder with Docker, the pinned Go and Node.js toolchains, ext4 utilities and a separately verified Ubuntu OCI image digest. The recipe pins the container platform to the native guest architecture and rejects a mismatched image before export. Run as **root** so the exported root filesystem retains its file ownership:
 
 ```sh
 BASE_IMAGE=ubuntu:24.04@sha256:<reviewed-native-image-digest> \
@@ -33,11 +33,17 @@ The recipe creates a fresh ext4 root with the common dependencies, guest/SSH ser
 
 ## Per-machine initialization and release work
 
+Both recipes retain distribution materials at `/usr/share/doc/axv-guest` inside the image and export the same directory as `distribution/axv-guest/` beside the disk and manifest. `SHA256SUMS` covers the disk, manifest, base identity record and exported materials. Inspect it from the bundle directory with `sha256sum --check SHA256SUMS`.
+
+The [guest collector](../../scripts/guest-release-notices.mjs) reads the executable without running it, checks the pinned toolchain and manifest target/digest, and retains AXV's MIT license plus original Go notices. Linked modules must match the current server module graph; their downloaded sources are verified before copying notices. `build-info.json` preserves the binary digest and VCS metadata, including dirty or absent settings for local builds. Collection does not certify a release.
+
+The common installer records the image's dpkg database in `os-packages.tsv`, including package states, binary/source versions and architecture, plus its `os-release`. Existing OS copyright files remain under `/usr/share/doc`; the exported [guest third-party notice](THIRD_PARTY_NOTICES.md) explains these separate terms. These records identify the built inputs and do not make unpinned APT resolution reproducible or replace source/license review.
+
 Images contain generic files, with machine IDs and global SSH host keys cleared. The common installer rejects an input containing AXV machine configuration, dedicated SSH identity or authorized client profiles; use a clean base instead of repackaging a used VM. Lima's runtime initializer writes machine configuration and initializes dedicated SSH identity using the preinstalled helper. Firecracker's seed initializer mounts the project and read-only seed disks, copies its private configuration and initializes SSH identity. Tokens, machine IDs and SSH host keys never belong in a distributed image. Start does not install packages, replace the guest binary or update an existing image.
 
 Build scratch files and helper executables stay in `.data/test/image-build-*` and are removed by the recipe's trap. Output bundles are explicit caller-selected directories; downloaded bases remain in the shared cache. Built/private bundles are not automatically added there.
 
-Publishing still requires real provider/architecture artifacts, checksums, a reviewed versioned catalog entry, upstream license notices, and native lifecycle plus enhanced guest/SSH acceptance. The Lima and Firecracker recipes have different disk formats and boot mechanisms while preserving the shared capability contract. Retain upstream licenses in the guest's `/usr/share/doc`; neither base images nor generated disks are committed to the repository.
+Publishing still requires a reviewed clean source revision matching `build-info.json`, the base URL/digest or OCI digest, a package/license and corresponding-source review, a reviewed versioned catalog entry, and native lifecycle plus enhanced guest/SSH acceptance for that exact provider/architecture bundle. Keep the exported materials with the disk; separately supplied kernels need their own provenance and distribution review. Neither base images nor generated disks are committed to the repository. Current availability remains in [project status](../../README.md#project-status).
 
 ## Package source selection
 

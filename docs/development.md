@@ -109,22 +109,32 @@ The [production smoke](../scripts/smoke-production.mjs) exercises the embedded b
 
 ## GitHub CI and dependency maintenance
 
-The [CI workflow](../.github/workflows/ci.yml) runs for every pull request, pushes to `main`, and manual dispatches. Verification jobs use Ubuntu 24.04 hosted runners and the pinned Go, Node.js and pnpm versions from `.go-version`, `.node-version` and `package.json`. There are no path filters; documentation changes also receive both required checks. A newer run on the same ref cancels the previous run.
+The [CI workflow](../.github/workflows/ci.yml) runs for every pull request, pushes to `main`, and manual dispatches, using the pinned toolchains. There are no path filters; documentation changes also receive both required checks. A newer run on the same ref cancels the previous run.
 
 | Check | Coverage |
 | --- | --- |
-| `checks` | Locked dependency installation, formatting, Go and Vitest tests, typecheck, lint, production build, production smoke and temporary production installation |
+| `checks` | Requires Linux verification, focused macOS native checks and dependency security to pass |
 | `e2e` | Requires every browser job to pass, covering the full `test:e2e` browser, display-scale and touch matrix |
 
-The six Playwright projects run on separate runners, each retaining one worker and its own isolated server and profile. A failed browser does not cancel the other projects. The aggregate `e2e` job runs even when a dependency fails and succeeds only if every browser job succeeds; a failed or skipped dependency cannot produce a passing aggregate check.
+Linux verification on Ubuntu 24.04 runs locked dependency installation, formatting, Go and Vitest tests, typecheck, lint, production build, smoke and temporary production installation. After installation, CI rejects modified or newly generated dependency and toolchain files, including workspace and module checksums. This CI-only check requires their Git status to remain clean; ordinary local commands allow uncommitted work.
 
-Verification jobs install tmux and use deterministic Codex fixtures without provider credentials or model requests. They run the existing launchers as the runner user with the repository's private `.data/test` root. The workflow caches only the pnpm store and Go module/compiler caches. It retains each failed browser project's reports, screenshots and traces for seven days; AXV profiles and test roots are excluded from uploaded artifacts. `GOTOOLCHAIN=local` keeps checks on the selected Go version instead of downloading a newer toolchain to satisfy a dependency.
+The macOS 15 ARM64 job builds the native server and runs focused Go race checks for profile storage, Host Terminal, Codex and Lima adapters. It uses fixture processes rather than launching VMs or native desktop supervisors. The six Playwright projects run on separate Ubuntu runners, each with one worker and an isolated server. A failed browser does not cancel the other projects. Both aggregate checks run after their dependencies and require every result to be `success`; failed, skipped or cancelled dependencies cannot produce a passing check.
 
-Hosted CI covers the commands above. Native daemon, VM, network and real-Codex acceptance still require their explicit environments and procedures below. Passing CI does not establish native VM support or replace visual/interaction acceptance.
+Test jobs use the existing launchers and private `.data/test` root. Host-session checks use tmux and deterministic Codex fixtures without provider credentials or model requests. Caches contain only dependencies and compiler output. Failed browser reports are retained for seven days, excluding AXV profiles and test roots. `GOTOOLCHAIN=local` prevents implicit Go upgrades. Native daemon, VM, network and real-Codex acceptance remain separate explicit checks; CI does not replace them or visual/interaction acceptance.
 
 Maintain `main` protection with the GitHub Actions checks `checks` and `e2e` required, the branch up to date before merging, and review conversations resolved. Disable force pushes and branch deletion. The baseline does not require approval from a second maintainer, so a sole maintainer can merge a verified pull request. Configure these repository settings after both check names have appeared in a successful run; workflow files do not configure branch protection.
 
-The [Dependabot configuration](../.github/dependabot.yml) checks GitHub Actions, the root pnpm workspace through the `npm` ecosystem, and Go modules under `apps/server` every Monday. Each ecosystem groups minor and patch updates and permits at most five open version-update pull requests; major updates remain separate. Security alerts and security-update pull requests depend on the repository's GitHub settings and are not limited to the weekly version-update schedule. Dependabot does not merge pull requests automatically.
+The reusable [dependency security workflow](../.github/workflows/security.yml) runs within required CI, independently every Monday, and on manual dispatch. Run its checks locally with:
+
+```sh
+make security
+```
+
+`make audit-js` uses the pinned pnpm to scan production, development and optional dependencies, failing on low severity or higher.
+
+`make audit-go` first runs the production build to prepare embedded assets, then installs the fixed scanner version from [its launcher](../scripts/audit-go.mjs) into private temporary storage. It runs text-mode `govulncheck -test -tags production ./...` from the server module with the selected Go toolchain and `CGO_ENABLED=0`, matching the production build. Reachable known vulnerabilities, including tests and the standard library, fail the check; module-only advisories remain informational. The scan covers the selected build platform. Both audits preserve registry/database and scanner errors as failures and apply no automatic fixes.
+
+The [Dependabot configuration](../.github/dependabot.yml) checks Actions, the root pnpm workspace and `apps/server` Go modules every Monday, groups minor/patch updates, and limits each ecosystem to five open version-update pull requests. Major updates remain separate. Repository security alerts and security-update PRs complement these scans and are independent of that weekly schedule. Dependabot does not merge automatically.
 
 Review dependency changes with their lockfiles and run the same verification matrix. For pnpm updates, check the workspace manifests, overrides and frozen-lockfile installation together. The hosted Dependabot updater has been verified to install and use the pnpm version pinned by `packageManager`. Keep Action references pinned to full commit SHAs and verify replacement SHAs against the upstream release. Review compiler-major migrations against the lint plugins' supported TypeScript range and resolve migration errors before accepting the update.
 

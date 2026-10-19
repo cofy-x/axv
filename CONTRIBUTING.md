@@ -1,6 +1,6 @@
 # Contributing to AXV
 
-The [cofy-x contribution guidelines](https://github.com/cofy-x/.github/blob/main/CONTRIBUTING.md) and [Code of Conduct](https://github.com/cofy-x/.github/blob/main/CODE_OF_CONDUCT.md) apply. This page adds AXV's project-specific workflow; use [Support](SUPPORT.md) for questions and [Security](SECURITY.md) for private vulnerability reports.
+The [cofy-x contribution guidelines](https://github.com/cofy-x/.github/blob/main/CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md) apply. This page adds AXV's project-specific workflow; use [Support](SUPPORT.md) for questions and [Security](SECURITY.md) for private vulnerability reports.
 
 ## Choose a change
 

@@ -2,10 +2,10 @@ PNPM ?= npx --yes pnpm@12.11.2
 GO ?= go
 E2E_ARGS ?=
 
-.PHONY: help deps install dev build build-dashboard build-go test test-go typecheck format format-check lint lint-fix lint-fix-format test-e2e smoke-production verify-codex-live clean
+.PHONY: help deps install dev build build-dashboard build-go test test-go typecheck format format-check lint lint-fix lint-fix-format test-e2e smoke-production verify-codex-live security audit-js audit-go clean
 
 help:
-	@echo "make deps | install | dev | build | test | typecheck | format | format-check | lint | lint-fix | lint-fix-format | test-e2e | smoke-production | verify-codex-live"
+	@echo "make deps | install | dev | build | test | typecheck | format | format-check | lint | lint-fix | lint-fix-format | test-e2e | smoke-production | verify-codex-live | security"
 
 deps:
 	$(PNPM) install --frozen-lockfile
@@ -60,6 +60,14 @@ smoke-production:
 
 verify-codex-live:
 	$(PNPM) run verify:codex-live
+
+security: audit-js audit-go
+
+audit-js:
+	$(PNPM) audit --audit-level=low
+
+audit-go: build
+	GO="$(GO)" node scripts/audit-go.mjs
 
 clean:
 	rm -rf dist apps/dashboard/dist apps/server/internal/webui/dist coverage test-results playwright-report

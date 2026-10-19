@@ -5,12 +5,14 @@ FROM ${BASE_IMAGE}
 ARG AXV_GUEST_PACKAGE_SOURCE=preserve
 COPY configure-package-sources /usr/local/lib/axv/configure-package-sources
 COPY install-base.sh /usr/local/lib/axv/install-base
+COPY package-inventory.sh /usr/local/lib/axv/package-inventory
 RUN AXV_GUEST_PACKAGE_SOURCE="$AXV_GUEST_PACKAGE_SOURCE" sh /usr/local/lib/axv/install-base \
     && rm /usr/local/lib/axv/install-base \
     && printf 'axv ALL=(root) NOPASSWD: /sbin/reboot\n' > /etc/sudoers.d/axv-shutdown \
     && chmod 0440 /etc/sudoers.d/axv-shutdown
 COPY axv-guest /usr/local/bin/axv-guest
 COPY image.json /usr/share/axv/image.json
+COPY guest-distribution/ /usr/share/doc/axv-guest/
 COPY prepare-guest.sh /usr/local/lib/axv/prepare-guest
 COPY prepare-ssh /usr/local/lib/axv/prepare-ssh
 COPY axv-ssh.service /etc/systemd/system/

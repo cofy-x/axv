@@ -15,9 +15,10 @@ Before application changes, read [ownership and dependencies](architecture.md#ow
 | Shared host directory selection | [Host directories API](api/host-directories.md) | The consuming Terminal, Codex or Project Files reference |
 | Codex conversations, runs or document delivery | [Host Codex architecture](codex.md) | [Host Codex API](api/host-codex.md) |
 | VMs, volumes, images or guest execution | [VM architecture](vm-platform.md) | [Compute API](api/compute.md), [Guest API](api/guest.md), [VM CLI](startup.md#vm-command-line) or [image recipes](../images/guest/README.md), according to the changed boundary |
-| Installation, configuration, startup or supervision | [Startup](startup.md) | [Runtime identity API](api/desktop.md) for identity contracts |
+| Installation, uninstallation, configuration, startup or supervision | [Startup](startup.md) | [Runtime identity API](api/desktop.md) for identity contracts |
 | Build tooling, tests or acceptance | [Development](development.md) | The affected feature reference |
 | Contributions, bug reports or usage questions | [Contributing](../CONTRIBUTING.md) and [Support](../SUPPORT.md) | [Development](development.md) for verification |
+| Community conduct or sensitive incidents | [Code of Conduct](../CODE_OF_CONDUCT.md) | [Support](../SUPPORT.md) for public channels |
 | Reporting a suspected vulnerability | [Security policy](../SECURITY.md) | [API access boundaries](api/README.md#access-and-identity-boundaries) for the affected contract |
 | Release preparation, distribution or third-party notices | [Releasing](releasing.md) | [Development](development.md) and [image recipes](../images/guest/README.md) for required acceptance |
 | Product decisions or capability claims | [Product direction](product.md) and [project status](../README.md#project-status) | The affected usage or implementation reference |
@@ -40,6 +41,7 @@ Each fact has one owner. Another page may state the consequence its reader needs
 | [AGENTS.md](../AGENTS.md) | Repository-wide working rules and brief high-risk guardrails |
 | [Contributing](../CONTRIBUTING.md) | AXV contribution workflow and links to organization expectations |
 | [Support](../SUPPORT.md) | Public support channels, report context and diagnostic redaction |
+| [Code of Conduct](../CODE_OF_CONDUCT.md) | Organization conduct rules and AXV's incident-reporting channels |
 | [Security policy](../SECURITY.md) | Security support scope, private vulnerability reporting and disclosure process |
 | [This map](README.md) | Reading paths, content ownership and documentation maintenance |
 | [Product direction](product.md) | Identity, rationale, settled direction and open product decisions |
@@ -49,7 +51,7 @@ Each fact has one owner. Another page may state the consequence its reader needs
 | [Host Codex architecture](codex.md) | Provider integration, process/run ownership, reconciliation and delivery persistence |
 | [VM architecture](vm-platform.md) | Host/guest ownership, durable compute state, preparation and provider mechanisms |
 | [API reference](api/README.md) | Routes, fields, protocol limits, errors, access checks and caller retry/lifecycle obligations |
-| [Startup](startup.md) | Installation, CLI workflows, configuration precedence, paths, environment and service operation |
+| [Startup](startup.md) | Installation, uninstallation, CLI workflows, configuration precedence, paths, environment and service operation |
 | [Usage](usage.md) | Visible user actions, confirmations and their effects |
 | [Development](development.md) | Build/verification commands, prerequisites, test isolation and diagnostics |
 | [Releasing](releasing.md) | Release preparation, artifact publication and third-party distribution notices |

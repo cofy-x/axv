@@ -1,6 +1,6 @@
 module github.com/cofy-x/axv/apps/server
 
-go 1.26.8
+go 1.26.9
 
 require (
 	github.com/UserExistsError/conpty v0.1.4
