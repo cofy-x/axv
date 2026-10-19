@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cofy-x/axv/apps/server/internal/atomicfile"
 	"github.com/cofy-x/axv/apps/server/internal/codex/runner"
 )
 
@@ -72,7 +73,7 @@ func runOwnedCodexRunnerFixture(ctx context.Context, path string) int {
 	}
 	state := runner.State{RunID: manifest.RunID, ThreadID: thread, HistoryHome: manifest.HistoryHome, Status: runner.StatusReady}
 	data, _ = json.Marshal(state)
-	if os.WriteFile(filepath.Join(filepath.Dir(path), "state.json"), data, 0600) != nil {
+	if atomicfile.Write(filepath.Join(filepath.Dir(path), "state.json"), data, 0600) != nil {
 		_ = ownership.Close()
 		return 13
 	}
