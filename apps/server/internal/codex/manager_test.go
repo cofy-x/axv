@@ -20,6 +20,14 @@ func testManager(t *testing.T) *Manager {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(profile) })
+	return testManagerWithPaths(t, dir, profile)
+}
+
+func testManagerWithPaths(t *testing.T, dir, profile string) *Manager {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
 	store, err := storage.Open(filepath.Join(dir, "desktop.sqlite"))
 	if err != nil {
 		t.Fatal(err)

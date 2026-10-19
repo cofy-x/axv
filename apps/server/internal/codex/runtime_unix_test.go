@@ -22,10 +22,24 @@ import (
 
 func realManager(t *testing.T) (*Manager, *httptest.Server, string) {
 	t.Helper()
-	if executable("tmux") == "" {
+	tmuxPath := executable("tmux")
+	if tmuxPath == "" {
 		t.Skip("real tmux integration requires tmux")
 	}
-	home := t.TempDir()
+	home, err := os.MkdirTemp("", "axv-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	drained := false
+	t.Cleanup(func() {
+		if err := removeFixtureDirectory(home, drained); err != nil {
+			if !drained {
+				t.Log(err)
+			} else {
+				t.Errorf("remove completed Codex fixture: %v", err)
+			}
+		}
+	})
 	t.Setenv("HOME", home)
 	t.Setenv("CODEX_HOME", filepath.Join(home, "config"))
 	bin := filepath.Join(home, "bin")
@@ -55,7 +69,8 @@ done
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	m := testManager(t)
+	m := testManagerWithPaths(t, filepath.Join(home, "data"), home)
+	writers := newFixtureWriters(t, filepath.Join(home, "fixture-writers"))
 	m.probe = func(ctx context.Context) Info {
 		return probeUsing(ctx, runtime.GOOS, func(name string) (string, bool) {
 			if path := executable(name); path != "" {
@@ -73,12 +88,31 @@ done
 		})
 	}
 	t.Setenv("AXV_TEST_RUNNER", "1")
+	t.Setenv("AXV_TEST_RUNNER_GATE_REQUIRED", "1")
 	m.runnerCommand = func(manifest string) ([]string, error) {
+		gate, err := writers.prepare(manifest)
+		if err != nil {
+			return nil, err
+		}
 		path, err := os.Executable()
-		return []string{path, "-test.run=^TestCodexRunnerFixtureProcess$", "--", manifest}, err
+		return []string{path, "-test.run=^TestCodexRunnerFixtureProcess$", "--", "--fixture-gate=" + gate, manifest}, err
 	}
 	m.verifyHistory = func(context.Context, string, string, string, []string, string) error { return nil }
-	t.Cleanup(func() { _, _ = command(context.Background(), executable("tmux"), "-L", m.socket, "kill-server") })
+	t.Cleanup(func() {
+		// Stop admitting launches before closing this fixture's independent server.
+		m.Close()
+		output, err := command(context.Background(), tmuxPath, "-L", m.socket, "kill-server")
+		if err != nil && !missingRuntime(output) {
+			t.Errorf("stop owned Codex fixture tmux server: %v: %s", err, output)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
+		defer cancel()
+		if err := writers.close(ctx); err != nil {
+			t.Errorf("Codex fixture writers did not complete; retained %s: %v", home, err)
+			return
+		}
+		drained = err == nil || missingRuntime(output)
+	})
 	server := serveManager(t, m)
 	return m, server, home
 }
