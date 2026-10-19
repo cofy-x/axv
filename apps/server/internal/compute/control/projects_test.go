@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -213,13 +214,24 @@ func TestProjectFilesForwardOnlyExactScopeAndPreserveGuestErrors(t *testing.T) {
 		t.Fatalf("successful guest mkdir was rejected: %v", err)
 	}
 	f.mu.Lock()
-	f.file = func(w http.ResponseWriter, _ *http.Request) {
+	f.file = func(w http.ResponseWriter, r *http.Request) {
+		// Consume the body like the guest before replying: Connection: close
+		// can otherwise reset the connection while request bytes remain unread.
+		if _, err := io.Copy(io.Discard, r.Body); err != nil {
+			t.Errorf("read disk-full request body: %v", err)
+			http.Error(w, "fixture request read failed", http.StatusInternalServerError)
+			return
+		}
 		w.WriteHeader(http.StatusInsufficientStorage)
 		_ = json.NewEncoder(w).Encode(compute.Error{Code: "disk_full", Message: "project volume is full"})
 	}
 	f.mu.Unlock()
-	if _, err := f.service.ProjectFiles(context.Background(), b.Project.ID, "write", req); compute.ErrorCode(err) != "disk_full" {
+	before := f.calls.Load()
+	if _, err := f.service.ProjectFiles(context.Background(), b.Project.ID, "write", req); compute.ErrorCode(err) != "disk_full" || err.Error() != "project volume is full" {
 		t.Fatalf("disk error was hidden: %v", err)
+	}
+	if calls := f.calls.Load() - before; calls != 1 {
+		t.Fatalf("disk-full write was sent %d times; expected one request", calls)
 	}
 }
 
