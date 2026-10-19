@@ -101,6 +101,8 @@ Provider lifecycle and guest readiness are separate. Create/start/restart succee
 
 The Linux guest service runs as `axv` (UID 1000). Per-machine tokens authenticate host requests over Firecracker vsock or Lima's SSH/private Unix-socket transport. Readiness verifies protocol, machine identity and a writable project filesystem distinct from root. Commands have bounded concurrency, duration and output; project-relative starting directories do not sandbox ordinary guest processes. The [Guest API](api/guest.md) owns transport and limits.
 
+Lima's relay connection owns its output reader independently of process reaping, so buffered guest responses remain readable after the relay exits. Closing the connection releases its pipes and reaps only that relay.
+
 Graceful shutdown uses the verified installed image's provider: Firecracker requests a guest reboot, which exits its VMM, while Lima requests poweroff. Firecracker's image grants only the corresponding reboot command through sudo. A guest halt alone can leave Firecracker running, so it is not used as graceful completion. The host observes process exit and retains its bounded force-stop fallback for unavailable or unresponsive guest services.
 
 Guest Terminal binds the exact machine, Linux boot ID and terminal ID. Reattach replays a bounded output tail to that identity; it never creates another shell.
