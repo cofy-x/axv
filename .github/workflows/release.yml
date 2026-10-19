@@ -1,0 +1,59 @@
+name: Release candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Candidate version matching package.json, for example 0.1.0-rc.1
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-candidate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Linux amd64 candidate
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      VERSION: ${{ inputs.version }}
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Validate release version
+        run: node scripts/package-release.mjs --check-version
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .go-version
+          cache-dependency-path: apps/server/go.sum
+      - name: Install host test prerequisite
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes tmux
+      - name: Install locked dependencies
+        run: make deps PNPM=pnpm
+      - name: Build and smoke-test candidate
+        run: |
+          make build PNPM=pnpm
+          make smoke-production PNPM=pnpm
+      - name: Assemble archive and original license texts
+        run: node scripts/package-release.mjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: axv-${{ inputs.version }}-linux-amd64-candidate
+          path: dist/release/${{ inputs.version }}/
+          if-no-files-found: error
+          retention-days: 14

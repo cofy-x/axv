@@ -1,5 +1,6 @@
 import { expect, test as base } from '@playwright/test';
 import type { APIRequestContext, Locator, Page } from '@playwright/test';
+import { monitorRuntimeErrors } from './runtime-errors';
 
 export interface Entry {
   id: string;
@@ -170,9 +171,11 @@ export async function persistedLayout(page: Page, request: APIRequestContext) {
 
 export const test = base.extend<{ desktopReady: void }>({
   desktopReady: [
-    async ({ page, request }, use) => {
-      const runtimeErrors: string[] = [];
-      page.on('pageerror', (error) => runtimeErrors.push(error.message));
+    async ({ page, request }, use, testInfo) => {
+      // WebKit also maps native navigation-loader diagnostics to pageerror:
+      // https://github.com/microsoft/playwright/issues/43120
+      // Native ErrorEvent/unhandledrejection remain the uncaught-JS evidence.
+      const runtime = await monitorRuntimeErrors(page);
       // The runner owns this isolated database. Remove only data created by tests;
       // each browser context has its own client layout and IndexedDB namespace.
       for (const entry of await entries(request)) {
@@ -196,10 +199,23 @@ export const test = base.extend<{ desktopReady: void }>({
         page.getByRole('complementary', { name: 'Application Dock' }),
       ).toBeVisible();
       await use();
-      expect(
-        runtimeErrors,
-        'The desktop must not throw browser runtime errors.',
-      ).toEqual([]);
+      try {
+        expect(
+          runtime.documents.size,
+          'The native runtime error monitor must be installed.',
+        ).toBeGreaterThan(0);
+        if (runtime.pageErrors.length)
+          await testInfo.attach('browser-page-errors', {
+            body: JSON.stringify(runtime.pageErrors, null, 2),
+            contentType: 'application/json',
+          });
+        expect(
+          runtime.errors,
+          'The desktop must not throw browser runtime errors.',
+        ).toEqual([]);
+      } finally {
+        runtime.dispose();
+      }
     },
     { auto: true },
   ],

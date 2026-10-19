@@ -4,10 +4,21 @@ package tmux
 
 import (
 	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestAttachmentStartFailurePreservesStageAndNativeCause(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing-tmux")
+	p, err := (Backend{}).Attach(path, Target{Session: "exact-run"}, 80, 24)
+	if p != nil || !errors.Is(err, os.ErrNotExist) || !strings.Contains(err.Error(), "start attachment PTY") {
+		t.Fatalf("attachment lost its startup stage or native cause: process=%v error=%v", p, err)
+	}
+}
 
 func TestNativeCommandBoundsOutputAndHonorsCallerDeadline(t *testing.T) {
 	backend := Backend{}

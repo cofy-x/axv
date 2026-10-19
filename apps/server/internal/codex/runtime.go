@@ -293,6 +293,7 @@ func (m *Manager) reconcile(ctx context.Context, session storage.CodexSession) (
 	if strings.HasPrefix(output, "1:") {
 		exit, signal := strings.TrimPrefix(output, "1:"), ""
 		if !confirmedExitOutcome(exit, signal) {
+			missingOutcome := exit == ""
 			// tmux closes the pane PTY before waitpid necessarily publishes
 			// its outcome. An empty status alone is not evidence of failure.
 			for attempt := 0; attempt < 5; attempt++ {
@@ -300,9 +301,13 @@ func (m *Manager) reconcile(ctx context.Context, session storage.CodexSession) (
 				if inspectErr != nil {
 					return session, failure(Unavailable, "session_unavailable", "The tmux exit status could not be inspected. Try again.")
 				}
-				if status, cause, ok := strings.Cut(detail, ":"); ok && confirmedExitOutcome(status, cause) {
+				status, cause, ok := strings.Cut(detail, ":")
+				if ok && confirmedExitOutcome(status, cause) {
 					exit, signal = status, cause
 					break
+				}
+				if !ok || status != "" || cause != "" {
+					missingOutcome = false
 				}
 				if attempt < 4 {
 					select {
@@ -312,8 +317,22 @@ func (m *Manager) reconcile(ctx context.Context, session storage.CodexSession) (
 					}
 				}
 			}
+			if !confirmedExitOutcome(exit, signal) && missingOutcome {
+				// Some tmux builds lose SIGCHLD while updating utmp and leave
+				// a dead pane without a wait result. Only the exact runner's
+				// durable result can replace that completely missing outcome.
+				proof, err := runner.ReadExit(m.runDirectory(session.RunID), session.RunID)
+				if err != nil {
+					return session, failure(Unavailable, "session_exit_unconfirmed", "The terminal closed, but its Codex runner exit record could not be verified. Check the AXV data directory or choose End Session.")
+				}
+				if proof != nil {
+					if err := m.awaitRunnerCleanup(ctx, session.ID); err != nil {
+						return session, err
+					}
+					exit = strconv.Itoa(proof.ExitCode)
+				}
+			}
 			if !confirmedExitOutcome(exit, signal) {
-				// Older supported tmux versions do not expose signal status.
 				// Keep uncertainty explicit and leave exact-run End available.
 				return session, failure(Unavailable, "session_exit_unconfirmed", "The terminal closed, but tmux has not confirmed its exit status. Try again or choose End Session.")
 			}

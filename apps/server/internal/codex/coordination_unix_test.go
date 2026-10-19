@@ -10,7 +10,10 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -313,5 +316,136 @@ func TestRuntimeWaitsForConfirmedExitOutcome(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func writeRuntimeExitProof(t *testing.T, manager *Manager, run storage.CodexSession, record string) {
+	t.Helper()
+	directory := manager.runDirectory(run.RunID)
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "exit.json"), []byte(strings.ReplaceAll(record, "$run", run.RunID)), 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRuntimeExitProofRequiresAnExactDeadPaneAndEntirelyMissingOutcome(t *testing.T) {
+	if executable("tmux") == "" {
+		t.Skip("requires tmux discovery; native commands are injected")
+	}
+	for _, tc := range []struct {
+		name, pane, record, want, errorCode string
+		outcomes                            []string
+	}{
+		{name: "clean proof", pane: "1:", record: `{"runId":"$run","exitCode":0}`, want: "ended"},
+		{name: "failed proof", pane: "1:", record: `{"runId":"$run","exitCode":7}`, want: "failed"},
+		{name: "live pane", pane: "0:", record: `{"runId":"$run","exitCode":0}`, want: "running"},
+		{name: "live pane ignores corrupt proof", pane: "0:", record: `{`, want: "running"},
+		{name: "absent proof", pane: "1:", want: "running", errorCode: "session_exit_unconfirmed"},
+		{name: "wrong run", pane: "1:", record: `{"runId":"another-run","exitCode":0}`, want: "running", errorCode: "session_exit_unconfirmed"},
+		{name: "invalid code", pane: "1:", record: `{"runId":"$run","exitCode":256}`, want: "running", errorCode: "session_exit_unconfirmed"},
+		{name: "missing code", pane: "1:", record: `{"runId":"$run"}`, want: "running", errorCode: "session_exit_unconfirmed"},
+		{name: "corrupt proof", pane: "1:", record: `{`, want: "running", errorCode: "session_exit_unconfirmed"},
+		{name: "malformed initial status", pane: "1:unknown", record: `{"runId":"$run","exitCode":0}`, want: "running", errorCode: "session_exit_unconfirmed"},
+		{name: "contradictory tmux outcome", pane: "1:", outcomes: []string{"7:TERM"}, record: `{"runId":"$run","exitCode":0}`, want: "running", errorCode: "session_exit_unconfirmed"},
+		{name: "malformed outcome before missing result", pane: "1:", outcomes: []string{"unknown:", ":"}, record: `{"runId":"$run","exitCode":0}`, want: "running", errorCode: "session_exit_unconfirmed"},
+		{name: "confirmed tmux status takes precedence", pane: "1:0", record: `{"runId":"$run","exitCode":7}`, want: "ended"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			manager := testManager(t)
+			run := serviceRunningRun(t, manager, "exit-proof")
+			if tc.record != "" {
+				writeRuntimeExitProof(t, manager, run, tc.record)
+			}
+			killed, inspections := false, 0
+			manager.run = func(_ context.Context, _ string, args ...string) (string, error) {
+				switch {
+				case slices.Contains(args, "list-panes"):
+					return run.TmuxSession + "\t0\t" + tc.pane, nil
+				case slices.Contains(args, "display-message"):
+					if len(tc.outcomes) == 0 {
+						return ":", nil
+					}
+					outcome := tc.outcomes[min(inspections, len(tc.outcomes)-1)]
+					inspections++
+					return outcome, nil
+				case slices.Contains(args, "kill-session"):
+					if !slices.Contains(args, target(run)) {
+						t.Errorf("exit proof cleanup addressed another run: %q", args)
+					}
+					killed = true
+					return "", nil
+				default:
+					t.Errorf("unexpected runtime command: %q", args)
+					return "", nil
+				}
+			}
+			current, err := manager.reconcile(context.Background(), run)
+			if tc.errorCode != "" {
+				requireServiceError(t, err, Unavailable, tc.errorCode)
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			if current.Status != tc.want || killed != final(tc.want) {
+				t.Fatalf("exit proof changed the wrong runtime: %+v killed=%t", current, killed)
+			}
+			stored, err := manager.store.CodexRunByID(context.Background(), run.RunID)
+			if err != nil || stored.Status != tc.want {
+				t.Fatalf("exit proof persisted an unexpected result: %+v %v", stored, err)
+			}
+		})
+	}
+}
+
+func TestRuntimeExitProofWaitsForOwnershipAndRetriesCleanup(t *testing.T) {
+	if executable("tmux") == "" {
+		t.Skip("requires tmux discovery; native commands are injected")
+	}
+	manager := testManager(t)
+	run := serviceRunningRun(t, manager, "proof-cleanup")
+	writeRuntimeExitProof(t, manager, run, `{"runId":"$run","exitCode":0}`)
+	lock := holdConversationOwnership(t, manager, run.ID)
+	killAttempts := 0
+	manager.run = func(_ context.Context, _ string, args ...string) (string, error) {
+		switch {
+		case slices.Contains(args, "list-panes"):
+			return run.TmuxSession + "\t0\t1:", nil
+		case slices.Contains(args, "display-message"):
+			return ":", nil
+		case slices.Contains(args, "kill-session"):
+			if !slices.Contains(args, target(run)) {
+				t.Errorf("exit proof cleanup addressed another run: %q", args)
+			}
+			killAttempts++
+			if killAttempts == 1 {
+				return "permission denied", errors.New("test cleanup failure")
+			}
+			return "", nil
+		default:
+			t.Errorf("unexpected runtime command: %q", args)
+			return "", nil
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	if _, err := manager.reconcile(ctx, run); !errors.Is(err, context.DeadlineExceeded) || killAttempts != 0 {
+		t.Fatalf("exit proof bypassed managed cleanup: %v killAttempts=%d", err, killAttempts)
+	}
+	if err := lock.Close(); err != nil {
+		t.Fatal(err)
+	}
+	current, err := manager.reconcile(context.Background(), run)
+	requireServiceError(t, err, Unavailable, "session_cleanup_failed")
+	if current.Status != "running" {
+		t.Fatalf("cleanup failure published a final state: %+v", current)
+	}
+	stored, err := manager.store.CodexRunByID(context.Background(), run.RunID)
+	if err != nil || stored.Status != "running" {
+		t.Fatalf("cleanup failure could not be retried: %+v %v", stored, err)
+	}
+	current, err = manager.reconcile(context.Background(), run)
+	if err != nil || current.Status != "ended" || killAttempts != 2 {
+		t.Fatalf("exit proof retry did not complete: %+v %v killAttempts=%d", current, err, killAttempts)
 	}
 }

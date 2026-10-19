@@ -1,0 +1,84 @@
+name: Bug Report
+description: Report a reproducible AXV problem.
+title: '[Bug]: '
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check existing issues and the [project status](https://github.com/cofy-x/axv#project-status) first.
+        Report vulnerabilities [privately](https://github.com/cofy-x/axv/security/advisories/new).
+        Redact tokens, credentials, private paths, document contents and agent history before sharing evidence.
+  - type: input
+    id: version
+    attributes:
+      label: AXV version and commit
+      description: Include axv version and the source commit SHA. A dev version alone does not identify a build.
+      placeholder: 'dev, commit abc1234'
+    validations:
+      required: true
+  - type: input
+    id: host
+    attributes:
+      label: Host OS and architecture
+      description: Describe the computer running AXV; include the browser OS separately if different.
+      placeholder: 'macOS 15 arm64, browser on the same host'
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Relevant components and versions
+      description: Include browser/version, launch mode, and Codex/tmux or Lima/Firecracker/image details when affected. For build failures, include Go/Node/pnpm versions.
+      placeholder: 'Firefox; axv serve; Codex and tmux versions if involved'
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected component
+      multiple: true
+      options:
+        - Installation / startup
+        - Desktop / windows
+        - Documents / storage
+        - Project Files
+        - Host Terminal
+        - Codex
+        - VM management / images
+        - Guest execution / SSH / forwarding
+        - Build / tests / CI
+        - Other / unsure
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Use synthetic projects and sanitized commands. Identify any relevant nondefault configuration and whether this also occurs with an isolated profile.
+      placeholder: |
+        1. Start AXV with ...
+        2. Open ...
+        3. Run ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include the visible error and whether the behavior is repeatable.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized diagnostics
+      description: Share relevant short log excerpts or screenshots. Do not upload databases, AXV profiles, provider credentials/history or private VM images. See SUPPORT.md for redaction guidance.
+    validations:
+      required: false

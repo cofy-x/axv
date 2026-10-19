@@ -1,0 +1,31 @@
+name: Feature Request
+description: Propose an AXV capability or workflow improvement.
+title: '[Feature]: '
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Review the [product direction](https://github.com/cofy-x/axv/blob/main/docs/product.md) and existing issues.
+        Describe the problem and execution context so the proposal can be assessed against AXV's boundaries.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and intended workflow
+      description: What are you trying to accomplish? Identify the host or guest and affected application or agent.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Explain what a user would do and the resulting behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and tradeoffs
+      description: Include existing workarounds or related issues. Redact private project details.
+    validations:
+      required: false

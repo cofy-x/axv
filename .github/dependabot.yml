@@ -1,0 +1,38 @@
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns: ['*']
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: pnpm
+      - dependency-name: node
+    groups:
+      javascript:
+        patterns: ['*']
+        update-types: [minor, patch]
+
+  - package-ecosystem: gomod
+    directory: /apps/server
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      go-modules:
+        patterns: ['*']
+        update-types: [minor, patch]

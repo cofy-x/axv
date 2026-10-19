@@ -18,6 +18,7 @@ import (
 	codexhttp "github.com/cofy-x/axv/apps/server/internal/codex/httpapi"
 	computegateway "github.com/cofy-x/axv/apps/server/internal/compute/gateway"
 	"github.com/cofy-x/axv/apps/server/internal/config"
+	"github.com/cofy-x/axv/apps/server/internal/diagnostics"
 	hostdirhttp "github.com/cofy-x/axv/apps/server/internal/hostdir/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/projectfiles"
@@ -67,6 +68,7 @@ func RunContext(ctx context.Context, settings config.Config, options Options) er
 		ProxyURL:         settings.ProxyURL,
 		TmuxSocket:       settings.TmuxSocket,
 		RunnerExecutable: options.RunnerExecutable,
+		Logger:           diagnostics.FromContext(ctx).With("component", "codex"),
 	})
 	if err != nil {
 		return err

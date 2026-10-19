@@ -250,7 +250,7 @@ describe('persistent Codex connections', () => {
     expect(sockets).toHaveLength(0);
   });
 
-  it.each([403, 404])(
+  it.each([401, 403, 404])(
     'stops after HTTP %s instead of retrying denied or missing sessions',
     async (status) => {
       vi.useFakeTimers();
@@ -313,6 +313,132 @@ describe('persistent Codex connections', () => {
     expect(sockets[0].send).not.toHaveBeenCalled();
     expect(sockets[1].send).toHaveBeenCalledExactlyOnceWith(
       '{"resize":[120,50]}',
+    );
+  });
+
+  it('recovers from one attachment failure on the same run and ignores its old socket', async () => {
+    vi.useFakeTimers();
+    const { connection, sockets, options, writes } = harness();
+    await connection.start();
+    const oldMessage = sockets[0].onmessage!;
+    sockets[0].message(
+      '{"error":"Could not attach to the persistent Codex session.","code":"attach_failed"}',
+    );
+    expect(connection.getSnapshot().phase).toBe('reconnecting');
+    expect(connection.sendText('never send before ready\r')).toBe(false);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(sockets).toHaveLength(2);
+    expect(options.getSession).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(options.createSocket).mock.calls[1][0]).toBe(
+      vi.mocked(options.createSocket).mock.calls[0][0],
+    );
+    sockets[1].ready();
+    oldMessage.call(
+      sockets[0] as unknown as WebSocket,
+      {
+        data: '{"error":"Old attachment failed","code":"attach_failed"}',
+      } as MessageEvent,
+    );
+    oldMessage.call(
+      sockets[0] as unknown as WebSocket,
+      {
+        data: new TextEncoder().encode('old screen').buffer,
+      } as MessageEvent,
+    );
+    expect(connection.getSnapshot()).toMatchObject({
+      phase: 'connected',
+      session: { id: record.id, runId: record.runId },
+    });
+    expect(writes).toHaveLength(0);
+    expect(sockets[1].send).toHaveBeenCalledExactlyOnceWith(
+      '{"resize":[80,24]}',
+    );
+    expect(connection.sendText('new input\r')).toBe(true);
+    expect(sockets[1].send).toHaveBeenLastCalledWith(
+      new TextEncoder().encode('new input\r'),
+    );
+    expect(sockets[0].send).not.toHaveBeenCalled();
+  });
+
+  it('bounds repeated attachment failures and keeps their final error visible', async () => {
+    vi.useFakeTimers();
+    const { connection, sockets, options } = harness();
+    await connection.start();
+    for (let attempt = 0; attempt < 6; attempt++) {
+      expect(sockets).toHaveLength(attempt + 1);
+      sockets[attempt].message(
+        '{"error":"Could not attach to the persistent Codex session.","code":"attach_failed"}',
+      );
+      if (attempt < 5) await vi.advanceTimersToNextTimerAsync();
+    }
+    await vi.runAllTimersAsync();
+    expect(sockets).toHaveLength(6);
+    expect(options.getSession).toHaveBeenCalledTimes(6);
+    expect(
+      vi
+        .mocked(options.createSocket)
+        .mock.calls.every(([url]) =>
+          url.includes('/session-id/runs/run-id/terminal?'),
+        ),
+    ).toBe(true);
+    expect(connection.getSnapshot()).toMatchObject({
+      phase: 'error',
+      retryable: true,
+      message:
+        'Could not attach to the persistent Codex session. Choose Reconnect to try again.',
+    });
+  });
+
+  it('discards queued input across a disconnect followed by an attachment failure', async () => {
+    vi.useFakeTimers();
+    const { connection, sockets } = harness();
+    await connection.start();
+    sockets[0].ready();
+    sockets[0].send.mockClear();
+    sockets[0].bufferedAmount = 70_000;
+    expect(connection.sendText('do not replay\r')).toBe(true);
+    sockets[0].disconnected();
+    await vi.advanceTimersToNextTimerAsync();
+    sockets[1].message(
+      '{"error":"Attachment unavailable","code":"attach_failed"}',
+    );
+    await vi.advanceTimersToNextTimerAsync();
+    sockets[2].ready();
+    expect(sockets[0].send).not.toHaveBeenCalled();
+    expect(sockets[1].send).not.toHaveBeenCalled();
+    expect(sockets[2].send).toHaveBeenCalledExactlyOnceWith(
+      '{"resize":[80,24]}',
+    );
+  });
+
+  it('cancels attachment recovery when detached and refuses a different run during retry', async () => {
+    vi.useFakeTimers();
+    const detached = harness();
+    await detached.connection.start();
+    detached.sockets[0].message(
+      '{"error":"Attachment unavailable","code":"attach_failed"}',
+    );
+    detached.connection.dispose();
+    const changed = harness({
+      getSession: vi
+        .fn()
+        .mockResolvedValueOnce(record)
+        .mockResolvedValue({ ...record, runId: 'newer-run' }),
+    });
+    await changed.connection.start();
+    changed.sockets[0].message(
+      '{"error":"Attachment unavailable","code":"attach_failed"}',
+    );
+    await vi.runAllTimersAsync();
+    expect(detached.options.getSession).toHaveBeenCalledOnce();
+    expect(detached.sockets).toHaveLength(1);
+    expect(changed.sockets).toHaveLength(1);
+    expect(changed.connection.getSnapshot()).toMatchObject({
+      phase: 'error',
+      retryable: false,
+    });
+    expect(changed.connection.getSnapshot().message).toContain(
+      'different Codex run',
     );
   });
 
@@ -448,6 +574,23 @@ describe('persistent Codex connections', () => {
       expect(item.sockets).toHaveLength(1);
     }
   });
+
+  it.each(['forbidden', 'permission_denied', 'run_changed', 'unknown_error'])(
+    'does not automatically retry a %s control',
+    async (code) => {
+      vi.useFakeTimers();
+      const { connection, sockets, options } = harness();
+      await connection.start();
+      sockets[0].message(JSON.stringify({ error: 'Access unavailable', code }));
+      await vi.runAllTimersAsync();
+      expect(connection.getSnapshot()).toMatchObject({
+        phase: 'error',
+        message: 'Access unavailable',
+      });
+      expect(options.getSession).toHaveBeenCalledOnce();
+      expect(sockets).toHaveLength(1);
+    },
+  );
 
   it('caps input atomically and retains exact UTF-8/control bytes in accepted frames', async () => {
     const { connection, sockets, options } = harness();

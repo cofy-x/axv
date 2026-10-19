@@ -133,6 +133,7 @@ func (a *Attachment) Open(parent context.Context) error {
 	}
 	p, err := m.backend().Attach(a.path, a.target, a.cols, a.rows)
 	if err != nil {
+		m.settings.Logger.Error("codex.attach_failed", err, "runId", a.runID, "executable", a.path)
 		return failure(Unavailable, "attach_failed", "Could not attach to the persistent Codex session.")
 	}
 	a.mu.Lock()

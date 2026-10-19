@@ -1,0 +1,23 @@
+name: Usage Question
+description: Ask for help using or developing AXV.
+title: '[Question]: '
+body:
+  - type: markdown
+    attributes:
+      value: |
+        See the [support guide](https://github.com/cofy-x/axv/blob/main/SUPPORT.md) and search existing issues first.
+        Do not include credentials, private document contents or agent history. Use private security reporting for vulnerabilities.
+  - type: textarea
+    id: question
+    attributes:
+      label: Goal and question
+      description: Explain what you want to do, which instructions you followed and where you are stuck.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Relevant setup
+      description: Include the AXV commit/version, host OS and architecture, launch mode, and relevant component versions. Share only sanitized excerpts.
+    validations:
+      required: true

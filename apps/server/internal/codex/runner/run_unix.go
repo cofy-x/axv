@@ -4,6 +4,8 @@ package runner
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -21,11 +23,31 @@ import (
 
 // Run owns both the official TUI and its private stdio app-server. It is
 // launched inside the tmux pane, independently of the HTTP server's lifetime.
-func Run(manifestPath string) error {
+func Run(manifestPath string) (returned error) {
 	manifest, err := readManifest(manifestPath)
 	if err != nil {
 		return err
 	}
+	return runWithExit(manifestPath, func() error { return runOwned(manifestPath, manifest) })
+}
+
+func runWithExit(manifestPath string, run func() error) (returned error) {
+	// The owned body must return normally after all its cleanup defers. A panic
+	// propagates without publishing an outcome that the wrapper never returned.
+	returned = run()
+	code := 0
+	if errors.Is(returned, context.Canceled) {
+		code = 130
+	} else if returned != nil {
+		code = 1
+	}
+	if err := RecordExit(manifestPath, code); err != nil {
+		returned = errors.Join(returned, fmt.Errorf("record Codex runner exit: %w", err))
+	}
+	return returned
+}
+
+func runOwned(manifestPath string, manifest Manifest) error {
 	statePath := filepath.Join(filepath.Dir(manifestPath), "state.json")
 	starting := State{RunID: manifest.RunID, ThreadID: manifest.ThreadID, HistoryHome: manifest.HistoryHome, Status: StatusStarting}
 	if writeState(statePath, starting) != nil {

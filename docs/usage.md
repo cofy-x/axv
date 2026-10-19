@@ -104,6 +104,8 @@ Run windows keep **Sessions**, the attachment icon and **Interrupt** in the tool
 
 Closing a Codex window, reloading or stopping AXV detaches; the run remains alive under tmux. Multiple clients share input and output. Exit or runtime loss is shown without automatically restarting work. Old windows stay attached to their original run and cannot send commands to a newer one.
 
+Transient connection and attachment failures retry automatically against the same run. Repeated failures leave a visible error and **Reconnect** action; unsent input is discarded. Access rejection or a final run stops automatic recovery.
+
 Continuation needs the original provider history, project and account access. It restores conversation context, not shell state, interrupted work or tmux scrollback. Missing history or an unverified identity produces an error instead of a new conversation. Use AXV's **New Session** for another conversation rather than the CLI's `/new`, fork or switch-conversation actions.
 
 Names, archives and recent projects survive service restarts. On metadata conflict, review the latest state before retrying. Configuration changes apply to new runs after [settings reload](startup.md#agent-settings-and-background-lifecycle). See [Codex architecture](codex.md) for conversation/run ownership and the [API](api/host-codex.md) for limits and caller contracts.

@@ -378,6 +378,9 @@ func TestRunOwnsTUIAndServerDescendants(t *testing.T) {
 			if syscall.Kill(serverPID, 0) != nil || syscall.Kill(tuiPID, 0) != nil {
 				t.Fatal("detached runtime did not stay alive")
 			}
+			if proof, err := ReadExit(directory, manifest.RunID); proof != nil || err != nil {
+				t.Fatalf("live runner published exit proof: %+v, %v", proof, err)
+			}
 			if ending == "hangup" {
 				_ = command.Process.Signal(syscall.SIGHUP)
 			} else {
@@ -400,6 +403,13 @@ func TestRunOwnsTUIAndServerDescendants(t *testing.T) {
 			}
 			if ending == "crash" && (state.Status != StatusFailed || state.ErrorCode != "codex_runtime_failed" || process.err == nil) {
 				t.Fatalf("nonzero TUI exit not recorded: state=%+v error=%v", state, process.err)
+			}
+			// A race-instrumented fixture can exceed the existing TUI-close
+			// grace period. The proof must match the wrapper's actual outcome.
+			code := command.ProcessState.ExitCode()
+			proof, err := ReadExit(directory, manifest.RunID)
+			if err != nil || proof == nil || proof.ExitCode != code {
+				t.Fatalf("finished runner proof = %+v, %v; want code %d", proof, err, code)
 			}
 		})
 	}
@@ -483,6 +493,9 @@ func TestRunKeepsConversationOwnershipUntilServerStops(t *testing.T) {
 	if !contextLockContended(err) {
 		t.Fatalf("ownership released before provider exit: %v", err)
 	}
+	if proof, err := ReadExit(firstDir, "first"); proof != nil || err != nil {
+		t.Fatalf("exit proof published before provider cleanup: %+v, %v", proof, err)
+	}
 	second, input, resumed := start(secondDir, secondEnvironment, "second", ModeResume)
 	waitFile(filepath.Join(secondDir, "state.json"))
 	if _, err := os.Stat(filepath.Join(secondDir, "server.pid")); !os.IsNotExist(err) {
@@ -492,6 +505,14 @@ func TestRunKeepsConversationOwnershipUntilServerStops(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitReady(resumed)
+	select {
+	case <-first.done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("predecessor runner did not finish after its provider")
+	}
+	if proof, err := ReadExit(firstDir, "first"); err != nil || proof == nil || proof.ExitCode != 0 {
+		t.Fatalf("cleaned predecessor has no exit proof: %+v, %v", proof, err)
+	}
 	assertStopped(t, serverPID)
 	_, _ = fmt.Fprintln(input, "quit")
 	select {

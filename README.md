@@ -1,10 +1,14 @@
 # AXV
 
+[![CI](https://github.com/cofy-x/axv/actions/workflows/ci.yml/badge.svg)](https://github.com/cofy-x/axv/actions/workflows/ci.yml)
+
 **Your personal cloud for VMs and coding agents.**
 
 AXV is a personal cloud workstation for virtual machines and coding-agent sessions: **Agents × Virtualization**. A Window Maker-inspired browser desktop brings documents, host shells, Codex and VM management together. See [architecture](docs/architecture.md) for service and package boundaries.
 
 ## Project status
+
+AXV is unreleased and experimental. Interfaces and AXV-owned development data may change; review the [storage baseline policy](docs/storage.md#desktop-database-baseline) before updating an existing profile. [Product direction](docs/product.md) describes the goals and open decisions; feature work is tracked in [Issues](https://github.com/cofy-x/axv/issues).
 
 - **Desktop:** Working windows, four desktop workspaces, Dock, menus, Inspector, and responsive layouts; PWA installation is not implemented
 - **Documents:** Local virtual filesystem, Markdown editing/preview, explicit saves, revision checks and draft recovery; project/VM/conversation links, immutable saved snapshots and explicit exchange with registered host projects. Project Files browses host directories on macOS/Linux; VM project-file browsing is not implemented
@@ -56,3 +60,13 @@ Contributors and coding agents follow [AGENTS.md](AGENTS.md), then use the [docu
 ## Verify changes
 
 Follow [verification](docs/development.md#verification) for required commands, documentation-only checks, browser coverage and isolated test operation. The guide also covers native-daemon and explicit real-Codex acceptance.
+
+## Contributing and support
+
+Read [Contributing](CONTRIBUTING.md) for the contribution workflow and the [Support guide](SUPPORT.md) for bug reports, feature requests and usage questions. Report vulnerabilities privately through the [Security policy](SECURITY.md). Community participation follows the [cofy-x Code of Conduct](https://github.com/cofy-x/.github/blob/main/CODE_OF_CONDUCT.md).
+
+[Release preparation](docs/releasing.md) covers release checks, artifacts and third-party notices.
+
+## License
+
+AXV is licensed under the [MIT License](LICENSE).

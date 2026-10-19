@@ -3,6 +3,7 @@
 package tmux
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,14 +28,16 @@ func (b Backend) Attach(path string, target Target, cols, rows int) (Process, er
 	cmd.Env = Environment(filepath.Dir(path))
 	file, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("start attachment PTY: %w", err)
 	}
 	// Register a nonblocking descriptor with Go's poller on macOS and Linux so
 	// detaching interrupts stalled reads/writes rather than blocking shutdown.
 	fd, err := unix.FcntlInt(file.Fd(), unix.F_DUPFD_CLOEXEC, 0)
 	_ = file.Close()
-	if err == nil {
-		err = unix.SetNonblock(fd, true)
+	if err != nil {
+		err = fmt.Errorf("duplicate attachment PTY: %w", err)
+	} else if err = unix.SetNonblock(fd, true); err != nil {
+		err = fmt.Errorf("set attachment PTY nonblocking: %w", err)
 	}
 	if err != nil {
 		if fd >= 0 {
