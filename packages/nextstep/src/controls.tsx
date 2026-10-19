@@ -1,10 +1,10 @@
 import { useId } from 'react';
 import type {
   ButtonHTMLAttributes,
+  ComponentPropsWithRef,
   InputHTMLAttributes,
   ReactNode,
   SelectHTMLAttributes,
-  TextareaHTMLAttributes,
 } from 'react';
 import type { IconName } from './types';
 
@@ -556,7 +556,7 @@ export function TextArea({
   id,
   className = '',
   ...props
-}: TextareaHTMLAttributes<HTMLTextAreaElement> & { label?: ReactNode }) {
+}: ComponentPropsWithRef<'textarea'> & { label?: ReactNode }) {
   const generated = useId();
   const inputId = id ?? generated;
   const input = (

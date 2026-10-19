@@ -360,7 +360,13 @@ export async function verifiedBundle(path, arch) {
   );
   assert.equal(bundle.guest?.imageVersion, 1);
   assert.equal(bundle.guest?.protocolVersion, 3);
-  for (const capability of ['exec', 'terminals', 'ssh', 'network'])
+  for (const capability of [
+    'exec',
+    'terminals',
+    'ssh',
+    'network',
+    'project-files',
+  ])
     assert.ok(
       bundle.guest?.capabilities?.includes(capability),
       `Enhanced acceptance requires ${capability}.`,
@@ -374,6 +380,51 @@ export async function verifiedBundle(path, arch) {
 
 function quote(value) {
   return `'${String(value).replaceAll("'", "'\\''")}'`;
+}
+
+// Registered projects protect their volumes from online deletion. Only the
+// invocation's detached project volumes may remain for final directory cleanup,
+// after all VM deletion and controller/cgroup shutdown checks have succeeded.
+export function ownedProtectedProjectVolumes({
+  projects,
+  volumes,
+  machines,
+  ownedMachines,
+  registrations,
+  hostId,
+}) {
+  assert.equal(
+    machines.length,
+    0,
+    'Live or uncertain VMs block volume cleanup.',
+  );
+  const protectedVolumes = new Set();
+  for (const project of projects) {
+    const registration = registrations.find(
+      (item) =>
+        item.volumeId === project.volumeId &&
+        item.root === project.root &&
+        (!item.id || item.id === project.id),
+    );
+    assert.ok(registration, 'Unexpected registered project in the owned host.');
+    assert.equal(project.hostId, hostId, 'Project host ownership changed.');
+    const volume = volumes.find((item) => item.id === project.volumeId);
+    assert.ok(
+      volume && ownedMachines.some((item) => item.volumeId === volume.id),
+      'Project volume is not owned by this invocation.',
+    );
+    assert.ok(
+      volume.retain &&
+        volume.status === 'ready' &&
+        !volume.machineId &&
+        !volume.pendingMachineId &&
+        !volume.pendingAction &&
+        !volume.pendingSizeGiB,
+      'A project volume is attached, unavailable or uncertain.',
+    );
+    protectedVolumes.add(volume.id);
+  }
+  return protectedVolumes;
 }
 
 async function acceptance(options) {
@@ -476,6 +527,7 @@ async function acceptance(options) {
     unitDescription,
     machines: [],
     operations: [],
+    projects: [],
   };
   let hostRunning = false;
   let unitSubmitted = false;
@@ -739,7 +791,13 @@ async function acceptance(options) {
         lastMachine = machine;
         if (machine.status !== 'running' || !machine.ready) return false;
         assert.equal(machine.guestState, 'ready', machine.guestReason);
-        for (const capability of ['exec', 'terminals', 'ssh', 'network'])
+        for (const capability of [
+          'exec',
+          'terminals',
+          'ssh',
+          'network',
+          'project-files',
+        ])
           assert.ok(machine.guestCapabilities.includes(capability));
         const health = await request(`/machines/${id}/guest/health`);
         assert.equal(health.machineId, id);
@@ -1244,12 +1302,25 @@ async function acceptance(options) {
               await deleteOwnedMachine(owned, machine);
           }
           const { volumes } = await request('/volumes');
+          const { projects } = await request('/projects');
+          const protectedVolumes = ownedProtectedProjectVolumes({
+            projects,
+            volumes,
+            machines: (await cliJSON(['list'])).machines,
+            ownedMachines: state.machines,
+            registrations: state.projects,
+            hostId: state.hostId,
+          });
           for (const volume of volumes) {
             assert.ok(
               state.machines.some((owned) => owned.volumeId === volume.id),
               'Unexpected volume in the owned host.',
             );
             if (volume.status === 'deleted') continue;
+            // Keep protected data intact while the host runs. The verified
+            // owned runtime directory is removed only after controller and
+            // cgroup shutdown below; an uncertain shutdown retains everything.
+            if (protectedVolumes.has(volume.id)) continue;
             const mutation = {
               requestId: `cleanup-${randomUUID()}`,
               kind: 'volume-delete',
@@ -1363,7 +1434,7 @@ async function acceptance(options) {
             );
         }
         console.error(
-          'Delete retained volumes through the owned host API; stop that host before removing only the printed owned directories.',
+          'Delete unbound retained volumes through the owned host API. Registered project volumes are protected: first delete every owned VM and verify the owned controller/cgroup is stopped before explicitly removing only the printed owned test directories.',
         );
       } else {
         const runtimeState = await lstat(shortRuntime);
@@ -1491,6 +1562,165 @@ async function acceptance(options) {
       'Real VM creation, guest capability handshake, exec, project write and network observation passed.',
     );
 
+    await exec(owned.id, [
+      'sh',
+      '-ec',
+      [
+        'git init --initial-branch=main native-project-source',
+        'git -C native-project-source config user.name "AXV acceptance"',
+        'git -C native-project-source config user.email acceptance@example.invalid',
+        "printf 'Native project baseline\\n' > native-project-source/README.md",
+        'git -C native-project-source add README.md',
+        'git -C native-project-source commit -m "Native acceptance baseline"',
+        'git clone native-project-source workspace',
+        'git -C workspace worktree add ../workspace-worktree -b acceptance-worktree',
+      ].join('\n'),
+    ]);
+    const registration = {
+      requestId: `native-project-${randomUUID()}`,
+      volumeId: owned.volumeId,
+      root: 'workspace',
+    };
+    state.projects.push(registration);
+    await save();
+    const { project } = await cliJSON([
+      'project',
+      'register',
+      '--machine',
+      owned.id,
+      '--volume',
+      owned.volumeId,
+      '--root',
+      registration.root,
+      '--request-id',
+      registration.requestId,
+      '--name',
+      'Native Git workspace',
+    ]);
+    registration.id = project.id;
+    await save();
+    assert.equal(project.volumeId, owned.volumeId);
+    assert.equal(project.root, registration.root);
+    const bindingPath = join(directory, 'project-binding.json');
+    let projectBinding;
+
+    async function captureProjectBinding() {
+      projectBinding = await cliJSON(['project', 'binding', project.id]);
+      assert.equal(projectBinding.project.id, project.id);
+      await writeFile(bindingPath, JSON.stringify(projectBinding), {
+        mode: 0o600,
+      });
+      return projectBinding;
+    }
+
+    const fileRequest = (binding, action, path, fields = {}) =>
+      request(`/projects/${project.id}/files/${action}`, 'POST', {
+        binding: binding.binding,
+        path,
+        ...fields,
+      });
+    const initialBinding = await captureProjectBinding();
+    assert.equal(initialBinding.binding.machineId, owned.id);
+    const listing = await cliJSON([
+      'project',
+      'files',
+      project.id,
+      '',
+      '--binding-file',
+      bindingPath,
+    ]);
+    assert.ok(listing.entries.some((entry) => entry.path === 'README.md'));
+    const reviewed = await cliJSON([
+      'project',
+      'read',
+      project.id,
+      'README.md',
+      '--binding-file',
+      bindingPath,
+    ]);
+    assert.equal(reviewed.content, 'Native project baseline\n');
+    const projectContent = `Native project changed through AXV: ${token}\n`;
+    const projectContentPath = join(directory, 'reviewed-project-content.txt');
+    await writeFile(projectContentPath, projectContent);
+    const written = await cliJSON([
+      'project',
+      'write',
+      project.id,
+      'README.md',
+      '--binding-file',
+      bindingPath,
+      '--expected-sha256',
+      reviewed.sha256,
+      '--file',
+      projectContentPath,
+    ]);
+    assert.equal(written.content, projectContent);
+    assert.notEqual(written.sha256, reviewed.sha256);
+    await assert.rejects(
+      fileRequest(initialBinding, 'write', 'README.md', {
+        content: 'Unreviewed overwrite',
+        expectedSha256: reviewed.sha256,
+      }),
+      (error) => error.statusCode === 409 && error.code === 'file_conflict',
+    );
+    await assert.rejects(
+      fileRequest(initialBinding, 'read', '../native-persistence.txt'),
+      (error) => error.statusCode === 400 && error.code === 'invalid_path',
+    );
+    await exec(owned.id, ['ln', '-s', '/etc/passwd', 'workspace/outside-link']);
+    await assert.rejects(
+      fileRequest(initialBinding, 'read', 'outside-link'),
+      (error) => error.statusCode === 400 && error.code === 'not_file',
+    );
+    await exec(owned.id, ['rm', 'workspace/outside-link']);
+    const folder = await cliJSON([
+      'project',
+      'mkdir',
+      project.id,
+      'notes',
+      '--binding-file',
+      bindingPath,
+    ]);
+    assert.equal(folder.path, 'notes');
+    await cliJSON([
+      'project',
+      'write',
+      project.id,
+      'notes/acceptance.txt',
+      '--binding-file',
+      bindingPath,
+      '--create',
+      '--file',
+      projectContentPath,
+    ]);
+    await assert.rejects(
+      fileRequest(initialBinding, 'write', 'notes/acceptance.txt', {
+        content: 'Create-only must preserve existing content',
+        expectedSha256: '',
+      }),
+      (error) => error.statusCode === 409 && error.code === 'file_conflict',
+    );
+    const projectGitState = await exec(owned.id, [
+      'git',
+      '-C',
+      'workspace',
+      'status',
+      '--porcelain=v1',
+    ]);
+    assert.match(projectGitState, / M README\.md/);
+    assert.match(projectGitState, /\?\? notes\//);
+    const worktreeState = await exec(owned.id, [
+      'git',
+      '-C',
+      'workspace',
+      'worktree',
+      'list',
+      '--porcelain',
+    ]);
+    console.log(
+      'Real Git clone/worktree, retained-volume project registration, CLI list/read/write/mkdir, reviewed hash, create-only and outside-path/symlink protection passed.',
+    );
+
     const remote = (command) => cli(['ssh', '-T', owned.id, '--', command]);
     assert.equal((await remote(`printf '%s' ${quote(token)}`)).stdout, token);
     assert.equal(
@@ -1573,6 +1803,13 @@ async function acceptance(options) {
     await action(owned, 'start');
     const nextHealth = await ready(owned.id);
     assert.notEqual(nextHealth.bootId, health.bootId);
+    await assert.rejects(
+      fileRequest(initialBinding, 'write', 'README.md', {
+        content: 'Old boot must not receive a write',
+        expectedSha256: written.sha256,
+      }),
+      (error) => error.statusCode === 409 && error.code === 'binding_changed',
+    );
     health = nextHealth;
     assert.equal(
       await exec(owned.id, ['cat', 'native-persistence.txt']),
@@ -1600,8 +1837,18 @@ async function acceptance(options) {
       'Stop, stopped SSH refusal, start, restart, new boot identities and persistent project/SSH identity passed.',
     );
 
+    const beforeControllerRestart = await captureProjectBinding();
     await startHost(true);
     assert.equal((await ready(owned.id)).bootId, health.bootId);
+    assert.equal(
+      (await fileRequest(beforeControllerRestart, 'read', 'README.md')).content,
+      projectContent,
+    );
+    assert.ok(
+      (await cliJSON(['project', 'list'])).projects.some(
+        (item) => item.id === project.id,
+      ),
+    );
     assert.equal(
       await exec(owned.id, ['cat', 'native-persistence.txt']),
       token,
@@ -1630,6 +1877,64 @@ async function acceptance(options) {
       volumeId: retained.id,
     });
     await ready(recovered.id);
+    for (const action of ['list', 'read', 'write', 'mkdir']) {
+      await assert.rejects(
+        fileRequest(
+          beforeControllerRestart,
+          action,
+          action === 'list' ? '' : 'README.md',
+          action === 'write'
+            ? {
+                content: 'Old VM must not receive a write',
+                expectedSha256: written.sha256,
+              }
+            : {},
+        ),
+        (error) => error.statusCode === 409,
+      );
+    }
+    const replacementBinding = await captureProjectBinding();
+    assert.equal(replacementBinding.project.id, project.id);
+    assert.equal(replacementBinding.binding.machineId, recovered.id);
+    assert.notEqual(
+      replacementBinding.binding.volumeRevision,
+      beforeControllerRestart.binding.volumeRevision,
+    );
+    assert.equal(
+      (await fileRequest(replacementBinding, 'read', 'README.md')).content,
+      projectContent,
+    );
+    assert.equal(
+      await exec(recovered.id, [
+        'git',
+        '-C',
+        'workspace',
+        'status',
+        '--porcelain=v1',
+      ]),
+      projectGitState,
+    );
+    assert.equal(
+      await exec(recovered.id, [
+        'git',
+        '-C',
+        'workspace',
+        'worktree',
+        'list',
+        '--porcelain',
+      ]),
+      worktreeState,
+    );
+    assert.equal(
+      await exec(recovered.id, [
+        'git',
+        '-C',
+        'workspace-worktree',
+        'status',
+        '--porcelain=v1',
+      ]),
+      '',
+    );
     assert.equal(
       await exec(recovered.id, ['cat', 'native-persistence.txt']),
       token,
@@ -1637,7 +1942,7 @@ async function acceptance(options) {
     );
     await action(recovered, 'rm');
     console.log(
-      'A new VM reattached the retained project volume and read the original saved data.',
+      'A new VM reattached the retained project volume: project identity, edited/untracked code and Git worktrees survived, and all old file bindings were rejected.',
     );
 
     const task = await create('AXV native expiring task', { ttl: 60 });

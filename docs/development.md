@@ -180,6 +180,30 @@ The default project is this repository; `pnpm verify:codex-live /absolute/projec
 
 The check isolates AXV data, profile and tmux routing, inherits proxy configuration, and writes a credential-free result to `.cache/codex-live/last-run.json` without a transcript. It uses your model access; run it only when that acceptance is intended. The [script](../scripts/verify-codex-live.mjs) owns the detailed assertions.
 
+## VM project workspace acceptance
+
+Run focused fixture coverage through the same isolated Go launcher:
+
+```sh
+node scripts/test-go.mjs -race \
+  ./apps/server/internal/compute/control ./apps/server/internal/compute/httpapi \
+  ./apps/server/internal/compute/client ./apps/server/internal/cli \
+  ./apps/server/internal/guest/...
+```
+
+Project store/service/HTTP tests cover retained-volume registration, durable receipts/replay, attachment/revision checks and stale environment rejection. Guest tests cover path confinement, text/hash checks, create-only publication and invalid/stale identities. CLI fake-host tests verify captured bindings and volume revisions, registration recovery after VM removal with the original host/payload, machine-readable output, unchanged writes, explicit creation expectations and no retry after conflicts or lost responses. Browser tests complement these service fixtures with edited snapshots, conflict/draft preservation and explicit reconnect. Required cross-layer verification remains the [matrix above](#verification); fixture success alone does not establish native VM support.
+
+For first-phase native acceptance, use an invocation-owned profile/test root and a newly built compatible enhanced image; follow the platform prerequisites and cleanup rules below. Do not select an existing personal project or profile. The [Linux native script](../scripts/verify-vm-firecracker.mjs) exercises a real in-guest Git clone/worktree, CLI file access, version/path/symlink rejection, controller recovery and replacement-VM binding checks. Its cleanup leaves registered volumes protected while the host runs, then removes only its verified owned test directories after all owned VMs and the controller/cgroup are stopped. Run the workflow below as applicable, including browser actions that require separate interaction acceptance:
+
+1. Create a development VM with a retained project volume. Through guest SSH, place a real Git repository and all worktree/common Git metadata in a directory on that volume. Record the VM, volume and host IDs; retain the original CLI request IDs for uncertain lifecycle submissions.
+2. Follow [VM project CLI](startup.md#vm-project-files) to register that directory, capture its binding, list/read a tracked file, edit it with the reviewed SHA-256 and create a file/directory. Confirm actual bytes and `git status` inside the guest. Verify a changed hash, traversal, outside symlink, binary file and create-only overwrite each fail without touching another file.
+3. Keep the VM running, close the browser and restart the desktop/controller using the profile's documented launcher. Confirm the same project ID and on-volume code/Git state are available. A guest-service restart must invalidate the old binding even when the boot ID remains unchanged. Explicitly reacquire a binding after reviewing the environment.
+4. Stop and remove only that VM while retaining its volume. Create a replacement stopped VM, attach the retained volume using the volume UI/API and start it. Reopen the original project and compare tracked/untracked content, Git status and worktree validity. Old bindings must reject list/read/write/mkdir; a newly captured binding must target the replacement explicitly. Also verify an unavailable VM cannot cause host file access.
+5. Review a browser edit, change its file independently through SSH and confirm Save preserves the draft and reports a conflict. Exercise Reload File/Reconnect choices, tab-local draft restore and close/Keep Draft. An uncertain file response requires a read/inspection, without automatic retry.
+6. Delete only this invocation's VM, volume and services when unbound resources can be cleaned up safely. Project-bound volumes deliberately reject deletion and retention removal in this phase: preserve the isolated profile and its cleanup instructions rather than bypassing that protection or removing its database while a VM still runs. Stop owned services/VMs before explicitly removing the disposable test profile and its verified storage.
+
+Task durability, exact cancellation, runaway-task enforcement, measured resource limits, disk-exhaustion recovery and backup restoration are the subsequent [workspace acceptance target](product.md#vm-project-workspace-constraints). Existing bounded guest exec and retained-volume copies do not satisfy those checks. When implementing that target, additionally prove duplicate task submissions cannot execute twice and restore/replacement rejects old write/cancel bindings. Record actual native results and unavailable checks in task/PR history, updating [project status](../README.md#project-status) only when supported by evidence.
+
 ## Native VM preparation acceptance
 
 ### macOS Lima
@@ -220,7 +244,7 @@ node scripts/verify-vm-firecracker.mjs --yes \
   --version 1.17.0 --subnet <unused-private-/22>
 ```
 
-The [Linux acceptance script](../scripts/verify-vm-firecracker.mjs) builds an isolated executable and verifies real lifecycle, guest execution, Guest Terminal detach/replay/resize/End, SSH/file transfers, SSH PTY resize and local/remote TCP forwarding, Internet egress, host isolation, controller recovery, retained project data and task expiry. It creates a dedicated transient system service with delegated cgroups, independent profile and owned short `/tmp/axv-fc-*` runtime directory. It verifies image/kernel digests and removes only its own VMs, volumes, service, TAPs, firewall table and directories. Interrupted submissions retain their original request IDs; uncertain cleanup preserves the profile with recovery commands. `AXV_VM_VERIFY_KEEP_FAILURE=1` explicitly retains failed-run state. Inputs are never downloaded or provisioned automatically.
+The [Linux acceptance script](../scripts/verify-vm-firecracker.mjs) builds an isolated executable and verifies real lifecycle, guest execution, Guest Terminal detach/replay/resize/End, SSH/file transfers, SSH PTY resize and local/remote TCP forwarding, Internet egress, host isolation, controller recovery, [VM project/Git retention and binding protection](#vm-project-workspace-acceptance), and task expiry. The image must declare `project-files` alongside the other enhanced capabilities. It creates a dedicated transient system service with delegated cgroups, independent profile and owned short `/tmp/axv-fc-*` runtime directory. It verifies image/kernel digests and removes only its own VMs, volumes, service, TAPs, firewall table and directories. Interrupted submissions retain their original request IDs; uncertain cleanup preserves the profile with recovery commands. `AXV_VM_VERIFY_KEEP_FAILURE=1` explicitly retains failed-run state. Inputs are never downloaded or provisioned automatically.
 
 On a Docker host using the iptables backend and a restrictive forwarding policy, explicitly add `--docker-uplink <interface>` to authorize two temporary `DOCKER-USER` rules scoped to this run's TAP prefix, guest subnet and uplink. Cleanup removes their exact owner-comment handles, including when preserving failed VMs. It does not change chain policies. Other firewalls require administrator integration as described in [VM networking](vm-platform.md#host-firewall-integration).
 

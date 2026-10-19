@@ -4,7 +4,7 @@
 
 Machine, storage and durable-operation APIs for the computer running AXV. The VM service and its virtual machines run on that computer, independently of the browser's platform.
 
-The browser gateway uses `/api/compute`. Host routes use `/v1` on the private host Unix socket; `/environment` and `/preparation/*` are desktop-only. The VM CLI uses the private socket directly. Host protocol version is **3**. The [shared access boundary](README.md#access-and-identity-boundaries) applies. JSON request bodies accept one object with no unknown fields, limited to **64 KiB**; image upload uses its separate multipart limit.
+The browser gateway uses `/api/compute`. Host routes use `/v1` on the private host Unix socket; `/environment` and `/preparation/*` are desktop-only. The VM CLI uses the private socket directly. Host protocol version is **3**. The [shared access boundary](README.md#access-and-identity-boundaries) applies. JSON request bodies accept one object with no unknown fields, normally limited to **64 KiB**; project writes and image uploads specify separate limits below.
 
 ## Routes
 
@@ -29,6 +29,14 @@ The browser gateway uses `/api/compute`. Host routes use `/v1` on the private ho
 | POST | `/volumes` | 202 `{ volume, operation }` |
 | POST | `/volumes/:id/actions` | 202 `{ volume, operation }` |
 | POST | `/volumes/:id/delete` | 202 operation |
+| GET | `/projects` | `{ projects }` |
+| POST | `/projects` | 201 `{ project }` |
+| GET | `/projects/:id` | `{ project }` |
+| GET | `/projects/:id/binding` | `{ project, binding }` |
+| POST | `/projects/:id/files/list` | `{ project, binding, entries, nextCursor?, truncated }` |
+| POST | `/projects/:id/files/read` | `{ project, binding, path, content, sha256, size, modifiedAt }` |
+| POST | `/projects/:id/files/write` | Same file response after confirmed publication |
+| POST | `/projects/:id/files/mkdir` | `{ project, binding, name, path, kind, size, modifiedAt }` |
 | GET | `/images` | `{ images }` |
 | POST | `/images` | 202 `{ image, operation }` |
 | POST | `/images/import` | 202 `{ image, operation }` |
@@ -112,6 +120,37 @@ Volume listings include detached retained storage. Creation can allocate a new v
 Volume creation accepts `{ requestId, name, provider, sizeGiB, retain, sourceVolumeId? }`. A copy locks the source and its attached VM; an attached source must be stopped. Copies are independent, cannot be smaller than the source, and may omit provider/size to use the source values.
 
 Volume actions accept `{ requestId, revision, action, name?, retain?, sizeGiB?, machineId?, machineRevision? }`, with actions `rename`, `retain`, `resize`, `attach` and `detach`. Attachment changes require the affected VM's revision and stopped state; growth of attached storage also requires stopped state. An uncertain attachment retains `pendingMachineId` and blocks deleting either resource until resolved. Failed actions retain `pendingAction`; a retry must match that action and attachment target, using a new request ID after inspecting the final failed operation.
+
+## VM projects
+
+These routes are available through the desktop gateway and private host socket. Every request requires `X-AXV-Host-ID` matching the original host, including list/get/binding. Gateway mutations also require the shared local Origin check. POST bodies require `application/json`, one JSON object and no unknown fields; query parameters, invalid UTF-8 and unpaired Unicode surrogates are rejected without replacing submitted characters. The ordinary **64 KiB** body limit applies except writes, which allow an **8 MiB** JSON envelope for escaped text. These routes never access a host project directory or fall back to host execution.
+
+`POST /projects` accepts `{ requestId, volumeId, volumeRevision, machineId, root, name? }`. The volume must be retained, ready, currently attached to that exact running VM and free of conflicting operations. Its revision must match. The selected image and current guest must both offer `project-files`. `root` is an existing canonical path relative to the project volume; the empty string selects its root. It cannot be an absolute path, `.`/`..`, a symlink root or an AXV reserved internal path. Registration does not clone Git or create missing directories.
+
+The returned project contains `{ id, hostId, kind: "vm", name, volumeId, root, rootIdentity, revision, createdAt }`. It identifies volume data independently of the current VM. Registration receipts share the host request-ID namespace: replaying the same request returns the original project; a changed payload returns `409 idempotency_conflict`. A fresh registration of the same volume/root and unchanged filesystem identity returns the existing project without renaming it. An identity mismatch fails without adopting the replacement directory. Project-bound volumes cannot be deleted or have retention disabled; no project deletion or restored-volume rebind is available yet.
+
+`GET /projects/:id/binding` verifies current attachment and guest/root identity and returns `{ project, binding }`. The binding contains `{ hostId, projectId, projectRevision, volumeId, volumeRevision, machineId, bootId, instanceId }`; `instanceId` identifies this guest-service incarnation, separately from the Linux boot. VM replacement on the same retained volume keeps the project ID but requires an explicit new binding. Host replacement, volume changes and guest restart invalidate old requests.
+
+Every file POST accepts `{ binding, path }` with the complete original binding. List additionally accepts `cursor?` and `limit?`; write requires `content` and explicit `expectedSha256`. The host rejects fields belonging to other actions. It holds an access lease against lifecycle/attachment changes during forwarding, rechecks the bound machine and guest, and sends the registered root identity to the guest. A stopped or missing VM, unavailable guest or stale binding fails; callers must not automatically substitute a new binding.
+
+Paths are canonical relative paths of at most **4096 UTF-8 bytes**, without traversal, backslashes, control characters or `.axv`/`.axv-*` components. The empty path lists the project root; other actions require a nonempty path. Listing defaults to **100** entries, accepts **1–200**, reports symlinks without opening them and caps scanning at **10,000** entries with `truncated`. `nextCursor` is valid only for the observed mutable directory; it is not a snapshot. Reads and writes accept regular UTF-8 text files up to **1 MiB** without binary control characters. Symlinks and special files cannot be opened; ancestor resolution remains confined to the project.
+
+For writes, `expectedSha256: ""` means create-only; a lowercase SHA-256 means replace exactly the reviewed version. Missing/null content or expectations are rejected; an explicit empty content string clears a reviewed file. Parents must already exist; `mkdir` creates one directory and rejects an existing name. Conflict returns an error without refreshing the expectation. Successful writes return the new `sha256`. The guest stages/syncs content, rechecks directory/file identities and hash before atomic publication and confirms the resulting bytes. AXV writers are serialized; ordinary guest processes can still race between the last check and rename. This is not an OS-level compare-and-swap against arbitrary guest tools. See [guest enforcement](guest.md#project-file-protocol).
+
+File writes and mkdir are synchronous and have no durable request receipt. A transport or post-publication error can mean the change succeeded; inspect the original binding/path before deciding how to retry. Never blindly repeat a write, refresh its hash or acquire another environment binding to make a failed request succeed. Registration recovery instead preserves its original request ID/payload and consults the project list. Project/file persistence survives desktop/controller restart; the current VM/guest must still be available for file access. Persistent command tasks/logs/cancellation are outside this phase.
+
+| Status | Project/file codes |
+| --- | --- |
+| 400 | `invalid_request`, `invalid_path`, `invalid_directory`, `invalid_cursor`, `not_file` |
+| 403 | `file_forbidden` |
+| 404 | `not_found` |
+| 409 | `binding_changed`, `boot_changed`, `instance_changed`, `project_changed`, `file_conflict`, `revision_conflict`, `operation_conflict`, `idempotency_conflict`, `volume_conflict`, `unavailable` |
+| 413 | `file_too_large` |
+| 415 | `not_text` |
+| 503 | `unsupported`, `host_unavailable`, `guest_unavailable`, `guest_identity_mismatch`, `project_unavailable`, `file_unavailable` |
+| 507 | `disk_full` |
+
+[VM architecture](../vm-platform.md#vm-projects) owns durable project and file-publication mechanisms; [VM project CLI](../startup.md#vm-project-files) provides the host-agent workflow. These IDs remain separate from [registered host projects](project-files.md), virtual documents and task/run identities.
 
 ## Images
 

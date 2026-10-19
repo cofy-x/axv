@@ -4,7 +4,7 @@ These explicit recipes install dependencies and prebuilt services into immutable
 
 Both provider formats share `install-base.sh`, the unprivileged `axv` account (UID/GID 1000), `/projects`, the guest service, dedicated SSH helpers and the [`guest/image`](../../apps/server/internal/guest/image) manifest contract. The builder installs systemd, filesystem tools, Python, Bash, Git, curl, socat and OpenSSH. The image owns `/usr/share/axv/image.json`, `/usr/local/bin/axv-guest`, `/usr/local/lib/axv/prepare-ssh` and service units.
 
-The installed manifest includes provider, architecture and a `guest` object with `imageVersion`, `protocolVersion`, `capabilities` and an optional integrity digest of its own guest executable. That digest never has to match the current AXV application. Bundle `manifest.json` adds an immutable image ID/name and rootfs filename/SHA-256. Builder IDs include the platform and rootfs digest, so different builds cannot reuse a fixed image identity. Ordinary custom Linux bundles may omit `guest`, retaining basic VM management. [VM architecture](../../docs/vm-platform.md#image-and-capability-contract) owns capability and runtime-handshake behavior.
+The installed manifest includes provider, architecture and a `guest` object with `imageVersion`, `protocolVersion`, `capabilities` and an optional integrity digest of its own guest executable. That digest never has to match the current AXV application. Bundle `manifest.json` adds an immutable image ID/name and rootfs filename/SHA-256. Builder IDs include the platform and rootfs digest, so different builds cannot reuse a fixed image identity. Ordinary custom Linux bundles may omit `guest`, retaining basic VM management. [VM architecture](../../docs/vm-platform.md#image-and-capability-contract) owns capability and runtime-handshake behavior. Project-file access requires an explicit image rebuild/import with `project-files`; selecting the old compatible image does not add that feature, and Start never replaces its guest binary.
 
 ## Lima cloud disk
 
@@ -29,7 +29,7 @@ BASE_IMAGE=ubuntu:24.04@sha256:<reviewed-native-image-digest> \
   bash images/guest/build-rootfs.sh /absolute/new-firecracker-bundle
 ```
 
-The recipe creates a fresh ext4 root with the common dependencies, guest/SSH services and seed initializer. It removes only its own temporary container, image tag and build directory. Supply and verify a compatible kernel separately in the administrator's host configuration; this recipe does not fetch one. Run the separate [Linux native acceptance](../../docs/development.md#linux-firecracker) against the completed bundle; [project status](../../README.md#project-status) owns validated platforms and release availability.
+The recipe creates a fresh ext4 root with the common dependencies, guest/SSH services and seed initializer. It removes only its own temporary container, image tag and build directory. Supply and verify a compatible kernel separately in the administrator's host configuration; this recipe does not fetch one. Project-file access requires kernel `CONFIG_FHANDLE` and ext4 export-handle support; [guest file enforcement](../../docs/api/guest.md#project-file-protocol) owns the identity mechanism and unsupported-system behavior. Run the separate [Linux native acceptance](../../docs/development.md#linux-firecracker) against the completed bundle; [project status](../../README.md#project-status) owns validated platforms and release availability.
 
 ## Per-machine initialization and release work
 

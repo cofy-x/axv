@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   acceptanceOptions,
   hostJSON,
+  ownedProtectedProjectVolumes,
   runAcceptanceCommand,
   sha256,
   verifiedBundle,
@@ -180,7 +181,7 @@ async function fixture(change = {}) {
     guest: {
       imageVersion: 1,
       protocolVersion: 3,
-      capabilities: ['exec', 'terminals', 'ssh', 'network'],
+      capabilities: ['exec', 'terminals', 'ssh', 'network', 'project-files'],
     },
     rootfs: { file: 'root.ext4', sha256: await sha256(rootfs) },
     ...change,
@@ -267,5 +268,65 @@ describe('native acceptance artifact integrity', () => {
     await expect(verifiedBundle(limited.path, 'amd64')).rejects.toThrow(
       /requires terminals/,
     );
+    const withoutProjectFiles = await fixture({
+      guest: {
+        imageVersion: 1,
+        protocolVersion: 3,
+        capabilities: ['exec', 'terminals', 'ssh', 'network'],
+      },
+    });
+    await expect(
+      verifiedBundle(withoutProjectFiles.path, 'amd64'),
+    ).rejects.toThrow(/requires project-files/);
+  });
+});
+
+describe('registered project volume native cleanup boundary', () => {
+  const owned = {
+    hostId: 'host-owned',
+    projects: [
+      {
+        id: 'project-owned',
+        hostId: 'host-owned',
+        volumeId: 'volume-owned',
+        root: 'workspace',
+      },
+    ],
+    volumes: [{ id: 'volume-owned', retain: true, status: 'ready' }],
+    machines: [],
+    ownedMachines: [{ id: 'vm-owned', volumeId: 'volume-owned' }],
+    registrations: [
+      { id: 'project-owned', volumeId: 'volume-owned', root: 'workspace' },
+    ],
+  };
+
+  it('leaves only its detached registered volume for final stopped-host directory cleanup', () => {
+    expect([...ownedProtectedProjectVolumes(owned)]).toEqual(['volume-owned']);
+    // A registration response may have been lost after acceptance. The original
+    // saved volume/root still identifies this invocation's request.
+    expect([
+      ...ownedProtectedProjectVolumes({
+        ...owned,
+        registrations: [{ volumeId: 'volume-owned', root: 'workspace' }],
+      }),
+    ]).toEqual(['volume-owned']);
+  });
+
+  it('retains state when VM liveness, attachment or project ownership is uncertain', () => {
+    for (const change of [
+      { machines: [{ id: 'vm-owned', status: 'unknown' }] },
+      { volumes: [{ ...owned.volumes[0], machineId: 'vm-owned' }] },
+      { volumes: [{ ...owned.volumes[0], pendingMachineId: 'vm-other' }] },
+      { volumes: [{ ...owned.volumes[0], pendingAction: 'detach' }] },
+      { volumes: [{ ...owned.volumes[0], pendingSizeGiB: 2 }] },
+      { volumes: [{ ...owned.volumes[0], status: 'unknown' }] },
+      { projects: [{ ...owned.projects[0], hostId: 'host-other' }] },
+      { registrations: [] },
+      { ownedMachines: [] },
+    ]) {
+      expect(() =>
+        ownedProtectedProjectVolumes({ ...owned, ...change }),
+      ).toThrow();
+    }
   });
 });

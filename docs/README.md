@@ -15,6 +15,7 @@ Before application changes, read [ownership and dependencies](architecture.md#ow
 | Shared host directory selection | [Host directories API](api/host-directories.md) | The consuming Terminal, Codex or Project Files reference |
 | Codex conversations, runs or document delivery | [Host Codex architecture](codex.md) | [Host Codex API](api/host-codex.md) |
 | VMs, volumes, images or guest execution | [VM architecture](vm-platform.md) | [Compute API](api/compute.md), [Guest API](api/guest.md), [VM CLI](startup.md#vm-command-line) or [image recipes](../images/guest/README.md), according to the changed boundary |
+| VM projects, retained-volume bindings or guest project files | [VM projects](vm-platform.md#vm-projects) | [Compute project API](api/compute.md#vm-projects), [guest file enforcement](api/guest.md#project-file-protocol), [VM project CLI](startup.md#vm-project-files); [product constraints](product.md#vm-project-workspace-constraints) for scope |
 | Installation, uninstallation, configuration, startup or supervision | [Startup](startup.md) | [Runtime identity API](api/desktop.md) for identity contracts |
 | Build tooling, tests or acceptance | [Development](development.md) | The affected feature reference |
 | Contributions, bug reports or usage questions | [Contributing](../CONTRIBUTING.md) and [Support](../SUPPORT.md) | [Development](development.md) for verification |

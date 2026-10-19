@@ -118,7 +118,7 @@ func newVM() *cobra.Command {
 		return jsonResult(cmd.OutOrStdout(), m)
 	}}
 	inspect.Flags().BoolVar(&inspectJSON, "json", false, "write machine-readable JSON (also the default for inspect)")
-	cmd.AddCommand(inspect, newCreate(), newIP(), newSSH(false), newSSH(true), newOperations(), newPackageSource())
+	cmd.AddCommand(inspect, newCreate(), newIP(), newSSH(false), newSSH(true), newOperations(), newPackageSource(), newVMProject())
 	for _, action := range []string{"start", "stop", "restart", "rm"} {
 		cmd.AddCommand(newAction(action))
 	}

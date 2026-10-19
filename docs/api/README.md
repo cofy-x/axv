@@ -10,7 +10,7 @@ These pages own routes, request/response shapes, limits, errors and caller retry
 - [Host Terminal](host-terminal.md): An ephemeral host shell owned by one WebSocket connection.
 - [Host directories](host-directories.md): Shared local directory selection and path validation for host tools.
 - [Host Codex](host-codex.md): Conversations, exact process runs and attachments.
-- [Compute](compute.md): Environment preparation, service readiness, machines, volumes, images and durable operations.
+- [Compute](compute.md): Environment preparation, service readiness, machines, volumes, images, durable operations and VM project bindings/files.
 - [Guest execution](guest.md): Guest health, commands, detachable guest terminals, network observation and local SSH access.
 
 For component ownership and implementation, see [architecture](../architecture.md), [Codex architecture](../codex.md) and [VM architecture](../vm-platform.md). [Startup](../startup.md) owns configuration and service operation instructions.
@@ -46,6 +46,8 @@ Desktop-state and virtual-file mutations validate a supplied Origin against the 
 Host Terminal, host-directory, Codex and compute gateway routes use the shared [local-access validator](../../apps/server/internal/localaccess/request.go): a loopback peer, a Host of `localhost` or a loopback address, and an exact scheme/Host match when Origin is supplied. Their WebSocket upgrades and mutations require Origin. Forwarded headers do not bypass these checks. The private compute socket is authorized through OS permissions; this is not remote-user authentication.
 
 Project-file and document-exchange routes use that same local-access validator, requiring Origin for mutations. Their registered root identity and project-relative paths remain separate from virtual-document IDs and VM project-volume identities.
+
+VM project routes use the compute gateway/private-socket boundary and require the original host identity even for reads. File requests also carry the explicit project/volume/VM/boot/guest-service binding, verified before forwarding and inside the guest. A new binding must be requested as a separate caller decision; a missing VM never causes execution or file access on the host. [Compute projects](compute.md#vm-projects) owns that contract.
 
 Virtual-file entry IDs are not host paths. Host directory selection uses absolute paths on the service's computer; guest commands use project-relative starting directories inside a selected VM. Desktop workspaces do not select an execution target. Runtime instance, database, browser client, host, machine, guest boot, conversation and process-run identities have separate lifetimes and purposes.
 

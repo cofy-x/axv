@@ -30,7 +30,7 @@ func TestPreparationRejectsForeignAndPriorFormatsWithoutReset(t *testing.T) {
 		version, format int
 	}{
 		{"prior preparation", 2, 0},
-		{"compute", 1, 0x41584331},
+		{"compute", 1, 0x41584332},
 		{"desktop", 1, 0x41585631},
 		{"unversioned with a view", 0, 0},
 	} {

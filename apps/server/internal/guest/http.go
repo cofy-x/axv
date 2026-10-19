@@ -18,7 +18,7 @@ func (s *service) handler() http.Handler {
 	mux := http.NewServeMux()
 	s.access.Register(mux)
 	mux.HandleFunc("GET /v1/health", func(w http.ResponseWriter, r *http.Request) {
-		health := protocol.Health{Version: protocol.Version, MachineID: s.config.MachineID, BootID: s.bootID}
+		health := protocol.Health{Version: protocol.Version, MachineID: s.config.MachineID, BootID: s.bootID, InstanceID: s.instanceID}
 		health.SSHAvailable = image.Has(s.capabilities, "ssh") && s.access.Info(r.Context()).Available
 		health.Capabilities = []string{}
 		for _, capability := range image.Capabilities() {
@@ -34,6 +34,11 @@ func (s *service) handler() http.Handler {
 		respond(w, http.StatusOK, health)
 	})
 	mux.HandleFunc("POST /v1/exec", s.execute)
+	mux.HandleFunc("POST /v1/project-files/inspect", s.inspectProjectFiles)
+	mux.HandleFunc("POST /v1/project-files/list", s.listProjectFiles)
+	mux.HandleFunc("POST /v1/project-files/read", s.readProjectFile)
+	mux.HandleFunc("POST /v1/project-files/write", s.writeProjectFile)
+	mux.HandleFunc("POST /v1/project-files/mkdir", s.mkdirProjectFile)
 	mux.HandleFunc("GET /v1/terminals", s.terminals.list)
 	mux.HandleFunc("POST /v1/terminals", s.terminals.create)
 	mux.HandleFunc("GET /v1/terminals/{id}", s.terminals.info)
@@ -58,6 +63,8 @@ func (s *service) handler() http.Handler {
 		switch {
 		case r.URL.Path == "/v1/exec":
 			capability = "exec"
+		case strings.HasPrefix(r.URL.Path, "/v1/project-files"):
+			capability = "project-files"
 		case strings.HasPrefix(r.URL.Path, "/v1/terminals"):
 			capability = "terminals"
 		case strings.HasPrefix(r.URL.Path, "/v1/ssh"):

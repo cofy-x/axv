@@ -7,7 +7,10 @@ export const projectFilesApp: AppDefinition = {
   title: 'Project Files',
   icon: 'project',
   component: ProjectFiles,
-  windowKey: (params) => params.projectId || 'projects',
+  windowKey: (params) =>
+    params.vmProjectId
+      ? `vm:${params.hostId}:${params.vmProjectId}`
+      : params.projectId || 'projects',
   defaultSize: { width: 800, height: 540 },
   minSize: { width: 310, height: 300 },
 };

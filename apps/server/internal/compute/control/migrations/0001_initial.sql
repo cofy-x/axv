@@ -1,5 +1,5 @@
--- AXC1 identifies the compute database independently of the migration sequence.
-PRAGMA application_id = 0x41584331;
+-- AXC2 identifies the compute database independently of the migration sequence.
+PRAGMA application_id = 0x41584332;
 
 -- One persistent host identity; reopening never allocates a replacement.
 CREATE TABLE identity (
@@ -53,3 +53,18 @@ CREATE TABLE catalog (
     disk_gib INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX catalog_kind ON catalog (kind);
+
+-- Project identity belongs to a retained volume, never its current VM.
+CREATE TABLE projects (
+    id TEXT PRIMARY KEY,
+    volume_id TEXT NOT NULL,
+    root TEXT NOT NULL,
+    data TEXT NOT NULL CHECK (json_valid(data)),
+    UNIQUE (volume_id, root),
+    FOREIGN KEY (volume_id) REFERENCES volumes(id)
+);
+CREATE TABLE project_requests (
+    request_id TEXT PRIMARY KEY,
+    fingerprint TEXT NOT NULL,
+    project_id TEXT NOT NULL REFERENCES projects(id)
+);
