@@ -21,6 +21,8 @@ updates:
     ignore:
       - dependency-name: pnpm
       - dependency-name: node
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
     groups:
       javascript:
         patterns: ['*']
