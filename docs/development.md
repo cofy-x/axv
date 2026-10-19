@@ -109,14 +109,16 @@ The [production smoke](../scripts/smoke-production.mjs) exercises the embedded b
 
 ## GitHub CI and dependency maintenance
 
-The [CI workflow](../.github/workflows/ci.yml) runs for every pull request, pushes to `main`, and manual dispatches. Both jobs use Ubuntu 24.04 hosted runners and the pinned Go, Node.js and pnpm versions from `.go-version`, `.node-version` and `package.json`. There are no path filters; documentation changes also receive both checks. A newer run on the same ref cancels the previous run.
+The [CI workflow](../.github/workflows/ci.yml) runs for every pull request, pushes to `main`, and manual dispatches. Verification jobs use Ubuntu 24.04 hosted runners and the pinned Go, Node.js and pnpm versions from `.go-version`, `.node-version` and `package.json`. There are no path filters; documentation changes also receive both required checks. A newer run on the same ref cancels the previous run.
 
 | Check | Coverage |
 | --- | --- |
 | `checks` | Locked dependency installation, formatting, Go and Vitest tests, typecheck, lint, production build, production smoke and temporary production installation |
-| `e2e` | Locked dependencies and browser system libraries, then the full `make test-e2e` browser, display-scale and touch matrix |
+| `e2e` | Requires every browser job to pass, covering the full `test:e2e` browser, display-scale and touch matrix |
 
-The jobs install tmux and use deterministic Codex fixtures without provider credentials or model requests. They run the existing launchers as the runner user with the repository's private `.data/test` root. The workflow caches only the pnpm store and Go module/compiler caches. It retains failed browser reports, screenshots and traces for seven days; AXV profiles and test roots are excluded from uploaded artifacts. `GOTOOLCHAIN=local` keeps checks on the selected Go version instead of downloading a newer toolchain to satisfy a dependency.
+The six Playwright projects run on separate runners, each retaining one worker and its own isolated server and profile. A failed browser does not cancel the other projects. The aggregate `e2e` job runs even when a dependency fails and succeeds only if every browser job succeeds; a failed or skipped dependency cannot produce a passing aggregate check.
+
+Verification jobs install tmux and use deterministic Codex fixtures without provider credentials or model requests. They run the existing launchers as the runner user with the repository's private `.data/test` root. The workflow caches only the pnpm store and Go module/compiler caches. It retains each failed browser project's reports, screenshots and traces for seven days; AXV profiles and test roots are excluded from uploaded artifacts. `GOTOOLCHAIN=local` keeps checks on the selected Go version instead of downloading a newer toolchain to satisfy a dependency.
 
 Hosted CI covers the commands above. Native daemon, VM, network and real-Codex acceptance still require their explicit environments and procedures below. Passing CI does not establish native VM support or replace visual/interaction acceptance.
 
@@ -143,6 +145,8 @@ Run the full Go suite and desktop smoke/browser checks with the identity being v
 When a child process is killed, use bounded diagnostics to record its actual executable, ProxyCommand when applicable, working directory and temporary paths before retrying. Keep executable test artifacts under the repository test root and investigate the reported paths; do not disable or bypass host security controls.
 
 Browser and production smoke tests require tmux on macOS/Linux. They use a deterministic Codex fixture, with no installed Codex CLI, login or model request required. Their [shell fixture](../scripts/shell-fixture.mjs) gives the server a private `HOME`, selects `/bin/sh`, and clears `ENV` and `BASH_ENV`: Host Terminal still starts a login shell, without loading the user's home profile or inherited startup hooks. This fixture does not change the invoking shell or explicit native acceptance's user home and shared-cache behavior.
+
+The [browser runtime guard](../tests/runtime-errors.ts) collects native `error` and `unhandledrejection` events from each document and frame into a host-owned record that survives reloads. It retains Playwright `pageerror` events as diagnostic attachments: WebKit also emits them for handled requests cancelled during document replacement ([upstream issue](https://github.com/microsoft/playwright/issues/43120)). Browser regressions verify uncaught exceptions and unhandled rejections remain failures, including exceptions with the same text as that engine diagnostic.
 
 Each run owns its data, profile, project, listener and explicit tmux socket. On macOS/Linux, build, Go-test, browser and development launchers also own their child process groups. Cleanup waits for all tracked child shutdown attempts before reporting failures; a cleanup failure is visible and makes the launcher exit nonzero even when its checks succeeded. Cleanup may stop only the invocation's resources. Shared launcher and Codex fixture behavior lives in [scripts/lib.mjs](../scripts/lib.mjs) and [scripts/codex-fixture.mjs](../scripts/codex-fixture.mjs).
 

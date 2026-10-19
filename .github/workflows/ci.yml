@@ -58,10 +58,26 @@ jobs:
       - name: Check production installation
         run: AXV_TEST_PRODUCTION_INSTALL=1 pnpm exec vitest run scripts/install.test.mjs
 
-  e2e:
-    name: e2e
+  browsers:
+    name: browser (${{ matrix.project }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: chromium
+            browser: chromium
+          - project: firefox
+            browser: firefox
+          - project: webkit
+            browser: webkit
+          - project: chromium-dpr2
+            browser: chromium
+          - project: chromium-touch
+            browser: chromium
+          - project: webkit-touch
+            browser: webkit
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -91,17 +107,33 @@ jobs:
           sudo apt-get install --yes tmux
       - name: Install locked dependencies
         run: make deps
-      - name: Install browser system dependencies
-        run: pnpm exec playwright install-deps chromium firefox webkit
-      - name: Check all browser projects
-        run: make test-e2e
+      - name: Install browser and system dependencies
+        env:
+          PLAYWRIGHT_BROWSER: ${{ matrix.browser }}
+        run: pnpm exec playwright install --with-deps "$PLAYWRIGHT_BROWSER"
+      - name: Check browser project
+        env:
+          BROWSER_PROJECT: ${{ matrix.project }}
+        run: pnpm test:e2e --project="$BROWSER_PROJECT"
       - name: Upload failed browser diagnostics
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: browser-diagnostics
+          name: browser-diagnostics-${{ matrix.project }}
           path: |
             playwright-report/
             test-results/
           retention-days: 7
           if-no-files-found: ignore
+
+  e2e:
+    name: e2e
+    needs: browsers
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - name: Require every browser project to pass
+        env:
+          BROWSER_RESULT: ${{ needs.browsers.result }}
+        run: test "$BROWSER_RESULT" = success
