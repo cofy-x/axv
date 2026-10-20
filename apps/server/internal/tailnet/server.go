@@ -454,11 +454,15 @@ func peerIdentity(who *apitype.WhoIsResponse) remoteaccess.Identity {
 		return remoteaccess.Identity{}
 	}
 	node := who.Node
+	// A peer's MachineAuthorized bool may be omitted and is not a reliable peer
+	// approval signal. The SDK reads it from SelfNode in GetMachineStatus; its
+	// client/web.getSession authorizes WhoIs ownership without requiring it.
+	// Device approval remains enforced by Tailscale's transport before this listener.
 	// WhoIs resolves a netmap entry, including entries retained for expired or
 	// restricted peers. These entries cannot authorize either a new request or
 	// the next check of an existing stream. Expired includes Tailscale's control
 	// clock adjustment; comparing KeyExpiry to our local clock would lose it.
-	if node.Expired || !node.MachineAuthorized || node.IsJailed || node.UnsignedPeerAPIOnly ||
+	if node.Expired || node.IsJailed || node.UnsignedPeerAPIOnly ||
 		node.User <= 0 || node.User != who.UserProfile.ID || !presentNodeID(string(node.StableID)) {
 		return remoteaccess.Identity{}
 	}

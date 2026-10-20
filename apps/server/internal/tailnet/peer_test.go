@@ -1,6 +1,7 @@
 package tailnet
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -9,13 +10,32 @@ import (
 	"tailscale.com/tailcfg"
 )
 
+func TestPeerIdentityDoesNotRequireSelfOnlyMachineAuthorizationField(t *testing.T) {
+	for _, test := range []struct{ name, field string }{
+		{"omitted", ""},
+		{"false", `,"MachineAuthorized":false`},
+		{"true", `,"MachineAuthorized":true`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			data := `{"Node":{"User":123,"StableID":"node-client"` + test.field + `},"UserProfile":{"ID":123}}`
+			var who apitype.WhoIsResponse
+			if err := json.Unmarshal([]byte(data), &who); err != nil {
+				t.Fatal(err)
+			}
+			want := remoteaccess.Identity{UserID: "123", NodeID: "node-client"}
+			if got := peerIdentity(&who); got != want {
+				t.Fatalf("valid WhoIs peer rejected for an optional machine field: %+v", got)
+			}
+		})
+	}
+}
+
 func TestPeerIdentityRejectsRestrictedEntriesRetainedByWhoIs(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		change func(*apitype.WhoIsResponse)
 	}{
 		{"expired", func(who *apitype.WhoIsResponse) { who.Node.Expired = true }},
-		{"approval withdrawn", func(who *apitype.WhoIsResponse) { who.Node.MachineAuthorized = false }},
 		{"jailed", func(who *apitype.WhoIsResponse) { who.Node.IsJailed = true }},
 		{"peer API only", func(who *apitype.WhoIsResponse) { who.Node.UnsignedPeerAPIOnly = true }},
 		{"missing node", func(who *apitype.WhoIsResponse) { who.Node = nil }},
@@ -26,7 +46,7 @@ func TestPeerIdentityRejectsRestrictedEntriesRetainedByWhoIs(t *testing.T) {
 		{"invalid stable node", func(who *apitype.WhoIsResponse) { who.Node.StableID = "0" }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			who := &apitype.WhoIsResponse{Node: &tailcfg.Node{User: 123, StableID: "node-client", MachineAuthorized: true}, UserProfile: &tailcfg.UserProfile{ID: 123}}
+			who := &apitype.WhoIsResponse{Node: &tailcfg.Node{User: 123, StableID: "node-client"}, UserProfile: &tailcfg.UserProfile{ID: 123}}
 			test.change(who)
 			if got := peerIdentity(who); got != (remoteaccess.Identity{}) {
 				t.Fatalf("restricted WhoIs entry authorized a peer: %+v", got)

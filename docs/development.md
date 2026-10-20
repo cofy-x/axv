@@ -41,6 +41,8 @@ make build
 
 The [build script](../scripts/build.mjs) embeds the UI into `dist/axv`. The executable works from any directory without Node at runtime. `make build-go` produces `dist/server-dev` without embedded production assets; direct Go builds and tests do not require frontend output.
 
+Production JavaScript and CSS support negotiated gzip when compression reduces their size. Content-fingerprinted assets use private immutable caching; HTML and unversioned resources require revalidation so new builds select their current assets. The HTML displays the existing startup screen while the application bundle loads, including on a slow remote connection.
+
 `make install` runs dependency setup, this production build and atomic installation into Go's binary directory sequentially. It does not initialize user data or launch services. [Installation and updates](startup.md#installation-and-updates) owns destination, PATH and live-service update semantics. For installation checks, always select a temporary `GOBIN` and a separate short `AXV_HOME`; never overwrite a real installation as part of automated verification.
 
 Builds report `dev` unless `VERSION` is supplied. A version must start with an ASCII letter or digit and contain only ASCII letters, digits, `.`, `_`, `+`, or `-`. For a custom build, pass the same version to its smoke check:
@@ -102,6 +104,8 @@ node scripts/test-go.mjs -race \
 ```
 
 These tests use controlled identity/transport fixtures and real local TLS/WebSockets. The production smoke also requires the default-disabled transport to create no node state. Live acceptance must exercise the [production remote desktop](startup.md#remote-access) from an independently authenticated tailnet device, including browser actions and terminal continuity. Use the [host baseline checker](#remote-host-network-verification) to compare DNS, Git access and network fingerprints; fixture tests and an unchanged host baseline do not establish production remote browser acceptance or cross-device behavior.
+
+For live acceptance, use an isolated profile and workspace with the production executable. Verify the enrolled `.ts.net` address in a browser with normal certificate validation, owner access, local-only route rejection and a foreground terminal connection lasting at least 90 seconds. Check that disabling the embedded node disconnects remote clients while a local terminal remains usable, and that re-enabling retains the node identity without enrollment. A separate userspace Tailscale client can verify this path without starting system Tailscale, but physical phone/tablet acceptance still requires those devices. Keep the service available until manual checks finish, then stop only the acceptance-owned processes and compare the host baseline again.
 
 The guest service keeps Linux boot, mount and vsock setup separate from portable request handling. These unit tests complement the native image and VM acceptance below.
 
