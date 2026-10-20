@@ -3,10 +3,13 @@
 package tmux
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -23,7 +26,10 @@ type attachment struct {
 	once sync.Once
 }
 
-func (b Backend) Attach(path string, target Target, cols, rows int) (Process, error) {
+func (b Backend) Attach(ctx context.Context, path string, target Target, cols, rows int) (Process, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	cmd := exec.Command(path, Arguments(target.Socket, "attach-session", "-E", "-t", target.SessionTarget())...)
 	cmd.Env = Environment(filepath.Dir(path))
 	file, err := nativepty.Start(cmd, uint16(cols), uint16(rows))
@@ -32,7 +38,44 @@ func (b Backend) Attach(path string, target Target, cols, rows int) (Process, er
 	}
 	p := &attachment{File: file, cmd: cmd, done: make(chan struct{})}
 	go func() { p.err = cmd.Wait(); close(p.done) }()
+	if err := b.waitAttachment(ctx, path, target, p); err != nil {
+		p.Close()
+		return nil, err
+	}
 	return p, nil
+}
+
+// Starting the client process does not mean tmux has attached it yet. Do not
+// report readiness while an initial resize would still include client startup.
+func (b Backend) waitAttachment(parent context.Context, path string, target Target, p *attachment) error {
+	ctx, cancel := context.WithTimeout(parent, 4*time.Second)
+	defer cancel()
+	pid := strconv.Itoa(p.cmd.Process.Pid)
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("wait for attachment client: %w", ctx.Err())
+		case <-p.Done():
+			return fmt.Errorf("attachment PTY exited before joining the persistent session: %v", p.ExitError())
+		default:
+		}
+		clients, err := b.Command(ctx, path, target, "list-clients", "-t", target.SessionTarget(), "-F", "#{client_pid}")
+		if err != nil {
+			return fmt.Errorf("inspect attachment clients: %w", err)
+		}
+		for _, client := range strings.Fields(clients) {
+			if client == pid {
+				return nil
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("wait for attachment client: %w", ctx.Err())
+		case <-p.Done():
+			return fmt.Errorf("attachment PTY exited before joining the persistent session: %v", p.ExitError())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
 }
 
 func (p *attachment) Done() <-chan struct{} { return p.done }
