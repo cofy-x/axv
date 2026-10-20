@@ -20,9 +20,10 @@ func (s *service) handler() http.Handler {
 	mux.HandleFunc("GET /v1/health", func(w http.ResponseWriter, r *http.Request) {
 		health := protocol.Health{Version: protocol.Version, MachineID: s.config.MachineID, BootID: s.bootID, InstanceID: s.instanceID}
 		health.SSHAvailable = image.Has(s.capabilities, "ssh") && s.access.Info(r.Context()).Available
+		taskError := s.taskAvailabilityError()
 		health.Capabilities = []string{}
 		for _, capability := range image.Capabilities() {
-			if image.Has(s.capabilities, capability) && (capability != "ssh" || health.SSHAvailable) {
+			if image.Has(s.capabilities, capability) && (capability != "ssh" || health.SSHAvailable) && (capability != "project-tasks" || taskError == nil) {
 				health.Capabilities = append(health.Capabilities, capability)
 			}
 		}
@@ -30,6 +31,9 @@ func (s *service) handler() http.Handler {
 			health.Reason = err.Error()
 		} else {
 			health.Ready = true
+		}
+		if health.Reason == "" && image.Has(s.capabilities, "project-tasks") && taskError != nil {
+			health.Reason = "Project tasks unavailable: " + taskError.Error()
 		}
 		respond(w, http.StatusOK, health)
 	})
@@ -39,6 +43,9 @@ func (s *service) handler() http.Handler {
 	mux.HandleFunc("POST /v1/project-files/read", s.readProjectFile)
 	mux.HandleFunc("POST /v1/project-files/write", s.writeProjectFile)
 	mux.HandleFunc("POST /v1/project-files/mkdir", s.mkdirProjectFile)
+	for _, action := range []string{"submit", "inspect", "logs", "cancel"} {
+		mux.HandleFunc("POST /v1/project-tasks/"+action, func(w http.ResponseWriter, r *http.Request) { s.projectTaskRequest(w, r, action) })
+	}
 	mux.HandleFunc("GET /v1/terminals", s.terminals.list)
 	mux.HandleFunc("POST /v1/terminals", s.terminals.create)
 	mux.HandleFunc("GET /v1/terminals/{id}", s.terminals.info)
@@ -65,6 +72,8 @@ func (s *service) handler() http.Handler {
 			capability = "exec"
 		case strings.HasPrefix(r.URL.Path, "/v1/project-files"):
 			capability = "project-files"
+		case strings.HasPrefix(r.URL.Path, "/v1/project-tasks"):
+			capability = "project-tasks"
 		case strings.HasPrefix(r.URL.Path, "/v1/terminals"):
 			capability = "terminals"
 		case strings.HasPrefix(r.URL.Path, "/v1/ssh"):

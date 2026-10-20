@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   acceptanceOptions,
   hostJSON,
+  machineJSONArguments,
   ownedProtectedProjectVolumes,
   runAcceptanceCommand,
   sha256,
@@ -40,6 +41,34 @@ afterEach(async () => {
 });
 
 describe('native acceptance interruption and exact host binding', () => {
+  it('keeps machine-readable CLI flags outside the guest command argv', () => {
+    expect(
+      machineJSONArguments(['project', 'task', 'list', 'project-1']),
+    ).toEqual(['project', 'task', 'list', 'project-1', '--json']);
+    expect(
+      machineJSONArguments([
+        'project',
+        'task',
+        'submit',
+        'project-1',
+        '--',
+        'python3',
+        '--json',
+        'value',
+      ]),
+    ).toEqual([
+      'project',
+      'task',
+      'submit',
+      'project-1',
+      '--json',
+      '--',
+      'python3',
+      '--json',
+      'value',
+    ]);
+  });
+
   it('waits for interrupted command cleanup before allowing the caller to remove its fixture', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'axv-fc-abort-'));
     directories.push(directory);
@@ -181,7 +210,14 @@ async function fixture(change = {}) {
     guest: {
       imageVersion: 1,
       protocolVersion: 3,
-      capabilities: ['exec', 'terminals', 'ssh', 'network', 'project-files'],
+      capabilities: [
+        'exec',
+        'terminals',
+        'ssh',
+        'network',
+        'project-files',
+        'project-tasks',
+      ],
     },
     rootfs: { file: 'root.ext4', sha256: await sha256(rootfs) },
     ...change,
@@ -278,6 +314,16 @@ describe('native acceptance artifact integrity', () => {
     await expect(
       verifiedBundle(withoutProjectFiles.path, 'amd64'),
     ).rejects.toThrow(/requires project-files/);
+    const withoutProjectTasks = await fixture({
+      guest: {
+        imageVersion: 1,
+        protocolVersion: 3,
+        capabilities: ['exec', 'terminals', 'ssh', 'network', 'project-files'],
+      },
+    });
+    await expect(
+      verifiedBundle(withoutProjectTasks.path, 'amd64'),
+    ).rejects.toThrow(/requires project-tasks/);
   });
 });
 

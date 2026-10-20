@@ -128,7 +128,51 @@ Binding and file commands return JSON by default; `--json` is also accepted. The
 
 File paths are relative to the project; the empty path lists its root. `files` accepts `--limit` and the returned `--cursor`. `read` returns UTF-8 content and its SHA-256; `write` requires exactly one of `--expected-sha256` or `--create`, reads stdin by default (`--file -`) and accepts up to 1 MiB. Writes reject stale versions and preserve existing files on create-only conflicts. Errors do not retry, replace the binding or fetch a new hash. If a write/mkdir response is uncertain, inspect that original path before deciding what to do. [Compute project API](api/compute.md#vm-projects) owns limits and concurrency guarantees.
 
-Projects retain their identity through desktop/controller restart and replacement of a VM using the same retained volume. This interface does not provide persistent install/build/test tasks, restore-to-copy rebinding, automatic Git cloning/worktree repair or a host-agent sandbox. Existing synchronous guest commands and SSH retain their [separate lifetimes](api/guest.md).
+Projects retain their identity through desktop/controller restart and replacement of a VM using the same retained volume. [Project tasks](#vm-project-tasks) provide persistent command execution separately from file writes. Restore-to-copy rebinding, automatic Git cloning/worktree repair and a host-agent sandbox remain unavailable. Existing synchronous guest commands and SSH retain their [separate lifetimes](api/guest.md).
+
+### VM project tasks
+
+`axv vm project task` is the host-agent interface for dependency installation, builds and tests inside a registered VM project. Its image and current guest must support `project-tasks`. Capture the intended environment explicitly, then submit argv after `--`:
+
+```bash
+axv vm project binding <project-id> > task-binding.json
+axv vm project task submit <project-id> --binding-file task-binding.json \
+  --request-id install-original --timeout 30m -- npm ci
+axv vm project task receipt <project-id> install-original --host-id <original-host-id>
+axv vm project task inspect <project-id> <task-id> --host-id <original-host-id>
+axv vm project task list <project-id> --host-id <original-host-id>
+```
+
+Submission returns a task and its first execution attempt after durable acceptance; it does not wait for the command to finish. The task retains its original command and limits, while each attempt records its own VM, volume, boot and guest-service binding. Observe `attempt.status`, `exitCode` and `reason` before starting dependent work. Browser closure, CLI interruption and desktop/controller restart do not cancel accepted tasks. A task VM's own TTL remains independent and can stop its work by deleting that VM.
+
+`submit` accepts `--directory` relative to the registered project root and per-attempt `--timeout`, `--cpus`, `--memory` (MiB), `--max-processes` and `--max-log-bytes`. Defaults are 15 minutes, one CPU, 512 MiB, 64 processes and 1 MiB of combined stdout/stderr. Limits must be supported by the guest and fit the selected VM. Reaching the log capacity stops the attempt with a visible `log_limit` failure. Commands run without shell interpolation; use an explicit `sh -ec '<script>'` argv when a shell is intended. The starting directory does not sandbox the command's ordinary guest filesystem access. [Project task API](api/compute.md#vm-project-tasks) owns limits, states and enforcement.
+
+Submit and retry print the original host/project/environment/request receipt to stderr before sending it; an output failure prevents submission. Keep the original `AXV_HOME`, request ID and binding after any uncertain response; recover using `receipt`, never submit a new request merely because the response was lost. `--request-id` is optional for a first submission; an omitted ID is generated and printed. An unknown receipt does not prove that submission failed. The CLI does not automatically retry mutations, refresh bindings or execute commands on the host.
+
+Queries require `--host-id` or a saved `--binding-file`; a binding file selects the original host for queries without requiring that old VM to remain available. `inspect` includes the current attempt and complete recorded attempt history. To inspect one attempt's combined log, retain its exact ID and byte offset:
+
+```bash
+axv vm project task logs <project-id> <task-id> <attempt-id> \
+  --host-id <original-host-id> --offset 0 --limit 65536
+axv vm project task logs <project-id> <task-id> <attempt-id> \
+  --host-id <original-host-id> --offset 0 --raw > attempt.log
+axv vm project task cancel <project-id> <task-id> <attempt-id> \
+  --host-id <original-host-id>
+```
+
+All commands return JSON by default; `--json` is also accepted. Log JSON contains base64 `data`, `offset` and `nextOffset`; use the returned `nextOffset` for another chunk. `--raw` writes exactly that chunk's bytes with no added newline. Host-cached logs remain readable when the guest is unavailable; `logBytes` can exceed the cached bytes, so an empty chunk alone does not prove completion. `logs` returns one chunk and does not follow new output.
+
+Cancellation always names one attempt. With `--host-id`, the CLI reads that exact attempt's recorded binding from durable task history; it never substitutes the current attempt's binding. Alternatively supply its original `--binding-file`. Cancellation of an old attempt cannot target a later retry or replacement VM. Acceptance of cancellation is separate from confirmed process-group termination; continue inspecting the task's state.
+
+Retry is an explicit new attempt of the original task specification after the prior attempt reaches a final state. Capture and review the intended binding separately, then submit a distinct retry request:
+
+```bash
+axv vm project binding <project-id> > retry-binding.json
+axv vm project task retry <project-id> <task-id> \
+  --binding-file retry-binding.json --request-id retry-original
+```
+
+An `unknown` attempt cannot be retried until reconciliation establishes its outcome or confirms interruption; this avoids overlapping unconfirmed work. Retry does not change argv, directory or limits. To change the specification, submit another task explicitly. Per-task disk/I/O/network throttling, backup restoration, service preview and host-agent permission constraints remain separate work.
 
 ### SSH, file transfer and forwarding
 

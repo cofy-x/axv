@@ -19,9 +19,12 @@ import { HostFolderChooser } from './HostFolderChooser';
 import { projectFileLocation } from './navigation';
 import { VMProjectLauncher } from './VMProjectLauncher';
 import { VMProjectFiles } from './VMProjectFiles';
+import { VMProjectTasks } from './VMProjectTasks';
 
 export function ProjectFiles(props: AppWindowProps) {
-  return props.window.params.vmProjectId ? (
+  return props.window.params.vmTasksProjectId ? (
+    <VMProjectTasks {...props} />
+  ) : props.window.params.vmProjectId ? (
     <VMProjectFiles {...props} />
   ) : props.window.params.projectId ? (
     <ProjectBrowser {...props} />

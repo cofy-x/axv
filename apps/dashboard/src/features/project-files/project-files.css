@@ -230,6 +230,109 @@
   max-height: 50%;
   overflow: auto;
 }
+.vm-project-tasks {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  container: vm-project-tasks / inline-size;
+}
+.vm-project-tasks > .app-toolbar,
+.vm-project-tasks .vm-task-result .app-toolbar {
+  flex-wrap: wrap;
+}
+.vm-task-scroll {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  padding: 10px;
+}
+.vm-task-scroll h2,
+.vm-task-scroll h3 {
+  font-size: 14px;
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+}
+.vm-task-form {
+  padding-block: 8px;
+  border-block: 1px solid var(--ns-mid);
+}
+.vm-task-form textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+.vm-task-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(100px, 140px) auto;
+  gap: 8px;
+  align-items: end;
+}
+.vm-task-fields input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.vm-task-limit-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-block: 8px;
+}
+.vm-task-limit-fields input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.vm-task-workspace {
+  display: grid;
+  grid-template-columns: minmax(140px, 30%) minmax(0, 1fr);
+  gap: 10px;
+  padding-top: 12px;
+}
+.vm-task-list button {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--ns-mid);
+  background: var(--ns-face);
+  padding: 6px;
+  min-height: 40px;
+  overflow-wrap: anywhere;
+}
+.vm-task-list button[aria-current] {
+  background: #222;
+  color: white;
+}
+.vm-task-result {
+  min-width: 0;
+}
+.vm-task-result pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 300px;
+  min-height: 80px;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid var(--ns-mid);
+  padding: 8px;
+  font: 13px/1.5 var(--ns-mono);
+}
+.vm-task-result dd {
+  overflow-wrap: anywhere;
+}
+@container vm-project-tasks (max-width: 599px) {
+  .vm-task-workspace,
+  .vm-task-fields,
+  .vm-task-limit-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .vm-task-form textarea {
+    font-size: 16px;
+  }
+  .vm-task-list {
+    max-height: 180px;
+    overflow: auto;
+  }
+}
 @container project-files (max-width: 599px) {
   .vm-project-register-form {
     grid-template-columns: minmax(0, 1fr);

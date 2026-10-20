@@ -22,6 +22,8 @@ type service struct {
 	instanceID     string
 	projectFilesMu sync.Mutex
 	terminals      *terminals
+	tasks          *projectTasks
+	taskError      error
 	access         *access.Server
 	capabilities   []string
 	executions     chan struct{}
@@ -47,6 +49,9 @@ func newService(ctx context.Context, config protocol.Config, bootID string, capa
 func (s *service) close() {
 	s.cancel()
 	s.terminals.close()
+	if s.tasks != nil {
+		s.tasks.close()
+	}
 }
 
 func (s *service) serve(listener net.Listener, output io.Writer) error {

@@ -49,7 +49,7 @@ func projectRequest(ctx context.Context, q querier, req compute.RegisterProjectR
 		return compute.Project{}, false, err
 	}
 	var exists bool
-	if err := q.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM operations WHERE request_id=?)", req.RequestID).Scan(&exists); err != nil {
+	if err := q.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM operations WHERE request_id=? UNION ALL SELECT 1 FROM task_requests WHERE request_id=?)", req.RequestID, req.RequestID).Scan(&exists); err != nil {
 		return compute.Project{}, false, err
 	}
 	if exists {
