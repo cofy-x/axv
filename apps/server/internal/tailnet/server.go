@@ -290,11 +290,10 @@ func (s *Server) run(options Options, store *stateStore, factory func(Options, f
 	defer func() { cancel(); <-refreshDone }()
 	monitor := time.NewTicker(limits.poll)
 	defer monitor.Stop()
-	var serveErr error
 loop:
 	for {
 		select {
-		case serveErr = <-served:
+		case <-served:
 			served = nil
 			if s.ctx.Err() == nil {
 				s.fail("The remote HTTPS listener stopped unexpectedly.")
@@ -327,11 +326,10 @@ loop:
 		cleanupErr = errors.Join(cleanupErr, errors.New("shut down the remote HTTP listener"), server.Close())
 	}
 	if served != nil {
-		serveErr = <-served
+		<-served
 	}
-	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
-		cleanupErr = errors.Join(cleanupErr, errors.New("close the remote HTTP listener"))
-	}
+	// Listener faults remain visible in Status. Only failures to release owned
+	// resources prevent the controller from starting a replacement node.
 	return cleanupErr
 }
 

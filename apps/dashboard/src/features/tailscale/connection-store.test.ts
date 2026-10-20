@@ -4,8 +4,7 @@ import type { ConnectionInfo } from './types';
 
 const info: ConnectionInfo = {
   local: true,
-  remote: { state: 'disabled' },
-  host: { installed: true, state: 'connected', ips: ['100.65.1.2'] },
+  remote: { enabled: false, supported: true, state: 'disabled' },
 };
 const cleanup: (() => void)[] = [];
 
@@ -108,7 +107,12 @@ describe('shared read-only connection status', () => {
     await vi.advanceTimersByTimeAsync(0);
     resolve({
       ...info,
-      remote: { state: 'ready', url: 'https://old.example.ts.net' },
+      remote: {
+        ...info.remote,
+        enabled: true,
+        state: 'ready',
+        url: 'https://old.example.ts.net',
+      },
     });
     await vi.advanceTimersByTimeAsync(0);
     expect(store.getSnapshot().info).toBe(info);

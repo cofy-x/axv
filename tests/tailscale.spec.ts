@@ -5,8 +5,6 @@ const address = 'https://axv-workstation.example.ts.net';
 const panel = (page: Page) => page.locator('[data-app-id="remote-access"]');
 const remoteState = (page: Page) =>
   panel(page).locator('[aria-labelledby="tailscale-axv-title"]');
-const hostState = (page: Page) =>
-  panel(page).locator('[aria-labelledby="tailscale-host-title"]');
 
 async function choose(target: Locator, touch = false) {
   if (touch) await target.tap();
@@ -36,24 +34,27 @@ async function openPreferences(page: Page, touch = false) {
   return preferences;
 }
 
-function snapshot(local = false) {
+function snapshot(local = true) {
   return {
     local,
     remote: {
+      enabled: false,
+      supported: true,
       state: 'disabled',
-      message: 'AXV remote access is disabled in this profile.',
-    },
-    host: {
-      state: 'connected',
-      installed: true,
-      daemonAvailable: true,
-      hostname: 'workstation',
-      ips: ['100.64.0.20', 'fd7a:115c:a1e0::20'],
+      message: '',
     },
   };
 }
 
-test('Tailscale distinguishes AXV and system Tailscale and refreshes without host changes', async ({
+function authorization(state: ReturnType<typeof snapshot>, authUrl?: string) {
+  return {
+    instanceId: 'tailscale-browser-fixture',
+    ...state.remote,
+    ...(authUrl ? { authUrl } : {}),
+  };
+}
+
+test('local Tailscale setup enables the AXV node, authorizes, and disables without a workstation restart', async ({
   page,
 }, info) => {
   const touch = info.project.use.hasTouch === true;
@@ -64,47 +65,85 @@ test('Tailscale distinguishes AXV and system Tailscale and refreshes without hos
       value: { writeText: async () => undefined },
     }),
   );
-  let enrollmentReads = 0;
   let connectionReads = 0;
-  const writes: string[] = [];
-  page.on('request', (request) => {
-    if (request.url().includes('/api/remote/status')) enrollmentReads++;
-    if (request.url().includes('/api/connection')) {
-      connectionReads++;
-      if (request.method() !== 'GET') writes.push(request.method());
-    }
+  let enrollmentReads = 0;
+  const writes: boolean[] = [];
+  const navigation: string[] = [];
+  page.on('framenavigated', (frame) => {
+    if (frame === page.mainFrame()) navigation.push(frame.url());
   });
-  await page.route('**/api/connection', (route) =>
-    route.fulfill({ json: state }),
-  );
+  await page.route('**/api/connection', (route) => {
+    connectionReads++;
+    return route.fulfill({ json: state });
+  });
+  await page.route('**/api/remote/status', (route) => {
+    enrollmentReads++;
+    return route.fulfill({
+      json: authorization(state, 'https://login.tailscale.com/a/example'),
+    });
+  });
+  await page.route('**/api/remote', (route) => {
+    expect(route.request().method()).toBe('PUT');
+    const { enabled } = route.request().postDataJSON() as { enabled: boolean };
+    writes.push(enabled);
+    Object.assign(state.remote, {
+      enabled,
+      state: enabled ? 'needs-login' : 'disabled',
+      message: '',
+      url: undefined,
+    });
+    return route.fulfill({ json: authorization(state) });
+  });
   await page.reload();
+  const initialNavigation = navigation.length;
   await expect(
     page.getByRole('region', { name: 'Desktop status', exact: true }),
   ).toHaveCount(0);
   expect(connectionReads).toBe(0);
   await openRemote(page, touch);
-  await expect(
-    remoteState(page).getByRole('heading', { name: 'AXV Remote Access' }),
-  ).toBeVisible();
   await expect(remoteState(page).locator('.tailscale-state')).toHaveText('Off');
-  await expect(hostState(page).locator('.tailscale-state')).toHaveText(
-    'Connected',
+  await expect(
+    panel(page).getByText('System Tailscale', { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    panel(page).getByRole('button', { name: 'Enable', exact: true }),
+  ).toBeEnabled();
+  await choose(
+    panel(page).getByRole('button', { name: 'Enable', exact: true }),
+    touch,
+  );
+  await expect(remoteState(page).locator('.tailscale-state')).toHaveText(
+    'Sign in',
   );
   await expect(
-    hostState(page).getByText('100.64.0.20', { exact: true }),
-  ).toBeVisible();
-  await expect(panel(page).getByRole('link', { name: address })).toHaveCount(0);
-  Object.assign(state.remote, { state: 'ready', message: '', url: address });
-  Object.assign(state.host, { state: 'disconnected' });
+    panel(page).getByRole('link', { name: 'Authorize', exact: true }),
+  ).toHaveAttribute('href', 'https://login.tailscale.com/a/example');
+  expect(writes).toEqual([true]);
+  expect(enrollmentReads).toBeGreaterThan(0);
+  Object.assign(state.remote, { state: 'needs-https' });
+  await choose(
+    panel(page).getByRole('button', { name: 'Refresh', exact: true }),
+    touch,
+  );
+  await expect(remoteState(page).locator('.tailscale-state')).toHaveText(
+    'HTTPS required',
+  );
+  await expect(
+    panel(page).getByRole('link', {
+      name: 'Tailscale DNS settings',
+      exact: true,
+    }),
+  ).toHaveAttribute('href', 'https://login.tailscale.com/admin/dns');
+  await expect(
+    panel(page).getByRole('link', { name: 'Authorize', exact: true }),
+  ).toHaveCount(0);
+  Object.assign(state.remote, { state: 'ready', url: address });
   await choose(
     panel(page).getByRole('button', { name: 'Refresh', exact: true }),
     touch,
   );
   await expect(remoteState(page).locator('.tailscale-state')).toHaveText(
     'Ready',
-  );
-  await expect(hostState(page).locator('.tailscale-state')).toHaveText(
-    'Disconnected',
   );
   await expect(
     panel(page).getByRole('link', { name: address, exact: true }),
@@ -116,8 +155,117 @@ test('Tailscale distinguishes AXV and system Tailscale and refreshes without hos
   await expect(
     panel(page).getByText('HTTPS URL copied.', { exact: true }),
   ).toBeVisible();
-  expect(enrollmentReads).toBe(0);
-  expect(writes).toEqual([]);
+  await choose(
+    panel(page)
+      .locator('summary')
+      .filter({ hasText: 'Connect another device' }),
+    touch,
+  );
+  await expect(
+    panel(page).getByRole('link', { name: 'Install Tailscale', exact: true }),
+  ).toHaveAttribute('href', 'https://tailscale.com/download');
+  await expect(
+    panel(page).getByText(
+      'Connect with the same Tailscale account that authorized AXV.',
+    ),
+  ).toBeVisible();
+  const disable = panel(page).getByRole('button', {
+    name: 'Disable',
+    exact: true,
+  });
+  await choose(disable, touch);
+  const confirmation = page.getByRole('dialog', {
+    name: 'Disable remote access?',
+    exact: true,
+  });
+  await expect(confirmation).toBeVisible();
+  await expect(confirmation).toContainText(/host shells/i);
+  await expect(confirmation).toContainText(/Codex.*detach/i);
+  await expect(confirmation).toContainText(/VMs.*continue/i);
+  await choose(
+    confirmation.getByRole('button', { name: 'Cancel', exact: true }),
+    touch,
+  );
+  await expect(confirmation).toBeHidden();
+  await expect(disable).toBeFocused();
+  expect(writes).toEqual([true]);
+  await choose(disable, touch);
+  await choose(
+    confirmation.getByRole('button', { name: 'Disable', exact: true }),
+    touch,
+  );
+  await expect(remoteState(page).locator('.tailscale-state')).toHaveText('Off');
+  await expect(
+    panel(page).getByRole('button', { name: 'Enable', exact: true }),
+  ).toBeEnabled();
+  await expect(
+    panel(page).getByRole('link', { name: address, exact: true }),
+  ).toHaveCount(0);
+  expect(writes).toEqual([true, false]);
+  expect(navigation).toHaveLength(initialNavigation);
+});
+
+test('failed Tailscale control stays visible and an enabled error can be retried', async ({
+  page,
+}, info) => {
+  const touch = info.project.use.hasTouch === true;
+  const state = snapshot();
+  let failWrite = true;
+  const writes: boolean[] = [];
+  await page.route('**/api/connection', (route) =>
+    route.fulfill({ json: state }),
+  );
+  await page.route('**/api/remote', (route) => {
+    const { enabled } = route.request().postDataJSON() as { enabled: boolean };
+    writes.push(enabled);
+    if (failWrite)
+      return route.fulfill({
+        status: 500,
+        json: { error: 'Could not save remote access setting.' },
+      });
+    Object.assign(state.remote, { enabled, state: 'starting', message: '' });
+    return route.fulfill({ json: authorization(state) });
+  });
+  await page.reload();
+  await openRemote(page, touch);
+  await choose(
+    panel(page).getByRole('button', { name: 'Enable', exact: true }),
+    touch,
+  );
+  await expect(panel(page).getByRole('alert')).toContainText(
+    'Could not save remote access setting.',
+  );
+  await expect(remoteState(page).locator('.tailscale-state')).toHaveText('Off');
+  await expect(
+    panel(page).getByRole('button', { name: 'Enable', exact: true }),
+  ).toBeEnabled();
+  Object.assign(state.remote, {
+    enabled: true,
+    state: 'error',
+    message: 'The remote listener stopped.',
+  });
+  await choose(
+    panel(page).getByRole('button', { name: 'Refresh', exact: true }),
+    touch,
+  );
+  await expect(remoteState(page).locator('.tailscale-state')).toHaveText(
+    'Needs attention',
+  );
+  await expect(
+    panel(page).getByRole('button', { name: 'Retry', exact: true }),
+  ).toBeEnabled();
+  failWrite = false;
+  await choose(
+    panel(page).getByRole('button', { name: 'Retry', exact: true }),
+    touch,
+  );
+  await expect(remoteState(page).locator('.tailscale-state')).toHaveText(
+    'Starting',
+  );
+  await expect(
+    panel(page).getByRole('button', { name: 'Disable', exact: true }),
+  ).toBeEnabled();
+  expect(writes).toEqual([true, true]);
 });
 
 test('connection polling and local authorization belong to the active Tailscale view', async ({
@@ -125,7 +273,7 @@ test('connection polling and local authorization belong to the active Tailscale 
 }, info) => {
   const touch = info.project.use.hasTouch === true;
   const state = snapshot(true);
-  state.remote.state = 'needs-login';
+  Object.assign(state.remote, { enabled: true, state: 'needs-login' });
   let reads = 0;
   let connectionReads = 0;
   let authUrl = 'https://login.tailscale.com/a/example';
@@ -135,12 +283,7 @@ test('connection polling and local authorization belong to the active Tailscale 
   });
   await page.route('**/api/remote/status', (route) => {
     reads++;
-    return route.fulfill({
-      json: {
-        state: 'needs-login',
-        authUrl,
-      },
-    });
+    return route.fulfill({ json: authorization(state, authUrl) });
   });
   await page.reload();
   expect(connectionReads).toBe(0);
@@ -153,10 +296,7 @@ test('connection polling and local authorization belong to the active Tailscale 
     name: 'Authorize',
     exact: true,
   });
-  await expect(authorize).toHaveAttribute(
-    'href',
-    'https://login.tailscale.com/a/example',
-  );
+  await expect(authorize).toHaveAttribute('href', authUrl);
   await authorize.focus();
   authUrl = 'https://login.tailscale.com/a/updated';
   await expect(authorize).toHaveAttribute('href', authUrl, { timeout: 9000 });
@@ -175,30 +315,92 @@ test('connection polling and local authorization belong to the active Tailscale 
   expect({ connections: connectionReads, authorizations: reads }).toEqual(
     hiddenReads,
   );
-  state.local = false;
-  reads = 0;
+});
+
+test('unsupported AXV hosts explain availability without offering a control', async ({
+  page,
+}, info) => {
+  const touch = info.project.use.hasTouch === true;
+  const state = snapshot();
+  Object.assign(state.remote, {
+    supported: false,
+    message: 'AXV remote access requires macOS or Linux.',
+  });
+  const protectedRequests: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.startsWith('/api/remote'))
+      protectedRequests.push(new URL(request.url()).pathname);
+  });
+  await page.route('**/api/connection', (route) =>
+    route.fulfill({ json: state }),
+  );
   await page.reload();
   await openRemote(page, touch);
-  await choose(
-    panel(page).getByRole('button', { name: 'Refresh', exact: true }),
-    touch,
+  await expect(
+    panel(page).getByText('AXV remote access requires macOS or Linux.'),
+  ).toBeVisible();
+  for (const name of ['Enable', 'Disable', 'Retry'])
+    await expect(
+      panel(page).getByRole('button', { name, exact: true }),
+    ).toHaveCount(0);
+  expect(protectedRequests).toEqual([]);
+});
+
+test('remote Tailscale viewers can copy the address but cannot control or enroll the AXV node', async ({
+  page,
+}, info) => {
+  const touch = info.project.use.hasTouch === true;
+  const state = snapshot(false);
+  Object.assign(state.remote, { enabled: true, state: 'needs-login' });
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async () => undefined },
+    }),
   );
+  const protectedRequests: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.startsWith('/api/remote'))
+      protectedRequests.push(
+        `${request.method()} ${new URL(request.url()).pathname}`,
+      );
+  });
+  await page.route('**/api/connection', (route) =>
+    route.fulfill({ json: state }),
+  );
+  await page.reload();
+  await openRemote(page, touch);
   await expect(
     panel(page).getByText(
       'Complete AXV authorization on the computer running AXV.',
     ),
   ).toBeVisible();
-  await expect(authorize).toHaveCount(0);
+  await expect(
+    panel(page).getByRole('link', { name: 'Authorize', exact: true }),
+  ).toHaveCount(0);
+  for (const name of ['Enable', 'Disable', 'Retry'])
+    await expect(
+      panel(page).getByRole('button', { name, exact: true }),
+    ).toHaveCount(0);
+  Object.assign(state.remote, { state: 'ready', url: address });
   await choose(
     panel(page).getByRole('button', { name: 'Refresh', exact: true }),
     touch,
   );
+  await expect(remoteState(page).locator('.tailscale-state')).toHaveText(
+    'Ready',
+  );
   await expect(
-    panel(page).getByText(
-      'Complete AXV authorization on the computer running AXV.',
-    ),
+    panel(page).getByRole('button', { name: 'Copy HTTPS URL', exact: true }),
   ).toBeVisible();
-  expect(reads).toBe(0);
+  await choose(
+    panel(page).getByRole('button', { name: 'Copy HTTPS URL', exact: true }),
+    touch,
+  );
+  await expect(
+    panel(page).getByText('HTTPS URL copied.', { exact: true }),
+  ).toBeVisible();
+  expect(protectedRequests).toEqual([]);
 });
 
 test('failed polling stops reporting ready and copy errors remain visible', async ({
@@ -206,7 +408,7 @@ test('failed polling stops reporting ready and copy errors remain visible', asyn
 }, info) => {
   const touch = info.project.use.hasTouch === true;
   const state = snapshot(false);
-  Object.assign(state.remote, { state: 'ready', message: '', url: address });
+  Object.assign(state.remote, { enabled: true, state: 'ready', url: address });
   let failed = false;
   await page.route('**/api/connection', (route) =>
     failed
@@ -242,9 +444,6 @@ test('failed polling stops reporting ready and copy errors remain visible', asyn
     touch,
   );
   await expect(remoteState(page).locator('.tailscale-state')).toHaveText(
-    'Unknown',
-  );
-  await expect(hostState(page).locator('.tailscale-state')).toHaveText(
     'Unknown',
   );
   await expect(

@@ -16,6 +16,7 @@ const (
 	readStrict readMode = iota
 	readDesktop
 	readCompute
+	readRemote
 )
 
 func Load() (Profile, error) {
@@ -51,6 +52,16 @@ func ReadCompute(home string) (Profile, error) {
 	return readProfile(home, readCompute)
 }
 
+// ReadRemote resolves mutable remote settings independently of desktop and VM
+// configuration, without initializing a profile or creating node state.
+func ReadRemote(home string) (Remote, error) {
+	p, err := readProfile(home, readRemote)
+	if p.Remote.Hostname == "" {
+		p.Remote.Hostname = "axv"
+	}
+	return p.Remote, err
+}
+
 func readProfile(home string, mode readMode) (Profile, error) {
 	p := Profile{Home: home}
 	file, err := os.Open(filepath.Join(home, "config.json"))
@@ -72,11 +83,19 @@ func readProfile(home string, mode readMode) (Profile, error) {
 	}
 	computeJSON := values["compute"]
 	delete(values, "compute")
-	if mode == readCompute {
+	if mode == readCompute || mode == readRemote {
 		version := values["runtime_version"]
+		remote := values["remote"]
 		values = map[string]json.RawMessage{}
 		if len(version) > 0 {
 			values["runtime_version"] = version
+		}
+		if mode == readRemote && len(remote) > 0 {
+			// Reject null rather than silently treating malformed remote settings
+			// as a fresh, default-disabled configuration.
+			if err := decode(remote, &p.Remote); err != nil {
+				return p, fmt.Errorf("AXV remote configuration: %w", err)
+			}
 		}
 	}
 	profileJSON, _ := json.Marshal(values)
@@ -85,6 +104,9 @@ func readProfile(home string, mode readMode) (Profile, error) {
 	}
 	if p.RuntimeVersion != 0 && p.RuntimeVersion != 1 {
 		return p, fmt.Errorf("unsupported AXV runtime_version %d", p.RuntimeVersion)
+	}
+	if mode == readRemote {
+		return p, ValidateRemote(p.Remote)
 	}
 	if len(computeJSON) > 0 {
 		if err := json.Unmarshal(computeJSON, &p.Compute); err != nil {

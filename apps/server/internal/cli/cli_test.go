@@ -205,13 +205,8 @@ func TestSharedProfileAndSnapshotRetainAgentSettings(t *testing.T) {
 	if restored.Environment["CODEX_HOME"] != filepath.Join(home, "codex-config") || restored.Environment["HTTPS_PROXY"] != os.Getenv("HTTPS_PROXY") || restored.Fingerprint() != settings.Fingerprint() {
 		t.Fatal("runtime snapshot lost its environment or identity")
 	}
-	if !restored.Desktop.Remote.Enabled || restored.Desktop.Remote.Hostname != "axv-snapshot" || restored.Desktop.Remote.OwnerUserID != "123456" {
-		t.Fatal("runtime snapshot lost remote access configuration")
-	}
-	changed := restored
-	changed.Desktop.Remote.OwnerUserID = "987654"
-	if changed.Fingerprint() == settings.Fingerprint() {
-		t.Fatal("a changed remote owner retained the desktop launch identity")
+	if bytes.Contains(snapshot, []byte(`"Remote"`)) {
+		t.Fatal("mutable remote access settings entered the captured launch inputs")
 	}
 	after, err := os.ReadFile(path)
 	if err != nil || !bytes.Equal(after, original) {

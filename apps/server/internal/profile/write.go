@@ -3,6 +3,7 @@ package profile
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -52,6 +53,62 @@ func SaveCompute(home string, c Compute) error {
 		return err
 	}
 	return jsonfile.Write(path, values, 0600)
+}
+
+// SaveRemoteEnabled changes only the durable remote switch. The caller holds
+// Lock, shared with compute preparation and CLI profile writers. Unknown fields
+// and the existing enrollment identity settings retain their ownership.
+func SaveRemoteEnabled(home string, enabled bool) (Remote, error) {
+	remote, err := ReadRemote(home)
+	if err != nil {
+		return Remote{}, err
+	}
+	if remote.Enabled == enabled {
+		return remote, nil
+	}
+	path := filepath.Join(home, "config.json")
+	values := map[string]json.RawMessage{}
+	file, err := os.Open(path)
+	if err == nil {
+		data, readErr := io.ReadAll(io.LimitReader(file, 1<<20+1))
+		closeErr := file.Close()
+		if readErr != nil {
+			return Remote{}, readErr
+		}
+		if closeErr != nil {
+			return Remote{}, closeErr
+		}
+		if err := decode(data, &values); err != nil {
+			return Remote{}, err
+		}
+	} else if !os.IsNotExist(err) {
+		return Remote{}, err
+	}
+	fields := map[string]json.RawMessage{}
+	if data, exists := values["remote"]; exists {
+		if err := decode(data, &fields); err != nil {
+			return Remote{}, err
+		}
+		// Recheck the exact data we will preserve if an external editor replaced
+		// the profile between reads. Participating AXV writers hold the lock.
+		remote = Remote{}
+		if err := decode(data, &remote); err != nil {
+			return Remote{}, err
+		}
+		if err := ValidateRemote(remote); err != nil {
+			return Remote{}, err
+		}
+	}
+	fields["enabled"], _ = json.Marshal(enabled)
+	values["remote"], _ = json.Marshal(fields)
+	if err := jsonfile.Write(path, values, 0600); err != nil {
+		return Remote{}, err
+	}
+	remote.Enabled = enabled
+	if remote.Hostname == "" {
+		remote.Hostname = "axv"
+	}
+	return remote, nil
 }
 
 func createDefault(path string, defaults any) error {

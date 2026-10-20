@@ -33,6 +33,7 @@ type fakeBackend struct {
 	mu          sync.Mutex
 	status      *ipnstate.Status
 	statusErr   error
+	closeErr    error
 	up          func(context.Context) (*ipnstate.Status, error)
 	cert        func(context.Context, string, time.Duration) (*tls.Certificate, error)
 	listener    net.Listener
@@ -87,7 +88,7 @@ func (n *fakeBackend) WhoIs(context.Context, string) (remoteaccess.Identity, err
 	return remoteaccess.Identity{UserID: "123", NodeID: "peer-client"}, nil
 }
 
-func (n *fakeBackend) Close() error { n.closeCalls.Add(1); return nil }
+func (n *fakeBackend) Close() error { n.closeCalls.Add(1); return n.closeErr }
 
 func clearCredentials(t *testing.T) {
 	t.Helper()
@@ -162,6 +163,45 @@ func awaitState(t *testing.T, server *Server, expected State) Status {
 	}
 	t.Fatalf("remote state never became %s: %+v", expected, server.Status())
 	return Status{}
+}
+
+func TestListenerFailureRetainsDiagnosticAndReportsOnlyCleanupFailure(t *testing.T) {
+	for _, cleanupFails := range []bool{false, true} {
+		name := "cleaned-up"
+		if cleanupFails {
+			name = "cleanup-failed"
+		}
+		t.Run(name, func(t *testing.T) {
+			options := testOptions(t)
+			certificate := certificateFixture(t, 1)
+			node := &fakeBackend{status: validStatus(), cert: func(context.Context, string, time.Duration) (*tls.Certificate, error) {
+				return certificate, nil
+			}}
+			if cleanupFails {
+				node.closeErr = errors.New("fixture backend cleanup failure")
+			}
+			server, err := start(context.Background(), options, func(Options, func(string, ...any)) backend { return node }, testTiming)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = server.Close() })
+			awaitState(t, server, StateReady)
+			node.mu.Lock()
+			listener := node.listener
+			node.mu.Unlock()
+			if err := listener.Close(); err != nil {
+				t.Fatal(err)
+			}
+			awaitState(t, server, StateError)
+			<-server.done
+			if err := server.Close(); (err != nil) != cleanupFails {
+				t.Fatalf("Close confused a listener fault with cleanup failure: %v", err)
+			}
+			if status := server.Status(); status.State != StateError || status.Error == "" || status.URL != "" || node.closeCalls.Load() != 1 {
+				t.Fatalf("listener failure lost its diagnostic or cleanup: %+v, closes %d", status, node.closeCalls.Load())
+			}
+		})
+	}
 }
 
 func clientFor(t *testing.T, node *fakeBackend, certificates ...*tls.Certificate) *http.Client {

@@ -8,126 +8,114 @@ import type { ConnectionInfo, ConnectionSnapshot } from './types';
 
 const info: ConnectionInfo = {
   local: true,
-  remote: { state: 'disabled' },
-  host: {
-    installed: true,
-    state: 'connected',
-    hostname: 'system-node',
-    ips: ['100.65.1.2'],
-  },
+  remote: { enabled: false, supported: true, state: 'disabled' },
 };
 const snapshot: ConnectionSnapshot = { info, loading: false };
 
-describe('remote status presentation', () => {
-  it('keeps AXV off even when the system Tailscale daemon is connected', () => {
+function render(candidate: ConnectionSnapshot) {
+  return renderToStaticMarkup(
+    createElement(TailscaleDetails, {
+      snapshot: candidate,
+      onSetEnabled: vi.fn(),
+      onCopy: vi.fn(),
+      authorization: {
+        url: 'https://login.tailscale.com/a/private-capability',
+      },
+    }),
+  );
+}
+
+describe('Tailscale status and controls', () => {
+  it('offers embedded access without a system-installation prerequisite', () => {
     expect(connectionPresentation(snapshot)).toMatchObject({
       remote: 'Off',
       remoteTone: 'off',
-      host: 'Connected',
-      hostTone: 'ready',
     });
-    const html = renderToStaticMarkup(
-      createElement(TailscaleDetails, { snapshot, onCopy: vi.fn() }),
-    );
-    expect(html).toContain('AXV Remote Access');
-    expect(html).toContain('System Tailscale');
-    expect(html).toContain('Off</p>');
-    expect(html).toContain('Connected</p>');
-    expect(html).toContain('type="button"');
+    const html = render(snapshot);
+    expect(html).toContain('Enable</button>');
+    expect(html).toContain('No system installation is needed');
+    expect(html).toContain('Connect another device');
+    expect(html).toContain('href="https://tailscale.com/download"');
+    expect(html).not.toContain('System Tailscale');
+    expect(html).not.toContain('private-capability');
   });
 
-  it('reports stale connection states as unknown without claiming an unavailable daemon is off', () => {
-    expect(
-      connectionPresentation({ ...snapshot, error: 'Offline' }),
-    ).toMatchObject({ remote: 'Unknown', host: 'Unknown' });
-    expect(
-      connectionPresentation({
-        ...snapshot,
-        info: { ...info, host: { installed: true, state: 'unavailable' } },
-      }),
-    ).toMatchObject({ remote: 'Off', host: 'Unavailable' });
+  it('makes stale state unknown and prevents actions or retained login links', () => {
+    const candidate = { ...snapshot, error: 'Offline' };
+    expect(connectionPresentation(candidate)).toMatchObject({
+      remote: 'Unknown',
+      remoteTone: 'unknown',
+    });
+    const html = render(candidate);
+    expect(html).toContain('disabled=""');
+    expect(html).not.toContain('private-capability');
     expect(connectionPresentation({ loading: true }).remote).toBe('Checking…');
-    expect(
-      connectionPresentation({
-        ...snapshot,
-        info: {
-          ...info,
-          remote: {
-            state: 'ready',
-            message: 'Certificate renewal will retry.',
-          },
-        },
-      }),
-    ).toMatchObject({ remote: 'Ready', remoteTone: 'pending' });
   });
 
-  it('shows distinct ready HTTPS and host IP details with named copy controls', () => {
-    const html = renderToStaticMarkup(
-      createElement(TailscaleDetails, {
-        snapshot: {
-          ...snapshot,
-          info: {
-            ...info,
-            remote: { state: 'ready', url: 'https://axv.example.ts.net' },
-          },
+  it('shows a ready HTTPS address and keeps certificate warnings visible', () => {
+    const candidate: ConnectionSnapshot = {
+      ...snapshot,
+      info: {
+        ...info,
+        remote: {
+          ...info.remote,
+          enabled: true,
+          state: 'ready',
+          url: 'https://axv.example.ts.net',
+          message: 'Certificate renewal will retry.',
         },
-        onCopy: vi.fn(),
-      }),
-    );
-    expect(html).toContain('AXV Remote Access');
-    expect(html).toContain('System Tailscale');
+      },
+    };
+    expect(connectionPresentation(candidate)).toMatchObject({
+      remote: 'Ready',
+      remoteTone: 'pending',
+    });
+    const html = render(candidate);
     expect(html).toContain('href="https://axv.example.ts.net"');
     expect(html).toContain('Copy HTTPS URL');
-    expect(html).toContain('100.65.1.2');
-    expect(html).toContain('Copy IP address');
+    expect(html).toContain('Disable</button>');
     expect(html).not.toContain('Authorize</a>');
   });
 
-  it('never renders a retained enrollment capability to a remote viewer or stale summary', () => {
+  it('limits authorization, retry and enable controls to a local supported server', () => {
+    const login: ConnectionInfo = {
+      ...info,
+      remote: { ...info.remote, enabled: true, state: 'needs-login' },
+    };
+    const html = render({ ...snapshot, info: login });
+    expect(html).toContain('Authorize</a>');
+    expect(html).toContain('referrerPolicy="no-referrer"');
     for (const candidate of [
-      {
-        ...snapshot,
-        info: {
-          ...info,
-          local: false,
-          remote: { state: 'needs-login' as const },
-        },
-      },
-      {
-        ...snapshot,
-        error: 'Offline',
-        info: { ...info, remote: { state: 'needs-login' as const } },
-      },
+      { ...snapshot, info: { ...login, local: false } },
+      { ...snapshot, error: 'Offline', info: login },
     ]) {
-      const html = renderToStaticMarkup(
-        createElement(TailscaleDetails, {
-          snapshot: candidate,
-          authorization: {
-            url: 'https://login.tailscale.com/a/private-capability',
-          },
-          onCopy: vi.fn(),
-        }),
-      );
-      expect(html).not.toContain('private-capability');
-      expect(html).not.toContain('Authorize</a>');
+      const hidden = render(candidate);
+      expect(hidden).not.toContain('private-capability');
+      expect(hidden).not.toContain('Authorize</a>');
     }
-    const local = renderToStaticMarkup(
-      createElement(TailscaleDetails, {
-        snapshot: {
-          ...snapshot,
-          info: { ...info, remote: { state: 'needs-login' } },
-        },
-        authorization: {
-          url: 'https://login.tailscale.com/a/private-capability',
-        },
-        onCopy: vi.fn(),
-      }),
+    const remote = render({ ...snapshot, info: { ...login, local: false } });
+    expect(remote).not.toContain('Disable</button>');
+    expect(remote).toContain(
+      'Manage remote access on the computer running AXV',
     );
-    expect(local).toContain('Authorize</a>');
-    expect(local).toContain('referrerPolicy="no-referrer"');
+    const unsupported = render({
+      ...snapshot,
+      info: { ...info, remote: { ...info.remote, supported: false } },
+    });
+    expect(unsupported).not.toContain('Enable</button>');
+    expect(unsupported).toContain('macOS or Linux');
+    const failed = render({
+      ...snapshot,
+      info: {
+        ...info,
+        remote: { ...info.remote, enabled: true, state: 'error' },
+      },
+    });
+    expect(failed).toContain('Retry</button>');
+    expect(failed).toContain('Disable</button>');
   });
 
-  it('uses one non-modal utility window available through existing launchers', () => {
+  it('preserves the singleton utility and existing saved launcher identities', () => {
     expect(tailscaleApp).toMatchObject({
       id: 'remote-access',
       title: 'Tailscale',

@@ -136,6 +136,8 @@ async function remoteDisabledSmoke(base) {
   const status = await json(base, '/remote/status');
   assert.deepEqual(status, {
     instanceId: runtime.instanceId,
+    enabled: false,
+    supported: process.platform === 'darwin' || process.platform === 'linux',
     state: 'disabled',
   });
   const home = codex?.env.AXV_HOME || join(dir, 'axv-home');
@@ -148,17 +150,10 @@ async function remoteDisabledSmoke(base) {
   await assert.rejects(access(join(home, 'tailscale')), { code: 'ENOENT' });
   const summary = await json(base, '/connection');
   assert.equal(summary.local, true);
+  assert.equal(summary.remote.enabled, false);
+  assert.equal(summary.remote.supported, status.supported);
   assert.equal(summary.remote.state, 'disabled');
-  assert.equal(typeof summary.host.installed, 'boolean');
-  assert.ok(
-    [
-      'not-installed',
-      'unavailable',
-      'connected',
-      'disconnected',
-      'needs-login',
-    ].includes(summary.host.state),
-  );
+  assert.equal('host' in summary, false);
   assert.equal(JSON.stringify(summary).includes('authUrl'), false);
   assert.equal(JSON.stringify(summary).includes('ownerUserId'), false);
   const foreignSummary = await fetchBounded(`${base}/api/connection`, {
@@ -170,6 +165,40 @@ async function remoteDisabledSmoke(base) {
   });
   assert.equal(foreign.status, 403);
   assert.equal((await foreign.json()).code, 'remote_local_only');
+
+  // Keep every smoke mutation disabled: acceptance must not enroll a real node.
+  for (const origin of [undefined, 'https://outside.invalid']) {
+    const rejected = await fetchBounded(`${base}/api/remote`, {
+      method: 'PUT',
+      headers: {
+        ...(origin ? { Origin: origin } : {}),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ enabled: false }),
+    });
+    assert.equal(rejected.status, 403);
+    assert.equal((await rejected.json()).code, 'remote_local_only');
+  }
+  for (const body of [
+    '{}',
+    'null',
+    '[]',
+    '{"enabled":"false"}',
+    '{"enabled":false,"unknown":true}',
+    '{"enabled":false',
+  ]) {
+    const rejected = await fetchBounded(`${base}/api/remote`, {
+      method: 'PUT',
+      headers: { Origin: base, 'Content-Type': 'application/json' },
+      body,
+    });
+    assert.equal(rejected.status, 400, body);
+  }
+  const disabled = await json(base, '/remote', 'PUT', { enabled: false });
+  assert.equal(disabled.enabled, false);
+  assert.equal(disabled.state, 'disabled');
+  assert.deepEqual(await json(base, '/remote/status'), status);
+  await assert.rejects(access(join(home, 'tailscale')), { code: 'ENOENT' });
 }
 
 async function until(check, description, details = () => '') {
@@ -943,7 +972,7 @@ try {
     );
   await codex?.verifyIsolation();
   console.log(
-    'Production smoke passed: CLI help/version/errors, disabled remote status and CLI identity without node state, cross-origin remote status rejection, isolated global configuration, flag precedence, dynamic ports, listener failure, graceful shutdown with active PTYs, host shell input/output/resize/interrupt/session limits/restart, Host Codex workspace/project/tmux identity/redacted proxy diagnostics/environment refresh/idempotent creation and continuation/multiple clients/detach/reattach/session isolation/metadata/recent projects/termination/process persistence across service restart/history context in a new process/old-run isolation, embedded UI, independent cwd, database identity, files, trash, preferences, workspaces, Dock, Clip, panels, and client layouts survive restart.',
+    'Production smoke passed: CLI help/version/errors, disabled remote status and CLI identity without node state, local-only remote controls and strict mutation input, isolated global configuration, flag precedence, dynamic ports, listener failure, graceful shutdown with active PTYs, host shell input/output/resize/interrupt/session limits/restart, Host Codex workspace/project/tmux identity/redacted proxy diagnostics/environment refresh/idempotent creation and continuation/multiple clients/detach/reattach/session isolation/metadata/recent projects/termination/process persistence across service restart/history context in a new process/old-run isolation, embedded UI, independent cwd, database identity, files, trash, preferences, workspaces, Dock, Clip, panels, and client layouts survive restart.',
   );
 } catch (error) {
   console.error('Production smoke failed:', error);

@@ -59,7 +59,7 @@ Applications use the shared title bar, optional toolbar, scrolling content and o
 
 Empty, loading, failed and unsaved states are part of the design. Preserve visible work during recovery and report success only after the action succeeds.
 
-Keep browser/server connectivity, application remote-access readiness and system VPN state distinct. Status lamps need text labels, and a failed status query must not retain a current-looking success lamp. Connection diagnostics use an on-demand non-modal utility panel, reached through existing application launchers or Preferences. Optional Dock and Clip shortcuts follow their existing application roles.
+Keep browser/server connectivity and application remote-access readiness distinct. The Tailscale utility controls AXV’s embedded remote entrypoint and does not display system VPN state. Status lamps need text labels, and a failed status query must not retain a current-looking success lamp. Connection diagnostics use an on-demand non-modal utility panel, reached through existing application launchers or Preferences. Optional Dock and Clip shortcuts follow their existing application roles.
 
 ## Interaction conventions
 

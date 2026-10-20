@@ -168,35 +168,37 @@ See the [Guest API](api/guest.md#ssh-access) for transport and key-registration 
 
 Private remote access is optional and disabled by default. AXV embeds its own [tsnet](https://tailscale.com/docs/features/tsnet) node and serves the production desktop over HTTPS on macOS/Linux. The deployment machine does not need the system Tailscale service running: AXV does not use `tailscale up`, change host DNS/routes or install host firewall rules. In particular, keep the system service stopped and disabled on hosts where the tailnet's CGNAT range conflicts with the system DNS servers.
 
-Add a `remote` section to the existing `AXV_HOME/config.json`, preserving its other settings:
+Open **Tailscale** from the local desktop icon, **Workspace → Applications** or **Preferences**, then choose **Enable**. This saves `remote.enabled: true` in `AXV_HOME/config.json` and starts AXV's node immediately. It also enables the node on future AXV service launches. **Disable** saves `false` and stops only the remote transport; neither action restarts the desktop. Closing the browser or Tailscale panel leaves the service running. [Remote desktop usage](usage.md#remote-desktop) owns the visible flow and confirmations.
+
+Local desktop readiness does not wait for remote access. When status is `needs-login`, choose **Authorize** and enroll the node with the workstation owner's Tailscale account. First enrollment binds the stable owner and node IDs in private state. Tagged server/client nodes and other users are rejected. The same owner's authorized devices can access host files, shells, agents and VM controls with this deployment account's permissions; choose the enrolling account accordingly.
+
+Advanced configuration can include the following `remote` section in the existing profile, preserving its other settings:
 
 ```json
 {
   "remote": {
-    "enabled": true,
+    "enabled": false,
     "hostname": "axv-workstation"
   }
 }
 ```
 
-`hostname` is a lowercase DNS label of 1–63 characters (letters, digits and internal hyphens); the default is `axv`. Each profile owns a separate node, so choose a distinct name for separate workstations. Start `axv serve` or explicitly apply the change with `axv daemon restart`, then run:
+`hostname` is a lowercase DNS label of 1–63 characters (letters, digits and internal hyphens); the default is `axv`. Each profile owns a separate node, so choose a distinct name for separate workstations. An optional `remote.owner_user_id` can require a known positive numeric Tailscale user ID before first enrollment. These settings are read from the current profile on AXV service startup and on explicit enable/retry. Editing the file does not change a running node; use the panel to apply its enabled setting. After changing hostname or owner requirements, explicitly disable and enable, preserving the existing owner binding; a conflicting identity requires maintenance, not automatic reenrollment.
+
+For local inspection without enabling networking:
 
 ```bash
 axv remote status
 axv remote status --json
 ```
 
-Local desktop readiness does not wait for remote access. When status is `needs-login`, open its current enrollment URL and authorize the node using the workstation owner's Tailscale account. First enrollment binds the stable owner and node IDs in private state. An optional `remote.owner_user_id` can require a known positive numeric Tailscale user ID before first enrollment. Tagged server/client nodes and other users are rejected. The same owner's authorized devices can access host files, shells, agents and VM controls with this deployment account's permissions; choose the enrolling account accordingly.
-
-Open the desktop's **Tailscale** utility from its desktop icon, **Workspace → Applications** or **Preferences** to inspect AXV's embedded status and the system Tailscale status separately. Local enrollment is available there when needed. A missing/inaccessible system daemon does not prevent embedded tsnet access; the panel never changes host VPN or DNS settings. [Remote desktop usage](usage.md#remote-desktop) owns the panel actions and status meanings.
-
 Enable MagicDNS and HTTPS certificates in the tailnet's [DNS settings](https://login.tailscale.com/admin/dns), and permit your devices to reach this node on TCP 443 in tailnet policy. [Tailscale HTTPS setup](https://tailscale.com/docs/how-to/set-up-https-certificates) explains that certificate issuance publishes the node's `.ts.net` name in certificate transparency logs. This does not make the service public. Missing settings produce `needs-https`; status `error` includes a diagnostic. Recheck status after enrollment/settings changes. In `ready`, open the reported HTTPS URL from another device connected to Tailscale as the bound owner. There is no HTTP fallback or public Funnel.
 
 Node credentials, certificates and the owner binding stay under `AXV_HOME/tailscale/`, independently of desktop documents and the system Tailscale installation. The Tailscale SDK also maintains private diagnostic buffers there and uploads provider diagnostics to Tailscale; these can include enrollment URLs. AXV's own operational log records remote state without enrollment URLs. Normal desktop shutdown keeps that node enrollment for the next launch. Protect this directory as credentials; do not copy it into another profile or silently reset an invalid binding. Changing the enrolled owner or node requires explicit maintenance with the desktop stopped.
 
-AXV renews certificates in the background while continuing to serve a valid cached certificate. Renewal errors appear in local status. If the certificate actually expires, or the enrolled identity/HTTPS domain changes, AXV withdraws the remote entrypoint; resolve the reported cause and explicitly restart the desktop. The local desktop remains available.
+AXV renews certificates in the background while continuing to serve a valid cached certificate. Renewal errors appear in local status. If the certificate actually expires, or the enrolled identity/HTTPS domain changes, AXV withdraws the remote entrypoint; resolve the reported cause and choose **Retry** in the local Tailscale panel. The local desktop remains available.
 
-To disable remote access, set `remote.enabled` to `false` and explicitly restart the desktop (or stop and relaunch foreground `serve`). Editing the profile alone does not change a running launch. A restart ends ordinary Host Terminal shells and detaches Codex views under the [existing lifecycle rules](#daily-commands); Codex runs, VMs and project volumes survive. `axv remote status` only inspects the running instance and never enables networking. VM preparation and remote configuration remain operations on the AXV deployment machine. The [Tailscale remote access API](api/tailscale.md) owns authorization and route restrictions; [usage](usage.md#remote-desktop) covers browser state across devices.
+To disable remote access, choose **Disable** in the local panel. Remote browsers disconnect and their ordinary Host Terminal shells end; Codex views detach while existing Codex runs and VMs continue. Local terminals and work stay open. Node credentials and owner authorization are preserved for the next enable. A configuration-save failure leaves the live setting unchanged. If a node cannot close cleanly, AXV rejects another start until the desktop service is restarted; the error remains visible. VM preparation and remote configuration remain operations on the AXV deployment machine. The [Tailscale remote access API](api/tailscale.md) owns authorization and route restrictions; [usage](usage.md#remote-desktop) covers browser state across devices.
 
 ## First-time macOS setup
 
@@ -355,10 +357,10 @@ New runs use the default tmux server unless `AXV_TMUX_SOCKET` selects another. A
 
 Foreground and background services resolve the same workspace, proxy and tmux settings. Background startup captures a scoped environment: PATH, home/user/shell/locale, Codex/OpenAI settings, proxies and certificate paths. The exact allowlist lives in [environment.go](../apps/server/internal/app/launch/environment.go); other shell variables are not copied, and empty captured values clear supervisor defaults.
 
-The [`app/launch`](../apps/server/internal/app/launch) package owns captured desktop inputs, the persisted `Snapshot` contract and an explicit `Inputs` fingerprint. The runtime `app.Settings` composition adds live compute settings, logging and process dependencies without defining the snapshot protocol or desktop identity. Capture and restoration clone mutable snapshot values so later runtime changes cannot alter saved inputs. Restoring a background desktop uses its captured inputs and environment; later VM activation resolves the current compute configuration without changing the desktop's launch identity.
+The [`app/launch`](../apps/server/internal/app/launch) package owns captured desktop inputs, the persisted `Snapshot` contract and an explicit `Inputs` fingerprint. The runtime `app.Settings` composition adds live compute settings, logging and process dependencies without defining the snapshot protocol or desktop identity. Capture and restoration clone mutable snapshot values so later runtime changes cannot alter saved inputs. Restoring a background desktop uses its captured inputs and environment; later VM activation and the remote-access controller resolve their current profile settings without changing the desktop's launch identity. Remote settings are mutable profile state and are excluded from captured desktop inputs and their fingerprint.
 
 Native service snapshots also carry a launch identity, distinct from the process instance identity, so concurrent launchers can recognize their own job without adopting a foreground desktop. The shared profile owns immutable executable copies under `AXV_HOME/bin`; desktop composition captures one for later host and Codex children. Replacing the installed entry therefore cannot change an existing desktop's child executable. The [launch contract](../apps/server/internal/app/launch/snapshot.go) and [settings composition](../apps/server/internal/app/settings.go) are the implementation entry points.
 
 Snapshots and ownership records are private (0600) and may contain supplied environment credentials. AXV does not read or copy Codex credential files or put snapshot values in supervisor command arguments/status output.
 
-Editing a profile or shell environment does not mutate a live process. `daemon restart` captures updated desktop settings/environment for new sessions while preserving the compute host and existing Codex runs. On Linux, desktop units deliberately retain surviving tmux processes; a prior unit may remain visible until those processes exit. See [daemon supervision](../apps/server/internal/daemon/native.go) and [native daemon verification](development.md#native-daemon-smoke) when changing this behavior.
+Editing a profile or shell environment alone does not mutate a live process. The local Tailscale panel applies and persists remote enable/disable without a desktop restart. `daemon restart` captures updated desktop settings/environment for new sessions while preserving the compute host and existing Codex runs. On Linux, desktop units deliberately retain surviving tmux processes; a prior unit may remain visible until those processes exit. See [daemon supervision](../apps/server/internal/daemon/native.go) and [native daemon verification](development.md#native-daemon-smoke) when changing this behavior.

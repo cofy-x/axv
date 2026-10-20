@@ -1,29 +1,25 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/url"
 	"strings"
 
-	"github.com/cofy-x/axv/apps/server/internal/hosttailscale"
 	"github.com/cofy-x/axv/apps/server/internal/localaccess"
 	"github.com/cofy-x/axv/apps/server/internal/tailnet"
 )
 
-type hostStatusProvider interface {
-	Status(context.Context) hosttailscale.Status
-}
-
 type remoteConnectionStatus struct {
-	State   tailnet.State `json:"state"`
-	URL     string        `json:"url,omitempty"`
-	Message string        `json:"message,omitempty"`
+	Enabled   bool          `json:"enabled"`
+	Supported bool          `json:"supported"`
+	State     tailnet.State `json:"state"`
+	URL       string        `json:"url,omitempty"`
+	Message   string        `json:"message,omitempty"`
 }
 
-func remoteConnection(status tailnet.Status) remoteConnectionStatus {
-	result := remoteConnectionStatus{State: status.State}
+func remoteConnection(status remoteSnapshot) remoteConnectionStatus {
+	result := remoteConnectionStatus{Enabled: status.Enabled, Supported: status.Supported, State: status.State}
 	switch status.State {
 	case tailnet.StateDisabled:
 		result.Message = "AXV remote access is disabled in this profile."
@@ -54,7 +50,7 @@ func remoteConnection(status tailnet.Status) remoteConnectionStatus {
 	return result
 }
 
-func connectionHandler(remoteStatus func() tailnet.Status, host hostStatusProvider) http.Handler {
+func connectionHandler(remoteStatus func() remoteSnapshot) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
@@ -67,7 +63,6 @@ func connectionHandler(remoteStatus func() tailnet.Status, host hostStatusProvid
 		_ = json.NewEncoder(w).Encode(struct {
 			Local  bool                   `json:"local"`
 			Remote remoteConnectionStatus `json:"remote"`
-			Host   hosttailscale.Status   `json:"host"`
-		}{Local: localaccess.Request(r, false), Remote: remoteConnection(remoteStatus()), Host: host.Status(r.Context())})
+		}{Local: localaccess.Request(r, false), Remote: remoteConnection(remoteStatus())})
 	})
 }

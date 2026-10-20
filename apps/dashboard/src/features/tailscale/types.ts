@@ -7,25 +7,17 @@ export type RemoteState =
   | 'error'
   | 'stopped';
 
-export type HostTailscaleState =
-  | 'not-installed'
-  | 'unavailable'
-  | 'connected'
-  | 'disconnected'
-  | 'needs-login';
+export interface RemoteInfo {
+  enabled: boolean;
+  supported: boolean;
+  state: RemoteState;
+  url?: string;
+  message?: string;
+}
 
 export interface ConnectionInfo {
   local: boolean;
-  remote: { state: RemoteState; url?: string; message?: string };
-  host: {
-    state: HostTailscaleState;
-    installed: boolean;
-    daemonAvailable?: boolean;
-    backendState?: string;
-    hostname?: string;
-    ips?: string[];
-    message?: string;
-  };
+  remote: RemoteInfo;
 }
 
 export interface ConnectionSnapshot {

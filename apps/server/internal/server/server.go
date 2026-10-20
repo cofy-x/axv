@@ -20,7 +20,6 @@ import (
 	"github.com/cofy-x/axv/apps/server/internal/config"
 	"github.com/cofy-x/axv/apps/server/internal/diagnostics"
 	hostdirhttp "github.com/cofy-x/axv/apps/server/internal/hostdir/httpapi"
-	"github.com/cofy-x/axv/apps/server/internal/hosttailscale"
 	"github.com/cofy-x/axv/apps/server/internal/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/projectfiles"
 	"github.com/cofy-x/axv/apps/server/internal/storage"
@@ -102,17 +101,16 @@ func RunContext(ctx context.Context, settings config.Config, options Options) (r
 	application.Handle("/api/compute/", computeGateway)
 	application.Handle("/", httpapi.New(store, webui.Handler()))
 	handler := newHandler(application, terminals, codexAPI)
-	remoteStatus, stopRemote := startRemote(ctx, settings, handler)
+	remote := newRemoteController(ctx, settings.Home, handler)
 	defer func() {
-		if err := stopRemote(); err != nil {
+		if err := remote.Close(); err != nil {
 			diagnostics.FromContext(ctx).Error("remote.close_failed", err)
 			result = errors.Join(result, fmt.Errorf("close remote access: %w", err))
 		}
 	}()
-	application.Handle("GET /api/remote/status", remoteStatusHandler(options.InstanceID, remoteStatus))
-	hostTailscale := hosttailscale.New(ctx)
-	defer hostTailscale.Close()
-	application.Handle("GET /api/connection", connectionHandler(remoteStatus, hostTailscale))
+	application.Handle("GET /api/remote/status", remoteStatusHandler(options.InstanceID, remote.Status))
+	application.Handle("PUT /api/remote", remoteSettingsHandler(remote))
+	application.Handle("GET /api/connection", connectionHandler(remote.Status))
 	server := &http.Server{
 		Addr:              settings.Addr,
 		Handler:           handler,

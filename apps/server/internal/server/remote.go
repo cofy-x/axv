@@ -3,28 +3,27 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"path/filepath"
 	"strings"
 
-	"github.com/cofy-x/axv/apps/server/internal/config"
 	"github.com/cofy-x/axv/apps/server/internal/diagnostics"
 	"github.com/cofy-x/axv/apps/server/internal/localaccess"
+	"github.com/cofy-x/axv/apps/server/internal/profile"
 	"github.com/cofy-x/axv/apps/server/internal/remoteaccess"
 	"github.com/cofy-x/axv/apps/server/internal/tailnet"
 )
 
 // startRemote owns a second transport for the same workstation. Its failure
 // remains visible through local status without taking down the local desktop.
-func startRemote(ctx context.Context, settings config.Config, handler http.Handler) (func() tailnet.Status, func() error) {
-	if !settings.Remote.Enabled {
-		return func() tailnet.Status { return tailnet.Status{State: "disabled"} }, func() error { return nil }
-	}
+func startRemote(ctx context.Context, home string, settings profile.Remote, handler http.Handler) (remoteService, error) {
 	logger := diagnostics.FromContext(ctx).With("component", "remote")
 	service, err := tailnet.Start(ctx, tailnet.Options{
-		StateDir:    filepath.Join(settings.Home, "tailscale"),
-		Hostname:    settings.Remote.Hostname,
-		OwnerUserID: settings.Remote.OwnerUserID,
+		StateDir:    filepath.Join(home, "tailscale"),
+		Hostname:    settings.Hostname,
+		OwnerUserID: settings.OwnerUserID,
 		Handler: func(endpoint tailnet.Endpoint) (http.Handler, func(), error) {
 			middleware, err := remoteaccess.NewMiddleware(remoteaccess.MiddlewareOptions{
 				Origin:         endpoint.Origin,
@@ -46,12 +45,12 @@ func startRemote(ctx context.Context, settings config.Config, handler http.Handl
 	})
 	if err != nil {
 		logger.Error("remote.unavailable", err)
-		return func() tailnet.Status { return tailnet.Status{State: "error", Error: err.Error()} }, func() error { return nil }
+		return nil, err
 	}
-	return service.Status, service.Close
+	return service, nil
 }
 
-func remoteStatusHandler(instanceID string, status func() tailnet.Status) http.Handler {
+func remoteStatusHandler(instanceID string, status func() remoteSnapshot) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
@@ -63,9 +62,45 @@ func remoteStatusHandler(instanceID string, status func() tailnet.Status) http.H
 		}
 		_ = json.NewEncoder(w).Encode(struct {
 			InstanceID string `json:"instanceId"`
-			tailnet.Status
-		}{InstanceID: instanceID, Status: status()})
+			remoteSnapshot
+		}{InstanceID: instanceID, remoteSnapshot: status()})
 	})
+}
+
+func remoteSettingsHandler(controller *remoteController) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		if !localaccess.Request(r, true) {
+			remoteWriteError(w, http.StatusForbidden, "remote_local_only", "Change remote access on the computer running AXV.")
+			return
+		}
+		var input struct {
+			Enabled *bool `json:"enabled"`
+		}
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&input); err != nil || input.Enabled == nil || decoder.Decode(new(any)) != io.EOF {
+			remoteWriteError(w, http.StatusBadRequest, "invalid_remote_request", "Provide only an enabled boolean to change remote access.")
+			return
+		}
+		if err := controller.SetEnabled(r.Context(), *input.Enabled); err != nil {
+			var failure *remoteControlError
+			if errors.As(err, &failure) {
+				remoteWriteError(w, failure.status, failure.code, failure.message)
+			} else {
+				remoteWriteError(w, http.StatusServiceUnavailable, "remote_stopping", "The remote access change could not complete. Refresh its status.")
+			}
+			return
+		}
+		_ = json.NewEncoder(w).Encode(remoteConnection(controller.Status()))
+	})
+}
+
+func remoteWriteError(w http.ResponseWriter, status int, code, message string) {
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"code": code, "error": message})
 }
 
 func remoteLocalOnlyRoute(r *http.Request) bool {
