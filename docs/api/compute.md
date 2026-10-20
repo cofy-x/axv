@@ -197,7 +197,7 @@ The logs route accepts only `offset` (nonnegative byte offset, default **0**) an
 
 Task endpoints retain the project binding/storage error mapping above. Invalid specifications or log ranges return `400 invalid_request`; mismatched execution bindings return `409 binding_changed`; retrying active or uncertain work returns `409 task_conflict`. Task/history capacity exhaustion returns `429 capacity_exceeded` or `task_limit`; unavailable durable guest state returns `503 task_state_unavailable`; unsupported resource enforcement returns `503 unsupported`. Disk exhaustion remains visible as `507 disk_full`.
 
-[VM project CLI](../startup.md#vm-project-tasks) owns command-line use. Guest execution supervision and controller reconciliation belong to [VM architecture](../vm-platform.md#vm-projects); project-volume backup/restore and development-service preview remain separate capabilities.
+[VM project CLI](../startup.md#vm-project-tasks) owns command-line use. Guest execution supervision and controller reconciliation belong to [VM architecture](../vm-platform.md#persistent-project-tasks); project-volume backup/restore and development-service preview remain separate capabilities.
 
 ## Images
 
