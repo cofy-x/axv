@@ -2,9 +2,12 @@
 
 package tmux
 
-import "errors"
+import (
+	"context"
+	"errors"
+)
 
-func (b Backend) Attach(string, Target, int, int) (Process, error) {
+func (b Backend) Attach(context.Context, string, Target, int, int) (Process, error) {
 	return nil, errors.New("Host Codex sessions require macOS or Linux with tmux.")
 }
 

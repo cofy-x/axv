@@ -121,17 +121,17 @@ func (a *Attachment) Open(parent context.Context) error {
 	m.connections[a.runID][a] = true
 	m.mu.Unlock()
 	release, err := m.inputGates.acquire(ctx, a.runID)
-	if err == nil {
-		err = m.scroll(ctx, a.path, a.runID, 0)
-		release()
-	}
 	if err != nil {
+		return failure(Unavailable, "attach_failed", "Could not restore live Codex input.")
+	}
+	defer release()
+	if err := m.scroll(ctx, a.path, a.runID, 0); err != nil {
 		return failure(Unavailable, "attach_failed", "Could not restore live Codex input.")
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	p, err := m.backend().Attach(a.path, a.target, a.cols, a.rows)
+	p, err := m.backend().Attach(ctx, a.path, a.target, a.cols, a.rows)
 	if err != nil {
 		m.settings.Logger.Error("codex.attach_failed", err, "runId", a.runID, "executable", a.path)
 		return failure(Unavailable, "attach_failed", "Could not attach to the persistent Codex session.")

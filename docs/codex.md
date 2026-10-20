@@ -119,6 +119,8 @@ The frontend owns xterm, bounded queues, sizing, scrolling and reconnect backoff
 
 `PrepareAttachment` validates the exact run and reserves capacity before transport upgrade. `Open` restores live input and starts the PTY client after upgrade. Parent cancellation and `Detach` interrupt native I/O; `Close` releases the reservation only after the transport drains its forwarding workers. Ordinary Go callers also close their leases explicitly. Attachment inspection reports runtime uncertainty directly, while list/detail views preserve known identities with a transient reason.
 
+Attachment startup waits for the spawned tmux client to register against the recorded session before announcing terminal readiness. This keeps the browser's initial resize behind client initialization; cancellation, early exit or an unconfirmed attachment closes only that client.
+
 PTY startup failures retain the failing stage (start, descriptor duplication or nonblocking setup) and native cause in the private diagnostic logger, with the exact run ID and executable. Browser messages remain safe and do not include native diagnostics. Logs use the shared sanitizer and contain no terminal streams, provider configuration or environment snapshots; see [service diagnostics](startup.md#configuration-and-storage).
 
 `--no-alt-screen` retains tmux history; reattachment/fresh input leave copy mode. History scrolling sends scroll commands, never composer keystrokes. Hidden input, focus and owner-bound commands follow [desktop contracts](desktop.md).
