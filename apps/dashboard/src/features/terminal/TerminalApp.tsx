@@ -11,6 +11,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { request } from '../../shared/api/http';
 import { useWindowCommands } from '../../shared/desktop/WindowCommandsContext';
+import { useTerminalPaste } from '../../shared/terminal/use-terminal-paste';
 import { TerminalSession } from './terminal-session';
 import type { TerminalInfo, TerminalState } from './terminal-session';
 import { isDesktopTerminalKey } from './terminal-keys';
@@ -42,6 +43,16 @@ export function TerminalApp({
   const [size, setSize] = useState({ cols: 80, rows: 24 });
   const [hasSelection, setHasSelection] = useState(false);
   const [feedback, setFeedback] = useState('');
+  const { pasteClipboard, pasteText, invalidatePaste, recordPasteInput } =
+    useTerminalPaste({
+      desktop,
+      title: window.title,
+      terminal,
+      connection: session,
+      interactive: interactiveRef,
+      mayFocus,
+      setFeedback,
+    });
   const live = state.phase === 'connecting' || state.phase === 'connected';
   const projectName =
     projectPath?.split(/[\\/]/).filter(Boolean).at(-1) ||
@@ -125,6 +136,7 @@ export function TerminalApp({
       write: (data, done) => term.write(data, done),
       onState: (next) => {
         if (disposed) return;
+        if (next.phase !== 'connected') invalidatePaste();
         term.options.disableStdin =
           next.phase !== 'connected' || !interactiveRef.current;
         setState(next);
@@ -137,7 +149,7 @@ export function TerminalApp({
     session.current = connection;
     const subscriptions = [
       term.onData((data) => {
-        connection.sendText(data);
+        recordPasteInput(connection.sendText(data));
       }),
       term.onBinary((data) => {
         connection.sendBinary(data);
@@ -210,6 +222,7 @@ export function TerminalApp({
     });
     return () => {
       disposed = true;
+      invalidatePaste();
       cancelAnimationFrame(frame);
       observer.disconnect();
       connection.dispose();
@@ -218,7 +231,7 @@ export function TerminalApp({
       terminal.current = null;
       session.current = null;
     };
-  }, [generation, projectPath]);
+  }, [generation, projectPath, invalidatePaste, recordPasteInput]);
 
   useEffect(
     () =>
@@ -264,40 +277,6 @@ export function TerminalApp({
       if (terminal.current !== target) return false;
       setFeedback(
         'Clipboard access was denied. Use the browser’s Copy command for the selected text.',
-      );
-      return false;
-    }
-  }, []);
-
-  const pasteClipboard = useCallback(async () => {
-    const target = terminal.current;
-    const connection = session.current;
-    if (!target || connection?.getSnapshot().phase !== 'connected')
-      return false;
-    try {
-      const text = await navigator.clipboard.readText();
-      if (
-        terminal.current !== target ||
-        session.current !== connection ||
-        connection.getSnapshot().phase !== 'connected'
-      )
-        return false;
-      setFeedback('');
-      // A fixed menu explicitly targets its owner even when another window is active.
-      // Only this clipboard command may bypass suspended keyboard input.
-      const disabled = target.options.disableStdin;
-      target.options.disableStdin = false;
-      try {
-        target.paste(text);
-      } finally {
-        target.options.disableStdin = disabled;
-      }
-      if (interactiveRef.current && mayFocus()) target.focus();
-      return true;
-    } catch {
-      if (terminal.current !== target) return false;
-      setFeedback(
-        'Clipboard access was denied. Focus the terminal and use your system paste shortcut.',
       );
       return false;
     }
@@ -373,6 +352,12 @@ export function TerminalApp({
         pasteClipboard,
         state.phase === 'connected',
       ),
+      commands.register(
+        window.id,
+        'terminal:paste-text',
+        pasteText,
+        state.phase === 'connected',
+      ),
       commands.register(window.id, 'terminal:clear', clear),
       commands.register(window.id, 'terminal:details', details),
       commands.register(
@@ -391,6 +376,7 @@ export function TerminalApp({
     newSession,
     copySelection,
     pasteClipboard,
+    pasteText,
     clear,
     details,
     interrupt,

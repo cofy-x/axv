@@ -39,6 +39,7 @@ export function terminalSessionMenu(
   return [
     command('Clear', 'terminal:clear'),
     command('Details', 'terminal:details'),
+    command('Paste text', 'terminal:paste-text'),
     { separator: true },
     command('Interrupt', 'terminal:interrupt'),
     command('New Session', 'terminal:new-session'),
@@ -91,6 +92,7 @@ export function createTerminalApp(commands: WindowCommands): AppDefinition {
           items: [
             command('Copy', 'terminal:copy'),
             command('Paste', 'terminal:paste'),
+            command('Paste text', 'terminal:paste-text'),
             command('Clear', 'terminal:clear'),
           ],
         },

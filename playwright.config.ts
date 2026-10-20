@@ -45,6 +45,7 @@ export default defineConfig({
       name: 'chromium-touch',
       testMatch: [
         '**/touch.spec.ts',
+        '**/terminal-paste.spec.ts',
         '**/codex.touch.spec.ts',
         '**/desktop-icons.spec.ts',
         '**/workstation.spec.ts',
@@ -68,6 +69,7 @@ export default defineConfig({
       name: 'webkit-touch',
       testMatch: [
         '**/touch.spec.ts',
+        '**/terminal-paste.spec.ts',
         '**/codex.touch.spec.ts',
         '**/desktop-icons.spec.ts',
         '**/workstation.spec.ts',

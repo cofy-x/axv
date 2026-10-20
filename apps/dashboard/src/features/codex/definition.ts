@@ -23,6 +23,7 @@ export function codexEditMenu(
   return [
     command('Copy', 'codex:copy'),
     command('Paste', 'codex:paste'),
+    command('Paste text', 'codex:paste-text'),
     command('Clear', 'codex:clear'),
   ];
 }

@@ -9,17 +9,193 @@ import {
 } from './terminal-helpers';
 import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import type { Point } from '@cofy-x/axv-nextstep';
 
 import {
   bounds,
   actionMenu,
   createEntry,
+  dockEntry,
   editorWindow,
   expect,
   filesWindow,
   menuItem,
+  persistedLayout,
   test,
 } from './helpers';
+
+test('overflowing Dock keeps native touch scrolling separate from launch and ordering', async ({
+  page,
+  request,
+  isMobile,
+  browserName,
+}) => {
+  test.skip(!isMobile, 'Runs in the explicit touch projects.');
+  const dock = page.getByRole('complementary', { name: 'Application Dock' });
+  const clock = dock.getByRole('button', {
+    name: 'Clock and date',
+    exact: true,
+  });
+  const add = dock.getByRole('button', {
+    name: 'Add application to Dock',
+    exact: true,
+  });
+  const order = () =>
+    dock
+      .locator('[data-dock-app]')
+      .evaluateAll((entries) =>
+        entries.map((entry) => entry.getAttribute('data-dock-app')!),
+      );
+  const before = await order();
+  const windows = await page.locator('[data-window-id]').count();
+  const scrollLeft = () => dock.evaluate((element) => element.scrollLeft);
+  const scrollEnd = await dock.evaluate(
+    (element) => element.scrollWidth - element.clientWidth,
+  );
+  expect(scrollEnd).toBeGreaterThan(0);
+  await expect(clock).toHaveCSS('touch-action', 'pan-x');
+  await expect(dockEntry(page, before[0]!).locator('.ns-dock-tile')).toHaveCSS(
+    'touch-action',
+    'pan-x',
+  );
+  await expect
+    .poll(async () =>
+      (await persistedLayout(page, request))?.dock?.map(
+        (entry: { appId: string }) => entry.appId,
+      ),
+    )
+    .toEqual(before);
+  const savedDock = (await persistedLayout(page, request)).dock;
+
+  if (browserName === 'chromium') {
+    const protocol = await page.context().newCDPSession(page);
+    const area = await bounds(dock);
+    const reachable = new Set<string>();
+    const recordReachable = async () => {
+      const visible = await dock.locator('[data-dock-app]').evaluateAll(
+        (entries, area) =>
+          entries
+            .filter((entry) => {
+              const box = entry.getBoundingClientRect();
+              return box.left >= area.x && box.right <= area.x + area.width;
+            })
+            .map((entry) => entry.getAttribute('data-dock-app')!),
+        area,
+      );
+      visible.forEach((id) => reachable.add(id));
+    };
+    const swipe = async (start: Point, endX: number) => {
+      await protocol.send('Input.dispatchTouchEvent', {
+        type: 'touchStart',
+        touchPoints: [start],
+      });
+      for (let step = 1; step <= 8; step++)
+        await protocol.send('Input.dispatchTouchEvent', {
+          type: 'touchMove',
+          touchPoints: [
+            { x: start.x + ((endX - start.x) * step) / 8, y: start.y },
+          ],
+        });
+      await protocol.send('Input.dispatchTouchEvent', {
+        type: 'touchEnd',
+        touchPoints: [],
+      });
+    };
+    const swipeOnApp = async (later: boolean) => {
+      const start = await dock.locator('[data-dock-app]').evaluateAll(
+        (entries, { area, later }) => {
+          const boxes = entries
+            .map((entry) => entry.getBoundingClientRect())
+            .filter(
+              (box) => box.left >= area.x && box.right <= area.x + area.width,
+            );
+          const box = later ? boxes[boxes.length - 1]! : boxes[0]!;
+          return {
+            x: later ? box.right - 8 : box.left + 8,
+            y: box.top + 24,
+          };
+        },
+        { area, later },
+      );
+      await swipe(start, later ? area.x + 6 : area.x + area.width - 6);
+    };
+    try {
+      await recordReachable();
+      const clockBox = await bounds(clock);
+      await swipe(
+        { x: clockBox.x + clockBox.width - 8, y: clockBox.y + 24 },
+        area.x + 6,
+      );
+      await expect.poll(scrollLeft).toBeGreaterThan(0);
+      for (let step = 0; step < before.length; step++) {
+        await recordReachable();
+        if ((await scrollLeft()) >= scrollEnd - 1) break;
+        const prior = await scrollLeft();
+        await swipeOnApp(true);
+        await expect.poll(scrollLeft).toBeGreaterThan(prior);
+      }
+      await recordReachable();
+      await expect.poll(scrollLeft).toBeGreaterThanOrEqual(scrollEnd - 1);
+      await expect(add).toBeInViewport({ ratio: 1 });
+      expect([...reachable].sort()).toEqual([...before].sort());
+      for (
+        let step = 0;
+        step < before.length && (await scrollLeft()) > 1;
+        step++
+      ) {
+        const prior = await scrollLeft();
+        await swipeOnApp(false);
+        await expect.poll(scrollLeft).toBeLessThan(prior);
+      }
+      await expect.poll(scrollLeft).toBeLessThanOrEqual(1);
+      await expect(clock).toBeInViewport({ ratio: 1 });
+    } finally {
+      await protocol.detach();
+    }
+  } else {
+    // Playwright WebKit exposes taps, not native swipes. This checks pan policy
+    // and reachability only; real iPhone Safari scrolling needs device acceptance.
+    for (const id of before) {
+      const entry = dockEntry(page, id);
+      await entry.scrollIntoViewIfNeeded();
+      await expect(entry).toBeInViewport({ ratio: 1 });
+      await expect(entry.locator('.ns-dock-options')).toBeInViewport();
+    }
+    await add.scrollIntoViewIfNeeded();
+    await expect(add).toBeInViewport({ ratio: 1 });
+  }
+  await expect(page.locator('[data-window-id]')).toHaveCount(windows);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.locator('.ns-menu-layer')).toHaveCount(0);
+  await expect(dock.locator('.is-dragging')).toHaveCount(0);
+  expect(await order()).toEqual(before);
+  expect((await persistedLayout(page, request)).dock).toEqual(savedDock);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth > innerWidth,
+    ),
+  ).toBe(false);
+
+  const gallery = dockEntry(page, 'gallery');
+  await gallery.locator('.ns-dock-tile').tap();
+  await expect(page.locator('[data-app-id="gallery"]')).toBeVisible();
+  await gallery.locator('.ns-dock-options').tap();
+  await menuItem(page, 'Move Earlier').tap();
+  const reordered = [...before];
+  const index = reordered.indexOf('gallery');
+  reordered.splice(index, 1);
+  reordered.splice(index - 1, 0, 'gallery');
+  await expect.poll(order).toEqual(reordered);
+  await expect
+    .poll(async () =>
+      (await persistedLayout(page, request)).dock.map(
+        (entry: { appId: string }) => entry.appId,
+      ),
+    )
+    .toEqual(reordered);
+  await page.reload();
+  await expect.poll(order).toEqual(reordered);
+});
 
 test('touch can navigate columns, inspect, edit and switch workspaces without right click', async ({
   page,

@@ -58,6 +58,7 @@ export function guestTerminalSessionMenu(
   return [
     command('Clear', 'terminal:clear'),
     command('Details', 'terminal:details'),
+    command('Paste text', 'terminal:paste-text'),
     command('Reconnect', 'guest-terminal:reconnect'),
     { separator: true },
     command('End Session', 'guest-terminal:end'),
@@ -106,6 +107,7 @@ export function createGuestTerminalApp(
           items: [
             command('Copy', 'terminal:copy'),
             command('Paste', 'terminal:paste'),
+            command('Paste text', 'terminal:paste-text'),
             command('Clear', 'terminal:clear'),
             command('Interrupt', 'terminal:interrupt'),
           ],

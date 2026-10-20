@@ -38,6 +38,8 @@ All windows retain stable identity in the same React tree. Folded, minimized and
 
 Stable workspace IDs have editable names. Each workspace owns Clip shortcuts, stacking order and an active window. A window belongs to one home workspace and may be sticky across workspaces. Dock state represents applications and stores pinning and order; live windows supply running state and the window chooser. Minimized windows have separate restore icons.
 
+Dock touch and pen gestures use native scrolling along the Dock's layout axis; only mouse pointers enter custom drag ordering. The tiles, clock and surrounding controls permit the same native pan direction. Visible ordering commands remain available to touch and keyboard users. A cancelled drag clears its feedback without persisting an order or suppressing a later activation.
+
 ## Geometry and desktop icons
 
 Moving, resizing, maximizing and narrow-screen fitting use one computed work area. The miniwindow strip reserves space only when the current workspace has visible minimized windows, including sticky windows. The Dock reserves its own space. Workspace or shelf changes adjust displayed bounds without overwriting normal geometry or `restoreBounds`.
@@ -71,6 +73,12 @@ The shared [`nativepty`](../apps/server/internal/nativepty) adapter creates poll
 On macOS/Linux, the process waiter retains the exit code, signal, duration and requested-close state in [service diagnostics](startup.md#configuration-and-storage), without terminal streams or environment values. It publishes process completion before logging so diagnostics cannot delay session cleanup.
 
 Service shutdown closes ordinary Terminal connections and reaps their shells explicitly: `http.Server.Shutdown` alone does not close upgraded WebSockets. [Codex attachments](codex.md#terminal-attachments) have a separate lifetime. Framing and same-origin checks belong to the [Host Terminal API](api/host-terminal.md); the development proxy must preserve browser Host and Origin.
+
+### Clipboard input
+
+Host Terminal, Guest Terminal and Codex share a dashboard-owned [paste flow](../apps/dashboard/src/shared/terminal/use-terminal-paste.tsx) and native editable fallback. The [operation controller](../apps/dashboard/src/shared/terminal/terminal-paste.ts) owns request invalidation and local input acceptance. Clipboard reads begin directly in the user action; read failures and terminal input failures have separate feedback. The fallback uses shared controls in the desktop dialog, but terminal identity and lifecycle remain feature-owned. [Terminal clipboard](usage.md#terminal-clipboard) describes the visible workflow and line-break behavior.
+
+Each paste operation captures its emulator, connection and input generation. Leaving the connected state or disposing/replacing the connection invalidates pending reads and editable fallbacks, even if that controller later reconnects. A stale completion cannot open a fallback or send to later work. The fallback retains text after input rejection and never retries automatically. Input still passes through xterm's paste handling; accepted input means queued locally, not acknowledged by the shell. Explicit fixed-menu commands retain their original window owner, while dialogs and hidden terminals preserve their existing focus boundaries.
 
 ### Project terminals
 

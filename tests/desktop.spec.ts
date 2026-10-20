@@ -140,6 +140,7 @@ test('Dock pinning, order, clock, running state and document selection persist',
     { steps: 12 },
   );
   await page.mouse.up();
+  await expect(page.locator('[data-app-id="gallery"]')).toHaveCount(0);
   await expect.poll(async () => (await order())[0]).toBe('gallery');
   changed = await order();
   await expect
@@ -161,6 +162,62 @@ test('Dock pinning, order, clock, running state and document selection persist',
     .getByRole('dialog')
     .getByRole('button', { name: 'OK', exact: true })
     .click();
+});
+
+test('Dock drag cancellation and missing clicks do not consume later activation', async ({
+  page,
+}) => {
+  const gallery = dockEntry(page, 'gallery');
+  const tile = gallery.locator('.ns-dock-tile');
+  const window = page.locator('[data-app-id="gallery"]');
+  const before = await page
+    .locator('.ns-dock [data-dock-app]')
+    .evaluateAll((entries) =>
+      entries.map((entry) => entry.getAttribute('data-dock-app')),
+    );
+  const gesture = async (pointerType: string, cancelled: boolean) => {
+    const box = await bounds(tile);
+    const pointer = {
+      pointerId: 41,
+      pointerType,
+      button: 0,
+      clientX: box.x + 12,
+      clientY: box.y + 12,
+    };
+    await tile.dispatchEvent('pointerdown', pointer);
+    await page.locator('body').dispatchEvent('pointermove', {
+      ...pointer,
+      clientY: pointer.clientY + 20,
+    });
+    if (pointerType === 'mouse')
+      await expect(gallery).toHaveClass(/is-dragging/);
+    else await expect(gallery).not.toHaveClass(/is-dragging/);
+    // Synthetic pointer completion deliberately produces no native click.
+    await page
+      .locator('body')
+      .dispatchEvent(cancelled ? 'pointercancel' : 'pointerup', pointer);
+    await expect(gallery).not.toHaveClass(/is-dragging/);
+    expect(
+      await page
+        .locator('.ns-dock [data-dock-app]')
+        .evaluateAll((entries) =>
+          entries.map((entry) => entry.getAttribute('data-dock-app')),
+        ),
+    ).toEqual(before);
+  };
+  for (const pointerType of ['touch', 'pen']) await gesture(pointerType, false);
+  await gesture('mouse', true);
+  await tile.click();
+  await expect(window).toBeVisible();
+  await window.getByRole('button', { name: /^Close / }).click();
+  await gesture('mouse', false);
+  await tile.focus();
+  await tile.press('Enter');
+  await expect(window).toBeVisible();
+  await window.getByRole('button', { name: /^Close / }).click();
+  await gesture('mouse', false);
+  await tile.click();
+  await expect(window).toBeVisible();
 });
 
 test('workspaces and Clip retain mounted drafts, focus, sticky windows and renamed layout', async ({

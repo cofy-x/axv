@@ -365,7 +365,7 @@ export function DialogOverlay({
         : null;
     const first =
       ref.current?.querySelector<HTMLElement>(
-        'input:not(:disabled):not([type="hidden"])',
+        'input:not(:disabled):not([type="hidden"]), textarea:not(:disabled)',
       ) ??
       ref.current?.querySelector<HTMLElement>('[data-default="true"]') ??
       ref.current?.querySelector<HTMLElement>('button:not(:disabled)');
