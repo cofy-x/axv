@@ -12,6 +12,11 @@ interface Authorization {
   error?: string;
 }
 
+interface CopyStatus {
+  message: string;
+  error: boolean;
+}
+
 function useAuthorization(
   local: boolean,
   eligible: boolean,
@@ -97,12 +102,14 @@ export function TailscaleDetails({
   snapshot,
   authorization = {},
   changing = false,
+  copyStatus = { message: '', error: false },
   onSetEnabled,
   onCopy,
 }: {
   snapshot: ConnectionSnapshot;
   authorization?: Authorization;
   changing?: boolean;
+  copyStatus?: CopyStatus;
   onSetEnabled?: (enabled: boolean) => void;
   onCopy: (label: string, value: string) => void;
 }) {
@@ -114,8 +121,8 @@ export function TailscaleDetails({
     return (
       <p>
         {snapshot.loading
-          ? 'Checking connection…'
-          : 'Connection status is unavailable. Refresh to retry.'}
+          ? 'Checking…'
+          : 'Status unavailable. Refresh to check.'}
       </p>
     );
   const { remote } = info;
@@ -124,26 +131,26 @@ export function TailscaleDetails({
       aria-labelledby="tailscale-axv-title"
       className="tailscale-section"
     >
-      <h2 id="tailscale-axv-title">AXV Remote Access</h2>
-      <p>Open this workstation privately from your other devices.</p>
-      <p className="tailscale-state">
-        <span
-          className={`tailscale-status-dot is-${status.remoteTone}`}
-          aria-hidden="true"
-        />
-        {status.remote}
-      </p>
-      {remote.message && <p>{remote.message}</p>}
-      {!remote.supported ? (
-        <p>Remote access is available on AXV servers running macOS or Linux.</p>
-      ) : remote.state === 'disabled' ? (
-        <p>
-          Enable to connect AXV, then authorize it with your Tailscale account.
+      <div className="tailscale-heading">
+        <h2 id="tailscale-axv-title">Remote access</h2>
+        <p className="tailscale-state" role="status" aria-atomic="true">
+          <span
+            className={`tailscale-status-dot is-${status.remoteTone}`}
+            aria-hidden="true"
+          />
+          {status.remote}
         </p>
-      ) : remote.state === 'starting' ? (
-        <p>AXV is connecting its private Tailscale node.</p>
+      </div>
+      {remote.message &&
+        !['disabled', 'starting', 'needs-login', 'needs-https'].includes(
+          remote.state,
+        ) && <p>{remote.message}</p>}
+      {!remote.supported ? (
+        <p>Requires an AXV server running macOS or Linux.</p>
+      ) : remote.state === 'disabled' ? (
+        <p>Access AXV from your other devices.</p>
       ) : remote.state === 'stopped' || remote.state === 'error' ? (
-        <p>Retry to connect AXV again. Existing authorization is kept.</p>
+        <p>Retry to reconnect.</p>
       ) : null}
       {remote.state === 'needs-https' && (
         <>
@@ -156,21 +163,17 @@ export function TailscaleDetails({
             >
               Tailscale DNS settings
             </a>
-            . AXV will continue when they are available.
+            . AXV continues automatically.
           </p>
           <p className="fine-print">
-            Issuing a certificate publishes this node’s name in public
-            certificate transparency logs. Access stays private to Tailscale.
+            The hostname appears in public certificate logs. Access stays
+            private.
           </p>
         </>
       )}
-      {remote.state === 'needs-login' && (
+      {remote.state === 'needs-login' && info.local && (
         <>
-          <p>
-            {info.local
-              ? 'Authorize the AXV node with your Tailscale account, then return here.'
-              : 'Complete AXV authorization on the computer running AXV.'}
-          </p>
+          <p>Sign in with your Tailscale account.</p>
           {authorize && authorization.loading && (
             <p role="status">Loading authorization…</p>
           )}
@@ -178,17 +181,6 @@ export function TailscaleDetails({
             <p className="app-error" role="alert">
               {authorization.error}
             </p>
-          )}
-          {authorize && authorization.url && (
-            <a
-              className="ns-button tailscale-authorize"
-              href={authorization.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              referrerPolicy="no-referrer"
-            >
-              Authorize
-            </a>
           )}
         </>
       )}
@@ -209,9 +201,28 @@ export function TailscaleDetails({
           </dd>
         </dl>
       )}
+      {(url || copyStatus.message) && (
+        <p
+          className={`tailscale-copy-status${copyStatus.error ? ' app-error' : ''}`}
+          role={copyStatus.error ? 'alert' : 'status'}
+        >
+          {copyStatus.message}
+        </p>
+      )}
       {info.local && remote.supported && onSetEnabled && (
         <>
           <div className="tailscale-actions">
+            {authorize && authorization.url && (
+              <a
+                className="ns-button ns-default tailscale-authorize"
+                href={authorization.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                referrerPolicy="no-referrer"
+              >
+                Authorize
+              </a>
+            )}
             {remote.enabled &&
               (remote.state === 'error' || remote.state === 'stopped') && (
                 <Button
@@ -233,8 +244,8 @@ export function TailscaleDetails({
           </div>
           <p className="fine-print">
             {remote.enabled
-              ? 'Enabled for this AXV service and future launches. Disabling keeps your node authorization.'
-              : 'Enabling is saved for future AXV service launches. You can disable it here at any time.'}
+              ? 'Starts with AXV. Disabling keeps authorization.'
+              : 'Enabling is saved for future launches.'}
           </p>
         </>
       )}
@@ -243,10 +254,6 @@ export function TailscaleDetails({
           Manage remote access on the computer running AXV.
         </p>
       )}
-      <p className="fine-print">
-        Tailscale is built into AXV. No system installation is needed on the AXV
-        server; its DNS, routes and firewall stay unchanged.
-      </p>
       <details className="tailscale-help">
         <summary>Connect another device</summary>
         <ol>
@@ -263,7 +270,11 @@ export function TailscaleDetails({
           <li>Connect with the same Tailscale account that authorized AXV.</li>
           <li>When AXV is ready, open its HTTPS URL on that device.</li>
         </ol>
-        <p>The desktop uses the same host files, agents and VMs.</p>
+        <p>
+          Tailscale is built into AXV. No system installation is needed on the
+          AXV server; its DNS, routes and firewall stay unchanged.
+        </p>
+        <p>The desktop uses this workstation’s files, agents and VMs.</p>
       </details>
     </section>
   );
@@ -374,11 +385,11 @@ export function TailscalePanel({
   return (
     <div className="tailscale-app">
       <div className="app-toolbar">
-        <span className="toolbar-caption" role="status">
-          {snapshot.loading
+        <span className="toolbar-caption">
+          {!snapshot.info && snapshot.loading
             ? 'Checking…'
             : snapshot.error
-              ? 'Check failed'
+              ? 'Status unavailable'
               : 'Connection status'}
         </span>
         <IconButton
@@ -398,28 +409,18 @@ export function TailscalePanel({
           </p>
         )}
         {snapshot.error && snapshot.info && (
-          <p>
-            Showing details from the last successful check. Current connection
-            state is unknown.
-          </p>
+          <p>Showing previous details. Current connection state is unknown.</p>
         )}
         {(changeError || localError) && (
           <p className="app-error" role="alert">
             {changeError || localError}
           </p>
         )}
-        {copyStatus.message && (
-          <p
-            className={copyStatus.error ? 'app-error' : 'tailscale-copy-status'}
-            role={copyStatus.error ? 'alert' : 'status'}
-          >
-            {copyStatus.message}
-          </p>
-        )}
         <TailscaleDetails
           snapshot={snapshot}
           authorization={authorization}
           changing={changing}
+          copyStatus={copyStatus}
           onSetEnabled={(enabled) => void setEnabled(enabled)}
           onCopy={(label, value) => void copy(label, value)}
         />

@@ -129,8 +129,8 @@ test('overflowing Dock keeps native touch scrolling separate from launch and ord
       await expect.poll(scrollLeft).toBeGreaterThan(0);
       for (let step = 0; step < before.length; step++) {
         await recordReachable();
-        if ((await scrollLeft()) >= scrollEnd - 1) break;
         const prior = await scrollLeft();
+        if (prior >= scrollEnd - 1) break;
         await swipeOnApp(true);
         await expect.poll(scrollLeft).toBeGreaterThan(prior);
       }
@@ -138,12 +138,9 @@ test('overflowing Dock keeps native touch scrolling separate from launch and ord
       await expect.poll(scrollLeft).toBeGreaterThanOrEqual(scrollEnd - 1);
       await expect(add).toBeInViewport({ ratio: 1 });
       expect([...reachable].sort()).toEqual([...before].sort());
-      for (
-        let step = 0;
-        step < before.length && (await scrollLeft()) > 1;
-        step++
-      ) {
+      for (let step = 0; step < before.length; step++) {
         const prior = await scrollLeft();
+        if (prior <= 1) break;
         await swipeOnApp(false);
         await expect.poll(scrollLeft).toBeLessThan(prior);
       }

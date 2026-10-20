@@ -37,11 +37,20 @@
   font-size: 12px;
   line-height: 1.5;
 }
-.tailscale-section h2 {
-  margin: 0 0 8px;
+.tailscale-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-bottom: 12px;
+}
+.tailscale-heading h2 {
+  margin: 0;
   font-size: 13px;
 }
-.tailscale-state {
+.tailscale-heading .tailscale-state {
+  margin: 0;
   font-weight: bold;
 }
 .tailscale-url {
@@ -64,8 +73,11 @@
   color: inherit;
 }
 .tailscale-copy-status {
-  padding: 7px;
-  border: 1px solid var(--ns-mid);
+  min-height: 18px;
+  font-size: 11px;
+}
+.tailscale-content .tailscale-copy-status {
+  margin: 4px 0 0;
 }
 .tailscale-actions {
   display: flex;
@@ -93,5 +105,11 @@
   .tailscale-content .info-list {
     grid-template-columns: auto minmax(0, 1fr);
     column-gap: 9px;
+  }
+}
+@media (pointer: coarse) {
+  .tailscale-help summary {
+    min-height: 32px;
+    align-content: center;
   }
 }
