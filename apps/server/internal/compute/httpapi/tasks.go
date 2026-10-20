@@ -133,8 +133,8 @@ func parseTaskLogQuery(r *http.Request) (taskLogQuery, error) {
 	}
 	if value := values.Get("limit"); value != "" {
 		result.limit, err = strconv.Atoi(value)
-		if err != nil {
-			return result, compute.Problem("invalid_request", "The log limit must be an integer.")
+		if err != nil || result.limit < 1 || result.limit > 65536 {
+			return result, compute.Problem("invalid_request", "The log limit must be an integer from 1 to 65536.")
 		}
 	}
 	return result, nil

@@ -111,7 +111,7 @@ func TestProjectTaskHTTPRejectsMalformedUnicodeAndActionParameters(t *testing.T)
 		assertProjectHTTPProblem(t, projectHTTPCall(t, handler, bound.Binding.HostID, "POST", base+"/tasks", body), 400, "invalid_request")
 	}
 	assertProjectHTTPProblem(t, projectHTTPCall(t, handler, bound.Binding.HostID, "POST", base+"/tasks?offset=0", request), 400, "invalid_request")
-	for _, query := range []string{"offset=-1", "limit=-1", "limit=65537", "offset=1&offset=2", "limit=1&limit=2", "unknown=1", "offset=", "offset=%zz"} {
+	for _, query := range []string{"offset=-1", "limit=-1", "limit=0", "limit=65537", "offset=1&offset=2", "limit=1&limit=2", "unknown=1", "offset=", "offset=%zz"} {
 		assertProjectHTTPProblem(t, projectHTTPCall(t, handler, bound.Binding.HostID, "GET", base+"/tasks/missing/attempts/missing/logs?"+query, nil), 400, "invalid_request")
 	}
 	wrongHost := request

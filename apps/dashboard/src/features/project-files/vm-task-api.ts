@@ -24,6 +24,7 @@ export interface VMTaskAttempt {
   rootIdentity: string;
   requestId: string;
   status: string;
+  guestFinal: boolean;
   reason?: string;
   syncError?: string;
   exitCode?: number;
@@ -188,21 +189,55 @@ export const vmTasksAPI = {
     ),
 };
 
-const displayLimit = 128 << 10;
+export const vmTaskLogPageBytes = 128 << 10;
 
-/** Decode complete byte sequences across API pages; never execute terminal escapes. */
+function utf8Boundary(bytes: Uint8Array, position: number) {
+  for (let start = position - 1; start >= Math.max(0, position - 3); start--) {
+    const lead = bytes[start];
+    const length =
+      lead >= 0xc2 && lead <= 0xdf
+        ? 2
+        : lead >= 0xe0 && lead <= 0xef
+          ? 3
+          : lead >= 0xf0 && lead <= 0xf4
+            ? 4
+            : 0;
+    if (length <= position - start) continue;
+    try {
+      new TextDecoder('utf-8', { fatal: true }).decode(
+        bytes.subarray(start, Math.min(start + length, bytes.length)),
+        { stream: true },
+      );
+      return start;
+    } catch {
+      // Invalid source bytes remain in the displayed range for normal decoding.
+    }
+  }
+  return position;
+}
+
+/** Bound each page with up to three UTF-8 context bytes; preserve source offsets. */
 export async function readVMTaskLog(
   projectId: string,
   hostId: string,
   taskId: string,
   attemptId: string,
   signal: AbortSignal,
+  startOffset = 0,
 ) {
-  let offset = 0;
-  let text = '';
+  if (!Number.isSafeInteger(startOffset) || startOffset < 0)
+    throw new Error('The task log offset must be a nonnegative safe integer.');
+  const readStart = Math.max(0, startOffset - 3);
+  const prefixBytes = startOffset - readStart;
+  const buffer = new Uint8Array(
+    prefixBytes +
+      Math.min(vmTaskLogPageBytes, Number.MAX_SAFE_INTEGER - startOffset),
+  );
+  let offset = readStart;
+  let used = 0;
   let logBytes: number;
-  const decoder = new TextDecoder();
   do {
+    const limit = Math.min(32768, buffer.length - used);
     const result = await call<{
       data: string | null;
       offset: number;
@@ -211,29 +246,46 @@ export async function readVMTaskLog(
     }>(
       projectId,
       hostId,
-      `/${encodeURIComponent(taskId)}/attempts/${encodeURIComponent(attemptId)}/logs?offset=${offset}&limit=${Math.min(32768, displayLimit - offset)}`,
+      `/${encodeURIComponent(taskId)}/attempts/${encodeURIComponent(attemptId)}/logs?offset=${offset}&limit=${limit}`,
       undefined,
       signal,
     );
+    if (typeof result.data !== 'string' && result.data !== null)
+      throw new Error('The task log response has invalid byte data.');
     const bytes = Uint8Array.from(atob(result.data || ''), (byte) =>
       byte.charCodeAt(0),
     );
     if (
       result.offset !== offset ||
+      !Number.isSafeInteger(result.nextOffset) ||
       result.nextOffset !== offset + bytes.length ||
       !Number.isSafeInteger(result.logBytes) ||
       result.logBytes < result.nextOffset ||
-      bytes.length > displayLimit - offset
+      result.logBytes < startOffset ||
+      bytes.length > limit
     )
       throw new Error('The task log response has invalid byte offsets.');
     logBytes = result.logBytes;
     offset = result.nextOffset;
-    text += decoder.decode(bytes, { stream: offset < logBytes });
+    buffer.set(bytes, used);
+    used += bytes.length;
     if (!bytes.length) break;
-  } while (offset < logBytes && offset < displayLimit);
+  } while (offset < logBytes && used < buffer.length);
+  const bytes = buffer.subarray(0, used);
+  const start =
+    prefixBytes < used ? utf8Boundary(bytes, prefixBytes) : prefixBytes;
+  const fullPage = used === buffer.length && offset < logBytes;
+  const end = Math.max(start, fullPage ? utf8Boundary(bytes, used) : used);
+  const text = new TextDecoder('utf-8', { ignoreBOM: true }).decode(
+    bytes.subarray(start, end),
+    { stream: !fullPage && offset < logBytes },
+  );
   return {
     text: text.replaceAll('\u001b', '␛'),
-    displayedBytes: offset,
+    requestedOffset: startOffset,
+    offset: readStart + start,
+    nextOffset: readStart + end,
+    displayedBytes: end - start,
     logBytes,
   };
 }

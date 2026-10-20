@@ -39,6 +39,7 @@ type TaskAttempt struct {
 	LogBytes     int64          `json:"logBytes"`
 	CachedBytes  int64          `json:"cachedBytes"`
 	LogLimited   bool           `json:"logLimited"`
+	GuestFinal   bool           `json:"guestFinal"`
 	Cancel       bool           `json:"cancelRequested"`
 }
 

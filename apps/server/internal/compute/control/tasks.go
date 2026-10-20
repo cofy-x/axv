@@ -256,6 +256,15 @@ func validateTaskExecution(a compute.TaskAttempt, t compute.ProjectTask, e proto
 	if !valid || e.LogBytes < a.LogBytes || e.LogBytes > t.Spec.Limits.MaxLogBytes || e.LogBytes < a.CachedBytes || (a.LogLimited && !e.LogLimited) || len(e.Reason) > 4096 || !utf8.ValidString(e.Reason) || stringsContainControl(e.Reason) || (compute.TaskFinal(e.Status) && e.FinishedAt == nil) {
 		return compute.Problem("guest_identity_mismatch", "The guest returned invalid task state or log bounds.")
 	}
+	return validateFinalTaskLog(a, e)
+}
+
+func validateFinalTaskLog(a compute.TaskAttempt, e protocol.TaskExecution) error {
+	// A host interruption only records the last observed output size. Freeze
+	// that boundary after an actual guest terminal receipt confirms its end.
+	if a.GuestFinal && (!compute.TaskFinal(e.Status) || e.LogBytes != a.LogBytes || e.LogLimited != a.LogLimited) {
+		return compute.Problem("guest_identity_mismatch", "The guest changed a previously confirmed final task log.")
+	}
 	return nil
 }
 

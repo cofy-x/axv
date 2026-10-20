@@ -248,6 +248,9 @@ func (s *Store) saveTaskExecution(ctx context.Context, id string, e protocol.Tas
 		if err != nil {
 			return err
 		}
+		if err := validateFinalTaskLog(a, e); err != nil {
+			return err
+		}
 		// A verified terminal result is immutable; later stale observations or
 		// cancellation acknowledgements cannot resurrect it.
 		if !compute.TaskFinal(a.Status) {
@@ -261,6 +264,7 @@ func (s *Store) saveTaskExecution(ctx context.Context, id string, e protocol.Tas
 			}
 		}
 		a.LogBytes, a.LogLimited = e.LogBytes, e.LogLimited
+		a.GuestFinal = a.GuestFinal || compute.TaskFinal(e.Status)
 		a.SyncError = ""
 		if chunk != nil {
 			if err := validateTaskLog(a, e, *chunk); err != nil {

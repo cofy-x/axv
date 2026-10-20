@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import {
   expect,
   menuItem,
@@ -55,6 +55,9 @@ function result(id: string, command: string, status = 'running'): VMTaskResult {
     logBytes: Buffer.byteLength(output),
     cachedBytes: Buffer.byteLength(output),
     logLimited: false,
+    guestFinal: ['succeeded', 'failed', 'cancelled', 'interrupted'].includes(
+      status,
+    ),
     cancelRequested: false,
   };
   return {
@@ -82,8 +85,24 @@ function result(id: string, command: string, status = 'running'): VMTaskResult {
   };
 }
 
-async function fixture(page: Page, initial: VMTaskResult[] = []) {
+async function fixture(
+  page: Page,
+  initial: VMTaskResult[] = [],
+  options: { logText?: string; logChunkBytes?: number } = {},
+) {
   const values = new Map(initial.map((item) => [item.task.id, item]));
+  const taskOutputs = new Map<string, string>();
+  const logText = options.logText ?? output;
+
+  function setOutput(taskId: string, text: string) {
+    taskOutputs.set(taskId, text);
+    const item = values.get(taskId);
+    if (item)
+      item.attempt.logBytes = item.attempt.cachedBytes =
+        Buffer.byteLength(text);
+  }
+
+  for (const item of initial) setOutput(item.task.id, logText);
   const submissions: VMTaskSubmission[] = [];
   const cancellations: {
     taskId: string;
@@ -92,11 +111,14 @@ async function fixture(page: Page, initial: VMTaskResult[] = []) {
   }[] = [];
   const retries: VMTaskSubmission[] = [];
   const queriedHosts: string[] = [];
+  const logRequests: { taskId: string; offset: number; limit: number }[] = [];
   let reads = 0;
+  let bindingReads = 0;
   let offline = false;
   let changedHost = false;
   let loseSubmission = false;
   let loseRetry = false;
+  let cancelFailure = false;
   let listWait: Promise<void> | undefined;
   let releaseList: (() => void) | undefined;
   await page.route('**/api/compute/**', async (route) => {
@@ -117,10 +139,12 @@ async function fixture(page: Page, initial: VMTaskResult[] = []) {
     if (!path.startsWith(`/api/compute/projects/${project.id}/`))
       return route.continue();
     expect(route.request().headers()['x-axv-host-id']).toBe(project.hostId);
-    if (path.endsWith('/binding'))
+    if (path.endsWith('/binding')) {
+      bindingReads++;
       return changedHost
         ? json({ code: 'host_changed', error: 'The VM host changed.' }, 409)
         : json({ project, binding });
+    }
     if (path.endsWith('/files/list'))
       return json({
         project,
@@ -184,6 +208,7 @@ async function fixture(page: Page, initial: VMTaskResult[] = []) {
         item.task.spec = data.spec!;
         item.attempt.binding = data.binding;
         values.set(item.task.id, item);
+        setOutput(item.task.id, logText);
       }
       if (loseSubmission) {
         loseSubmission = false;
@@ -204,6 +229,7 @@ async function fixture(page: Page, initial: VMTaskResult[] = []) {
         binding: data.binding,
         requestId: data.requestId,
         status: 'running',
+        guestFinal: false,
         cancelRequested: false,
       };
       item.attempt = attempt;
@@ -222,6 +248,14 @@ async function fixture(page: Page, initial: VMTaskResult[] = []) {
         attemptId,
         binding: route.request().postDataJSON().binding,
       });
+      if (cancelFailure)
+        return json(
+          {
+            code: 'guest_unavailable',
+            error: 'Cancellation could not reach the original VM.',
+          },
+          503,
+        );
       const target = item.attempts.find((attempt) => attempt.id === attemptId)!;
       if (
         !['succeeded', 'failed', 'cancelled', 'interrupted'].includes(
@@ -234,13 +268,22 @@ async function fixture(page: Page, initial: VMTaskResult[] = []) {
       return json(item);
     }
     if (path.endsWith('/logs')) {
-      const bytes = Buffer.from(output);
+      const bytes = Buffer.from(taskOutputs.get(taskId) ?? logText);
       const offset = Number(url.searchParams.get('offset'));
-      const end = Math.min(offset + 5, bytes.length);
+      const limit = Number(url.searchParams.get('limit')) || 65536;
+      logRequests.push({ taskId, offset, limit });
+      const end = Math.min(
+        offset + Math.min(limit, options.logChunkBytes ?? 65536),
+        bytes.length,
+      );
+      const attemptId = parts[parts.indexOf('attempts') + 1];
+      const attempt = item.attempts.find((value) => value.id === attemptId);
+      if (!attempt)
+        return json({ code: 'not_found', error: 'Attempt not found.' }, 404);
       return json({
         taskId,
-        attemptId: parts[parts.indexOf('attempts') + 1],
-        status: item.attempt.status,
+        attemptId,
+        status: attempt.status,
         offset,
         nextOffset: end,
         logBytes: bytes.length,
@@ -255,8 +298,13 @@ async function fixture(page: Page, initial: VMTaskResult[] = []) {
     cancellations,
     retries,
     queriedHosts,
+    logRequests,
+    setOutput,
     get reads() {
       return reads;
+    },
+    get bindingReads() {
+      return bindingReads;
     },
     offline() {
       offline = true;
@@ -272,6 +320,9 @@ async function fixture(page: Page, initial: VMTaskResult[] = []) {
     },
     loseRetry() {
       loseRetry = true;
+    },
+    failCancellation() {
+      cancelFailure = true;
     },
     pauseList() {
       listWait = new Promise<void>((resolve) => {
@@ -312,23 +363,183 @@ async function openTasks(page: Page) {
   );
 }
 
+async function selectTask(page: Page, command: string | RegExp) {
+  const panel = tasksWindow(page);
+  const back = panel.getByRole('button', {
+    name: 'Back to Tasks',
+    exact: true,
+  });
+  if (await back.isVisible()) await back.click();
+  await panel
+    .getByRole('navigation', { name: 'Project tasks' })
+    .getByRole('button', { name: command })
+    .click();
+}
+
+async function expectSelectedAttempt(panel: Locator, attemptId: string) {
+  await expect(
+    panel.getByText('Execution details', { exact: true }).locator('..'),
+  ).toContainText(attemptId);
+  const selector = panel.getByRole('combobox', {
+    name: 'Attempt',
+    exact: true,
+  });
+  if (await selector.count()) await expect(selector).toHaveValue(attemptId);
+}
+
+test('task workspace comparison shows a realistic build and a new command', async ({
+  page,
+}, testInfo) => {
+  const build = result('build4b9c', 'pnpm run build');
+  const tests = result('tests8d2a', 'pnpm test', 'succeeded');
+  build.task.createdAt = build.attempt.createdAt = '2026-10-20T09:42:00Z';
+  tests.task.createdAt = tests.attempt.createdAt = '2026-10-20T09:38:00Z';
+  tests.attempt.exitCode = 0;
+  const buildOutput = [
+    '> task-repository@1.0.0 build /workspace/repo',
+    '> tsc -b && vite build',
+    '',
+    'vite v7.2.0 building client environment for production...',
+    'transforming...',
+    '✓ 248 modules transformed.',
+    'rendering chunks...',
+    'computing gzip size...',
+    'dist/index.html                   0.48 kB │ gzip:  0.31 kB',
+    'dist/assets/index-4ba93c.css      14.62 kB │ gzip:  3.54 kB',
+    'dist/assets/index-7ad08f.js      186.43 kB │ gzip: 58.21 kB',
+    '',
+    'Checking generated assets...',
+  ].join('\n');
+  await fixture(page, [build, tests], { logText: buildOutput });
+  await openTasks(page);
+  const panel = tasksWindow(page);
+  await selectTask(page, 'pnpm run build');
+  await expect(panel.getByLabel('Task output')).toHaveText(buildOutput);
+  const overview = testInfo.outputPath('vm-task-overview.png');
+  await panel.screenshot({ path: overview });
+  await testInfo.attach('VM task overview comparison', {
+    path: overview,
+    contentType: 'image/png',
+  });
+  await panel.getByRole('button', { name: 'New Task', exact: true }).click();
+  await panel
+    .getByRole('textbox', { name: 'Shell command', exact: true })
+    .fill('pnpm install --frozen-lockfile && pnpm test');
+  const composer = testInfo.outputPath('vm-task-compose.png');
+  await panel.screenshot({ path: composer });
+  await testInfo.attach('VM task composer comparison', {
+    path: composer,
+    contentType: 'image/png',
+  });
+});
+
+test('task overview keeps secondary actions and detailed output metadata out of the main workflow', async ({
+  page,
+}) => {
+  const item = result('compact-build', 'pnpm run build');
+  const state = await fixture(page, [item]);
+  const editor = await openTasks(page);
+  const panel = tasksWindow(page);
+  await selectTask(page, /pnpm run build/);
+  await expect(panel.getByLabel('Task output')).toHaveText(output);
+  await expect(panel.getByLabel('Attempt status', { exact: true })).toHaveText(
+    'running · Attempt 1',
+  );
+  await expect(
+    panel.getByRole('combobox', { name: 'Attempt', exact: true }),
+  ).toHaveCount(0);
+  for (const name of ['First', 'Previous', 'Next'])
+    await expect(panel.getByRole('button', { name, exact: true })).toHaveCount(
+      0,
+    );
+  await expect(
+    panel.getByRole('button', { name: 'Latest', exact: true }),
+  ).toBeVisible();
+  await expect(panel.getByText(/^Bytes /)).toBeHidden();
+  await expect(
+    panel.getByRole('button', { name: 'Project Files', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    panel.getByRole('button', { name: 'Reconnect VM', exact: true }),
+  ).toHaveCount(0);
+  const more = panel.getByRole('button', {
+    name: 'More task actions',
+    exact: true,
+  });
+  await more.click();
+  await expect(menuItem(page, 'Reconnect VM')).toBeVisible();
+  await expect(menuItem(page, 'Project Files')).toBeVisible();
+  await expect(menuItem(page, 'Task Help')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(more).toBeFocused();
+  const readsBeforeReconnect = state.bindingReads;
+  await more.click();
+  await menuItem(page, 'Reconnect VM').click();
+  await expect.poll(() => state.bindingReads).toBe(readsBeforeReconnect + 1);
+  await more.click();
+  await menuItem(page, 'Task Help').click();
+  const help = page.getByRole('dialog');
+  await expect(help).toContainText('/bin/sh -lc');
+  await expect(help).toContainText('browser');
+  await page.keyboard.press('Escape');
+  await expect(help).toHaveCount(0);
+  await expect(more).toBeFocused();
+  await more.click();
+  await menuItem(page, 'Task Help').click();
+  await help.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(help).toHaveCount(0);
+  await expect(more).toBeFocused();
+  await more.click();
+  await menuItem(page, 'Project Files').click();
+  await expect(editor).toBeVisible();
+  await expect(editor).toBeEnabled();
+  await expect(editor).toHaveValue('Keep unsaved file typing');
+  await expect(panel).toHaveCount(1);
+});
+
+test('a finished single-page attempt shows its result without paging or follow controls', async ({
+  page,
+}) => {
+  const item = result('finished-build', 'pnpm test', 'succeeded');
+  item.attempt.exitCode = 0;
+  await fixture(page, [item]);
+  await openTasks(page);
+  const panel = tasksWindow(page);
+  await selectTask(page, /pnpm test/);
+  await expect(panel.getByLabel('Task output')).toHaveText(output);
+  await expect(panel.getByLabel('Attempt status', { exact: true })).toHaveText(
+    'succeeded · Attempt 1 · Exit 0',
+  );
+  for (const name of ['First', 'Previous', 'Next', 'Latest'])
+    await expect(panel.getByRole('button', { name, exact: true })).toHaveCount(
+      0,
+    );
+  await expect(
+    panel.getByRole('button', { name: 'Retry Task', exact: true }),
+  ).toBeVisible();
+  await panel.getByText('Execution details', { exact: true }).click();
+  await expect(panel.getByText(/^Bytes /)).toContainText(
+    `Bytes 0–${Buffer.byteLength(output)} of ${Buffer.byteLength(output)}`,
+  );
+});
+
 test('project tasks preserve file drafts, submit an exact VM command and recover results after reload', async ({
   page,
   request,
 }, testInfo) => {
-  const state = await fixture(page);
+  const state = await fixture(page, [], { logChunkBytes: 5 });
   const editor = await openTasks(page);
   const panel = tasksWindow(page);
   await panel
     .getByRole('textbox', { name: 'Shell command', exact: true })
     .fill('npm test && npm run build');
-  await panel.getByText('Execution environment', { exact: true }).click();
+  await panel.getByText('Execution options', { exact: true }).click();
   await panel.getByLabel('Memory limit (MiB)', { exact: true }).fill('32');
   await panel.getByRole('button', { name: 'Run in VM', exact: true }).click();
   await expect(panel.getByRole('alert')).toContainText('Check task limits');
   expect(state.submissions).toHaveLength(0);
   await panel.getByLabel('Memory limit (MiB)', { exact: true }).fill('256');
-  await panel.getByText('Execution environment', { exact: true }).click();
+  await panel.getByText('Execution options', { exact: true }).click();
   await panel.getByRole('button', { name: 'Run in VM', exact: true }).click();
   await expect(panel.getByLabel('Task output')).toHaveText(output);
   await expect(
@@ -385,10 +596,7 @@ test('cancellation stops only the selected task while another task continues', a
   const state = await fixture(page, [first, second]);
   await openTasks(page);
   const panel = tasksWindow(page);
-  await panel
-    .getByRole('navigation', { name: 'Project tasks' })
-    .getByRole('button', { name: /npm run build/ })
-    .click();
+  await selectTask(page, /npm run build/);
   await panel
     .getByRole('button', { name: 'Cancel Attempt', exact: true })
     .click();
@@ -402,9 +610,7 @@ test('cancellation stops only the selected task while another task continues', a
   ]);
   expect(first.attempt.status).toBe('running');
   expect(second.attempt.status).toBe('cancelled');
-  await expect(panel.getByLabel('Attempt', { exact: true })).toHaveValue(
-    'second-attempt-1',
-  );
+  await expectSelectedAttempt(panel, 'second-attempt-1');
 });
 
 test('a late cancel confirmation cannot target a replacement attempt', async ({
@@ -414,10 +620,7 @@ test('a late cancel confirmation cannot target a replacement attempt', async ({
   const state = await fixture(page, [item]);
   await openTasks(page);
   const panel = tasksWindow(page);
-  await panel
-    .getByRole('navigation', { name: 'Project tasks' })
-    .getByRole('button', { name: /npm test/ })
-    .click();
+  await selectTask(page, /npm test/);
   await panel
     .getByRole('button', { name: 'Cancel Attempt', exact: true })
     .click();
@@ -442,9 +645,7 @@ test('a late cancel confirmation cannot target a replacement attempt', async ({
   ]);
   expect(item.attempt.status).toBe('running');
   expect(original.status).toBe('succeeded');
-  await expect(panel.getByLabel('Attempt', { exact: true })).toHaveValue(
-    original.id,
-  );
+  await expectSelectedAttempt(panel, original.id);
 });
 
 test('task polling pauses when hidden and keeps cached logs after connection and host failures', async ({
@@ -453,11 +654,9 @@ test('task polling pauses when hidden and keeps cached logs after connection and
   const state = await fixture(page, [result('first', 'npm test')]);
   await openTasks(page);
   const panel = tasksWindow(page);
-  await panel
-    .getByRole('navigation', { name: 'Project tasks' })
-    .getByRole('button', { name: /npm test/ })
-    .click();
+  await selectTask(page, /npm test/);
   await expect(panel.getByLabel('Task output')).toHaveText(output);
+  await panel.getByRole('button', { name: 'New Task', exact: true }).click();
   const command = panel.getByRole('textbox', {
     name: 'Shell command',
     exact: true,
@@ -466,9 +665,14 @@ test('task polling pauses when hidden and keeps cached logs after connection and
   await command.evaluate((element) =>
     (element as HTMLTextAreaElement).setSelectionRange(5, 13),
   );
-  const scrollTop = await panel
-    .locator('.vm-task-scroll')
-    .evaluate((element) => element.scrollTop);
+  const composer = panel.getByRole('form', { name: 'New task', exact: true });
+  await composer.getByText('Execution options', { exact: true }).click();
+  await composer.getByText('Execution environment', { exact: true }).click();
+  await composer.evaluate((element) => {
+    element.scrollTop = 80;
+  });
+  const scrollTop = await composer.evaluate((element) => element.scrollTop);
+  expect(scrollTop).toBeGreaterThan(0);
   await switchWorkspace(page, 2);
   const hiddenReads = state.reads;
   await page.waitForTimeout(2300);
@@ -482,10 +686,9 @@ test('task polling pauses when hidden and keeps cached logs after connection and
     ]),
   ).toEqual([5, 13]);
   await expect
-    .poll(() =>
-      panel.locator('.vm-task-scroll').evaluate((element) => element.scrollTop),
-    )
+    .poll(() => composer.evaluate((element) => element.scrollTop))
     .toBeCloseTo(scrollTop, 0);
+  await panel.getByRole('button', { name: 'New Task', exact: true }).click();
   state.offline();
   await panel.getByRole('button', { name: 'Refresh', exact: true }).click();
   await expect(panel.getByRole('alert')).toContainText(
@@ -543,10 +746,7 @@ test('unknown attempts are not retried and finished attempts require explicit co
   const state = await fixture(page, [item]);
   await openTasks(page);
   const panel = tasksWindow(page);
-  await panel
-    .getByRole('navigation', { name: 'Project tasks' })
-    .getByRole('button', { name: /npm test/ })
-    .click();
+  await selectTask(page, /npm test/);
   await expect(
     panel.getByRole('button', { name: 'Retry Task', exact: true }),
   ).toBeDisabled();
@@ -559,6 +759,9 @@ test('unknown attempts are not retried and finished attempts require explicit co
   item.attempt.reason = 'The original VM stopped.';
   await panel.getByRole('button', { name: 'Refresh', exact: true }).click();
   await panel.getByRole('button', { name: 'Retry Task', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Retry task?' })).toContainText(
+    `VM “${binding.machineId}”`,
+  );
   await page
     .getByRole('dialog')
     .getByRole('button', { name: 'Cancel', exact: true })
@@ -574,9 +777,7 @@ test('unknown attempts are not retried and finished attempts require explicit co
     binding,
     requestId: expect.any(String),
   });
-  await expect(panel.getByLabel('Attempt', { exact: true })).toHaveValue(
-    'first-attempt-2',
-  );
+  await expectSelectedAttempt(panel, 'first-attempt-2');
 });
 
 test('missing selected attempt history never substitutes the current execution', async ({
@@ -586,13 +787,8 @@ test('missing selected attempt history never substitutes the current execution',
   const state = await fixture(page, [item]);
   await openTasks(page);
   const panel = tasksWindow(page);
-  await panel
-    .getByRole('navigation', { name: 'Project tasks' })
-    .getByRole('button', { name: /npm test/ })
-    .click();
-  await expect(
-    panel.getByRole('combobox', { name: 'Attempt', exact: true }),
-  ).toHaveValue(item.attempt.id);
+  await selectTask(page, /npm test/);
+  await expectSelectedAttempt(panel, item.attempt.id);
   const replacement = { ...item.attempt, id: 'replacement-attempt', number: 2 };
   item.attempt = replacement;
   item.attempts = [replacement];
@@ -614,9 +810,7 @@ test('missing selected attempt history never substitutes the current execution',
   await expect(
     panel.getByRole('button', { name: 'Cancel Attempt', exact: true }),
   ).toBeEnabled();
-  await expect(
-    panel.getByRole('combobox', { name: 'Attempt', exact: true }),
-  ).toHaveValue(replacement.id);
+  await expectSelectedAttempt(panel, replacement.id);
 });
 
 test('a lost retry response recovers its exact attempt after reload without launching again', async ({
@@ -627,10 +821,7 @@ test('a lost retry response recovers its exact attempt after reload without laun
   const state = await fixture(page, [item]);
   await openTasks(page);
   const panel = tasksWindow(page);
-  await panel
-    .getByRole('navigation', { name: 'Project tasks' })
-    .getByRole('button', { name: /npm test/ })
-    .click();
+  await selectTask(page, /npm test/);
   state.loseRetry();
   await panel.getByRole('button', { name: 'Retry Task', exact: true }).click();
   await page
@@ -654,9 +845,7 @@ test('a lost retry response recovers its exact attempt after reload without laun
   await panel
     .getByRole('button', { name: 'Recover Submission', exact: true })
     .click();
-  await expect(panel.getByLabel('Attempt', { exact: true })).toHaveValue(
-    accepted.id,
-  );
+  await expectSelectedAttempt(panel, accepted.id);
   await expect(
     panel.getByRole('button', { name: 'Recover Submission', exact: true }),
   ).toHaveCount(0);
@@ -673,10 +862,7 @@ test('delayed restored history does not move focus away from command typing', as
   const state = await fixture(page, [result('first', 'npm test')]);
   await openTasks(page);
   const panel = tasksWindow(page);
-  await panel
-    .getByRole('navigation', { name: 'Project tasks' })
-    .getByRole('button', { name: /npm test/ })
-    .click();
+  await selectTask(page, /npm test/);
   await expect(panel.getByLabel('Task output')).toHaveText(output);
   await expect
     .poll(async () =>
@@ -689,6 +875,7 @@ test('delayed restored history does not move focus away from command typing', as
   state.pauseList();
   page.on('dialog', (dialog) => void dialog.accept());
   await page.reload();
+  await panel.getByRole('button', { name: 'New Task', exact: true }).click();
   const command = panel.getByRole('textbox', {
     name: 'Shell command',
     exact: true,
@@ -698,4 +885,454 @@ test('delayed restored history does not move focus away from command typing', as
   await expect(panel.getByLabel('Task output')).toHaveText(output);
   await expect(command).toHaveValue('Continue editing the next command');
   await expect(command).toBeFocused();
+});
+
+test('deferred task history focus respects a newly activated window', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await fixture(page, [result('first', 'npm test')]);
+  const editor = await openTasks(page);
+  const panel = tasksWindow(page);
+  const bounds = (await panel.boundingBox())!;
+  const edge = (await panel.locator('[data-resize="e"]').boundingBox())!;
+  await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + 550, edge.y + edge.height / 2);
+  await page.mouse.up();
+  await selectTask(page, /npm test/);
+  const back = panel.getByRole('button', {
+    name: 'Back to Tasks',
+    exact: true,
+  });
+  await expect(back).toBeVisible();
+  const frames = await back.evaluate((element) => {
+    const callbacks: FrameRequestCallback[] = [];
+    const original = window.requestAnimationFrame;
+    window.requestAnimationFrame = (callback) => {
+      callbacks.push(callback);
+      return 0;
+    };
+    try {
+      (element as HTMLButtonElement).click();
+    } finally {
+      window.requestAnimationFrame = original;
+    }
+    (
+      window as Window & { flushTaskFocusFrames?: () => void }
+    ).flushTaskFocusFrames = () => {
+      for (const callback of callbacks) callback(performance.now());
+    };
+    return callbacks.length;
+  });
+  expect(frames).toBeGreaterThan(0);
+  await filesWindow(page).dispatchEvent('pointerdown');
+  await expect(editor).toBeEnabled();
+  await editor.focus();
+  await expect(editor).toBeFocused();
+  await page.evaluate(() => {
+    const scope = window as Window & { flushTaskFocusFrames?: () => void };
+    scope.flushTaskFocusFrames?.();
+    delete scope.flushTaskFocusFrames;
+  });
+  await expect(editor).toBeFocused();
+  await expect(
+    panel.getByRole('navigation', { name: 'Project tasks' }),
+  ).not.toBeFocused();
+});
+
+test('accepted work opens its results and New Task restores the command draft', async ({
+  page,
+}, testInfo) => {
+  const state = await fixture(page);
+  await openTasks(page);
+  const panel = tasksWindow(page);
+  const command = panel.getByRole('textbox', {
+    name: 'Shell command',
+    exact: true,
+  });
+  await command.fill('npm test && npm run build');
+  for (const label of [
+    'Directory in project',
+    'Timeout (seconds)',
+    'CPU limit',
+    'Memory limit (MiB)',
+    'Process limit',
+    'Log limit (KiB)',
+  ])
+    await expect(panel.getByLabel(label, { exact: true })).toBeHidden();
+  await panel.getByText('Execution options', { exact: true }).click();
+  await panel.getByLabel('Directory in project', { exact: true }).fill('web');
+  await panel.getByLabel('Timeout (seconds)', { exact: true }).fill('1200');
+  await panel.getByLabel('CPU limit', { exact: true }).fill('2');
+  await panel.getByLabel('Memory limit (MiB)', { exact: true }).fill('768');
+  await panel.getByLabel('Process limit', { exact: true }).fill('96');
+  await panel.getByLabel('Log limit (KiB)', { exact: true }).fill('2048');
+  const environment = panel.getByText('Execution environment', { exact: true });
+  await environment.click();
+  const identities = environment.locator('..');
+  for (const identity of [
+    binding.hostId,
+    binding.projectId,
+    binding.volumeId,
+    binding.machineId,
+    binding.bootId,
+    binding.instanceId,
+  ])
+    await expect(identities).toContainText(identity);
+  await panel.getByText('Execution options', { exact: true }).click();
+  const submit = panel.getByRole('button', { name: 'Run in VM', exact: true });
+  await expect(submit).toBeEnabled();
+  const composerScreenshot = testInfo.outputPath('vm-task-composer.png');
+  await panel.screenshot({ path: composerScreenshot });
+  await testInfo.attach('VM task composer', {
+    path: composerScreenshot,
+    contentType: 'image/png',
+  });
+  await submit.click();
+  await expect(panel.getByLabel('Task output')).toHaveText(output);
+  await expect(command).toBeHidden();
+  await expect(
+    panel.getByRole('button', { name: 'Cancel Attempt', exact: true }),
+  ).toBeInViewport();
+  expect(state.submissions).toHaveLength(1);
+  expect(state.submissions[0].spec).toMatchObject({
+    argv: ['/bin/sh', '-lc', 'npm test && npm run build'],
+    directory: 'web',
+    limits: {
+      timeoutSeconds: 1200,
+      cpus: 2,
+      memoryMiB: 768,
+      maxProcesses: 96,
+      maxLogBytes: 2048 * 1024,
+    },
+  });
+  await panel.getByRole('button', { name: 'New Task', exact: true }).click();
+  await expect(command).toBeVisible();
+  await expect(command).toHaveValue('npm test && npm run build');
+  await panel.getByText('Execution options', { exact: true }).click();
+  await expect(
+    panel.getByLabel('Directory in project', { exact: true }),
+  ).toHaveValue('web');
+  await expect(
+    panel.getByLabel('Timeout (seconds)', { exact: true }),
+  ).toHaveValue('1200');
+  await expect(
+    panel.getByLabel('Memory limit (MiB)', { exact: true }),
+  ).toHaveValue('768');
+  await command.fill('npm run lint');
+  await panel.getByRole('button', { name: 'New Task', exact: true }).click();
+  await expect(command).toBeHidden();
+  await panel.getByRole('button', { name: 'New Task', exact: true }).click();
+  await expect(command).toHaveValue('npm run lint');
+  expect(state.submissions).toHaveLength(1);
+});
+
+test('narrow task results keep output and cancellation reachable with a way back to history', async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await fixture(page, [
+    result('first', 'npm test'),
+    result('second', 'npm run build'),
+  ]);
+  await openTasks(page);
+  const panel = tasksWindow(page);
+  await selectTask(page, /npm test/);
+  await expect(panel.getByLabel('Task output')).toHaveText(output);
+  await expect(
+    panel.getByRole('navigation', { name: 'Project tasks' }),
+  ).toBeHidden();
+  const cancel = panel.getByRole('button', {
+    name: 'Cancel Attempt',
+    exact: true,
+  });
+  const back = panel.getByRole('button', {
+    name: 'Back to Tasks',
+    exact: true,
+  });
+  await expect(cancel).toBeInViewport();
+  await expect(back).toBeInViewport();
+  const screenshot = testInfo.outputPath('vm-task-narrow-results.png');
+  await panel.screenshot({ path: screenshot });
+  await testInfo.attach('VM task narrow results', {
+    path: screenshot,
+    contentType: 'image/png',
+  });
+  await back.click();
+  const navigation = panel.getByRole('navigation', {
+    name: 'Project tasks',
+  });
+  await expect(navigation).toBeVisible();
+  await expect(navigation).toBeFocused();
+  await navigation.getByRole('button', { name: /npm run build/ }).click();
+  await expectSelectedAttempt(panel, 'second-attempt-1');
+  await expect(cancel).toBeInViewport();
+  const bounds = await cancel.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+
+  await page.setViewportSize({ width: 318, height: 420 });
+  const surface = panel.locator('.vm-project-tasks');
+  await expect
+    .poll(() => surface.evaluate((element) => element.clientWidth))
+    .toBeLessThanOrEqual(310);
+  expect(
+    await surface.evaluate(
+      (element) => element.scrollWidth - element.clientWidth,
+    ),
+  ).toBeLessThanOrEqual(1);
+
+  async function expectContainedContent() {
+    const bounds = (await surface.boundingBox())!;
+    const overflowing = await surface.locator('*:visible').evaluateAll(
+      (elements, bounds) =>
+        elements
+          .map((item) => ({
+            element: `${item.tagName}.${item.className}`,
+            left: item.getBoundingClientRect().left,
+            right: item.getBoundingClientRect().right,
+          }))
+          .filter(
+            (item) =>
+              item.left < bounds.x - 1 ||
+              item.right > bounds.x + bounds.width + 1,
+          ),
+      bounds,
+    );
+    expect(overflowing).toEqual([]);
+  }
+
+  await expectContainedContent();
+  const details = panel.getByText('Execution details', { exact: true });
+  await details.click();
+  await expectContainedContent();
+  await details.click();
+  await expectSelectedAttempt(panel, 'second-attempt-1');
+  await cancel.scrollIntoViewIfNeeded();
+  await cancel.focus();
+  await expect(cancel).toBeFocused();
+  await expect(cancel).toBeInViewport();
+  await page.keyboard.press('Tab');
+  const logs = panel.getByLabel('Task output');
+  await expect(logs).toBeFocused();
+  await page.keyboard.press('Tab');
+  const latest = panel.getByRole('button', { name: 'Latest', exact: true });
+  await expect(latest).toBeFocused();
+  await latest.scrollIntoViewIfNeeded();
+  await expect(latest).toBeInViewport();
+  const compactScreenshot = testInfo.outputPath('vm-task-compact-results.png');
+  await panel.screenshot({ path: compactScreenshot });
+  await testInfo.attach('VM task compact results', {
+    path: compactScreenshot,
+    contentType: 'image/png',
+  });
+  await expect(back).toBeInViewport();
+  await back.focus();
+  await expect(back).toBeInViewport();
+  await page.keyboard.press('Enter');
+  await expect(navigation).toBeVisible();
+  await expect(navigation).toBeFocused();
+});
+
+test('identical commands have distinct history labels and refreshing keeps their order', async ({
+  page,
+}) => {
+  const older = result('older001', 'npm test');
+  const newer = result('newer002', 'npm test');
+  older.task.createdAt = older.attempt.createdAt = '2026-10-20T08:00:00Z';
+  newer.task.createdAt = newer.attempt.createdAt = '2026-10-20T09:00:00Z';
+  await fixture(page, [older, newer]);
+  await openTasks(page);
+  const panel = tasksWindow(page);
+  const back = panel.getByRole('button', {
+    name: 'Back to Tasks',
+    exact: true,
+  });
+  if (await back.isVisible()) await back.click();
+  const navigation = panel.getByRole('navigation', {
+    name: 'Project tasks',
+    includeHidden: true,
+  });
+  const rows = navigation.locator('button');
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText('older001');
+  await expect(rows.nth(1)).toContainText('newer002');
+  await rows.nth(0).click();
+  await expect(panel.getByLabel('Task output')).toHaveText(output);
+  older.attempt.status = 'failed';
+  older.attempt.reason = 'The test command failed.';
+  await panel.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(rows.filter({ hasText: 'older001' })).toContainText('failed');
+  await expect(rows.nth(0)).toContainText('older001');
+  await expect(rows.nth(0)).toContainText('failed');
+  await expect(rows.nth(1)).toContainText('newer002');
+  await expectSelectedAttempt(panel, older.attempt.id);
+});
+
+test('large task logs page to the final result and Latest follows running output as plain text', async ({
+  page,
+}) => {
+  const item = result('build', 'npm run build');
+  const initial =
+    'FIRST BUILD LINE\n' +
+    'Compiling project modules and dependencies.\n'.repeat(9000) +
+    'CURRENT BUILD TAIL\n';
+  const finalLine =
+    'FINAL ERROR: the production build failed\n<script>window.longTaskLogExecuted=true</script>\n';
+  const state = await fixture(page, [item], { logText: initial });
+  await openTasks(page);
+  const panel = tasksWindow(page);
+  await selectTask(page, /npm run build/);
+  const logs = panel.getByLabel('Task output');
+  await expect(logs).toContainText('FIRST BUILD LINE');
+  await expect(logs).not.toContainText('CURRENT BUILD TAIL');
+  await panel.getByRole('button', { name: 'Latest', exact: true }).click();
+  await expect(logs).toContainText('CURRENT BUILD TAIL');
+  await expect
+    .poll(() => logs.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
+  const nextOutput = initial + 'NEW BUILD PROGRESS\n';
+  state.setOutput(item.task.id, nextOutput);
+  await panel.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(logs).toContainText('NEW BUILD PROGRESS');
+  await panel.getByRole('button', { name: 'First', exact: true }).click();
+  await expect(logs).toContainText('FIRST BUILD LINE');
+  await expect
+    .poll(() => logs.evaluate((element) => element.scrollTop))
+    .toBe(0);
+  await logs.evaluate((element) => {
+    element.scrollTop = 120;
+  });
+  const earlierPageScroll = await logs.evaluate((element) => element.scrollTop);
+  expect(earlierPageScroll).toBeGreaterThan(0);
+  state.setOutput(
+    item.task.id,
+    nextOutput.replace('FIRST BUILD LINE', 'FIRST BUILD LINE REFRESHED') +
+      finalLine,
+  );
+  item.attempt.status = 'failed';
+  item.attempt.exitCode = 1;
+  await panel.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(
+    panel.getByRole('region', { name: 'Task results', exact: true }),
+  ).toContainText('failed');
+  await expect(logs).toContainText('FIRST BUILD LINE REFRESHED');
+  await expect
+    .poll(() => logs.evaluate((element) => element.scrollTop))
+    .toBeCloseTo(earlierPageScroll, 0);
+  await expect(logs).not.toContainText('FINAL ERROR');
+  await panel.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(logs).not.toContainText('FIRST BUILD LINE');
+  await expect(logs).not.toContainText('FINAL ERROR');
+  await panel.getByRole('button', { name: 'Previous', exact: true }).click();
+  await expect(logs).toContainText('FIRST BUILD LINE');
+  await panel.getByRole('button', { name: 'Latest', exact: true }).click();
+  await expect(logs).toContainText(finalLine.trim());
+  expect(
+    Buffer.byteLength((await logs.textContent()) || ''),
+  ).toBeLessThanOrEqual(128 * 1024);
+  expect(state.logRequests.every((request) => request.limit <= 65536)).toBe(
+    true,
+  );
+  expect(
+    state.logRequests.some((request) => request.offset >= 128 * 1024),
+  ).toBe(true);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as typeof window & { longTaskLogExecuted?: boolean })
+          .longTaskLogExecuted,
+    ),
+  ).toBeUndefined();
+});
+
+test('Latest toggles following a short running log without showing paging controls', async ({
+  page,
+}) => {
+  await fixture(page, [result('short-log', 'npm test')]);
+  await openTasks(page);
+  const panel = tasksWindow(page);
+  await selectTask(page, /npm test/);
+  await expect(panel.getByLabel('Task output')).toHaveText(output);
+  const latest = panel.getByRole('button', { name: 'Latest', exact: true });
+  for (const name of ['First', 'Previous', 'Next'])
+    await expect(panel.getByRole('button', { name, exact: true })).toHaveCount(
+      0,
+    );
+  await latest.click();
+  await expect(latest).toHaveAttribute('aria-pressed', 'true');
+  await latest.click();
+  await expect(latest).toHaveAttribute('aria-pressed', 'false');
+  await expect(panel.getByLabel('Task output')).toHaveText(output);
+});
+
+test('an unavailable output page keeps the displayed page and can return to its cached start', async ({
+  page,
+}) => {
+  const logText =
+    'FIRST RETAINED PAGE\n' +
+    'Compiler output.\n'.repeat(12000) +
+    'SECOND PAGE END\n';
+  const state = await fixture(page, [result('large-log', 'npm run build')], {
+    logText,
+  });
+  await openTasks(page);
+  const panel = tasksWindow(page);
+  await selectTask(page, /npm run build/);
+  const logs = panel.getByLabel('Task output');
+  await expect(logs).toContainText('FIRST RETAINED PAGE');
+  const retained = await logs.textContent();
+  state.offline();
+  await panel.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(panel.getByRole('alert')).toContainText(
+    'Task controller unavailable.',
+  );
+  await expect(logs).toHaveText(retained!);
+  await expect(
+    panel.getByText('Requested page unavailable', { exact: false }),
+  ).toBeVisible();
+  await panel.getByText('Execution details', { exact: true }).click();
+  await expect(panel.getByText(/Bytes 0–131072 of /)).toBeVisible();
+  await panel.getByText('Execution details', { exact: true }).click();
+  await panel.getByRole('button', { name: 'First', exact: true }).click();
+  await expect(logs).toHaveText(retained!);
+  await expect(
+    panel.getByText('Requested page unavailable', { exact: false }),
+  ).toHaveCount(0);
+  state.online();
+  await panel.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(logs).toContainText('SECOND PAGE END');
+  await expect(logs).not.toContainText('FIRST RETAINED PAGE');
+});
+
+test('cancellation identifies its command and keeps a failed request visible beside retained output', async ({
+  page,
+}) => {
+  const command = 'npm run build -- --target=production';
+  const item = result('build', command);
+  const state = await fixture(page, [item]);
+  state.failCancellation();
+  await openTasks(page);
+  const panel = tasksWindow(page);
+  await selectTask(page, command);
+  await expect(panel.getByLabel('Task output')).toHaveText(output);
+  await panel
+    .getByRole('button', { name: 'Cancel Attempt', exact: true })
+    .click();
+  const dialog = page.getByRole('dialog', { name: 'Cancel attempt 1?' });
+  await expect(dialog).toContainText(command);
+  await dialog
+    .getByRole('button', { name: 'Cancel Attempt', exact: true })
+    .click();
+  const error = panel.getByRole('alert').filter({
+    hasText: 'Cancellation could not reach the original VM.',
+  });
+  await expect(error).toBeInViewport();
+  await expect(panel.getByLabel('Task output')).toHaveText(output);
+  expect(item.attempt.status).toBe('running');
+  expect(state.cancellations).toEqual([
+    { taskId: 'build', attemptId: 'build-attempt-1', binding },
+  ]);
 });

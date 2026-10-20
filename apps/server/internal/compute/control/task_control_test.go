@@ -413,6 +413,103 @@ func TestProjectTaskGuestCannotRegressKnownLogBounds(t *testing.T) {
 	}
 }
 
+func TestProjectTaskGuestCannotChangeFinalLogBounds(t *testing.T) {
+	for _, change := range []string{"larger log", "changed log limit", "running receipt"} {
+		t.Run(change, func(t *testing.T) {
+			f := newTaskFixture(t)
+			accepted := f.submit(t, "immutable-final-log")
+			f.reconcile(t, accepted.Task.ID)
+			data := bytes.Repeat([]byte("x"), 65537)
+			f.finish(accepted.Attempt.ID, data)
+			partial := f.reconcile(t, accepted.Task.ID)
+			if partial.Attempt.Status != "succeeded" || !partial.Attempt.GuestFinal || partial.Attempt.LogBytes != int64(len(data)) || partial.Attempt.CachedBytes != 65536 {
+				t.Fatalf("fixture has no final result with an uncached tail: %+v", partial.Attempt)
+			}
+			directory := f.service.store.directory
+			if err := f.service.store.Close(); err != nil {
+				t.Fatal(err)
+			}
+			reopened, err := OpenStore(directory)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { reopened.Close() })
+			f.service.store = reopened
+			f.mu.Lock()
+			original := f.records[accepted.Attempt.ID]
+			changed := original
+			switch change {
+			case "larger log":
+				changed.LogBytes++
+				f.logs[accepted.Attempt.ID] = append(append([]byte{}, data...), 'y')
+			case "changed log limit":
+				changed.LogLimited = true
+				f.logOverride = func(chunk protocol.TaskLog) protocol.TaskLog {
+					chunk.LogLimited = true
+					return chunk
+				}
+			case "running receipt":
+				changed.Status, changed.FinishedAt = "running", nil
+			}
+			f.records[accepted.Attempt.ID] = changed
+			f.mu.Unlock()
+			if err := f.service.store.saveTaskExecution(t.Context(), accepted.Attempt.ID, changed, nil); compute.ErrorCode(err) != "guest_identity_mismatch" {
+				t.Fatalf("the store accepted a changed final receipt after reopening: %v", err)
+			}
+			invalid := f.reconcile(t, accepted.Task.ID)
+			if invalid.Attempt.Status != "succeeded" || invalid.Attempt.SyncError == "" || invalid.Attempt.LogBytes != partial.Attempt.LogBytes || invalid.Attempt.LogLimited != partial.Attempt.LogLimited || invalid.Attempt.CachedBytes != partial.Attempt.CachedBytes {
+				t.Fatalf("changed final receipt modified the verified result or log cache: %+v", invalid.Attempt)
+			}
+			f.mu.Lock()
+			f.records[accepted.Attempt.ID] = original
+			f.logs[accepted.Attempt.ID] = data
+			f.logOverride = nil
+			f.mu.Unlock()
+			recovered := f.reconcile(t, accepted.Task.ID)
+			if recovered.Attempt.Status != "succeeded" || recovered.Attempt.SyncError != "" || recovered.Attempt.CachedBytes != int64(len(data)) {
+				t.Fatalf("the original final receipt did not recover its remaining log: %+v", recovered.Attempt)
+			}
+			chunk, err := f.service.ProjectTaskLogs(t.Context(), f.bound.Project.ID, accepted.Task.ID, accepted.Attempt.ID, f.bound.Binding.HostID, 65536, 65536)
+			if err != nil || !bytes.Equal(chunk.Data, data[65536:]) || chunk.NextOffset != int64(len(data)) {
+				t.Fatalf("recovery cached bytes outside the verified final log: %+v %v", chunk, err)
+			}
+		})
+	}
+}
+
+func TestProjectTaskHostInterruptionCanRecoverOriginalGuestLogTail(t *testing.T) {
+	f := newTaskFixture(t)
+	accepted := f.submit(t, "interrupted-log-recovery")
+	f.reconcile(t, accepted.Task.ID)
+	data := bytes.Repeat([]byte("x"), 65537)
+	f.mu.Lock()
+	record := f.records[accepted.Attempt.ID]
+	record.Status, record.LogBytes = "running", int64(len(data))
+	f.records[accepted.Attempt.ID], f.logs[accepted.Attempt.ID] = record, data
+	f.mu.Unlock()
+	partial := f.reconcile(t, accepted.Task.ID)
+	if partial.Attempt.GuestFinal || partial.Attempt.CachedBytes != 65536 {
+		t.Fatalf("fixture did not retain an active log tail: %+v", partial.Attempt)
+	}
+	if err := f.service.store.saveTaskFailure(t.Context(), accepted.Attempt.ID, "interrupted", "The original VM stopped before completion could be verified."); err != nil {
+		t.Fatal(err)
+	}
+	interrupted, err := f.service.ProjectTask(t.Context(), f.bound.Project.ID, accepted.Task.ID, f.bound.Binding.HostID)
+	if err != nil || interrupted.Attempt.GuestFinal || interrupted.Attempt.Status != "interrupted" {
+		t.Fatalf("host interruption was mistaken for a guest terminal receipt: %+v %v", interrupted.Attempt, err)
+	}
+	data = append(data, 'y', 'z')
+	f.finish(accepted.Attempt.ID, data)
+	recovered := f.reconcile(t, accepted.Task.ID)
+	if recovered.Attempt.Status != "interrupted" || recovered.Attempt.Reason != interrupted.Attempt.Reason || !recovered.Attempt.FinishedAt.Equal(*interrupted.Attempt.FinishedAt) || !recovered.Attempt.GuestFinal || recovered.Attempt.LogBytes != int64(len(data)) || recovered.Attempt.CachedBytes != int64(len(data)) || recovered.Attempt.SyncError != "" {
+		t.Fatalf("guest log recovery changed the host terminal result or lost the remaining tail: %+v", recovered.Attempt)
+	}
+	chunk, err := f.service.ProjectTaskLogs(t.Context(), f.bound.Project.ID, accepted.Task.ID, accepted.Attempt.ID, f.bound.Binding.HostID, 65536, 65536)
+	if err != nil || !bytes.Equal(chunk.Data, data[65536:]) || chunk.NextOffset != int64(len(data)) {
+		t.Fatalf("host interruption prevented recovery of the original log bytes: %+v %v", chunk, err)
+	}
+}
+
 func TestProjectTaskOriginalCancellationWorksWhenProjectBecomesUnavailable(t *testing.T) {
 	f := newTaskFixture(t)
 	accepted := f.submit(t, "project-unavailable-original")
