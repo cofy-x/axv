@@ -22,7 +22,7 @@ VM preparation and remote status/configuration are local-only and return `403 re
 
 Local and remote clients share the same storage and feature managers, including the four-shell Host Terminal limit and exact Codex run identities. Losing the remote entrypoint cancels only its clients: Host Terminal shells end, Codex views detach, guest terminals and accepted VM operations retain their feature-owned lifetimes. A changed self identity or HTTPS domain withdraws the listener and its clients. Local desktop readiness does not depend on remote login, certificates or connectivity.
 
-TLS handshakes use a validated cached certificate. A separate, bounded renewal worker refreshes certificates nearing expiry while an existing valid certificate remains usable. Renewal failure appears as a diagnostic in local status. An expired certificate withdraws the remote listener and requires an explicit desktop restart after correcting the cause; it never falls back to an expired, self-signed or unverified certificate.
+TLS handshakes use a validated cached certificate. A separate, bounded renewal worker refreshes certificates nearing expiry while an existing valid certificate remains usable. Renewal failure appears as a diagnostic in local status. An expired certificate withdraws the remote listener and requires explicit local retry after correcting the cause; it never falls back to an expired, self-signed or unverified certificate.
 
 Authorization failures return `403 remote_forbidden`; identity lookup timeout returns `503 remote_identity_unavailable`; unknown remote routes return `404 not_found`. During shutdown, new requests return `503 remote_stopping`. JSON failures use the shared `{ error, code }` shape.
 
@@ -33,22 +33,31 @@ Authorization failures return `403 remote_forbidden`; identity lookup timeout re
 ```json
 {
   "instanceId": "desktop-...",
+  "enabled": true,
+  "supported": true,
   "state": "ready",
   "url": "https://axv-workstation.example.ts.net",
   "ownerUserId": "123456"
 }
 ```
 
-States are `disabled`, `starting`, `needs-login`, `needs-https`, `ready`, `error` and `stopped`. `authUrl`, `url`, `ownerUserId` and `error` appear when relevant. An enrollment URL is a bearer capability: status is not cached and the URL is not written to AXV's persistent operational log. `axv remote status` verifies the active local runtime identity before displaying this response. Status describes the running launch snapshot; editing configuration takes effect at the next explicit desktop restart.
+States are `disabled`, `starting`, `needs-login`, `needs-https`, `ready`, `error` and `stopped`. `authUrl`, `url`, `ownerUserId` and `error` appear when relevant. An enrollment URL is a bearer capability: status is not cached and the URL is not written to AXV's persistent operational log. `axv remote status` verifies the active local runtime identity before displaying this response. `enabled` reports the saved runtime switch and `supported` reports macOS/Linux availability. Status describes the live remote controller; its profile settings are independent of the desktop launch snapshot.
+
+## Local control
+
+`PUT /api/remote` requires the raw loopback peer/Host and exact local Origin, even from an authenticated remote owner. Its body contains only `{ "enabled": true }` or `{ "enabled": false }`. Missing/null/non-boolean values, unknown fields, trailing JSON and bodies over 4096 bytes return `400 invalid_remote_request`. Successful responses return the same `remote` object as the connection summary below.
+
+The controller serializes changes, uses the shared profile command lock and preserves unrelated/unknown configuration fields. It saves only `remote.enabled` before changing live transport state. A save failure returns `500 remote_config_failed` without changing the running node; an occupied profile lock returns `409 remote_config_busy`. Repeated enable is idempotent for a running node. If enabled but errored/stopped, an explicit enable retries with the current profile settings and existing identity. Disable closes only the remote transport and retains node credentials. No request controls the system Tailscale service or changes host networking.
+
+Node start failures remain visible as `error` in local status; saving an enabled preference is not proof of readiness. A failed close returns `409 remote_close_failed` and blocks another start until desktop service restart, avoiding overlapping nodes. A stopping controller rejects changes with `503 remote_stopping`. Unsupported servers return `501 remote_unsupported` when enabling. An ambiguous interrupted request is not automatically replayed: read status before deciding to retry. All failures use `{ error, code }`.
 
 ## Desktop connection summary
 
-`GET /api/connection` accepts the shared local or explicitly authenticated remote access checks. It returns `{ local, remote, host }` for the Tailscale utility:
+`GET /api/connection` accepts the shared local or explicitly authenticated remote access checks. It returns `{ local, remote }` for the Tailscale utility:
 
 - `local` is true only when the original loopback peer/Host/Origin checks pass. A remote identity does not make this true.
-- `remote` contains the embedded node's `state`, an optional verified ready HTTPS `url`, and a safe `message`. It excludes enrollment URLs, owner IDs and raw operational errors. A renewal warning retains the ready address and supplies a fixed attention message.
-- `host` describes the independent system Tailscale installation: `state`, `installed`, optional `daemonAvailable`, `backendState`, `hostname`, `ips` and a safe `message`. States are `not-installed`, `unavailable`, `connected`, `disconnected` and `needs-login`. Here, `installed` means that a supported CLI was found; a missing CLI cannot rule out a GUI installation. `daemonAvailable` is present and true only after a successful query. An unreachable daemon is unavailable, not proof that it is stopped.
+- `remote` contains `enabled`, `supported`, the embedded node's `state`, an optional verified ready HTTPS `url`, and a safe `message`. It excludes enrollment URLs, owner IDs and raw operational errors. A renewal warning retains the ready address and supplies a fixed attention message.
 
-The [host detector](../../apps/server/internal/hosttailscale) runs only `tailscale status --json --peers=false`, with bounded execution/output and a 15-second shared cache. It projects only the local node's reported hostname/IPs and connection state, excluding users, peers, login links and raw command diagnostics. It never derives Tailscale identity from a CGNAT address or starts/stops/configures the service. Detected system connectivity does not enable AXV's remote listener.
+The application does not detect the host's system Tailscale installation. The desktop icon is a stable launcher regardless of installation or readiness.
 
-The dashboard polls the summary every five seconds while the Tailscale panel is active; Preferences only opens the panel. Failed checks show unknown current states and mark retained details as stale. Only an active local panel needing enrollment reads `/api/remote/status`; its bearer URL remains panel-local and is cleared when the view becomes inactive or enrollment state changes. Both endpoints use `Cache-Control: no-store`.
+The dashboard polls the summary every five seconds while the Tailscale panel is active; Preferences only opens the panel. Failed checks show unknown current states and mark retained details as stale. Only an active local panel reads `/api/remote/status` for enrollment or error details; its bearer URL remains panel-local and is cleared when the view becomes inactive or enrollment state changes. Status and control responses use `Cache-Control: no-store`.

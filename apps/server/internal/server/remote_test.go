@@ -14,7 +14,6 @@ import (
 	"github.com/cofy-x/axv/apps/server/internal/codex"
 	codexhttp "github.com/cofy-x/axv/apps/server/internal/codex/httpapi"
 	computegateway "github.com/cofy-x/axv/apps/server/internal/compute/gateway"
-	"github.com/cofy-x/axv/apps/server/internal/config"
 	"github.com/cofy-x/axv/apps/server/internal/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/profile"
 	"github.com/cofy-x/axv/apps/server/internal/projectfiles"
@@ -135,8 +134,8 @@ func TestAuthenticatedRemoteDesktopSharesFeatureHandlers(t *testing.T) {
 }
 
 func TestRemoteStatusNeverExposesEnrollmentOverUntrustedRequests(t *testing.T) {
-	handler := remoteStatusHandler("instance-test", func() tailnet.Status {
-		return tailnet.Status{State: tailnet.StateNeedsLogin, AuthURL: "https://login.tailscale.com/a/example"}
+	handler := remoteStatusHandler("instance-test", func() remoteSnapshot {
+		return remoteSnapshot{Enabled: true, Supported: true, Status: tailnet.Status{State: tailnet.StateNeedsLogin, AuthURL: "https://login.tailscale.com/a/example"}}
 	})
 	for _, tc := range []struct{ host, peer, origin string }{
 		{"workstation.example.ts.net", "100.64.1.2:1234", ""},
@@ -169,8 +168,8 @@ func TestRemoteStatusNeverExposesEnrollmentOverUntrustedRequests(t *testing.T) {
 
 func TestDisabledRemoteDoesNotCreateStateAndFailurePreservesLocalStatus(t *testing.T) {
 	home := t.TempDir()
-	status, closeRemote := startRemote(context.Background(), config.Config{Home: home}, http.NotFoundHandler())
-	if status().State != tailnet.StateDisabled || closeRemote() != nil {
+	controller := newRemoteController(context.Background(), home, http.NotFoundHandler())
+	if controller.Status().State != tailnet.StateDisabled || controller.Close() != nil {
 		t.Fatal("default remote transport is not disabled")
 	}
 	if _, err := os.Lstat(filepath.Join(home, "tailscale")); !os.IsNotExist(err) {
@@ -180,9 +179,12 @@ func TestDisabledRemoteDoesNotCreateStateAndFailurePreservesLocalStatus(t *testi
 	if err := os.WriteFile(filepath.Join(home, "tailscale"), []byte("unrelated file"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	status, closeRemote = startRemote(context.Background(), config.Config{Home: home, Remote: profile.Remote{Enabled: true, Hostname: "workstation"}}, http.NotFoundHandler())
-	defer closeRemote()
-	if status().State != tailnet.StateError || status().Error == "" {
-		t.Fatalf("invalid state failure hidden: %+v", status())
+	if _, err := profile.SaveRemoteEnabled(home, true); err != nil {
+		t.Fatal(err)
+	}
+	controller = newRemoteController(context.Background(), home, http.NotFoundHandler())
+	defer controller.Close()
+	if controller.Status().State != tailnet.StateError || controller.Status().Error == "" {
+		t.Fatalf("invalid state failure hidden: %+v", controller.Status())
 	}
 }

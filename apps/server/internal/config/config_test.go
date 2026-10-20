@@ -39,7 +39,7 @@ func TestResolveCompleteDesktopPrecedenceWithoutSideEffects(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			p := profile.Profile{Home: home, Desktop: tc.desktop, WorkspaceDir: "~/projects", ProxyURL: "http://127.0.0.1:7890"}
 			got, err := Resolve(tc.overrides, p, func(key string) string { return tc.env[key] }, func() (string, error) { return home, nil })
-			want := Config{Addr: tc.addr, DataDir: tc.data, Home: home, ConfigPath: filepath.Join(home, "config.json"), WorkspaceDir: filepath.Join(home, "projects"), ProxyURL: p.ProxyURL, Remote: profile.Remote{Hostname: "axv"}}
+			want := Config{Addr: tc.addr, DataDir: tc.data, Home: home, ConfigPath: filepath.Join(home, "config.json"), WorkspaceDir: filepath.Join(home, "projects"), ProxyURL: p.ProxyURL}
 			if err != nil || got != want {
 				t.Fatalf("resolved = %+v, %v; want %+v", got, err, want)
 			}

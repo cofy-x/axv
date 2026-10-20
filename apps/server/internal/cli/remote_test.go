@@ -74,6 +74,25 @@ func TestRemoteStatusWithoutDesktopDoesNotInitializeTheProfile(t *testing.T) {
 	}
 }
 
+func TestRemoteStatusRetainsTheRunningControllersEnabledAndSupportedFlags(t *testing.T) {
+	home := remoteStatusFixture(t, "desktop-fixture", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"instanceId": "desktop-fixture", "state": "disabled", "enabled": false, "supported": true})
+	})
+	t.Setenv("AXV_HOME", home)
+	var output bytes.Buffer
+	if err := Execute(context.Background(), []string{"remote", "status", "--json"}, nil, &output, nil, "dev"); err != nil {
+		t.Fatal(err)
+	}
+	var value map[string]any
+	if json.Unmarshal(output.Bytes(), &value) != nil || value["enabled"] != false || value["supported"] != true {
+		t.Fatalf("running controller flags were lost: %s", output.String())
+	}
+	output.Reset()
+	if err := Execute(context.Background(), []string{"remote", "status"}, nil, &output, nil, "dev"); err != nil || !strings.Contains(output.String(), "Enabled: false") {
+		t.Fatalf("saved enabled preference missing: %s %v", output.String(), err)
+	}
+}
+
 func TestRemoteStatusRejectsUnverifiedOrReplacedDesktop(t *testing.T) {
 	var contacted atomic.Bool
 	home := remoteStatusFixture(t, "another-instance", func(w http.ResponseWriter, _ *http.Request) {

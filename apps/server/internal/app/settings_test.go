@@ -87,8 +87,8 @@ func TestDesktopFingerprintIncludesCapturedInputs(t *testing.T) {
 		ComputeSettings: ComputeSettings{Compute: profile.Compute{Mode: "managed", HostConfig: "/profile/host.json"}, Host: &compute.Config{Socket: "/run/host.sock"}, ComputeError: "runtime problem"},
 		ProcessState:    ProcessState{RunnerExecutable: "/profile/bin/axv-pinned"},
 	}
-	// The current identity projection includes the default-disabled remote settings.
-	const baseline = "2e08ce5423df3ce0c1c550779275be5e573f2a18374d314d19de8a82ae56d49f"
+	// Only immutable desktop inputs participate in the launch identity.
+	const baseline = "c1baf83b5cdfc140de1e979d146e33a1b5f4a030559981ed8ac4cb31393bdc53"
 	if s.Fingerprint() != baseline || s.Snapshot().Fingerprint() != baseline {
 		t.Fatal("captured desktop identity changed")
 	}
@@ -102,17 +102,6 @@ func TestDesktopFingerprintIncludesCapturedInputs(t *testing.T) {
 	if next.Fingerprint() == baseline {
 		t.Fatal("immutable socket override was omitted from launch identity")
 	}
-	for name, remote := range map[string]profile.Remote{
-		"enabled":  {Enabled: true},
-		"hostname": {Hostname: "axv-office"},
-		"owner":    {OwnerUserID: "123456"},
-	} {
-		next = s
-		next.Desktop.Remote = remote
-		if next.Fingerprint() == baseline {
-			t.Fatalf("remote %s was omitted from launch identity", name)
-		}
-	}
 	s.Environment = nil
 	next = s
 	next.Environment = map[string]string{}
@@ -122,7 +111,7 @@ func TestDesktopFingerprintIncludesCapturedInputs(t *testing.T) {
 }
 
 func TestDesktopLaunchSnapshotCapturesFormat4Settings(t *testing.T) {
-	const captured = `{"launchId":"launch-original","computeOverride":"/run/override.sock","home":"/profile","environment":{"AXV_CACHE_HOME":"/cache"},"desktop":{"Addr":"127.0.0.1:3001","DataDir":"/profile/data","Home":"/profile","ConfigPath":"/profile/config.json","WorkspaceDir":"/projects","ProxyURL":"","TmuxSocket":"private","Remote":{"enabled":true,"hostname":"axv-office","owner_user_id":"123456"}},"compute":{"mode":"external","socket":"/run/override.sock"}}`
+	const captured = `{"launchId":"launch-original","computeOverride":"/run/override.sock","home":"/profile","environment":{"AXV_CACHE_HOME":"/cache"},"desktop":{"Addr":"127.0.0.1:3001","DataDir":"/profile/data","Home":"/profile","ConfigPath":"/profile/config.json","WorkspaceDir":"/projects","ProxyURL":"","TmuxSocket":"private"},"compute":{"mode":"external","socket":"/run/override.sock"}}`
 	var snapshot launch.Snapshot
 	if err := json.Unmarshal([]byte(captured), &snapshot); err != nil {
 		t.Fatal(err)
@@ -131,9 +120,6 @@ func TestDesktopLaunchSnapshotCapturesFormat4Settings(t *testing.T) {
 	if s.Home != "/profile" || s.LaunchID != "launch-original" || s.Compute.Socket != "/run/override.sock" || s.Desktop.WorkspaceDir != "/projects" || s.Environment["AXV_CACHE_HOME"] != "/cache" {
 		t.Fatal("captured launch fields were lost")
 	}
-	if s.Desktop.Remote != (profile.Remote{Enabled: true, Hostname: "axv-office", OwnerUserID: "123456"}) {
-		t.Fatal("captured remote settings were lost")
-	}
 	s.RunnerExecutable, s.ComputeError = "/new/runtime/axv", "runtime-only"
 	encoded, err := json.Marshal(s.Snapshot())
 	if err != nil || !bytes.Equal(encoded, []byte(captured)) {
@@ -141,6 +127,30 @@ func TestDesktopLaunchSnapshotCapturesFormat4Settings(t *testing.T) {
 	}
 	if s.Fingerprint() != snapshot.Fingerprint() {
 		t.Fatal("restoring a snapshot changed desktop identity")
+	}
+}
+
+func TestMutableRemoteSettingsDoNotChangeDesktopLaunchIdentity(t *testing.T) {
+	t.Setenv("AXV_COMPUTE_SOCKET", "")
+	p := profile.Profile{Home: t.TempDir()}
+	resolve := func() Settings {
+		t.Helper()
+		desktop, err := config.Resolve(config.Overrides{}, p, func(string) string { return "" }, os.UserHomeDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		settings, err := Resolve(p, desktop)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return settings
+	}
+	initial := resolve()
+	p.Remote = profile.Remote{Enabled: true, Hostname: "axv-office", OwnerUserID: "123456"}
+	updated := resolve()
+	data, err := json.Marshal(updated.Snapshot())
+	if err != nil || initial.Fingerprint() != updated.Fingerprint() || strings.Contains(string(data), `"Remote"`) {
+		t.Fatalf("a mutable remote setting entered captured inputs or invalidated desktop reuse: %v", err)
 	}
 }
 

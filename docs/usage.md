@@ -25,11 +25,18 @@ Welcome keeps **Show Desktop** visible and groups **Preferences** and **About AX
 
 ## Remote desktop
 
-Open **Tailscale** from its desktop icon, **Workspace → Applications** or its button in **Preferences**. The desktop launcher uses the usual selection, opening and drag behavior; it does not indicate connection readiness. The singleton non-modal panel can be kept in the Dock or added to Clip using the usual application and window menus. It checks connections while active and shows **AXV Remote Access** separately from **System Tailscale**. A system connection does not make the AXV remote desktop available; the AXV section reports its own readiness and HTTPS address. When reported, host addresses can be copied. Copy failures and unavailable status remain visible, and **Refresh** checks again. Missing-command detection is not proof that a separate Tailscale GUI app is absent.
+Open **Tailscale** from its desktop icon, **Workspace → Applications** or **Preferences**. The stable desktop launcher opens one non-modal panel and can also be kept in the Dock or added to Clip. Its icon does not indicate connection readiness; the panel checks AXV's connection while active. AXV includes Tailscale and needs no system installation on its server.
 
-On the AXV host, an active panel can show **Authorize** when the embedded node needs enrollment. Remote browsers receive only the connection summary. System Tailscale status is read-only: use the operating system or Tailscale app to manage it.
+On the computer running AXV:
 
-After [remote setup](startup.md#remote-access) on the AXV host, connect your other device to Tailscale with the workstation owner's account and open the HTTPS URL from `axv remote status`. The desktop operates on the same host documents, projects, agents and VMs. Host directory paths and commands still refer to that host; changing the browser device does not move execution.
+1. Choose **Enable**. The setting is saved for this AXV service and future launches; the desktop stays open.
+2. When **Sign in** appears, choose **Authorize**, use the workstation owner's Tailscale account and return to AXV.
+3. If **HTTPS required** appears, follow **Tailscale DNS settings** to enable MagicDNS and HTTPS certificates. Certificate issuance publishes the node's name in public certificate transparency logs; access remains private. AXV continues automatically once settings are available.
+4. When **Ready**, copy the **HTTPS URL**. Expand **Connect another device** for the official client download, connect that device with the same Tailscale account and open the URL. [Remote setup](startup.md#remote-access) owns account, policy and credential requirements.
+
+**Disable** stops AXV's remote entrypoint immediately and saves the preference, retaining authorization for later use. When ready, its confirmation explains that remote browsers disconnect and their Host Terminal shells end; Codex views detach while Codex runs and VMs continue. Cancel leaves access enabled. Local terminals and other work stay open. Closing the panel or browser does not disable the service. An enabled but stopped/errored node offers **Retry**. Save failures and diagnostics remain visible; **Refresh** checks again without changing the setting. AXV does not manage the system Tailscale service or its networking.
+
+Remote browsers receive a read-only connection summary. Enable, Disable, Retry and enrollment are available only on the AXV host. The remote desktop operates on the same host documents, projects, agents and VMs. Host directory paths and commands still refer to that host; changing the browser device does not move execution.
 
 Each browser origin/client keeps its own layout and unsaved recovery copies. The local HTTP and remote HTTPS addresses are different origins: explicitly save documents before switching devices or addresses. Shared saved documents remain available, and existing revision-conflict checks still apply. Host Terminal reconnect starts a new shell; Codex and Guest Terminal retain their distinct [session lifetimes](architecture.md#codex-attachment-and-process-lifetime).
 

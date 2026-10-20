@@ -4,13 +4,12 @@ import type { ConnectionInfo } from './types';
 
 const info: ConnectionInfo = {
   local: true,
-  remote: { state: 'needs-login' },
-  host: { installed: false, state: 'not-installed' },
+  remote: { enabled: true, supported: true, state: 'needs-login' },
 };
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe('read-only connection API', () => {
+describe('Tailscale connection API', () => {
   it('fetches only the sanitized summary with no browser cache', async () => {
     const fetch = vi.fn(async () => Response.json(info));
     vi.stubGlobal('fetch', fetch);
@@ -30,12 +29,45 @@ describe('read-only connection API', () => {
     vi.stubGlobal('fetch', fetch);
     for (const candidate of [
       { ...info, local: false },
-      { ...info, remote: { state: 'disabled' as const } },
-      { ...info, remote: { state: 'ready' as const } },
+      { ...info, remote: { ...info.remote, state: 'disabled' as const } },
+      { ...info, remote: { ...info.remote, state: 'ready' as const } },
     ])
       await expect(
         connectionAPI.authorizationURL(candidate),
       ).resolves.toBeUndefined();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('saves only an explicit enabled boolean locally and preserves server errors', async () => {
+    const fetch = vi.fn(async () => Response.json(info.remote));
+    vi.stubGlobal('fetch', fetch);
+    const controller = new AbortController();
+    await expect(
+      connectionAPI.setEnabled(info, true, controller.signal),
+    ).resolves.toEqual(info.remote);
+    expect(fetch).toHaveBeenCalledExactlyOnceWith('/api/remote', {
+      method: 'PUT',
+      body: '{"enabled":true}',
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    fetch.mockResolvedValueOnce(
+      Response.json(
+        { code: 'remote_config_failed', error: 'Could not save the setting.' },
+        { status: 500 },
+      ),
+    );
+    await expect(connectionAPI.setEnabled(info, false)).rejects.toThrow(
+      'Could not save the setting.',
+    );
+    fetch.mockClear();
+    for (const candidate of [
+      { ...info, local: false },
+      { ...info, remote: { ...info.remote, supported: false } },
+    ])
+      await expect(connectionAPI.setEnabled(candidate, true)).rejects.toThrow(
+        'Manage remote access',
+      );
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -82,7 +114,7 @@ describe('read-only connection API', () => {
   it('shows a desktop URL only when AXV actually reports a valid ready HTTPS address', () => {
     const remote = (state: ConnectionInfo['remote']['state'], url: string) => ({
       ...info,
-      remote: { state, url },
+      remote: { ...info.remote, state, url },
     });
     expect(readyURL(remote('ready', 'https://axv.example.ts.net'))).toBe(
       'https://axv.example.ts.net',

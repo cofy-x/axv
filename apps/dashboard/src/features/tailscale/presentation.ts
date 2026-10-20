@@ -1,8 +1,4 @@
-import type {
-  ConnectionSnapshot,
-  HostTailscaleState,
-  RemoteState,
-} from './types';
+import type { ConnectionSnapshot, RemoteState } from './types';
 
 export type ConnectionTone = 'off' | 'ready' | 'pending' | 'error' | 'unknown';
 
@@ -10,18 +6,10 @@ const remoteLabels: Record<RemoteState, string> = {
   disabled: 'Off',
   starting: 'Starting',
   'needs-login': 'Sign in',
-  'needs-https': 'Setup required',
+  'needs-https': 'HTTPS required',
   ready: 'Ready',
-  error: 'Error',
+  error: 'Needs attention',
   stopped: 'Stopped',
-};
-
-const hostLabels: Record<HostTailscaleState, string> = {
-  'not-installed': 'Not detected',
-  unavailable: 'Unavailable',
-  connected: 'Connected',
-  disconnected: 'Disconnected',
-  'needs-login': 'Sign in',
 };
 
 export function connectionPresentation(snapshot: ConnectionSnapshot) {
@@ -30,11 +18,6 @@ export function connectionPresentation(snapshot: ConnectionSnapshot) {
     ? 'Unknown'
     : info
       ? (remoteLabels[info.remote.state] ?? 'Unknown')
-      : 'Checking…';
-  const host = error
-    ? 'Unknown'
-    : info
-      ? (hostLabels[info.host.state] ?? 'Unknown')
       : 'Checking…';
   const remoteTone: ConnectionTone = error
     ? 'unknown'
@@ -47,14 +30,5 @@ export function connectionPresentation(snapshot: ConnectionSnapshot) {
         : info?.remote.state === 'disabled' || info?.remote.state === 'stopped'
           ? 'off'
           : 'pending';
-  const hostTone: ConnectionTone = error
-    ? 'unknown'
-    : info?.host.state === 'connected'
-      ? 'ready'
-      : info?.host.state === 'unavailable'
-        ? 'unknown'
-        : info?.host.state === 'needs-login'
-          ? 'pending'
-          : 'off';
-  return { remote, host, remoteTone, hostTone };
+  return { remote, remoteTone };
 }

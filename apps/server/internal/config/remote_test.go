@@ -1,15 +1,18 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/cofy-x/axv/apps/server/internal/profile"
 )
 
-func TestRemoteResolutionUsesOnlyTheProfileAndDoesNotCreateState(t *testing.T) {
+func TestRemoteSettingsRemainOutsideCapturedDesktopConfiguration(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "missing")
+	var baseline Config
 	for _, remote := range []profile.Remote{{}, {Enabled: true}, {Enabled: true, Hostname: "axv-office", OwnerUserID: "123456"}} {
 		p := profile.Profile{Home: home, Remote: remote}
 		got, err := Resolve(Overrides{}, p, func(key string) string {
@@ -19,12 +22,15 @@ func TestRemoteResolutionUsesOnlyTheProfileAndDoesNotCreateState(t *testing.T) {
 			}
 			return ""
 		}, os.UserHomeDir)
-		want := remote
-		if want.Hostname == "" {
-			want.Hostname = "axv"
+		if err != nil {
+			t.Fatal(err)
 		}
-		if err != nil || got.Remote != want {
-			t.Fatalf("remote settings changed: %+v, %v; want %+v", got.Remote, err, want)
+		if baseline == (Config{}) {
+			baseline = got
+		}
+		encoded, _ := json.Marshal(got)
+		if got != baseline || strings.Contains(string(encoded), `"Remote"`) {
+			t.Fatalf("mutable remote configuration entered captured desktop settings: %s", encoded)
 		}
 	}
 	if _, err := os.Stat(home); !os.IsNotExist(err) {

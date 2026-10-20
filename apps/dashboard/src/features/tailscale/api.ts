@@ -1,5 +1,5 @@
 import { request } from '../../shared/api/http';
-import type { ConnectionInfo } from './types';
+import type { ConnectionInfo, RemoteInfo } from './types';
 
 export function canAuthorize(info?: Pick<ConnectionInfo, 'local' | 'remote'>) {
   return info?.local === true && info.remote.state === 'needs-login';
@@ -30,6 +30,26 @@ export function readyURL(info?: ConnectionInfo) {
 export const connectionAPI = {
   status: (signal?: AbortSignal) =>
     request<ConnectionInfo>('/connection', { signal, cache: 'no-store' }),
+  setEnabled(info: ConnectionInfo, enabled: boolean, signal?: AbortSignal) {
+    if (!info.local || !info.remote.supported)
+      return Promise.reject(
+        new Error('Manage remote access on the computer running AXV.'),
+      );
+    return request<RemoteInfo>('/remote', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+      signal,
+    });
+  },
+  async localError(signal?: AbortSignal) {
+    const status = await request<{ state: string; error?: string }>(
+      '/remote/status',
+      { signal, cache: 'no-store' },
+    );
+    return status.state === 'error' || status.state === 'ready'
+      ? status.error
+      : undefined;
+  },
   async authorizationURL(
     info: Pick<ConnectionInfo, 'local' | 'remote'>,
     signal?: AbortSignal,

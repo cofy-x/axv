@@ -10,14 +10,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cofy-x/axv/apps/server/internal/hosttailscale"
 	"github.com/cofy-x/axv/apps/server/internal/remoteaccess"
 	"github.com/cofy-x/axv/apps/server/internal/tailnet"
 )
 
 func TestRemoteConnectionProjectionNeverIncludesEnrollmentOrDiagnostics(t *testing.T) {
 	for _, state := range []tailnet.State{tailnet.StateDisabled, tailnet.StateStarting, tailnet.StateNeedsLogin, tailnet.StateNeedsHTTPS, tailnet.StateReady, tailnet.StateError, tailnet.StateStopped} {
-		status := remoteConnection(tailnet.Status{State: state, URL: "https://workstation.example.ts.net", AuthURL: "https://login.tailscale.com/a/private", OwnerUserID: "private-owner", Error: "/private/state https://login.tailscale.com/a/private"})
+		status := remoteConnection(remoteSnapshot{Enabled: true, Supported: true, Status: tailnet.Status{State: state, URL: "https://workstation.example.ts.net", AuthURL: "https://login.tailscale.com/a/private", OwnerUserID: "private-owner", Error: "/private/state https://login.tailscale.com/a/private"}})
 		if status.State != state || state == tailnet.StateReady && (status.URL == "" || status.Message == "") || state != tailnet.StateReady && status.URL != "" {
 			t.Fatalf("remote state was lost: %+v", status)
 		}
@@ -27,7 +26,7 @@ func TestRemoteConnectionProjectionNeverIncludesEnrollmentOrDiagnostics(t *testi
 			t.Fatalf("private remote state escaped: %s, %v", data, err)
 		}
 		for key := range value {
-			if key != "state" && key != "url" && key != "message" {
+			if key != "state" && key != "url" && key != "message" && key != "enabled" && key != "supported" {
 				t.Fatalf("unexpected remote field %q: %s", key, data)
 			}
 		}
@@ -37,28 +36,22 @@ func TestRemoteConnectionProjectionNeverIncludesEnrollmentOrDiagnostics(t *testi
 		"https://workstation.example.ts.net/private", "https://workstation.example.ts.net?private", "https://workstation.example.ts.net?", "https://workstation.example.ts.net#private",
 		"https://workstation.example.ts.net:443", "https://workstation.example.ts.net/", "https:workstation.example.ts.net",
 	} {
-		status := remoteConnection(tailnet.Status{State: tailnet.StateReady, URL: address})
+		status := remoteConnection(remoteSnapshot{Status: tailnet.Status{State: tailnet.StateReady, URL: address}})
 		if status.State != tailnet.StateError || status.URL != "" {
 			t.Fatalf("unsafe remote address was exposed: %s: %+v", address, status)
 		}
 	}
-	if status := remoteConnection(tailnet.Status{State: tailnet.State("private-unknown")}); status.State != tailnet.StateError {
+	if status := remoteConnection(remoteSnapshot{Status: tailnet.Status{State: tailnet.State("private-unknown")}}); status.State != tailnet.StateError {
 		t.Fatalf("unknown remote status was exposed: %+v", status)
 	}
 }
 
-type fixtureHostStatus struct{ calls int }
-
-func (p *fixtureHostStatus) Status(context.Context) hosttailscale.Status {
-	p.calls++
-	return hosttailscale.Status{State: hosttailscale.StateUnavailable, Installed: true, Message: "Host daemon is unavailable."}
-}
-
 func TestConnectionStatusRequiresTrustedTransportAndUsesRawLocalIdentity(t *testing.T) {
-	host := &fixtureHostStatus{}
-	handler := connectionHandler(func() tailnet.Status {
-		return tailnet.Status{State: tailnet.StateNeedsLogin, AuthURL: "https://login.tailscale.com/a/private", OwnerUserID: "private-owner", Error: "/private/state"}
-	}, host)
+	calls := 0
+	handler := connectionHandler(func() remoteSnapshot {
+		calls++
+		return remoteSnapshot{Enabled: true, Supported: true, Status: tailnet.Status{State: tailnet.StateNeedsLogin, AuthURL: "https://login.tailscale.com/a/private", OwnerUserID: "private-owner", Error: "/private/state"}}
+	})
 	for _, tc := range []struct{ name, host, peer, origin string }{
 		{"untrusted-peer", "localhost:3001", "192.0.2.1:1234", ""},
 		{"untrusted-host", "attacker.example", "127.0.0.1:1234", ""},
@@ -73,7 +66,7 @@ func TestConnectionStatusRequiresTrustedTransportAndUsesRawLocalIdentity(t *test
 		}
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, r)
-		if w.Code != http.StatusForbidden || host.calls != 0 || strings.Contains(w.Body.String(), "private") {
+		if w.Code != http.StatusForbidden || calls != 0 || strings.Contains(w.Body.String(), "private") {
 			t.Fatalf("%s bypassed access checks: HTTP %d: %s", tc.name, w.Code, w.Body.String())
 		}
 	}
@@ -83,8 +76,8 @@ func TestConnectionStatusRequiresTrustedTransportAndUsesRawLocalIdentity(t *test
 		if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &value) != nil || value["local"] != local || strings.Contains(response.Body.String(), "private") || response.Header().Get("Cache-Control") != "no-store" || response.Header().Get("X-Content-Type-Options") != "nosniff" {
 			t.Fatalf("invalid connection response: HTTP %d: %s", response.Code, response.Body.String())
 		}
-		remote := map[string]any{"state": "needs-login", "message": "Complete Tailscale enrollment on the computer running AXV."}
-		if len(value) != 3 || !reflect.DeepEqual(value["remote"], remote) {
+		remote := map[string]any{"enabled": true, "supported": true, "state": "needs-login", "message": "Complete Tailscale enrollment on the computer running AXV."}
+		if len(value) != 2 || !reflect.DeepEqual(value["remote"], remote) {
 			t.Fatalf("connection projection changed: %s", response.Body.String())
 		}
 	}
@@ -113,7 +106,7 @@ func TestConnectionStatusRequiresTrustedTransportAndUsesRawLocalIdentity(t *test
 	owner = "456"
 	w = httptest.NewRecorder()
 	remote.ServeHTTP(w, r)
-	if w.Code != http.StatusForbidden || host.calls != 2 || strings.Contains(w.Body.String(), "private") {
+	if w.Code != http.StatusForbidden || calls != 2 || strings.Contains(w.Body.String(), "private") {
 		t.Fatalf("another owner read connection status: HTTP %d: %s", w.Code, w.Body.String())
 	}
 }

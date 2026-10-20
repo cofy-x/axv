@@ -17,6 +17,8 @@ import (
 
 type remoteStatus struct {
 	InstanceID  string `json:"instanceId,omitempty"`
+	Enabled     *bool  `json:"enabled,omitempty"`
+	Supported   *bool  `json:"supported,omitempty"`
 	State       string `json:"state"`
 	AuthURL     string `json:"authUrl,omitempty"`
 	URL         string `json:"url,omitempty"`
@@ -27,7 +29,7 @@ type remoteStatus struct {
 func newRemote() *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "remote", Short: "Inspect private remote access to this workstation",
-		Long: "Remote access is configured in the profile and applied when the desktop starts. Status never starts a Tailscale node or changes the profile.",
+		Long: "Remote access is controlled from the local desktop and retained in the profile. Status never starts a Tailscale node or changes the profile.",
 		Args: arguments(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
 	var asJSON bool
@@ -47,6 +49,9 @@ func newRemote() *cobra.Command {
 			}
 			var output strings.Builder
 			fmt.Fprintf(&output, "Remote access: %s\n", value.State)
+			if value.Enabled != nil {
+				fmt.Fprintf(&output, "Enabled: %t\n", *value.Enabled)
+			}
 			for _, entry := range []struct{ label, value string }{
 				{"URL", value.URL}, {"Authorize", value.AuthURL}, {"Owner user ID", value.OwnerUserID}, {"Error", value.Error},
 			} {

@@ -37,12 +37,6 @@
   font-size: 12px;
   line-height: 1.5;
 }
-.tailscale-section + .tailscale-section {
-  margin-top: 18px;
-  padding-top: 14px;
-  border-top: 1px solid var(--ns-mid);
-  box-shadow: 0 -1px var(--ns-light);
-}
 .tailscale-section h2 {
   margin: 0 0 8px;
   font-size: 13px;
@@ -50,19 +44,16 @@
 .tailscale-state {
   font-weight: bold;
 }
-.tailscale-address,
 .tailscale-url {
   display: flex;
   align-items: flex-start;
   gap: 5px;
 }
-.tailscale-address code,
 .tailscale-url a {
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.tailscale-address .ns-icon-button,
 .tailscale-url .ns-icon-button {
   flex-shrink: 0;
 }
@@ -75,6 +66,28 @@
 .tailscale-copy-status {
   padding: 7px;
   border: 1px solid var(--ns-mid);
+}
+.tailscale-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.tailscale-help {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--ns-mid);
+}
+.tailscale-help summary {
+  cursor: pointer;
+  font-weight: bold;
+}
+.tailscale-help ol {
+  padding-left: 22px;
+}
+.tailscale-help li + li {
+  margin-top: 5px;
 }
 @media (max-width: 599px) {
   .tailscale-content .info-list {

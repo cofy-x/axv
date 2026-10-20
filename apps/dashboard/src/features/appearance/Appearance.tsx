@@ -76,7 +76,7 @@ export function Appearance({ desktop }: AppWindowProps) {
         </fieldset>
         <fieldset>
           <legend>Tailscale</legend>
-          <p>View private access and system Tailscale status.</p>
+          <p>Set up private access from your other devices.</p>
           <div className="app-actions">
             <Button onClick={() => desktop.openApp('remote-access')}>
               Open
