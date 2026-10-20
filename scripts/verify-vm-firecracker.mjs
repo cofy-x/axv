@@ -21,6 +21,14 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { dispose, go, root, scratch, spawnChild, stop } from './lib.mjs';
+import { verifyProjectWorkflow } from './lib-vm-project-workflow.mjs';
+
+export function machineJSONArguments(args) {
+  const separator = args.indexOf('--');
+  return separator < 0
+    ? [...args, '--json']
+    : [...args.slice(0, separator), '--json', ...args.slice(separator)];
+}
 
 // Await process-group cleanup before returning, including an interrupted CLI
 // mutation whose request may already have been accepted by the host.
@@ -229,7 +237,9 @@ node scripts/verify-vm-firecracker.mjs --yes \\
 Optional: --executable /absolute/axv --uid 60000 --gid 60000 --dns 1.1.1.1
           --docker-uplink eth0
 This creates real VMs, TAPs, cgroups and one owned nftables table. It never
-downloads artifacts, installs dependencies or changes host sysctls.
+downloads VM inputs, installs host dependencies or changes host sysctls.
+The project workflow downloads a pinned public repository and installs its
+dependencies inside the disposable VM's project volume.
 With --docker-uplink, --yes also authorizes two temporary owner-commented
 DOCKER-USER rules for this run's TAP prefix/subnet and the selected uplink.
 Only their exact handles are removed; existing policies remain unchanged. Set
@@ -366,6 +376,7 @@ export async function verifiedBundle(path, arch) {
     'ssh',
     'network',
     'project-files',
+    'project-tasks',
   ])
     assert.ok(
       bundle.guest?.capabilities?.includes(capability),
@@ -710,7 +721,7 @@ async function acceptance(options) {
   }
 
   async function cliJSON(args, settings) {
-    return JSON.parse((await cli([...args, '--json'], settings)).stdout);
+    return JSON.parse((await cli(machineJSONArguments(args), settings)).stdout);
   }
 
   async function operation(id) {
@@ -797,6 +808,7 @@ async function acceptance(options) {
           'ssh',
           'network',
           'project-files',
+          'project-tasks',
         ])
           assert.ok(machine.guestCapabilities.includes(capability));
         const health = await request(`/machines/${id}/guest/health`);
@@ -1700,7 +1712,7 @@ async function acceptance(options) {
       }),
       (error) => error.statusCode === 409 && error.code === 'file_conflict',
     );
-    const projectGitState = await exec(owned.id, [
+    let projectGitState = await exec(owned.id, [
       'git',
       '-C',
       'workspace',
@@ -1720,6 +1732,438 @@ async function acceptance(options) {
     console.log(
       'Real Git clone/worktree, retained-volume project registration, CLI list/read/write/mkdir, reviewed hash, create-only and outside-path/symlink protection passed.',
     );
+
+    const taskFinal = (status) =>
+      ['succeeded', 'failed', 'cancelled', 'interrupted'].includes(status);
+    const taskPath = (taskId) => `/projects/${project.id}/tasks/${taskId}`;
+    const taskReceipt = (requestId) =>
+      request(`/projects/${project.id}/task-requests/${requestId}`);
+
+    async function submitProjectTask(argv, flags = []) {
+      const requestId = `native-task-${randomUUID()}`;
+      const result = await cliJSON([
+        'project',
+        'task',
+        'submit',
+        project.id,
+        '--binding-file',
+        bindingPath,
+        '--request-id',
+        requestId,
+        '--timeout',
+        '2m',
+        '--memory',
+        '64',
+        '--max-processes',
+        '16',
+        '--max-log-bytes',
+        '65536',
+        ...flags,
+        '--',
+        ...argv,
+      ]);
+      assert.equal(result.task.requestId, requestId);
+      assert.equal(
+        result.attempt.binding.bootId,
+        projectBinding.binding.bootId,
+      );
+      return result;
+    }
+
+    async function waitProjectTask(
+      task,
+      predicate = (attempt) => taskFinal(attempt.status),
+    ) {
+      return until(
+        async () => {
+          const result = await request(taskPath(task.task.id));
+          assert.equal(result.attempt.id, task.attempt.id);
+          return predicate(result.attempt) && result;
+        },
+        `project task ${task.task.id}/${task.attempt.id}`,
+        150_000,
+      );
+    }
+
+    async function projectTaskLog(task) {
+      const result = await waitProjectTask(
+        task,
+        (attempt) =>
+          taskFinal(attempt.status) && attempt.cachedBytes === attempt.logBytes,
+      );
+      const chunks = [];
+      let offset = 0;
+      while (offset < result.attempt.cachedBytes) {
+        const chunk = await request(
+          `${taskPath(task.task.id)}/attempts/${task.attempt.id}/logs?offset=${offset}&limit=65536`,
+        );
+        assert.equal(chunk.taskId, task.task.id);
+        assert.equal(chunk.attemptId, task.attempt.id);
+        assert.equal(chunk.offset, offset);
+        assert.ok(chunk.nextOffset > offset);
+        const bytes = Buffer.from(chunk.data, 'base64');
+        assert.equal(chunk.nextOffset, offset + bytes.length);
+        assert.ok(chunk.nextOffset <= result.attempt.cachedBytes);
+        chunks.push(bytes);
+        offset = chunk.nextOffset;
+      }
+      return { result, data: Buffer.concat(chunks) };
+    }
+
+    const cancelProjectTask = (task) =>
+      cliJSON([
+        'project',
+        'task',
+        'cancel',
+        project.id,
+        task.task.id,
+        task.attempt.id,
+        '--host-id',
+        state.hostId,
+      ]);
+    const pythonTask = (source, flags) =>
+      submitProjectTask(['python3', '-c', source], flags);
+
+    const durableTask = await pythonTask(
+      'from pathlib import Path; import time; p=Path("notes/task-once.txt"); p.open("a").write("once\\n"); print("started",flush=True); time.sleep(12); print("finished",flush=True)',
+    );
+    await waitProjectTask(
+      durableTask,
+      (attempt) => attempt.status === 'running',
+    );
+    const replay = await request(`/projects/${project.id}/tasks`, 'POST', {
+      requestId: durableTask.task.requestId,
+      binding: initialBinding.binding,
+      spec: durableTask.task.spec,
+    });
+    assert.equal(replay.attempt.id, durableTask.attempt.id);
+    await startHost(true);
+    assert.equal((await ready(owned.id)).bootId, health.bootId);
+    const recoveredTask = await taskReceipt(durableTask.task.requestId);
+    assert.equal(recoveredTask.task.id, durableTask.task.id);
+    assert.equal(recoveredTask.attempt.id, durableTask.attempt.id);
+    const durableLog = await projectTaskLog(durableTask);
+    assert.equal(durableLog.result.attempt.status, 'succeeded');
+    assert.equal(durableLog.data.toString('utf8'), 'started\nfinished\n');
+    assert.equal(
+      (await fileRequest(initialBinding, 'read', 'notes/task-once.txt'))
+        .content,
+      'once\n',
+    );
+
+    const binaryTask = await pythonTask(
+      'import os; os.write(1, bytes([255,0,10,228,184,150,231,149,140])); os.write(2,b"stderr\\x00")',
+    );
+    const binaryLog = await projectTaskLog(binaryTask);
+    assert.equal(binaryLog.result.attempt.status, 'succeeded');
+    assert.deepEqual(
+      binaryLog.data,
+      Buffer.from([
+        255, 0, 10, 228, 184, 150, 231, 149, 140, 115, 116, 100, 101, 114, 114,
+        0,
+      ]),
+    );
+
+    // The descendant starts a fresh session; exact cancellation must use its
+    // owned cgroup rather than relying on process-group membership.
+    const descendant =
+      'import os,time; from pathlib import Path; os.setsid(); Path("notes/task-descendant.pid").write_text(str(os.getpid())); time.sleep(120)';
+    const longTask = await pythonTask(
+      `import subprocess,time; subprocess.Popen(["python3","-c",${JSON.stringify(descendant)}]); time.sleep(120)`,
+    );
+    const otherTask = await pythonTask(
+      'import time; time.sleep(4); print("independent")',
+    );
+    const descendantPID = await until(async () => {
+      try {
+        const file = await fileRequest(
+          initialBinding,
+          'read',
+          'notes/task-descendant.pid',
+        );
+        return /^\d+$/.test(file.content) && file.content;
+      } catch (error) {
+        if (error.statusCode === 404) return false;
+        throw error;
+      }
+    }, 'task descendant session');
+    await cancelProjectTask(longTask);
+    const cancelled = await waitProjectTask(longTask);
+    assert.equal(cancelled.attempt.status, 'cancelled');
+    await until(
+      async () =>
+        (
+          await exec(owned.id, [
+            'python3',
+            '-c',
+            `from pathlib import Path; print(Path("/proc/${descendantPID}").exists())`,
+          ])
+        ).trim() === 'False',
+      'cancelled descendant exit',
+    );
+    const independent = await projectTaskLog(otherTask);
+    assert.equal(independent.result.attempt.status, 'succeeded');
+    assert.equal(independent.data.toString('utf8'), 'independent\n');
+
+    const retried = await cliJSON([
+      'project',
+      'task',
+      'retry',
+      project.id,
+      longTask.task.id,
+      '--binding-file',
+      bindingPath,
+      '--request-id',
+      `native-retry-${randomUUID()}`,
+    ]);
+    assert.notEqual(retried.attempt.id, longTask.attempt.id);
+    assert.equal(retried.attempt.number, 2);
+    await waitProjectTask(retried, (attempt) => attempt.status === 'running');
+    await cancelProjectTask(longTask);
+    const afterOldCancel = await request(taskPath(longTask.task.id));
+    assert.equal(afterOldCancel.attempt.id, retried.attempt.id);
+    assert.equal(afterOldCancel.attempt.cancelRequested, false);
+    assert.ok(!taskFinal(afterOldCancel.attempt.status));
+    assert.equal(
+      (await taskReceipt(longTask.task.requestId)).attempt.id,
+      longTask.attempt.id,
+    );
+    await cancelProjectTask(retried);
+    assert.equal((await waitProjectTask(retried)).attempt.status, 'cancelled');
+
+    const cgroupTask = await pythonTask(
+      'import json; from pathlib import Path; p=next(x.split(":",2)[2] for x in Path("/proc/self/cgroup").read_text().splitlines() if x.startswith("0::")); root=Path("/sys/fs/cgroup")/p.lstrip("/"); print(json.dumps({name:(root/name).read_text().strip() for name in ["cpu.max","memory.max","pids.max"]}))',
+    );
+    const cgroupLog = await projectTaskLog(cgroupTask);
+    assert.equal(cgroupLog.result.attempt.status, 'succeeded');
+    assert.deepEqual(JSON.parse(cgroupLog.data.toString('utf8')), {
+      'cpu.max': '100000 100000',
+      'memory.max': String(64 << 20),
+      'pids.max': '16',
+    });
+    const nestedGroupTask = await pythonTask(
+      'from pathlib import Path; p=next(x.split(":",2)[2] for x in Path("/proc/self/cgroup").read_text().splitlines() if x.startswith("0::")); root=Path("/sys/fs/cgroup")/p.lstrip("/"); (root/"nested"/"leaf").mkdir(parents=True); print(p)',
+    );
+    const nestedGroupLog = await projectTaskLog(nestedGroupTask);
+    assert.equal(nestedGroupLog.result.attempt.status, 'succeeded');
+    const nestedGroupPath = nestedGroupLog.data.toString('utf8').trim();
+    assert.match(
+      nestedGroupPath,
+      /^\/system\.slice\/axv-guest\.service\/attempt-[a-f0-9]{64}$/,
+    );
+    assert.equal(
+      (
+        await exec(owned.id, [
+          'python3',
+          '-c',
+          `from pathlib import Path; print(Path(${JSON.stringify('/sys/fs/cgroup' + nestedGroupPath)}).exists())`,
+        ])
+      ).trim(),
+      'False',
+    );
+    for (const [reason, source, flags] of [
+      ['timeout', 'import time; time.sleep(30)', ['--timeout', '1s']],
+      [
+        'log_limit',
+        'import os; os.write(1,b"x"*2048)',
+        ['--max-log-bytes', '1024'],
+      ],
+      [
+        'memory_limit',
+        'import time; data=bytearray(256*1024*1024); time.sleep(30)',
+        [],
+      ],
+      [
+        'process_limit',
+        'import subprocess,time\nchildren=[]\ntry:\n while True: children.append(subprocess.Popen(["sleep","30"]))\nexcept OSError:\n time.sleep(30)',
+        ['--max-processes', '8'],
+      ],
+    ]) {
+      const limited = await pythonTask(source, flags);
+      const outcome = await waitProjectTask(limited);
+      assert.equal(
+        outcome.attempt.status,
+        'failed',
+        JSON.stringify(outcome.attempt),
+      );
+      assert.equal(
+        outcome.attempt.reason,
+        reason,
+        JSON.stringify(outcome.attempt),
+      );
+      if (reason === 'log_limit') {
+        const log = await projectTaskLog(limited);
+        assert.equal(log.result.attempt.logLimited, true);
+        assert.equal(log.data.length, 1024);
+      }
+    }
+
+    // Exhaust only this invocation's finite project volume. The task journal
+    // remains on the guest root disk so failed execution stays observable.
+    const diskFill = 'notes/task-disk-fill';
+    try {
+      const filling = await pythonTask(
+        `import os; f=open(${JSON.stringify(diskFill)},"wb",buffering=0); s=os.fstatvfs(f.fileno()); os.posix_fallocate(f.fileno(),0,max(0,s.f_bavail*s.f_frsize-16777216)); f.seek(0,2)\nwhile True: f.write(b"x"*4096)`,
+      );
+      const filled = await projectTaskLog(filling);
+      assert.equal(filled.result.attempt.status, 'failed');
+      assert.match(filled.data.toString('utf8'), /No space left on device/);
+      await assert.rejects(
+        request(`/projects/${project.id}/files/write`, 'POST', {
+          binding: initialBinding.binding,
+          path: 'notes/disk-rejected-write',
+          expectedSha256: '',
+          content: 'Disk exhaustion must be visible.',
+        }),
+        (error) => error.statusCode === 507 && error.code === 'disk_full',
+      );
+      let rejected;
+      try {
+        rejected = await request(`/projects/${project.id}/tasks`, 'POST', {
+          requestId: `native-disk-full-${randomUUID()}`,
+          binding: initialBinding.binding,
+          spec: {
+            argv: ['python3', '-c', 'print("must not execute")'],
+            directory: '',
+            limits: {
+              timeoutSeconds: 30,
+              cpus: 1,
+              memoryMiB: 64,
+              maxProcesses: 16,
+              maxLogBytes: 65536,
+            },
+          },
+        });
+      } catch (error) {
+        assert.equal(error.statusCode, 507);
+        assert.equal(error.code, 'disk_full');
+      }
+      if (rejected) {
+        const rejectedResult = await waitProjectTask(rejected);
+        assert.equal(rejectedResult.attempt.status, 'failed');
+        assert.match(
+          rejectedResult.attempt.reason,
+          /disk_full|Insufficient real free space/,
+        );
+        assert.equal(rejectedResult.attempt.logBytes, 0);
+      }
+    } finally {
+      await exec(owned.id, ['rm', '-f', `workspace/${diskFill}`]);
+    }
+    const recoveredDiskTask = await pythonTask('print("disk-recovered")');
+    const recoveredDiskLog = await projectTaskLog(recoveredDiskTask);
+    assert.equal(recoveredDiskLog.result.attempt.status, 'succeeded');
+    assert.equal(recoveredDiskLog.data.toString('utf8'), 'disk-recovered\n');
+    assert.equal(
+      (await fileRequest(initialBinding, 'read', 'README.md')).sha256,
+      written.sha256,
+    );
+
+    // Kill only this task's own guest supervisor as the same unprivileged user.
+    // systemd restarts it on the same boot; recovery must never relaunch work.
+    const executorCrash = await pythonTask(
+      'import os,signal,time; from pathlib import Path; Path("notes/executor-once.txt").open("a").write("once\\n"); print("before-executor-exit",flush=True); time.sleep(2); os.kill(os.getppid(),signal.SIGKILL); time.sleep(120)',
+    );
+    const executorHealth = await until(
+      async () => {
+        try {
+          const current = await request(`/machines/${owned.id}/guest/health`);
+          return (
+            current.ready && current.instanceId !== health.instanceId && current
+          );
+        } catch (error) {
+          if (error.statusCode === 503 || error.statusCode === 409)
+            return false;
+          throw error;
+        }
+      },
+      'guest executor recovery after process exit',
+      90_000,
+    );
+    assert.equal(executorHealth.bootId, health.bootId);
+    assert.notEqual(executorHealth.instanceId, health.instanceId);
+    health = executorHealth;
+    assert.equal(
+      (await waitProjectTask(executorCrash)).attempt.status,
+      'interrupted',
+    );
+    await captureProjectBinding();
+    assert.equal(
+      (await fileRequest(projectBinding, 'read', 'notes/executor-once.txt'))
+        .content,
+      'once\n',
+    );
+    const afterExecutorCrash = await pythonTask(
+      'import time; time.sleep(4); print("new-executor")',
+    );
+    await cancelProjectTask(executorCrash);
+    assert.equal(
+      (await request(taskPath(afterExecutorCrash.task.id))).attempt
+        .cancelRequested,
+      false,
+    );
+    const recoveredExecutorLog = await projectTaskLog(afterExecutorCrash);
+    assert.equal(recoveredExecutorLog.result.attempt.status, 'succeeded');
+    assert.equal(recoveredExecutorLog.data.toString('utf8'), 'new-executor\n');
+
+    const interruptedTask = await pythonTask(
+      'import time; print("before-restart",flush=True); time.sleep(120)',
+    );
+    await waitProjectTask(
+      interruptedTask,
+      (attempt) => attempt.status === 'running',
+    );
+    await action(owned, 'restart');
+    const taskRestartHealth = await ready(owned.id);
+    assert.notEqual(taskRestartHealth.bootId, health.bootId);
+    health = taskRestartHealth;
+    const interruptedTaskResult = await waitProjectTask(interruptedTask);
+    assert.equal(interruptedTaskResult.attempt.status, 'interrupted');
+    assert.equal(
+      interruptedTaskResult.attempt.binding.bootId,
+      initialBinding.binding.bootId,
+    );
+    const cachedInterrupted = await request(
+      `${taskPath(interruptedTask.task.id)}/attempts/${interruptedTask.attempt.id}/logs?offset=0&limit=65536`,
+    );
+    assert.equal(cachedInterrupted.status, 'interrupted');
+    const offlineBinary = await request(
+      `${taskPath(binaryTask.task.id)}/attempts/${binaryTask.attempt.id}/logs?offset=2&limit=6`,
+    );
+    assert.deepEqual(
+      Buffer.from(offlineBinary.data, 'base64'),
+      binaryLog.data.subarray(2, 8),
+    );
+    assert.equal(offlineBinary.nextOffset, 8);
+    const replayAfterReplacementBoot = await request(
+      `/projects/${project.id}/tasks`,
+      'POST',
+      {
+        requestId: durableTask.task.requestId,
+        binding: initialBinding.binding,
+        spec: durableTask.task.spec,
+      },
+    );
+    assert.equal(replayAfterReplacementBoot.attempt.id, durableTask.attempt.id);
+    await captureProjectBinding();
+    console.log(
+      'Durable task receipts, controller restart without duplicate execution, binary log offsets, exact cancellation including setsid descendants, independent tasks, explicit retry, cgroup CPU/memory/PID limits and nested cleanup, timeout/log enforcement, project ENOSPC recovery, guest executor crash recovery and VM restart interruption passed.',
+    );
+    await verifyProjectWorkflow({
+      cliJSON,
+      request,
+      project,
+      bindingPath,
+      directory,
+      token,
+    });
+    projectGitState = await exec(owned.id, [
+      'git',
+      '-C',
+      'workspace',
+      'status',
+      '--porcelain=v1',
+    ]);
 
     const remote = (command) => cli(['ssh', '-T', owned.id, '--', command]);
     assert.equal((await remote(`printf '%s' ${quote(token)}`)).stdout, token);

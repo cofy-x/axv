@@ -44,6 +44,8 @@ func (s *Service) Run(ctx context.Context) error {
 	}
 	wg.Add(1)
 	go func() { defer wg.Done(); s.monitor(ctx) }()
+	wg.Add(1)
+	go func() { defer wg.Done(); s.taskMonitor(ctx) }()
 	<-ctx.Done()
 	wg.Wait()
 	return nil
@@ -358,7 +360,7 @@ func (s *Service) observeGuest(ctx context.Context, m compute.Machine, d compute
 		}
 		return
 	}
-	o.Ready, o.GuestState = true, "ready"
+	o.Ready, o.GuestState, o.GuestReason = true, "ready", health.Reason
 	for _, capability := range image.Guest.Capabilities {
 		if guestimage.Has(health.Capabilities, capability) {
 			o.GuestCapabilities = append(o.GuestCapabilities, capability)

@@ -473,6 +473,18 @@ export function VMProjectFiles({
         >
           Reconnect
         </Button>
+        <Button
+          disabled={!interactive}
+          onClick={() =>
+            desktop.openApp(
+              'project-files',
+              { hostId, vmTasksProjectId: id },
+              { title: `Tasks · ${project?.name || 'VM project'}` },
+            )
+          }
+        >
+          Tasks
+        </Button>
         <IconButton
           icon="more"
           label="More VM project actions"

@@ -54,7 +54,7 @@ export function Welcome({ desktop, window }: AppWindowProps) {
               app: 'project-files',
               icon: 'project' as const,
               name: 'Project Files',
-              text: 'Browse host files or edit VM projects.',
+              text: 'Browse projects and run VM tasks.',
             },
           ].map((link) => (
             <button
@@ -131,8 +131,8 @@ export function About() {
       </dl>
       <p className="fine-print">
         Documents and desktop layout stay on the AXV host. VM project files stay
-        on their retained volumes. Optional private remote access uses
-        Tailscale.
+        on retained volumes, and project tasks run inside their VMs. Optional
+        private remote access uses Tailscale.
       </p>
     </div>
   );

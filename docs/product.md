@@ -37,7 +37,7 @@ VMs provide the development environment for VM projects: project code, Git workt
 
 For a VM workflow, the authoritative project code and Git worktrees belong on its persistent project volume. The host agent operates on that copy through AXV tools. Existing host projects remain independent workflows; AXV does not automatically migrate, mount or synchronize them with VM projects.
 
-The agent-to-VM integration uses explicit AXV interfaces for project files, commands, task status and development services. The [VM project CLI](startup.md#vm-project-files) supplies the first project-file interface; persistent project tasks, development services and an AXV Skill remain goals. A Skill does not redirect an agent's built-in host tools or change its permissions. [Guest API](api/guest.md) documents the current execution interface and its limits.
+The agent-to-VM integration uses explicit AXV interfaces for project files, commands, task status and development services. The [VM project CLI](startup.md#vm-project-files) supplies file access and [persistent project tasks](startup.md#vm-project-tasks); development services and an AXV Skill remain goals. A Skill does not redirect an agent's built-in host tools or change its permissions. [Guest API](api/guest.md) documents execution and its limits.
 
 ### VM project workspace constraints
 
@@ -92,8 +92,8 @@ Official versioned AXV enhanced images are the intended long-term default prepar
 
 ## Decisions still open
 
-- The remaining tool/Skill integration for VM commands, project tasks and Git/worktree management on the project volume.
-- Long-running task identity, status, logs, cancellation and recovery; automatic session supervision after host boot and recovery after VM replacement.
+- The remaining Skill integration and Git/worktree management on the project volume.
+- Automatic session supervision after host boot, project backup restoration/rebinding and recovery policy after VM replacement. Persistent task attempts never automatically move between VMs.
 - Development-service discovery, access and preview.
 - Provider-specific session integration, including Claude Code and structured agent interfaces.
 - PWA delivery, cross-device browser acceptance and remote reconnection experience.

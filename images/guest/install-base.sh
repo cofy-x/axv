@@ -3,7 +3,7 @@ set -eu
 # Build-time only: both provider formats share this dependency and user contract.
 # Refuse a previously initialized machine instead of distributing its tokens,
 # host keys or authorized client profiles inside a new image.
-for path in /etc/axv/guest.json /etc/ssh/axv /var/lib/axv-ssh; do
+for path in /etc/axv/guest.json /etc/ssh/axv /var/lib/axv-ssh /var/lib/axv; do
   if [ -e "$path" ] || [ -L "$path" ]; then
     echo "Image input contains per-machine AXV state at $path; use a clean base." >&2
     exit 1
@@ -32,7 +32,7 @@ esac
 apt-get update
 apt-get install -y --no-install-recommends \
   systemd systemd-sysv udev sudo bash ca-certificates iproute2 \
-  util-linux e2fsprogs python3 git curl socat openssh-server
+  util-linux e2fsprogs python3 python3-venv git curl socat openssh-server
 rm -rf /var/lib/apt/lists/*
 if getent passwd 1000 >/dev/null && [ "$(getent passwd 1000 | cut -d: -f1)" != axv ]; then
   userdel "$(getent passwd 1000 | cut -d: -f1)"
@@ -46,6 +46,8 @@ id axv >/dev/null 2>&1 || useradd --uid 1000 --gid axv --create-home --shell /bi
 passwd --lock root
 usermod --password '*NP*' axv
 install -d -m 0755 /etc/axv /projects /usr/share/axv /usr/local/lib/axv /var/lib/dbus
+install -d -o root -g root -m 0755 /var/lib/axv
+install -d -o axv -g axv -m 0700 /var/lib/axv/tasks
 install -d -m 0755 /usr/share/doc/axv-guest
 sh /usr/local/lib/axv/package-inventory /usr/share/doc/axv-guest
 truncate -s 0 /etc/machine-id

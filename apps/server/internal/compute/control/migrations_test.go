@@ -48,6 +48,7 @@ func TestComputeRejectsForeignAndOldBaselinesWithoutReset(t *testing.T) {
 	}{
 		{"prior unmarked baseline", 4, 0},
 		{"prior compute baseline", 1, 0x41584331},
+		{"prior project-files compute baseline", 1, 0x41584332},
 		{"desktop database", 1, 0x41585631},
 		{"preparation database", 1, 0x41585031},
 		{"nonempty unversioned", 0, 0},
