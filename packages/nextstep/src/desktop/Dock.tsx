@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { PixelIcon } from '../controls';
 import type {
@@ -22,6 +22,7 @@ interface DockProps {
 export function Dock({ props, layout, api, setLayout }: DockProps) {
   const [now, setNow] = useState(() => new Date());
   const [dragged, setDragged] = useState<string | null>(null);
+  const suppressClick = useRef<string | null>(null);
   const beginGesture = usePointerGesture();
   useEffect(() => {
     const timer = globalThis.setInterval(() => setNow(new Date()), 1000);
@@ -108,7 +109,13 @@ export function Dock({ props, layout, api, setLayout }: DockProps) {
     return { x: rect.left - 220, y: rect.top };
   };
   return (
-    <aside className="ns-dock" aria-label="Application Dock">
+    <aside
+      className="ns-dock"
+      aria-label="Application Dock"
+      onPointerDownCapture={() => {
+        suppressClick.current = null;
+      }}
+    >
       <button
         type="button"
         className="ns-dock-tile ns-clock"
@@ -153,8 +160,8 @@ export function Dock({ props, layout, api, setLayout }: DockProps) {
               aria-label={`${app.title}${running ? ` · ${windows.length} running window${windows.length > 1 ? 's' : ''}` : ''}`}
               title={app.title}
               onPointerDown={(event) => {
-                if (event.button !== 0) return;
-                const button = event.currentTarget;
+                // Touch and pen keep native panning; their options menu orders entries.
+                if (event.button !== 0 || event.pointerType !== 'mouse') return;
                 const origin = { x: event.clientX, y: event.clientY };
                 let moved = false;
                 let target: string | null = null;
@@ -178,17 +185,16 @@ export function Dock({ props, layout, api, setLayout }: DockProps) {
                   (_, cancelled) => {
                     setDragged(null);
                     if (moved && !cancelled && target) reorder(app.id, target);
-                    if (moved) button.dataset.suppressClick = 'true';
+                    suppressClick.current = moved && !cancelled ? app.id : null;
                   },
                 );
               }}
               onClick={(event) => {
                 const el = event.currentTarget;
                 el.focus({ preventScroll: true });
-                if (el.dataset.suppressClick) {
-                  delete el.dataset.suppressClick;
-                  return;
-                }
+                const draggedApp = suppressClick.current;
+                suppressClick.current = null;
+                if (draggedApp === app.id && event.detail > 0) return;
                 if (windows.length > 1)
                   api.contextMenu(appMenu(app), pointFor(el), {
                     title: app.title,

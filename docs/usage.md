@@ -6,7 +6,7 @@ This guide owns visible actions and their effects. Start with [project status](.
 
 Run the installed `axv` command to start or reopen the workstation in your browser. Closing that launching terminal does not stop its background services. Repeating the command opens the existing instance with its current settings; explicit restart applies changed settings or a newly installed executable. [Startup](startup.md#daily-commands) owns the service commands and their lifetime effects.
 
-The **Dock** launches applications, lists their windows and supports pinning and ordering. **Clip** switches between four named desktop workspaces and holds their shortcuts. Minimizing a window creates its own miniwindow icon; restoring it preserves the window's content. Window menus move windows between workspaces or show them on all workspaces.
+The **Dock** launches applications, lists their windows and supports pinning and ordering. Swipe an overflowing Dock to reach its remaining launchers and Add control. Mouse dragging changes application order; **Move Earlier** and **Move Later** in each application's Dock options also work with touch and keyboard. **Clip** switches between four named desktop workspaces and holds their shortcuts. Minimizing a window creates its own miniwindow icon; restoring it preserves the window's content. Window menus move windows between workspaces or show them on all workspaces.
 
 Drag a title bar to move a window and its edges to resize. Double-click the title to fold it. Window menus also offer minimize, maximize, restore and close. Narrow screens fit the active window automatically. Drafts, selections and scrolling survive folding, minimizing and workspace changes.
 
@@ -105,6 +105,14 @@ Open **Terminal** for a shell in the service user's home directory. Codex's **Ho
 Closing a live window asks for confirmation and ends its shell and foreground job. Connection loss or service shutdown also ends it. **New Session** starts a fresh shell after exit or failure. Reloading the page starts fresh shells in restored windows, using the initial project directory rather than a later `cd` location.
 
 Copy and Paste have toolbar icons; the **More** menu includes **Clear** and **Details**. **Interrupt** stays visible. Shell keys such as Ctrl+C and Ctrl+W reach the shell; desktop navigation shortcuts remain available. Terminal requires local same-origin access; [platform requirements and limits](api/host-terminal.md) belong in its API reference.
+
+### Terminal clipboard
+
+Host Terminal, Guest Terminal and Codex support **Paste** through the browser's clipboard API. Complete any native paste confirmation the browser displays. If reading is unavailable or fails, AXV opens **Paste text**. You can also choose **Paste text** from the terminal's editing or More menu.
+
+In **Text to paste**, use the system's native Paste action or type text, then review it and choose **Send**. Enter in this field adds a line; it does not send. **Close** dismisses the dialog without sending its unsent text. An accepted send disables Send to prevent a duplicate submission; the text remains available to review or copy. Rejected input stays visible with an error.
+
+The dialog targets the terminal that opened it. A disconnect, session replacement or closed window invalidates that operation, including when the same terminal later reconnects. Copy any text you still need and open a new paste operation explicitly. AXV does not append Enter, but pasted line breaks or control characters can affect the receiving program, including executing shell commands. Bracketed paste protection depends on that program's support. Clipboard text is not saved in desktop layouts.
 
 ## Codex
 

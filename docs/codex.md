@@ -123,4 +123,6 @@ PTY startup failures retain the failing stage (start, descriptor duplication or 
 
 `--no-alt-screen` retains tmux history; reattachment/fresh input leave copy mode. History scrolling sends scroll commands, never composer keystrokes. Hidden input, focus and owner-bound commands follow [desktop contracts](desktop.md).
 
+Clipboard actions follow the shared [clipboard input](desktop.md#clipboard-input) boundary. Reconnection invalidates pending clipboard reads and paste dialogs, even when attaching again to the same run.
+
 See the [attachment protocol](api/host-codex.md#attachment-protocol-and-ending) for transport details and the shared [Host directory API](api/host-directories.md) for local directory selection.

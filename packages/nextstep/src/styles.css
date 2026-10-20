@@ -465,7 +465,7 @@ select:disabled {
   align-items: center;
   justify-content: center;
   padding: 4px;
-  touch-action: none;
+  touch-action: pan-y;
 }
 .ns-dock-tile:hover {
   background: #b8b8b8;
@@ -1226,6 +1226,9 @@ select:disabled {
 }
 .is-mobile .ns-dock > * {
   flex-shrink: 0;
+}
+.is-mobile .ns-dock-tile {
+  touch-action: pan-x;
 }
 .is-mobile .ns-dock-add {
   height: 64px;

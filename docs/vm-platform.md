@@ -120,6 +120,8 @@ Graceful shutdown uses the verified installed image's provider: Firecracker requ
 
 Guest Terminal binds the exact machine, Linux boot ID and terminal ID. Reattach replays a bounded output tail to that identity; it never creates another shell.
 
+Its clipboard actions follow the shared [clipboard input](desktop.md#clipboard-input) boundary. An attachment disconnect invalidates pending clipboard operations rather than delivering them after reattachment.
+
 Closing a window or disconnecting detaches without ending its shell. End Session terminates the terminal's process group. Records last only for the guest-service lifetime: service restart loses them even with an unchanged Linux boot ID. VM shutdown ends live sessions; neither browser nor controller reconstructs them. Deliberately daemonized processes may outlive a terminal as VM workloads.
 
 ### Guest SSH and network access

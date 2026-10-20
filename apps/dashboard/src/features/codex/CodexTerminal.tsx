@@ -10,6 +10,7 @@ import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { useWindowCommands } from '../../shared/desktop/WindowCommandsContext';
+import { useTerminalPaste } from '../../shared/terminal/use-terminal-paste';
 import { isDesktopTerminalKey } from '../terminal/terminal-keys';
 import {
   codexAPI,
@@ -71,6 +72,20 @@ export function CodexTerminal({
   const [size, setSize] = useState({ cols: 80, rows: 24 });
   const [hasSelection, setHasSelection] = useState(false);
   const [feedback, setFeedback] = useState('');
+  const {
+    pasteClipboard: paste,
+    pasteText,
+    invalidatePaste,
+    recordPasteInput,
+  } = useTerminalPaste({
+    desktop,
+    title: window.title,
+    terminal,
+    connection,
+    interactive: interactiveRef,
+    mayFocus,
+    setFeedback,
+  });
   const [ending, setEnding] = useState(false);
   const [changingMetadata, setChangingMetadata] = useState(false);
   const [metadataError, setMetadataError] = useState('');
@@ -168,6 +183,7 @@ export function CodexTerminal({
       },
       onState: (next) => {
         if (disposed) return;
+        if (next.phase !== 'connected') invalidatePaste();
         term.options.disableStdin =
           next.phase !== 'connected' || !interactiveRef.current;
         setState(next);
@@ -187,7 +203,7 @@ export function CodexTerminal({
     const subscriptions = [
       term.onData((data) => {
         returnToLive();
-        session.sendText(data);
+        recordPasteInput(session.sendText(data));
       }),
       term.onBinary((data) => {
         returnToLive();
@@ -305,6 +321,7 @@ export function CodexTerminal({
     });
     return () => {
       disposed = true;
+      invalidatePaste();
       mounted.current = false;
       cancelAnimationFrame(frame);
       observer.disconnect();
@@ -319,7 +336,7 @@ export function CodexTerminal({
       terminal.current = null;
       connection.current = null;
     };
-  }, [id, runId]);
+  }, [id, runId, invalidatePaste, recordPasteInput]);
 
   useEffect(() => {
     let disposed = false;
@@ -374,36 +391,6 @@ export function CodexTerminal({
       if (terminal.current === target)
         setFeedback(
           'Clipboard access was denied. Use the browser’s Copy command for selected text.',
-        );
-      return false;
-    }
-  }, []);
-  const paste = useCallback(async () => {
-    const target = terminal.current;
-    const session = connection.current;
-    if (!target || session?.getSnapshot().phase !== 'connected') return false;
-    try {
-      const text = await navigator.clipboard.readText();
-      if (
-        terminal.current !== target ||
-        connection.current !== session ||
-        session.getSnapshot().phase !== 'connected'
-      )
-        return false;
-      setFeedback('');
-      const disabled = target.options.disableStdin;
-      target.options.disableStdin = false;
-      try {
-        target.paste(text);
-      } finally {
-        target.options.disableStdin = disabled;
-      }
-      if (interactiveRef.current && mayFocus()) target.focus();
-      return true;
-    } catch {
-      if (terminal.current === target)
-        setFeedback(
-          'Clipboard access was denied. Focus Codex and use your system paste shortcut.',
         );
       return false;
     }
@@ -592,6 +579,12 @@ export function CodexTerminal({
         paste,
         state.phase === 'connected',
       ),
+      commands.register(
+        window.id,
+        'codex:paste-text',
+        pasteText,
+        state.phase === 'connected',
+      ),
       commands.register(window.id, 'codex:clear', clear),
       commands.register(
         window.id,
@@ -647,6 +640,7 @@ export function CodexTerminal({
     window.id,
     copy,
     paste,
+    pasteText,
     clear,
     interrupt,
     reconnect,
