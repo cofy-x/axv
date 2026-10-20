@@ -207,3 +207,90 @@ func TestCompressedCacheCoalescesReadersWithoutCachingRequestPaths(t *testing.T)
 		t.Fatal("missing request paths reached the compressed asset cache")
 	}
 }
+
+func TestOnlyExistingFingerprintedAssetsHaveImmutablePrivateCaching(t *testing.T) {
+	modified := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	content := []byte(strings.Repeat("/* desktop asset */\n", 128))
+	files := fstest.MapFS{"index.html": {Data: []byte("<html>AXV desktop</html>")}}
+	for _, name := range []string{
+		"assets/index-C9Cbn7EC.js", "assets/index-Bs84O787.css",
+		"assets/widget-_12abcD-.css", "assets/feature-A1-b_C2d.js",
+		"assets/app.js", "assets/index-short.js", "assets/index-C9Cbn7EC.js.map",
+		"assets/data.json", "index-C9Cbn7EC.js", "api/data.json",
+	} {
+		files[name] = &fstest.MapFile{Data: content, ModTime: modified}
+	}
+	h := fromFS(files)
+	const immutable = "private, max-age=31536000, immutable"
+	for _, tc := range []struct {
+		method       string
+		path         string
+		headers      map[string]string
+		status       int
+		cacheControl string
+	}{
+		{"GET", "/assets/index-C9Cbn7EC.js", nil, http.StatusOK, immutable},
+		{"GET", "/assets/index-C9Cbn7EC.js", map[string]string{"Accept-Encoding": "gzip"}, http.StatusOK, immutable},
+		{"HEAD", "/assets/index-C9Cbn7EC.js", map[string]string{"Accept-Encoding": "gzip"}, http.StatusOK, immutable},
+		{"GET", "/assets/index-Bs84O787.css", map[string]string{"Accept-Encoding": "gzip"}, http.StatusOK, immutable},
+		{"GET", "/assets/widget-_12abcD-.css", nil, http.StatusOK, immutable},
+		{"GET", "/assets/feature-A1-b_C2d.js?version=1", nil, http.StatusOK, immutable},
+		{"GET", "/assets/index-C9Cbn7EC.js", map[string]string{"Accept-Encoding": "gzip", "Range": "bytes=2-9"}, http.StatusPartialContent, immutable},
+		{"GET", "/assets/index-C9Cbn7EC.js", map[string]string{"Accept-Encoding": "gzip", "If-Modified-Since": modified.Format(http.TimeFormat)}, http.StatusNotModified, immutable},
+		{"GET", "/assets/index-C9Cbn7EC.js", map[string]string{"Accept-Encoding": "gzip", "If-Unmodified-Since": modified.Add(-time.Hour).Format(http.TimeFormat)}, http.StatusPreconditionFailed, "no-store"},
+		{"GET", "/assets/app.js", map[string]string{"Accept-Encoding": "gzip"}, http.StatusOK, "no-cache"},
+		{"GET", "/assets/index-short.js", nil, http.StatusOK, "no-cache"},
+		{"GET", "/assets/index-C9Cbn7EC.js.map", nil, http.StatusOK, "no-cache"},
+		{"GET", "/assets/data.json", nil, http.StatusOK, "no-cache"},
+		{"GET", "/api/data.json", nil, http.StatusOK, "no-cache"},
+		{"GET", "/index-C9Cbn7EC.js", nil, http.StatusOK, "no-cache"},
+		{"GET", "/", nil, http.StatusOK, "no-cache"},
+		{"HEAD", "/", nil, http.StatusOK, "no-cache"},
+		{"GET", "/notes/example", nil, http.StatusOK, "no-cache"},
+		{"GET", "/assets/missing-C9Cbn7EC.js", map[string]string{"Accept-Encoding": "gzip"}, http.StatusNotFound, "no-store"},
+		{"GET", "/assets/index-C9Cbn7EC.js/", nil, http.StatusMovedPermanently, "no-store"},
+		{"POST", "/assets/index-C9Cbn7EC.js", nil, http.StatusMethodNotAllowed, "no-store"},
+	} {
+		t.Run(tc.method+tc.path+"/"+tc.cacheControl, func(t *testing.T) {
+			r := httptest.NewRequest(tc.method, tc.path, nil)
+			for key, value := range tc.headers {
+				r.Header.Set(key, value)
+			}
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			if w.Code != tc.status || w.Header().Get("Cache-Control") != tc.cacheControl {
+				t.Fatalf("incorrect asset caching: HTTP %d, %v", w.Code, w.Header())
+			}
+			if tc.method == "HEAD" || tc.status == http.StatusNotModified {
+				if w.Body.Len() != 0 {
+					t.Fatal("bodyless response included content")
+				}
+			}
+		})
+	}
+}
+
+type deniedAssetFS struct{ fs.FS }
+
+func (files deniedAssetFS) Stat(name string) (fs.FileInfo, error) {
+	return fs.Stat(files.FS, name)
+}
+
+func (files deniedAssetFS) Open(name string) (fs.File, error) {
+	return nil, fs.ErrPermission
+}
+
+func TestFingerprintedAssetOpenFailureCannotCacheForbiddenResponse(t *testing.T) {
+	h := fromFS(deniedAssetFS{FS: fstest.MapFS{
+		"assets/locked-C9Cbn7EC.js": {Data: []byte(strings.Repeat("/* private */", 128))},
+	}})
+	for _, encoding := range []string{"", "gzip"} {
+		r := httptest.NewRequest("GET", "/assets/locked-C9Cbn7EC.js", nil)
+		r.Header.Set("Accept-Encoding", encoding)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusForbidden || w.Header().Get("Cache-Control") != "no-store" || w.Header().Get("Content-Encoding") != "" {
+			t.Fatalf("forbidden asset acquired immutable caching: HTTP %d, %v", w.Code, w.Header())
+		}
+	}
+}

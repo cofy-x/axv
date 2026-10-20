@@ -6,10 +6,14 @@ import (
 	"io/fs"
 	"net/http"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 )
+
+// Vite's default output names contain an eight-character base64url content hash.
+var fingerprintedAsset = regexp.MustCompile(`^assets/[^/]+-[A-Za-z0-9_-]{8}\.(js|css)$`)
 
 // fromFS also supports deep links without turning missing assets into HTML.
 // Production assets are immutable, so compressed copies can share their lifetime.
@@ -17,8 +21,9 @@ func fromFS(files fs.FS) http.Handler {
 	static := http.FileServer(http.FS(files))
 	compressed := gzipAssets{files: files, entries: make(map[string][]byte)}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := &assetResponseWriter{ResponseWriter: w, cacheControl: "no-cache"}
 		if r.Method != "GET" && r.Method != "HEAD" {
-			w.WriteHeader(http.StatusMethodNotAllowed)
+			response.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
 		name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
@@ -28,37 +33,62 @@ func fromFS(files fs.FS) http.Handler {
 		info, err := fs.Stat(files, name)
 		if err != nil {
 			if path.Ext(name) != "" {
-				http.NotFound(w, r)
+				http.NotFound(response, r)
 				return
 			}
 			copy := r.Clone(r.Context())
 			copy.URL.Path = "/"
-			static.ServeHTTP(w, copy)
+			static.ServeHTTP(response, copy)
 			return
+		}
+		if info.Mode().IsRegular() && r.URL.Path == "/"+name && fingerprintedAsset.MatchString(name) {
+			response.cacheControl = "private, max-age=31536000, immutable"
 		}
 		if info.Mode().IsRegular() && info.Size() >= 1024 && (path.Ext(name) == ".js" || path.Ext(name) == ".css") {
 			w.Header().Add("Vary", "Accept-Encoding")
 			// Keep FileServer's redirects and byte-range representation unchanged.
 			if r.URL.Path == "/"+name && r.Header.Get("Range") == "" && acceptsGzip(r.Header.Values("Accept-Encoding")) {
 				if data := compressed.get(name); len(data) != 0 {
-					http.ServeContent(gzipResponseWriter{w}, r, path.Base(name), info.ModTime(), bytes.NewReader(data))
+					response.gzip = true
+					http.ServeContent(response, r, path.Base(name), info.ModTime(), bytes.NewReader(data))
 					return
 				}
 			}
 		}
-		static.ServeHTTP(w, r)
+		static.ServeHTTP(response, r)
 	})
 }
 
-// ServeContent calculates the compressed length before WriteHeader. Delaying
-// the encoding header until a successful response also leaves 304/412 unchanged.
-type gzipResponseWriter struct{ http.ResponseWriter }
+// Commit representation headers only after FileServer/ServeContent succeeds.
+// ServeContent calculates compressed lengths before the encoding header is set.
+type assetResponseWriter struct {
+	http.ResponseWriter
+	cacheControl string
+	gzip         bool
+	wroteHeader  bool
+}
 
-func (w gzipResponseWriter) WriteHeader(status int) {
-	if status == http.StatusOK {
+func (w *assetResponseWriter) WriteHeader(status int) {
+	if w.wroteHeader {
+		return
+	}
+	w.wroteHeader = true
+	if status == http.StatusOK || status == http.StatusPartialContent || status == http.StatusNotModified {
+		w.Header().Set("Cache-Control", w.cacheControl)
+	} else {
+		w.Header().Set("Cache-Control", "no-store")
+	}
+	if w.gzip && status == http.StatusOK {
 		w.Header().Set("Content-Encoding", "gzip")
 	}
 	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *assetResponseWriter) Write(data []byte) (int, error) {
+	if !w.wroteHeader {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(data)
 }
 
 type gzipAssets struct {
