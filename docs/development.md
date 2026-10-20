@@ -41,6 +41,8 @@ make build
 
 The [build script](../scripts/build.mjs) embeds the UI into `dist/axv`. The executable works from any directory without Node at runtime. `make build-go` produces `dist/server-dev` without embedded production assets; direct Go builds and tests do not require frontend output.
 
+Production JavaScript and CSS support negotiated gzip when compression reduces their size. The HTML displays the existing startup screen while the application bundle loads, including on a slow remote connection.
+
 `make install` runs dependency setup, this production build and atomic installation into Go's binary directory sequentially. It does not initialize user data or launch services. [Installation and updates](startup.md#installation-and-updates) owns destination, PATH and live-service update semantics. For installation checks, always select a temporary `GOBIN` and a separate short `AXV_HOME`; never overwrite a real installation as part of automated verification.
 
 Builds report `dev` unless `VERSION` is supplied. A version must start with an ASCII letter or digit and contain only ASCII letters, digits, `.`, `_`, `+`, or `-`. For a custom build, pass the same version to its smoke check:
