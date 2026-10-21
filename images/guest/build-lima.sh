@@ -39,9 +39,10 @@ virt-customize -a "$build_dir/root.qcow2" \
   --copy-in "$build_dir/image.json:/usr/share/axv" \
   --copy-in "$build_dir/distribution/axv-guest:/usr/share/doc" \
   --copy-in "$build_dir/prepare-ssh:/usr/local/lib/axv" \
+  --upload "$image_dir/prepare-tasks.py:/usr/local/lib/axv/prepare-tasks" \
   --copy-in "$build_dir/axv-guest.service:/etc/systemd/system" \
   --copy-in "$repo_dir/apps/server/internal/guest/internal/access/axv-ssh.service:/etc/systemd/system" \
-  --run-command 'chmod 0755 /usr/local/bin/axv-guest /usr/local/lib/axv/prepare-ssh; systemctl enable axv-guest.service axv-ssh.service; cloud-init clean --logs --machine-id'
+  --run-command 'chmod 0755 /usr/local/bin/axv-guest /usr/local/lib/axv/prepare-ssh /usr/local/lib/axv/prepare-tasks; systemctl enable axv-guest.service axv-ssh.service; cloud-init clean --logs --machine-id'
 mkdir -- "$2"
 cp --sparse=always "$build_dir/root.qcow2" "$2/root.qcow2"
 mkdir -- "$2/distribution"

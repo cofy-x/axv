@@ -34,7 +34,7 @@ export function MenuOverlay({
   pin,
 }: {
   request: MenuRequest;
-  close: () => void;
+  close: (action?: () => void) => void;
   pin?: (point: Point) => void;
 }) {
   const beginGesture = usePointerGesture();
@@ -54,10 +54,7 @@ export function MenuOverlay({
   const [positions, setPositions] = useState<Point[]>([]);
   const latest = useRef(levels);
   latest.current = levels;
-  const dismiss = () => {
-    close();
-    request.opener?.focus({ preventScroll: true });
-  };
+  const dismiss = () => close();
 
   useLayoutEffect(() => {
     const next = levels.map((level, index) => {
@@ -122,8 +119,7 @@ export function MenuOverlay({
       openSubmenu(levelIndex, itemIndex);
       return;
     }
-    dismiss();
-    item.action?.();
+    close(item.action);
   };
   return (
     <div
@@ -359,10 +355,6 @@ export function DialogOverlay({
   const finish = (button: (typeof buttons)[number] | undefined) =>
     resolve(!button || button.cancel ? null : { button: button.value, value });
   useEffect(() => {
-    const opener =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
     const first =
       ref.current?.querySelector<HTMLElement>(
         'input:not(:disabled):not([type="hidden"]), textarea:not(:disabled)',
@@ -378,7 +370,6 @@ export function DialogOverlay({
     document.addEventListener('focusin', preventEscape);
     return () => {
       document.removeEventListener('focusin', preventEscape);
-      opener?.focus({ preventScroll: true });
     };
   }, []);
   return (

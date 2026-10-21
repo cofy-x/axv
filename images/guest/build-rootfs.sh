@@ -40,7 +40,7 @@ cleanup() {
 }
 trap cleanup EXIT
 mkdir -p "$build_dir/context" "$build_dir/rootfs"
-cp "$image_dir/Dockerfile" "$image_dir/install-base.sh" "$image_dir/package-inventory.sh" "$image_dir/prepare-guest.sh" "$image_dir/axv-prepare.service" "$image_dir/axv-guest.service" "$build_dir/context/"
+cp "$image_dir/Dockerfile" "$image_dir/install-base.sh" "$image_dir/package-inventory.sh" "$image_dir/prepare-guest.sh" "$image_dir/prepare-tasks.py" "$image_dir/axv-prepare.service" "$image_dir/axv-guest.service" "$build_dir/context/"
 cp "$repo_dir/apps/server/internal/compute/ubuntusources/configure.sh" "$build_dir/context/configure-package-sources"
 cp "$repo_dir/apps/server/internal/guest/internal/access/provision.sh" "$build_dir/context/prepare-ssh"
 cp "$repo_dir/apps/server/internal/guest/internal/access/axv-ssh.service" "$build_dir/context/"

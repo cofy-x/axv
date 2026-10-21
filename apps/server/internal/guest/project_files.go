@@ -61,16 +61,20 @@ func projectFailure(w http.ResponseWriter, err error) {
 // JSON escaping can expand one MiB of text to six MiB. Only writes receive
 // this larger envelope; the decoded content has its own one-MiB byte limit.
 func decodeProjectFile(w http.ResponseWriter, r *http.Request, target any, write bool) error {
+	limit := int64(64 << 10)
+	if write {
+		limit = 8 << 20
+	}
+	return decodeProjectJSON(w, r, target, limit, write)
+}
+
+func decodeProjectJSON(w http.ResponseWriter, r *http.Request, target any, limit int64, write bool) error {
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || mediaType != "application/json" {
 		return projectProblem(400, "invalid_request", "Project file requests require application/json.")
 	}
 	if r.URL.RawQuery != "" {
 		return projectProblem(400, "invalid_request", "Project file requests do not accept query parameters.")
-	}
-	limit := int64(64 << 10)
-	if write {
-		limit = 8 << 20
 	}
 	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
 	if err != nil {

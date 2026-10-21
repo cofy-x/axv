@@ -137,6 +137,7 @@ func Handler(service *control.Service) http.Handler {
 	registerImages(mux, service)
 	registerGuestSSH(mux, service)
 	registerProjects(mux, service)
+	registerTasks(mux, service)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		mux.ServeHTTP(w, r)
@@ -174,13 +175,13 @@ func failure(w http.ResponseWriter, err error) {
 	switch code {
 	case "invalid_request", "invalid_path", "invalid_content", "invalid_directory", "invalid_cursor", "not_file":
 		status = 400
-	case "not_found":
+	case "not_found", "task_not_found":
 		status = 404
-	case "binding_changed", "boot_changed", "instance_changed", "project_changed", "file_changed", "file_conflict", "revision_conflict", "operation_conflict", "idempotency_conflict", "volume_conflict", "image_conflict", "configuration_conflict", "name_conflict", "unavailable":
+	case "binding_changed", "boot_changed", "instance_changed", "project_changed", "file_changed", "file_conflict", "revision_conflict", "operation_conflict", "idempotency_conflict", "volume_conflict", "image_conflict", "configuration_conflict", "name_conflict", "unavailable", "task_conflict":
 		status = 409
-	case "capacity_exceeded":
+	case "capacity_exceeded", "task_limit":
 		status = 429
-	case "unsupported", "host_unavailable", "guest_unavailable", "guest_identity_mismatch", "storage_unavailable", "project_unavailable", "file_unavailable":
+	case "unsupported", "host_unavailable", "guest_unavailable", "guest_identity_mismatch", "storage_unavailable", "project_unavailable", "file_unavailable", "task_state_unavailable":
 		status = 503
 	case "file_too_large":
 		status = 413

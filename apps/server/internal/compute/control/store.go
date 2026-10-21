@@ -19,6 +19,7 @@ import (
 type Store struct {
 	db            *sql.DB
 	HostID        string
+	directory     string
 	projectLeases resourceLeases
 }
 
@@ -35,7 +36,7 @@ func OpenStore(dir string) (*Store, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	s := &Store{db: db}
+	s := &Store{db: db, directory: dir}
 	if _, err = db.Exec("PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;"); err == nil {
 		err = s.migrate()
 	}
@@ -148,7 +149,7 @@ func fingerprint(v any) string {
 
 func replay(ctx context.Context, tx *sql.Tx, requestID, hash string) (operationRecord, bool, error) {
 	var projectRequest bool
-	if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM project_requests WHERE request_id=?)", requestID).Scan(&projectRequest); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM project_requests WHERE request_id=? UNION ALL SELECT 1 FROM task_requests WHERE request_id=?)", requestID, requestID).Scan(&projectRequest); err != nil {
 		return operationRecord{}, false, err
 	}
 	if projectRequest {

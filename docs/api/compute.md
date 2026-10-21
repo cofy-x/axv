@@ -4,7 +4,7 @@
 
 Machine, storage and durable-operation APIs for the computer running AXV. The VM service and its virtual machines run on that computer, independently of the browser's platform.
 
-The browser gateway uses `/api/compute`. Host routes use `/v1` on the private host Unix socket; `/environment` and `/preparation/*` are desktop-only. The VM CLI uses the private socket directly. Host protocol version is **3**. The [shared access boundary](README.md#access-and-identity-boundaries) applies. JSON request bodies accept one object with no unknown fields, normally limited to **64 KiB**; project writes and image uploads specify separate limits below.
+The browser gateway uses `/api/compute`. Host routes use `/v1` on the private host Unix socket; `/environment` and `/preparation/*` are desktop-only. The VM CLI uses the private socket directly. Host protocol version is **3**. The [shared access boundary](README.md#access-and-identity-boundaries) applies. JSON request bodies accept one object with no unknown fields, normally limited to **64 KiB**; project writes, project tasks and image uploads specify separate limits below.
 
 ## Routes
 
@@ -37,6 +37,13 @@ The browser gateway uses `/api/compute`. Host routes use `/v1` on the private ho
 | POST | `/projects/:id/files/read` | `{ project, binding, path, content, sha256, size, modifiedAt }` |
 | POST | `/projects/:id/files/write` | Same file response after confirmed publication |
 | POST | `/projects/:id/files/mkdir` | `{ project, binding, name, path, kind, size, modifiedAt }` |
+| POST | `/projects/:id/tasks` | 202 `{ task, attempt, attempts }` |
+| GET | `/projects/:id/tasks` | `{ tasks: [{ task, attempt, attempts }] }` |
+| GET | `/projects/:id/tasks/:taskId` | `{ task, attempt, attempts }` |
+| GET | `/projects/:id/task-requests/:requestId` | Original submission/retry receipt as `{ task, attempt, attempts }` |
+| POST | `/projects/:id/tasks/:taskId/retry` | 202 `{ task, attempt, attempts }` |
+| POST | `/projects/:id/tasks/:taskId/attempts/:attemptId/cancel` | 202 `{ task, attempt, attempts }` |
+| GET | `/projects/:id/tasks/:taskId/attempts/:attemptId/logs?offset=&limit=` | Byte-offset log chunk |
 | GET | `/images` | `{ images }` |
 | POST | `/images` | 202 `{ image, operation }` |
 | POST | `/images/import` | 202 `{ image, operation }` |
@@ -137,7 +144,7 @@ Paths are canonical relative paths of at most **4096 UTF-8 bytes**, without trav
 
 For writes, `expectedSha256: ""` means create-only; a lowercase SHA-256 means replace exactly the reviewed version. Missing/null content or expectations are rejected; an explicit empty content string clears a reviewed file. Parents must already exist; `mkdir` creates one directory and rejects an existing name. Conflict returns an error without refreshing the expectation. Successful writes return the new `sha256`. The guest stages/syncs content, rechecks directory/file identities and hash before atomic publication and confirms the resulting bytes. AXV writers are serialized; ordinary guest processes can still race between the last check and rename. This is not an OS-level compare-and-swap against arbitrary guest tools. See [guest enforcement](guest.md#project-file-protocol).
 
-File writes and mkdir are synchronous and have no durable request receipt. A transport or post-publication error can mean the change succeeded; inspect the original binding/path before deciding how to retry. Never blindly repeat a write, refresh its hash or acquire another environment binding to make a failed request succeed. Registration recovery instead preserves its original request ID/payload and consults the project list. Project/file persistence survives desktop/controller restart; the current VM/guest must still be available for file access. Persistent command tasks/logs/cancellation are outside this phase.
+File writes and mkdir are synchronous and have no durable request receipt. A transport or post-publication error can mean the change succeeded; inspect the original binding/path before deciding how to retry. Never blindly repeat a write, refresh its hash or acquire another environment binding to make a failed request succeed. Registration recovery instead preserves its original request ID/payload and consults the project list. Project/file persistence survives desktop/controller restart; the current VM/guest must still be available for file access. [Project tasks](#vm-project-tasks) have a separate durable acceptance and cancellation contract.
 
 | Status | Project/file codes |
 | --- | --- |
@@ -151,6 +158,46 @@ File writes and mkdir are synchronous and have no durable request receipt. A tra
 | 507 | `disk_full` |
 
 [VM architecture](../vm-platform.md#vm-projects) owns durable project and file-publication mechanisms; [VM project CLI](../startup.md#vm-project-files) provides the host-agent workflow. These IDs remain separate from [registered host projects](project-files.md), virtual documents and task/run identities.
+
+## VM project tasks
+
+Project tasks run installation, builds and tests in a registered project's VM. A task identifies an immutable specification; an attempt identifies one execution in an exact project/volume/VM/boot/guest-service binding. These IDs are separate from VM lifecycle/preparation operations and from a VM's task-kind TTL. No endpoint selects a replacement environment or falls back to host execution.
+
+All routes require the original `X-AXV-Host-ID`, including list, receipt, status and logs. Mutations use the shared Origin/access policy and require `application/json`, a single object with no unknown fields and valid Unicode. Task mutation bodies allow **256 KiB** for escaped arguments. Query parameters are allowed only on the logs route, as described below.
+
+`POST /projects/:id/tasks` accepts `{ requestId, binding, spec }`. `binding` is the complete explicitly captured project binding used by file access, with identity fields of at most 128 UTF-8 bytes; it must match both the URL project and transport host. `spec` contains `{ argv, directory, limits }`. `directory` defaults to the project root and follows its relative-path rules; this starting-directory check does not sandbox subsequent guest process filesystem access. `argv` contains **1–128** valid UTF-8 arguments, without NUL, totaling at most **32 KiB**; the first argument cannot be empty. Arguments are executed directly, without shell interpolation.
+
+`limits` contains `{ timeoutSeconds, cpus, memoryMiB, maxProcesses, maxLogBytes }`. Omitted/zero values receive these defaults before request fingerprints are computed:
+
+| Limit | Default | Accepted range |
+| --- | --- | --- |
+| `timeoutSeconds` | 900 | 1–86,400 seconds |
+| `cpus` | 1 | 1–128, within the selected VM's allocation |
+| `memoryMiB` | 512 | 64–1,048,576 MiB, within the selected VM's allocation |
+| `maxProcesses` | 64 | 2–256 |
+| `maxLogBytes` | 1,048,576 | 1,024–8,388,608 bytes |
+
+The selected image and runtime guest must offer `project-tasks`; unsupported enforcement fails explicitly. Limits apply independently to each attempt. Combined stdout/stderr is retained up to the log capacity; exceeding it stops that attempt with `log_limit` and `logLimited: true`. These controls do not establish per-task disk, I/O or network limits or a sandbox for the host agent.
+
+Submission records the task, its first attempt and a durable request receipt before guest dispatch, then returns **202**. A successful response means accepted, not completed. Replaying the original request returns its recorded attempt without dispatching another execution, including when its original VM is gone. Changed payloads or request-ID reuse by another operation return an idempotency conflict. Preserve the original request ID, payload and binding; a transport error does not prove that the submission failed.
+
+The host retains up to **256 tasks**, **1,024 attempts**, **256 MiB** of reserved log capacity and an **8 MiB** metadata reservation across its task history. Capacity remains reserved for recorded attempts rather than silently pruning history; admission failure is visible. Actual host/guest storage availability is checked separately from these logical limits. No task-history deletion or automatic store reset is exposed by this API.
+
+`GET /projects/:id/tasks/:taskId` returns `{ task, attempt, attempts }`. The task contains `{ id, hostId, projectId, requestId, spec, currentAttemptId, createdAt }`. `attempt` is the current attempt for ordinary inspection; `attempts` contains recorded history. Each attempt contains `{ id, taskId, number, binding, root, rootIdentity, requestId, status, reason?, syncError?, exitCode?, createdAt, startedAt?, finishedAt?, logBytes, cachedBytes, logLimited, guestFinal, cancelRequested }`. Status and cached logs remain available across desktop/controller restart and guest unavailability. `syncError` exposes a current guest/result/log synchronization failure without replacing a known final outcome; successful synchronization clears it. `guestFinal` records whether a verified guest terminal receipt has fixed the log's final byte count and limit flag. Later nonterminal receipts or changed final log bounds fail synchronization. A host-recorded interruption alone does not fix those bounds: an original guest receipt can still recover more output while preserving the host's recorded terminal outcome.
+
+Attempts pass through `accepted`, `dispatching`, `running` and `cancelling`, or `unknown` when execution cannot yet be confirmed. Final states are `succeeded`, `failed`, `cancelled` and `interrupted`. A guest or VM failure cannot silently launch a replacement. An `unknown` attempt remains unresolved; it cannot be retried until reconciliation establishes a final outcome. `exitCode` is present only when known; `reason` explains failure, interruption or uncertain state. Optional `syncError` reports result/log synchronization failures without changing a previously verified final outcome; persisted error text is limited to 4096 UTF-8 bytes without control characters.
+
+`GET /projects/:id/task-requests/:requestId` recovers the original submit/retry receipt. Its `attempt` is the attempt created by that request, even if `task.currentAttemptId` now identifies a later retry. An unknown request is not proof that the submission did not arrive; inspect/recover the original identity before deciding to resubmit.
+
+`POST /projects/:id/tasks/:taskId/retry` accepts `{ requestId, binding }`. It requires a final previous attempt and an explicitly chosen current project binding, then creates a new attempt of the original task specification. The task ID remains stable and previous attempt IDs, logs and bindings remain unchanged. Retry has its own durable receipt and never refreshes the supplied binding or changes argv/limits.
+
+`POST /projects/:id/tasks/:taskId/attempts/:attemptId/cancel` accepts `{ binding }` containing that exact attempt's original binding. The host validates the complete original target and records cancellation intent before contacting its guest. The route never addresses a later retry, another task or a replacement VM. Acknowledging intent does not confirm that processes have stopped; inspect the attempt until termination is confirmed. Repeated cancellation remains scoped to that same attempt.
+
+The logs route accepts only `offset` (nonnegative byte offset, default **0**) and `limit` (**1–65,536** bytes, default **65,536**). It returns `{ taskId, attemptId, status, offset, data, nextOffset, logBytes, logLimited }`, where `data` is base64-encoded bytes in JSON. `nextOffset` is the exclusive end of this returned chunk. Logs preserve arbitrary stdout/stderr bytes, including invalid UTF-8, across reconnects. Host-cached data remains readable while its guest is unavailable; `logBytes` reports the last known guest size and can exceed cached/returned bytes. Guest synchronization requires the complete requested prefix and append-only log bounds; a missing or inconsistent prefix remains visible as a synchronization failure without discarding a verified final result. Empty data alone is not proof that a task has finished or that all guest output was cached. Queries never acquire a new execution binding.
+
+Task endpoints retain the project binding/storage error mapping above. Invalid specifications or log ranges return `400 invalid_request`; mismatched execution bindings return `409 binding_changed`; retrying active or uncertain work returns `409 task_conflict`. Task/history capacity exhaustion returns `429 capacity_exceeded` or `task_limit`; unavailable durable guest state returns `503 task_state_unavailable`; unsupported resource enforcement returns `503 unsupported`. Disk exhaustion remains visible as `507 disk_full`.
+
+[VM project CLI](../startup.md#vm-project-tasks) owns command-line use. Guest execution supervision and controller reconciliation belong to [VM architecture](../vm-platform.md#persistent-project-tasks); project-volume backup/restore and development-service preview remain separate capabilities.
 
 ## Images
 

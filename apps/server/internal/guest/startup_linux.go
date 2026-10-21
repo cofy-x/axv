@@ -70,6 +70,9 @@ func RunOptions(options Options, output io.Writer) error {
 		})
 	})
 	defer s.close()
+	if image.Has(installedImage.Guest.Capabilities, "project-tasks") {
+		s.initializeTasks()
+	}
 	listener, err := listenGuest(options.Listen)
 	if err != nil {
 		return err

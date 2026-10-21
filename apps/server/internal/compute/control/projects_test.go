@@ -30,11 +30,12 @@ type projectFixture struct {
 	file    func(http.ResponseWriter, *http.Request)
 }
 
-func newProjectFixture(t *testing.T) *projectFixture {
+func newProjectFixture(t *testing.T, capabilities ...string) *projectFixture {
 	t.Helper()
-	s, driver, created := guestFixture(t, &guestimage.Contract{ImageVersion: 1, ProtocolVersion: protocol.Version, Capabilities: []string{"project-files"}})
+	capabilities = append([]string{"project-files"}, capabilities...)
+	s, driver, created := guestFixture(t, &guestimage.Contract{ImageVersion: 1, ProtocolVersion: protocol.Version, Capabilities: capabilities})
 	f := &projectFixture{service: s, driver: driver}
-	f.health = protocol.Health{Version: protocol.Version, MachineID: created.Machine.ID, BootID: "boot-original", InstanceID: "guest-original", Ready: true, Capabilities: []string{"project-files"}}
+	f.health = protocol.Health{Version: protocol.Version, MachineID: created.Machine.ID, BootID: "boot-original", InstanceID: "guest-original", Ready: true, Capabilities: capabilities}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		health, file := f.health, f.file

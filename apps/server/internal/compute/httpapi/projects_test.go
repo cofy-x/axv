@@ -35,9 +35,10 @@ type projectHTTPFixture struct {
 	writes            atomic.Int32
 	mu                sync.Mutex
 	files             map[string]guestproto.ProjectFile
+	capabilities      []string
 }
 
-func newProjectHTTPFixture(t *testing.T) *projectHTTPFixture {
+func newProjectHTTPFixture(t *testing.T, capabilities ...string) *projectHTTPFixture {
 	t.Helper()
 	service, spec := operationService(t)
 	created, err := service.Create(t.Context(), compute.CreateRequest{RequestID: "http-project-create", Spec: spec, Start: true})
@@ -55,7 +56,7 @@ func newProjectHTTPFixture(t *testing.T) *projectHTTPFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixture := &projectHTTPFixture{service: service, machine: machine, files: map[string]guestproto.ProjectFile{}}
+	fixture := &projectHTTPFixture{service: service, machine: machine, files: map[string]guestproto.ProjectFile{}, capabilities: append([]string{"project-files"}, capabilities...)}
 	fixture.instance.Store("instance-original")
 	fixture.forcedError.Store("")
 	server := httptest.NewServer(http.HandlerFunc(fixture.serveGuest))
@@ -72,7 +73,7 @@ func (fixture *projectHTTPFixture) serveGuest(w http.ResponseWriter, r *http.Req
 	}
 	if r.URL.Path == "/v1/health" {
 		fixture.healthCalls.Add(1)
-		write(w, 200, guestproto.Health{Version: guestproto.Version, MachineID: fixture.machine.ID, BootID: "boot-project", InstanceID: fixture.instance.Load().(string), Ready: true, Capabilities: []string{"project-files"}})
+		write(w, 200, guestproto.Health{Version: guestproto.Version, MachineID: fixture.machine.ID, BootID: "boot-project", InstanceID: fixture.instance.Load().(string), Ready: true, Capabilities: fixture.capabilities})
 		if fixture.changeAfterHealth.Swap(false) {
 			fixture.instance.Store("instance-replacement")
 		}

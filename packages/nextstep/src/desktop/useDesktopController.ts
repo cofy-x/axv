@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   activateLayoutWindow,
   arrangeDesktopIconPositions,
@@ -40,6 +47,11 @@ function sameParams(first: WindowParams, second: WindowParams): boolean {
     Object.keys(first).length === Object.keys(second).length &&
     Object.entries(first).every(([key, value]) => second[key] === value)
   );
+}
+
+interface OverlayOpener {
+  element: HTMLElement;
+  activeWindowId: string | null;
 }
 
 function initialState(props: DesktopProps): DesktopLayout {
@@ -87,17 +99,43 @@ export function useDesktopController(props: DesktopProps) {
   const apiRef = useRef<DesktopAPI | null>(null);
   const [overview, setOverview] = useState(false);
   const [menu, setMenu] = useState<MenuRequest | null>(null);
+  const menuRef = useRef(menu);
+  menuRef.current = menu;
   const menuCounter = useRef(0);
+  const menuActionOpener = useRef<OverlayOpener | null>(null);
+  const pendingFocusReturn = useRef<OverlayOpener | null>(null);
   const [dialogs, setDialogs] = useState<
     Array<{
       id: number;
       options: DialogOptions;
       resolve: (result: DialogResult) => void;
+      opener: OverlayOpener | null;
     }>
   >([]);
   const dialogsRef = useRef(dialogs);
   dialogsRef.current = dialogs;
   const dialogCounter = useRef(0);
+  useLayoutEffect(() => {
+    if (menu || dialogs.length) return;
+    // Window controls become interactive again only after the overlay unmounts.
+    const opener = pendingFocusReturn.current;
+    pendingFocusReturn.current = null;
+    if (!opener || opener.activeWindowId !== layout.activeWindowId) return;
+    const target = opener.element;
+    const active = document.activeElement;
+    if (
+      !target.isConnected ||
+      target.matches(':disabled') ||
+      target.closest('[inert], [hidden]') ||
+      !target.getClientRects().length ||
+      getComputedStyle(target).visibility === 'hidden' ||
+      (active instanceof HTMLElement &&
+        active !== document.body &&
+        active !== target)
+    )
+      return;
+    target.focus({ preventScroll: true });
+  }, [menu, dialogs, layout.activeWindowId]);
   const closeHandlers = useRef(
     new Map<string, () => boolean | Promise<boolean>>(),
   );
@@ -192,8 +230,29 @@ export function useDesktopController(props: DesktopProps) {
   const dialog = useCallback(
     (options: DialogOptions) =>
       new Promise<DialogResult>((resolve) => {
+        const element =
+          menuRef.current?.opener ??
+          (document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null);
+        const opener =
+          menuActionOpener.current ??
+          dialogsRef.current.at(-1)?.opener ??
+          (element?.closest('.ns-dialog-layer')
+            ? pendingFocusReturn.current
+            : element
+              ? {
+                  element,
+                  activeWindowId: apiRef.current?.activeWindowId ?? null,
+                }
+              : null);
         setMenu(null);
-        const request = { id: ++dialogCounter.current, options, resolve };
+        const request = {
+          id: ++dialogCounter.current,
+          options,
+          resolve,
+          opener,
+        };
         dialogsRef.current = [...dialogsRef.current, request];
         setDialogs(dialogsRef.current);
       }),
@@ -489,8 +548,23 @@ export function useDesktopController(props: DesktopProps) {
     propsRef.current.onReady?.(api);
   }, [api]);
   const dialogRequest = dialogs[0];
+  const dismissMenu = (action?: () => void) => {
+    const opener = menu?.opener
+      ? { element: menu.opener, activeWindowId: layout.activeWindowId }
+      : null;
+    pendingFocusReturn.current = opener;
+    setMenu(null);
+    // A dialog opened by this action must inherit the original menu trigger.
+    menuActionOpener.current = opener;
+    try {
+      action?.();
+    } finally {
+      menuActionOpener.current = null;
+    }
+  };
   const resolveDialog = (result: DialogResult) => {
     if (!dialogRequest) return;
+    pendingFocusReturn.current = dialogRequest.opener;
     dialogsRef.current = dialogsRef.current.filter(
       (request) => request.id !== dialogRequest.id,
     );
@@ -544,7 +618,7 @@ export function useDesktopController(props: DesktopProps) {
     overview,
     setOverview,
     menu,
-    dismissMenu: () => setMenu(null),
+    dismissMenu,
     pinMenu,
     dialogRequest,
     resolveDialog,
