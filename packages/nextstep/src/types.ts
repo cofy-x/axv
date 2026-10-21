@@ -9,6 +9,8 @@ export type IconName =
   | 'trash'
   | 'appearance'
   | 'gallery'
+  | 'applications'
+  | 'checklist'
   | 'image'
   | 'network'
   | 'mesh-network'
@@ -70,6 +72,8 @@ export interface NextstepLayout {
   activeWindowId: string | null;
   icons: Record<string, Point>;
   compactIcons: Record<string, Point>;
+  /** Explicit per-application visibility overrides; omitted entries inherit desktop defaults. */
+  desktopApplications?: Record<string, boolean>;
   workspaces: Workspace[];
   currentWorkspaceId: string;
   dock: { appId: string; pinned: boolean }[];
@@ -126,6 +130,8 @@ export interface DesktopAPI {
   workspaces: Workspace[];
   currentWorkspaceId: string;
   launchApp: (appId: string) => void;
+  isApplicationOnDesktop: (appId: string) => boolean;
+  showDesktopApplication: (appId: string, shown: boolean) => void;
   updateWindowState: (id: string, update: WindowStateUpdate) => void;
   switchWorkspace: (id: string) => void;
   renameWorkspace: (id: string, name: string) => void;
@@ -157,6 +163,8 @@ export interface DesktopAPI {
 export interface AppWindowProps {
   window: DesktopWindow;
   desktop: DesktopAPI;
+  /** Whether the content is displayed, independently of keyboard activation. */
+  visible?: boolean;
   /** Keyboard input is suspended for inactive, hidden, folded or covered content. */
   interactive?: boolean;
 }
@@ -165,10 +173,14 @@ export interface AppDefinition {
   id: string;
   title: string;
   icon: IconName;
-  /** Whether to offer this application in the system launcher; defaults to true. */
+  /** Keep saved application references while preventing unavailable code from running. */
+  unavailable?: string;
+  /** Whether application launchers can create a window; explicit openApp calls remain available. Defaults to true. */
   launchable?: boolean;
   /** Pin a launchable application in a new layout's Dock; defaults to true. */
   defaultPinned?: boolean;
+  /** Offer a desktop launcher by default without overriding saved visibility choices. */
+  defaultDesktop?: boolean;
   launch?: (desktop: DesktopAPI) => void | Promise<void>;
   kind?: 'application' | 'panel';
   defaultSize?: Size;
@@ -179,10 +191,13 @@ export interface AppDefinition {
 }
 
 export interface DesktopIcon {
+  /** Stable host identity. The application: prefix is reserved for generated application shortcuts. */
   id: string;
   label: string;
   icon: IconName;
   appId?: string;
+  /** A pure application launcher, independent of resource icons opening the same application. */
+  applicationLauncher?: boolean;
   params?: WindowParams;
   isTrash?: boolean;
   trashable?: boolean;

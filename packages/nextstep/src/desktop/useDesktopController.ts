@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   activateLayoutWindow,
-  initialIconPosition,
+  arrangeDesktopIconPositions,
+  desktopApplicationIcons,
   iconWorkArea,
+  isApplicationOnDesktop as applicationOnDesktop,
   minimizedWindows,
   reconcileWorkspaceWindows,
   sanitizeLayout,
+  showDesktopApplication as updateDesktopApplication,
   switchWorkspaceLayout,
   toggleWindowZoom,
   unsupportedLayout,
+  validAppId,
   windowIdentity,
 } from '../model';
 import type { MenuRequest } from '../overlays';
@@ -29,6 +33,14 @@ import type {
 } from '../types';
 import { viewportSize } from './useViewport';
 import { updateWindowViewState } from './window-state';
+import { launchApplication, resolveApplication } from './applications';
+
+function sameParams(first: WindowParams, second: WindowParams): boolean {
+  return (
+    Object.keys(first).length === Object.keys(second).length &&
+    Object.entries(first).every(([key, value]) => second[key] === value)
+  );
+}
 
 function initialState(props: DesktopProps): DesktopLayout {
   let state = sanitizeLayout(props.initialLayout, props.apps);
@@ -121,14 +133,24 @@ export function useDesktopController(props: DesktopProps) {
       params: WindowParams = {},
       options?: { title?: string },
     ) => {
-      const app = propsRef.current.apps.find(
-        (candidate) => candidate.id === appId,
+      if (!validAppId(appId)) return '';
+      const app = resolveApplication(propsRef.current.apps, appId);
+      const restored = apiRef.current?.windows.find(
+        (win) => win.appId === appId && sameParams(win.params, params),
       );
-      if (!app) return '';
-      const id = windowIdentity(app, params);
+      if (!restored && app.unavailable !== undefined) {
+        void apiRef.current?.dialog({
+          title: 'Application unavailable',
+          message: app.unavailable,
+          buttons: [{ label: 'OK', value: 'ok', default: true }],
+        });
+        return '';
+      }
+      const id = restored?.id ?? windowIdentity(app, params);
       setOverview(false);
       setLayout((current) => {
         const existing = current.windows.find((item) => item.id === id);
+        if (!existing && app.unavailable !== undefined) return current;
         const index = current.windows.length % 6;
         const next: DesktopWindow = existing
           ? { ...existing, title: options?.title ?? existing.title }
@@ -177,37 +199,11 @@ export function useDesktopController(props: DesktopProps) {
       }),
     [],
   );
-  const launchApp = useCallback(
-    (appId: string) => {
-      const app = propsRef.current.apps.find(
-        (candidate) => candidate.id === appId,
-      );
-      if (!app || !apiRef.current || dialogsRef.current.length) return;
-      const api = apiRef.current;
-      const existing = [...api.windows]
-        .reverse()
-        .find((win) => win.appId === appId);
-      if (existing) {
-        api.focusWindow(existing.id);
-        return;
-      }
-      if (app.launch) {
-        Promise.resolve()
-          .then(() => app.launch?.(api))
-          .catch((error: unknown) => {
-            void dialog({
-              title: `Cannot open ${app.title}`,
-              message:
-                error instanceof Error
-                  ? error.message
-                  : 'The application could not be opened.',
-              buttons: [{ label: 'OK', value: 'ok', default: true }],
-            });
-          });
-      } else openApp(appId);
-    },
-    [dialog, openApp],
-  );
+  const launchApp = useCallback((appId: string) => {
+    if (!validAppId(appId) || !apiRef.current || dialogsRef.current.length)
+      return;
+    launchApplication(propsRef.current.apps, apiRef.current, appId);
+  }, []);
   const closeWindow = useCallback(async (id: string): Promise<boolean> => {
     if (closing.current.has(id)) return false;
     closing.current.add(id);
@@ -320,29 +316,28 @@ export function useDesktopController(props: DesktopProps) {
       })),
     [],
   );
-  const addClipShortcut = useCallback(
-    (shortcut: Omit<ClipShortcut, 'id'>) =>
-      setLayout((current) => ({
-        ...current,
-        workspaces: current.workspaces.map((workspace) =>
-          workspace.id !== current.currentWorkspaceId ||
-          workspace.clip.some(
-            (item) =>
-              item.appId === shortcut.appId &&
-              JSON.stringify(item.params) === JSON.stringify(shortcut.params),
-          )
-            ? workspace
-            : {
-                ...workspace,
-                clip: [
-                  ...workspace.clip,
-                  { ...shortcut, id: crypto.randomUUID() },
-                ].slice(-32),
-              },
-        ),
-      })),
-    [],
-  );
+  const addClipShortcut = useCallback((shortcut: Omit<ClipShortcut, 'id'>) => {
+    if (!validAppId(shortcut.appId)) return;
+    setLayout((current) => ({
+      ...current,
+      workspaces: current.workspaces.map((workspace) =>
+        workspace.id !== current.currentWorkspaceId ||
+        workspace.clip.some(
+          (item) =>
+            item.appId === shortcut.appId &&
+            JSON.stringify(item.params) === JSON.stringify(shortcut.params),
+        )
+          ? workspace
+          : {
+              ...workspace,
+              clip: [
+                ...workspace.clip,
+                { ...shortcut, id: crypto.randomUUID() },
+              ].slice(-32),
+            },
+      ),
+    }));
+  }, []);
   const removeClipShortcut = useCallback(
     (id: string) =>
       setLayout((current) => ({
@@ -366,15 +361,45 @@ export function useDesktopController(props: DesktopProps) {
         const key = viewport.width < 600 ? 'compactIcons' : 'icons';
         return {
           ...current,
-          [key]: Object.fromEntries(
-            propsRef.current.icons.map((icon, index) => [
-              icon.id,
-              initialIconPosition(index, area),
-            ]),
+          [key]: arrangeDesktopIconPositions(
+            current[key],
+            desktopApplicationIcons(
+              current,
+              propsRef.current.apps,
+              propsRef.current.icons,
+              launchApp,
+            ),
+            area,
           ),
         };
       }),
+    [launchApp],
+  );
+  const isApplicationOnDesktop = useCallback(
+    (appId: string) =>
+      applicationOnDesktop(
+        { desktopApplications: layout.desktopApplications },
+        propsRef.current.apps,
+        propsRef.current.icons,
+        appId,
+      ),
+    [layout.desktopApplications],
+  );
+  const showDesktopApplication = useCallback(
+    (appId: string, shown: boolean) => {
+      setLayout((current) => updateDesktopApplication(current, appId, shown));
+    },
     [],
+  );
+  const icons = useMemo(
+    () =>
+      desktopApplicationIcons(
+        { desktopApplications: layout.desktopApplications },
+        props.apps,
+        props.icons,
+        launchApp,
+      ),
+    [layout.desktopApplications, props.apps, props.icons, launchApp],
   );
   const contextMenu = useCallback(
     (items: MenuItem[], point: Point, options?: MenuOptions) => {
@@ -409,6 +434,8 @@ export function useDesktopController(props: DesktopProps) {
       workspaces: layout.workspaces,
       currentWorkspaceId: layout.currentWorkspaceId,
       launchApp,
+      isApplicationOnDesktop,
+      showDesktopApplication,
       openApp,
       closeWindow,
       focusWindow,
@@ -435,6 +462,8 @@ export function useDesktopController(props: DesktopProps) {
       layout.workspaces,
       layout.currentWorkspaceId,
       launchApp,
+      isApplicationOnDesktop,
+      showDesktopApplication,
       openApp,
       closeWindow,
       focusWindow,
@@ -510,6 +539,7 @@ export function useDesktopController(props: DesktopProps) {
   };
   return {
     layout,
+    icons,
     setLayout,
     overview,
     setOverview,

@@ -23,6 +23,28 @@ Touch controls expose menus and window actions without requiring a right-click. 
 
 Welcome keeps **Show Desktop** visible and groups **Preferences** and **About AXV** under **More**.
 
+## Applications and extensions
+
+Open **Application Manager** from its desktop icon, Welcome or **Applications → Application Manager** in the workspace menu. Built-in applications keep their existing launchers and windows. The manager is available without a default Dock pin; use the Dock Add menu to pin it if desired.
+
+The manager starts with installed extensions. **Open** launches an enabled application; **Enable** makes a disabled application available again. Each extension row's **More** menu contains secondary management actions. **Add package** opens package selection and review; this section opens initially for an empty directory. Collapsing it keeps the current review.
+
+Use **Show on desktop** beside an application to show or hide its launcher in this browser's layout. New extensions start without a desktop icon. This choice is independent of Dock pinning and installation access, does not open a window and keeps the launcher's position when hidden. Uninstalling retains the choice; reinstalling can restore the icon. Workspace, Documents, Recycler, files and individual VM icons keep their existing desktop behavior.
+
+Under **Add package**, choose **Install Checklist** to review the included example, then **Install**. **Open** launches its window. Add, edit or check items and choose **Save** to write that snapshot. Typing while saving stays unsaved. Closing a modified application or changing its installation offers Save, Cancel and Discard; a failed save retains the draft. **Export draft** in the application window downloads the current recovery copy independently of server connectivity.
+
+Checklist rejects a change that exceeds the [application-data limit](api/extensions.md#application-data), shows an explanation and keeps the previous accepted text. Shorten or remove another item, then retry. A rejected **Add** leaves the text in **New item**.
+
+If an application submits a draft that AXV cannot accept, the host window stays unsaved and blocks Save and changes that would lose it. Keep the window open to correct the draft, use **Export draft** when it can be represented as JSON, or explicitly discard it. The rejected content is held only in memory and is not recoverable after a browser reload.
+
+To install your own extension, open **Add package**, select a self-contained JSON **Extension package**, review its identity, version and private-data access, then install. **Download example** provides a complete editable Checklist package. Selecting a package for an existing application offers **Replace package**, preserving its saved data and current enable setting. Installation changes require access on the AXV host. The authenticated remote desktop can run installed applications and use their private data.
+
+**Reload** explicitly reconnects a window to the current installed version. With unsaved data, choose **Keep draft**, **Discard draft** or Cancel; keeping a draft retains its original saved revision, including after a session expires. A recovered draft offers **Restore draft** or **Discard draft** before the application opens. Restore does not overwrite a newer server document automatically. In Checklist, **Reload saved** asks before replacing dirty text; export a draft first when you need to keep both versions. Saving after another window changed the same data reports a revision conflict.
+
+Use **More → Disable** to stop further access from the old runtime while retaining windows, drafts and saved data. **Enable**, then **Reload**, reconnects that window. **More → Uninstall** keeps saved data available under **Uninstalled applications** for export or later reinstall. **Export saved data** downloads the server snapshot; it does not include unsaved drafts in application windows. It is in **More** for installed applications and directly available for uninstalled ones. **More → Delete data** is a separate, irreversible confirmation available after uninstalling. A temporarily missing application also retains its window, Dock pin and Clip shortcuts rather than removing them during layout recovery.
+
+Extensions in this version store only their own data. They cannot access AXV documents, registered projects, commands, terminals, agents or VMs. Package format and limits belong to the [Extensions API](api/extensions.md); authoring and the message bridge belong to [desktop architecture](desktop.md#installed-extensions).
+
 ## Remote desktop
 
 Open **Tailscale** from its desktop icon, **Workspace → Applications** or **Preferences**. The stable desktop launcher opens one non-modal panel and can also be kept in the Dock or added to Clip. Its icon does not indicate connection readiness; the panel checks AXV's connection while active. AXV includes Tailscale and needs no system installation on its server.
@@ -88,7 +110,7 @@ Linux uses an administrator-provisioned local Firecracker service. The environme
 
 Choose **New VM** once an available provider has a ready image. The initial name is `my-vm`; choose another when it is already in use. New machines start by default; choose to create a stopped machine when needed. Names must be unique on this host, including pending renames. The manager displays VM icons with names and states. Select one for Start/Stop, Terminal and Inspect; **More** contains secondary lifecycle actions. **Inspect** opens configuration and guest access. Search and state filters only allow actions on visible selections. The manager's **Project Volumes**, **Images** and **Activity** tabs expose storage and operation status; switching tabs or Environment keeps unfinished forms. **View Activity** follows an accepted operation through completion or failure and hides when that operation is already selected in Activity. If the local compute service becomes unavailable, the window retains the last known inventory and disables changes until the connection recovers.
 
-The desktop always includes a **Virtual Machines** launcher and adds an icon for each VM. Opening a VM icon shows its Inspector without starting the VM or a terminal; the Inspector's back arrow opens **Virtual Machines**. Renaming preserves its desktop position. VM icons are separate from virtual files and cannot be deleted through Recycler. Environment and operation technical details include the profile log location and relevant IDs for diagnosis; [startup](startup.md) owns log files and service commands.
+The desktop includes a **Virtual Machines** launcher by default and adds an icon for each VM. Application Manager can hide the application launcher independently of those VM icons. Opening a VM icon shows its Inspector without starting the VM or a terminal; the Inspector's back arrow opens **Virtual Machines**. Renaming preserves its desktop position. VM icons are separate from virtual files and cannot be deleted through Recycler. Environment and operation technical details include the profile log location and relevant IDs for diagnosis; [startup](startup.md) owns log files and service commands.
 
 Project Volumes keeps **New Volume** and **Copy** visible, with rename, growth, detach and delete under the selected volume's **More** menu. Images keeps **Add Image** visible; the selected image's **More** menu contains **Add Version** and **Remove**. Confirmation, progress and recovery controls stay with their forms.
 

@@ -5,6 +5,7 @@ These pages own routes, request/response shapes, limits, errors and caller retry
 ## Functional reference
 
 - [Desktop state](desktop.md): Runtime identity, health, bootstrap, preferences, layout and recovery identity.
+- [Installed applications](extensions.md): Package installation, sandboxed content, scoped runtime sessions and revision-checked private JSON data.
 - [Virtual files](files.md): Entries, revision-checked saves, trash, import, download and preview.
 - [Project files and document exchange](project-files.md): Explicit host projects, root-constrained browsing, document links, immutable snapshots, origins and idempotent copies.
 - [Host Terminal](host-terminal.md): An ephemeral host shell owned by one WebSocket connection.
@@ -23,6 +24,7 @@ Follow the route handler into its service for validation and persistence rules; 
 | Contract | Route and transport entry point | Models and validation |
 | --- | --- | --- |
 | Desktop and virtual files | [httpapi](../../apps/server/internal/httpapi), [runtime route](../../apps/server/internal/server/server.go) | [storage](../../apps/server/internal/storage) |
+| Installed applications | [extensions HTTP adapter](../../apps/server/internal/extensions/http.go), [desktop composition](../../apps/server/internal/server/server.go) | [package validation](../../apps/server/internal/extensions/manifest.go), [extension store](../../apps/server/internal/extensions/store.go) and [sessions](../../apps/server/internal/extensions/manager.go) |
 | Host Terminal | [terminal/manager.go](../../apps/server/internal/terminal/manager.go), [frames](../../apps/server/internal/terminal/session.go) | [terminal](../../apps/server/internal/terminal) |
 | [Host directories](host-directories.md) | [hostdir/httpapi](../../apps/server/internal/hostdir/httpapi) | [directory validation](../../apps/server/internal/hostdir/directories.go) |
 | Project files and document exchange | [projectfiles](../../apps/server/internal/projectfiles) | [registered references, snapshots and transfer receipts](../../apps/server/internal/storage/documents.go) |
@@ -44,11 +46,15 @@ Request shapes, revision rules, idempotency scope and limits belong to their fun
 
 On the local listener, desktop-state and virtual-file mutations validate a supplied Origin against the request Host or a loopback development host; they permit an omitted Origin.
 
+The shared desktop boundary rejects all `/api` requests with `Origin: null` or `Sec-Fetch-Site: cross-site`, including simple GETs without Origin. This prevents sandboxed application frames from directly using existing API families. Their trusted browser host uses the [installed-application broker](extensions.md#browser-broker) and backend session scope instead.
+
 Host Terminal, host-directory, Codex and compute gateway routes use the shared [access validator](../../apps/server/internal/localaccess/request.go): locally, a loopback peer, a Host of `localhost` or a loopback address, and an exact scheme/Host match when Origin is supplied. Their WebSocket upgrades and mutations require Origin. Forwarded headers do not bypass these checks. The private compute socket is authorized through OS permissions.
 
 The optional remote HTTPS listener authenticates every request, including UI assets and document reads, through the embedded node's `WhoIs`. Only the bound owner's untagged nodes are authorized. Its middleware supplies a private request context to the shared feature guards without changing `RemoteAddr` or trusting identity headers. Remote mutations and WebSocket upgrades require the exact HTTPS Origin; supplied Origin must match on reads too. Preparation and `/api/remote` status/control remain local-only; `/api/connection` supplies an authenticated, safe desktop summary. See the [Tailscale remote access contract](tailscale.md) for identity binding, route restrictions and failures.
 
 Project-file and document-exchange routes use that same local-access validator, requiring Origin for mutations. Their registered root identity and project-relative paths remain separate from virtual-document IDs and VM project-volume identities.
+
+Installed-application routes use the shared guard with Origin required for mutations. Installation, enable/disable, uninstall and data clearing are local-only; authenticated remote clients may use only the explicit catalog, data-read, content and session/RPC methods in the [application access contract](extensions.md#access). An extension's opaque browser origin is never an authenticated principal.
 
 VM project routes use the compute gateway/private-socket boundary and require the original host identity even for reads. File requests also carry the explicit project/volume/VM/boot/guest-service binding, verified before forwarding and inside the guest. A new binding must be requested as a separate caller decision; a missing VM never causes execution or file access on the host. [Compute projects](compute.md#vm-projects) owns that contract.
 

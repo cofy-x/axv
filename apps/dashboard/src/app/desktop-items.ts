@@ -42,11 +42,14 @@ export function createDesktopIcons(
       label: 'Text Editor',
       icon: 'notes',
       appId: 'notes',
+      applicationLauncher: true,
     },
     {
       id: 'system:terminal',
       label: 'Terminal',
       icon: 'terminal',
+      appId: 'terminal',
+      applicationLauncher: true,
       onOpen: () => {
         const desktop = getDesktop();
         if (desktop) openTerminalWindow(desktop);
@@ -57,18 +60,21 @@ export function createDesktopIcons(
       label: 'Project Files',
       icon: 'project',
       appId: 'project-files',
+      applicationLauncher: true,
     },
     {
       id: 'system:remote-access',
       label: 'Tailscale',
       icon: 'mesh-network',
       appId: 'remote-access',
+      applicationLauncher: true,
     },
     {
       id: 'system:appearance',
       label: 'Preferences',
       icon: 'appearance',
       appId: 'appearance',
+      applicationLauncher: true,
     },
     ...(codexInstalled
       ? [
@@ -77,6 +83,7 @@ export function createDesktopIcons(
             label: 'Codex',
             icon: 'companion' as const,
             appId: 'codex',
+            applicationLauncher: true,
           },
         ]
       : []),
@@ -85,12 +92,14 @@ export function createDesktopIcons(
       label: 'Virtual Machines',
       icon: 'virtual-machines',
       appId: 'machines',
+      applicationLauncher: true,
     },
     {
       id: 'system:gallery',
       label: 'Component Gallery',
       icon: 'gallery',
       appId: 'gallery',
+      applicationLauncher: true,
     },
     ...entries
       .filter(

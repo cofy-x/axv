@@ -8,6 +8,7 @@ import type {
   Size,
 } from '../types';
 import { createWindowMenu } from './menus';
+import { UnavailableApplication } from './applications';
 
 interface WindowFrameProps {
   win: DesktopWindow;
@@ -174,13 +175,18 @@ export function WindowFrame({
           pointerEvents: shaded ? 'none' : undefined,
         }}
       >
-        <Content
-          window={win}
-          desktop={api}
-          interactive={
-            active && !hidden && !shaded && !overview && !inputBlocked
-          }
-        />
+        {app.unavailable !== undefined ? (
+          <UnavailableApplication message={app.unavailable} />
+        ) : (
+          <Content
+            window={win}
+            desktop={api}
+            visible={!hidden && !shaded}
+            interactive={
+              active && !hidden && !shaded && !overview && !inputBlocked
+            }
+          />
+        )}
       </div>
       {!win.shaded && !mobile && !overview && (
         <>

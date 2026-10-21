@@ -28,6 +28,8 @@ export default defineConfig({
       name: 'chromium-dpr2',
       testMatch: [
         '**/visual.spec.ts',
+        '**/extensions.spec.ts',
+        '**/extensions-security.spec.ts',
         '**/codex.visual.spec.ts',
         '**/desktop-icons.spec.ts',
         '**/workstation.spec.ts',
@@ -45,6 +47,8 @@ export default defineConfig({
       name: 'chromium-touch',
       testMatch: [
         '**/touch.spec.ts',
+        '**/extensions.spec.ts',
+        '**/extensions-security.spec.ts',
         '**/terminal-paste.spec.ts',
         '**/codex.touch.spec.ts',
         '**/desktop-icons.spec.ts',
@@ -69,6 +73,8 @@ export default defineConfig({
       name: 'webkit-touch',
       testMatch: [
         '**/touch.spec.ts',
+        '**/extensions.spec.ts',
+        '**/extensions-security.spec.ts',
         '**/terminal-paste.spec.ts',
         '**/codex.touch.spec.ts',
         '**/desktop-icons.spec.ts',

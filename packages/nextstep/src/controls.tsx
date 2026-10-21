@@ -152,6 +152,43 @@ export function PixelIcon({
           <path stroke="#fff" d="M3 6h25M3 7v18" />
           <path stroke="#999" d="M4 25h23" />
         </g>
+      ) : name === 'applications' ? (
+        <g {...common}>
+          <path fill="#777" stroke="none" d="M4 29h26v2H4z" />
+          <path fill="#a7b6ab" d="M20.5 6.5h7v14h-7z" />
+          <path fill="none" stroke="#e7eee8" d="M22 8h4M22 9v10" />
+          <path fill="#ddd" d="M4.5 4.5h10v16h-10z" />
+          <path fill="#6f897a" stroke="none" d="M5 5h9v4H5z" />
+          <path fill="none" stroke="#fff" d="M6 11h6M6 13h5" />
+          <path fill="#eee" d="M10.5 1.5h12v20h-12z" />
+          <path fill="#455d50" stroke="none" d="M11 2h11v4H11z" />
+          <path fill="#dce6dc" d="M13.5 8.5h6v5h-6z" />
+          <path fill="none" stroke="#fff" d="M12 7v12M14 9h4" />
+          <path fill="#aaa" d="M2.5 15.5h27v14h-27z" />
+          <path fill="none" stroke="#eee" d="M3 16h25M3 17v11" />
+          <path fill="none" stroke="#777" d="M5 28h23V17" />
+          <path fill="#777" d="M11.5 20.5h9v4h-9z" />
+          <path fill="none" stroke="#eee" d="M13 22h6" />
+        </g>
+      ) : name === 'checklist' ? (
+        <g {...common}>
+          <path fill="#777" stroke="none" d="M6 5h23v26H6z" />
+          <path fill="#b7b29f" d="M4.5 3.5h23v27h-23z" />
+          <path fill="none" stroke="#e8e5d8" d="M5 4h21M5 5v24" />
+          <path fill="#f6f4e9" d="M7.5 6.5h17v21h-17z" />
+          <path fill="none" stroke="#fff" d="M8 7h15M8 8v18" />
+          <path fill="#bbb" d="M11.5 1.5h9v6h-9z" />
+          <path fill="none" stroke="#eee" d="M12 2h7M12 3v3" />
+          <path fill="none" stroke="#777" d="M14 4h4" />
+          <path
+            fill="none"
+            stroke="#315e45"
+            strokeWidth="2"
+            d="m9 12 2 2 4-4m-6 9 2 2 4-4"
+          />
+          <path fill="none" stroke="#777" d="M9.5 23.5h4v3h-4z" />
+          <path fill="none" stroke="#777" d="M17 12.5h5M17 19.5h5M17 25.5h5" />
+        </g>
       ) : name === 'gallery' ? (
         <g {...common}>
           <path fill="#ccc" d="M2.5 2.5h27v27h-27z" />

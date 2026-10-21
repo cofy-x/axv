@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "local.checklist",
+  "title": "Checklist",
+  "icon": "checklist",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "capabilities": ["storage"]
+}

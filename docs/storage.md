@@ -12,6 +12,8 @@ This guide owns virtual-document state, browser draft recovery and the desktop S
 
 Codex conversation/run persistence is described in [Host Codex](codex.md). Compute uses a separate database and ownership model described in [VM architecture](vm-platform.md).
 
+Installed applications use an independent [extension store](#installed-application-storage). Their JSON data is outside the virtual-file, document snapshot, document export and project-exchange APIs.
+
 For save and recovery changes, start with [`note-document.test.ts`](../apps/dashboard/src/features/notes/note-document.test.ts) and [`session.test.ts`](../apps/dashboard/src/shared/drafts/session.test.ts). For schema or stored-state changes, start with [`migrations_test.go`](../apps/server/internal/storage/migrations_test.go) and [`recovery_test.go`](../apps/server/internal/storage/recovery_test.go). These exercise failure and identity boundaries; verification commands belong to [development](development.md#verification).
 
 ## Document saves
@@ -64,9 +66,21 @@ SQLite's `application_id` is a file-format marker, separate from the migration v
 
 AXV is in unreleased development. Breaking schema changes and refactors are allowed; keep one clean current baseline and remove obsolete compatibility code. Development data is disposable and does not require migration, old-format adapters or a parallel compatible executable. Change the format marker for an incompatible baseline, stop the affected writers and Codex runs, then delete and recreate the affected AXV-owned development store. Host projects and provider-owned history/configuration are separate and are not part of this reset. Normal startup still rejects an incompatible or invalid database rather than silently deleting an arbitrary file. Define a released-data compatibility policy when preparing the first release.
 
+## Installed application storage
+
+[`extensions`](../apps/server/internal/extensions) owns `extensions.sqlite`, opened separately by the desktop service in its resolved data directory. Its embedded [`0001_initial.sql`](../apps/server/internal/extensions/migrations/0001_initial.sql) uses the **AXE2** format marker (`0x41584532`). A persistent UUID identifies this store independently of `desktop.sqlite` and scopes browser recovery, management actions, data reads/writes, content navigation and runtime sessions. The backend requires the original captured identity, so another store with matching application IDs and revision counters cannot receive an old operation or draft. The [application API](api/extensions.md#access) owns the header and content-path contract. Startup initializes a newly created file only; existing uninitialized, incompatible, unknown-layout or damaged databases are rejected without resetting them. Format and schema changes follow the same [unreleased baseline policy](#desktop-database-baseline), with this store's own marker and affected writers.
+
+Startup compares a fingerprint of SQLite's complete schema catalog with a pristine in-memory database built through the same embedded migrations and shared runner. Column definitions, types, keys, defaults, checks, references, indexes and triggers must match the owned baseline. This uses SQLite's recorded DDL directly, without permissive SQL normalization or a second manually maintained schema. Text primary keys explicitly reject NULL; generations and revisions require SQLite integer values as well as their positive/nonnegative ranges. Startup also checks data types and orphan data rather than relying on column affinity alone. The service verifies every retained package's complete canonical bytes and digest before serving requests. Catalog and runtime grant queries project only the manifest to Go; SQLite still reads the stored package JSON, but the Go metadata path does not load or repeatedly decode its HTML.
+
+Immutable canonical packages are stored by SHA-256 in a code table. Installation metadata holds the active digest, enabled/installed state and monotonically increasing generation. A different table holds one JSON document and its revision per application. Lifecycle changes preserve this document; uninstall retains metadata and data, while a separate revision-checked action explicitly clears data only after uninstall. The [application API](api/extensions.md) owns limits, generation checks and session invalidation.
+
+Previous package digests are retained as well. There is currently no package-history rollback or automatic code cleanup; repeated upgrades increase database size and the work needed for startup integrity checks.
+
+Extension data has no virtual entry ID and does not participate in virtual-document resets, snapshots, exports or project transfers. Its saved-data read endpoint and browser management export are separate operations. Resetting only the desktop database does not reset extension state; an explicit extension-store reset creates a different store UUID on the next startup. Stop its desktop writer and preserve wanted application data before explicitly resetting this AXV-owned development store. Neither reset includes host projects or provider history.
+
 ## Migration runner
 
-Each SQLite owner embeds its own migration directory. Desktop SQL lives in [`storage/migrations`](../apps/server/internal/storage/migrations); compute and preparation have separate [VM database ownership](vm-platform.md#ownership). They share the [`sqlitemigrate`](../apps/server/internal/sqlitemigrate) executor, never tables, identities or initialization data.
+Each SQLite owner embeds its own migration directory. Desktop SQL lives in [`storage/migrations`](../apps/server/internal/storage/migrations); installed applications use [`extensions/migrations`](../apps/server/internal/extensions/migrations), and compute and preparation have separate [VM database ownership](vm-platform.md#ownership). They share the [`sqlitemigrate`](../apps/server/internal/sqlitemigrate) executor, never tables, identities or initialization data.
 
 SQL files use `NNNN_description.sql` names and are embedded by Go at build time. Unique, consecutive numeric prefixes starting at `0001` define both execution order and the latest supported schema. There is no separate Go version constant or registration list to update, and the executable needs no SQL files beside it.
 

@@ -51,6 +51,12 @@ export function Welcome({ desktop, window }: AppWindowProps) {
               params: { folderId: 'documents' },
             },
             {
+              app: 'applications',
+              icon: 'applications' as const,
+              name: 'Application Manager',
+              text: 'Install and manage small applications.',
+            },
+            {
               app: 'project-files',
               icon: 'project' as const,
               name: 'Project Files',
@@ -132,7 +138,8 @@ export function About() {
       <p className="fine-print">
         Documents and desktop layout stay on the AXV host. VM project files stay
         on their retained volumes. Optional private remote access uses
-        Tailscale.
+        Tailscale. Application Manager adds restricted extensions with their own
+        saved data.
       </p>
     </div>
   );

@@ -2,6 +2,7 @@ import type {
   AppDefinition,
   Bounds,
   DesktopLayout,
+  DesktopIcon,
   DesktopWindow,
   MenuGroup,
   Point,
@@ -356,6 +357,132 @@ function strings(value: unknown): Record<string, string> {
   );
 }
 
+/** Persisted application references are opaque identifiers, not paths or URLs. */
+export function validAppId(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length <= 128 &&
+    /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(value)
+  );
+}
+
+export function isApplicationLauncher(
+  icon: DesktopIcon,
+): icon is DesktopIcon & { appId: string } {
+  return (
+    icon.applicationLauncher === true && validAppId(icon.appId) && !icon.isTrash
+  );
+}
+
+/** A stored choice takes precedence over host launchers and late application defaults. */
+export function isApplicationOnDesktop(
+  layout: Pick<DesktopLayout, 'desktopApplications'>,
+  apps: AppDefinition[],
+  icons: DesktopIcon[],
+  appId: string,
+): boolean {
+  if (!validAppId(appId)) return false;
+  const choice = layout.desktopApplications?.[appId];
+  if (typeof choice === 'boolean') return choice;
+  return (
+    icons.some((icon) => isApplicationLauncher(icon) && icon.appId === appId) ||
+    apps.some((app) => app.id === appId && app.defaultDesktop === true)
+  );
+}
+
+/** Only presentation changes: keep window state and both sets of icon positions intact. */
+export function showDesktopApplication(
+  layout: DesktopLayout,
+  appId: string,
+  shown: boolean,
+): DesktopLayout {
+  if (!validAppId(appId) || typeof shown !== 'boolean') return layout;
+  if (layout.desktopApplications?.[appId] === shown) return layout;
+  return {
+    ...layout,
+    desktopApplications: { ...layout.desktopApplications, [appId]: shown },
+  };
+}
+
+/** Combine resource icons with one host-owned or generated launcher for each shown application. */
+export function desktopApplicationIcons(
+  layout: Pick<DesktopLayout, 'desktopApplications'>,
+  apps: AppDefinition[],
+  icons: DesktopIcon[],
+  launchApp: (appId: string) => void,
+): DesktopIcon[] {
+  const hostApplications = new Set(
+    icons.filter(isApplicationLauncher).map((icon) => icon.appId),
+  );
+  const result = icons.flatMap((icon) => {
+    if (!isApplicationLauncher(icon)) return [icon];
+    if (!isApplicationOnDesktop(layout, apps, icons, icon.appId)) return [];
+    const app = apps.find((candidate) => candidate.id === icon.appId);
+    return [
+      {
+        ...icon,
+        trashable: false,
+        onOpen: icon.onOpen ?? (() => launchApp(icon.appId)),
+        ...(!app || app.unavailable !== undefined || app.launchable === false
+          ? { status: { label: 'Unavailable', tone: 'warning' as const } }
+          : {}),
+      },
+    ];
+  });
+  const candidates = new Set([
+    ...apps.filter((app) => app.defaultDesktop === true).map((app) => app.id),
+    ...Object.keys(layout.desktopApplications ?? {}),
+  ]);
+  for (const appId of candidates) {
+    if (
+      hostApplications.has(appId) ||
+      !isApplicationOnDesktop(layout, apps, icons, appId)
+    )
+      continue;
+    const app = apps.find((candidate) => candidate.id === appId);
+    result.push({
+      id: `application:${appId}`,
+      appId,
+      applicationLauncher: true,
+      label: app?.title ?? appId,
+      icon: app?.icon ?? 'document',
+      trashable: false,
+      onOpen: () => launchApp(appId),
+      ...(!app || app.unavailable !== undefined || app.launchable === false
+        ? { status: { label: 'Unavailable', tone: 'warning' as const } }
+        : {}),
+    });
+  }
+  return result;
+}
+
+/** Arranging visible icons must not erase positions belonging to hidden launchers. */
+export function arrangeDesktopIconPositions(
+  positions: Record<string, Point>,
+  icons: DesktopIcon[],
+  area: Bounds,
+): Record<string, Point> {
+  return {
+    ...positions,
+    ...Object.fromEntries(
+      icons.map((icon, index) => [icon.id, initialIconPosition(index, area)]),
+    ),
+  };
+}
+
+function savedWindowId(value: unknown, appId: string): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length <= 1024 &&
+    value.startsWith(`${appId}:`) &&
+    value.length > appId.length + 1 &&
+    Array.from(value).every((character) => {
+      const code = character.charCodeAt(0);
+      return code >= 32 && code !== 127;
+    })
+  );
+}
+
 function point(value: unknown): Point | undefined {
   const candidate = record(value);
   return Number.isFinite(candidate.x) && Number.isFinite(candidate.y)
@@ -413,8 +540,7 @@ export function sanitizeLayout(
       if (
         typeof shortcut.id !== 'string' ||
         clip.some((s) => s.id === shortcut.id) ||
-        typeof shortcut.appId !== 'string' ||
-        !apps.some((app) => app.id === shortcut.appId)
+        !validAppId(shortcut.appId)
       )
         continue;
       clip.push({
@@ -447,16 +573,26 @@ export function sanitizeLayout(
   for (const item of valid ? (raw.windows as unknown[]).slice(0, 100) : []) {
     const candidate = record(item);
     const geometry = bounds(candidate);
+    if (!validAppId(candidate.appId) || !geometry) continue;
     const app = apps.find((a) => a.id === candidate.appId);
-    if (!app || !geometry) continue;
     const params = strings(candidate.params);
-    const id = windowIdentity(app, params);
+    // A temporarily missing definition cannot recompute a resource's window key.
+    // Preserve valid saved identities when that definition becomes available again.
+    const id = savedWindowId(candidate.id, candidate.appId)
+      ? candidate.id
+      : app
+        ? windowIdentity(app, params)
+        : undefined;
+    if (!id) continue;
     if (windows.some((win) => win.id === id)) continue;
     windows.push({
       ...geometry,
       id,
-      appId: app.id,
-      title: String(candidate.title || app.title).slice(0, 256),
+      appId: candidate.appId,
+      title: String(candidate.title || app?.title || candidate.appId).slice(
+        0,
+        256,
+      ),
       params,
       viewState: record(candidate.viewState),
       workspaceId: workspaces.some((w) => w.id === candidate.workspaceId)
@@ -501,11 +637,7 @@ export function sanitizeLayout(
         )
         .map((app) => ({ appId: app.id, pinned: true }))) {
     const entry = record(item);
-    if (
-      typeof entry.appId === 'string' &&
-      apps.some((app) => app.id === entry.appId) &&
-      !dock.some((d) => d.appId === entry.appId)
-    )
+    if (validAppId(entry.appId) && !dock.some((d) => d.appId === entry.appId))
       dock.push({ appId: entry.appId, pinned: entry.pinned === true });
   }
   for (const win of windows) {
@@ -549,11 +681,17 @@ export function sanitizeLayout(
         return position ? [[id, position]] : [];
       }),
     );
+  const desktopApplications = Object.fromEntries(
+    Object.entries(record(raw.desktopApplications)).filter(
+      ([appId, shown]) => validAppId(appId) && typeof shown === 'boolean',
+    ),
+  ) as Record<string, boolean>;
   return {
     version: 2,
     windows,
     icons: iconPositions(raw.icons),
     compactIcons: iconPositions(raw.compactIcons),
+    ...(raw.desktopApplications === undefined ? {} : { desktopApplications }),
     workspaces,
     currentWorkspaceId,
     dock,

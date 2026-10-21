@@ -673,6 +673,26 @@ select:disabled {
   flex-direction: column;
   padding-bottom: 8px;
 }
+.ns-unavailable-application {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 20px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: safe center;
+  gap: 10px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.ns-unavailable-application > * {
+  flex-shrink: 0;
+}
+.ns-unavailable-application p {
+  margin: 0;
+  max-width: 48ch;
+}
 .ns-resizebar {
   position: absolute;
   bottom: 0;

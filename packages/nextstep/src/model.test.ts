@@ -147,7 +147,7 @@ describe('window geometry and restoration', () => {
     );
     expect(bounds).toEqual(saved);
   });
-  it('filters stale app references and malformed geometry from stored layouts', () => {
+  it('preserves unavailable applications while filtering malformed geometry from stored layouts', () => {
     const layout = {
       version: 1,
       activeWindowId: 'missing',
@@ -184,8 +184,11 @@ describe('window geometry and restoration', () => {
       ],
     };
     const restored = sanitizeLayout(layout, [app]);
-    expect(restored.windows).toHaveLength(1);
-    expect(restored.activeWindowId).toBe('files:documents');
+    expect(restored.windows.map((win) => win.id)).toEqual([
+      'files:documents',
+      'old:main',
+    ]);
+    expect(restored.activeWindowId).toBe('old:main');
     expect(restored.icons).toEqual({ good: { x: 20, y: 40 } });
     const desktopFocused = sanitizeLayout(
       { ...restored, activeWindowId: null },
@@ -478,6 +481,120 @@ function testWindow(id: string, workspaceId = 'workspace-1'): DesktopWindow {
 }
 
 describe('versioned workspace persistence', () => {
+  it('round-trips missing and disabled apps without losing resource identity, view state or owner references', () => {
+    const initial = sanitizeLayout(undefined, [app]);
+    const savedWindow = {
+      ...testWindow('retained'),
+      appId: 'org.example.tool',
+      id: 'org.example.tool:resource:original',
+      params: { resourceId: 'original' },
+      viewState: { selection: ['one'], location: 'retained' },
+      minimized: true,
+    };
+    const saved = {
+      ...initial,
+      windows: [savedWindow],
+      dock: [{ appId: savedWindow.appId, pinned: true }],
+      workspaces: initial.workspaces.map((workspace, index) =>
+        index
+          ? workspace
+          : {
+              ...workspace,
+              order: [savedWindow.id],
+              clip: [
+                {
+                  id: 'retained-shortcut',
+                  appId: savedWindow.appId,
+                  title: 'Resource',
+                  params: savedWindow.params,
+                },
+              ],
+            },
+      ),
+      pinnedMenus: [
+        {
+          id: 'retained-menu',
+          kind: 'application' as const,
+          title: 'Actions',
+          groupId: 'actions',
+          ownerWindowId: savedWindow.id,
+          x: 20,
+          y: 30,
+        },
+      ],
+    };
+    const missing = sanitizeLayout(saved, []);
+    expect(missing.windows).toEqual([savedWindow]);
+    expect(missing.dock).toEqual(saved.dock);
+    expect(missing.workspaces[0].clip).toEqual(saved.workspaces[0].clip);
+    expect(missing.pinnedMenus).toEqual(saved.pinnedMenus);
+    const definition = {
+      ...app,
+      id: savedWindow.appId,
+      windowKey: () => 'a-new-default-does-not-replace-saved-identities',
+    };
+    const disabled = sanitizeLayout(missing, [
+      { ...definition, unavailable: 'Enable the application to continue.' },
+    ]);
+    const available = sanitizeLayout(disabled, [definition]);
+    expect(available).toEqual(missing);
+  });
+
+  it('rejects unsafe application IDs and unverifiable missing window identities', () => {
+    const initial = sanitizeLayout(undefined, []);
+    const invalidIds = [
+      '',
+      '../tool',
+      'https://tool',
+      'app:resource',
+      'a'.repeat(129),
+    ];
+    const appIds = [...invalidIds, 'org.example.tool'];
+    const restored = sanitizeLayout(
+      {
+        ...initial,
+        windows: [
+          ...appIds.map((appId) => ({
+            ...testWindow('one'),
+            appId,
+            id: `${appId}:resource`,
+          })),
+          {
+            ...testWindow('other'),
+            appId: 'org.example.tool',
+            id: 'other-application:resource',
+          },
+          {
+            ...testWindow('control'),
+            appId: 'org.example.tool',
+            id: 'org.example.tool:control\ncharacter',
+          },
+        ],
+        dock: appIds.map((appId) => ({ appId, pinned: true })),
+        workspaces: [
+          {
+            ...initial.workspaces[0],
+            clip: appIds.map((appId, index) => ({
+              id: String(index),
+              appId,
+              params: {},
+            })),
+          },
+        ],
+      },
+      [],
+    );
+    expect(restored.windows.map((win) => win.id)).toEqual([
+      'org.example.tool:resource',
+    ]);
+    expect(restored.dock).toEqual([
+      { appId: 'org.example.tool', pinned: true },
+    ]);
+    expect(
+      restored.workspaces[0].clip.map((shortcut) => shortcut.appId),
+    ).toEqual(['org.example.tool']);
+  });
+
   it('creates four workspaces, registered launchers, and stable defaults', () => {
     const result = sanitizeLayout(undefined, [app]);
     expect(result.version).toBe(2);
@@ -530,7 +647,9 @@ describe('versioned workspace persistence', () => {
     expect(broken.windows).toHaveLength(1);
     expect(broken.windows[0].restoreBounds).toBeUndefined();
     expect(broken.workspaces[0].order).toEqual(['files:b']);
-    expect(broken.workspaces[0].clip).toEqual([]);
+    expect(broken.workspaces[0].clip).toEqual([
+      { id: 'bad', appId: 'missing', title: 'missing', params: {} },
+    ]);
     expect(broken.pinnedMenus).toEqual([]);
   });
   it('repairs missing running Dock entries and malformed maximized restore data', () => {

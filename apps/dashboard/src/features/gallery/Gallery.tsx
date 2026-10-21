@@ -231,6 +231,8 @@ export function Gallery({ desktop }: AppWindowProps) {
                   'trash',
                   'appearance',
                   'gallery',
+                  'applications',
+                  'checklist',
                   'image',
                   'network',
                   'mesh-network',

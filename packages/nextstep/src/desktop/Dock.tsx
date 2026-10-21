@@ -10,6 +10,7 @@ import type {
   Point,
 } from '../types';
 import { usePointerGesture } from './usePointerGesture';
+import { resolveApplication } from './applications';
 
 interface DockProps {
   props: DesktopProps;
@@ -32,9 +33,9 @@ export function Dock({ props, layout, api, setLayout }: DockProps) {
     (entry) =>
       entry.pinned || layout.windows.some((win) => win.appId === entry.appId),
   );
-  const apps = entries
-    .map((entry) => props.apps.find((app) => app.id === entry.appId))
-    .filter((app): app is AppDefinition => !!app);
+  const apps = entries.map((entry) =>
+    resolveApplication(props.apps, entry.appId),
+  );
   const setPinned = (appId: string, pinned: boolean) =>
     setLayout((current) => ({
       ...current,
@@ -73,6 +74,15 @@ export function Dock({ props, layout, api, setLayout }: DockProps) {
         label: 'Keep in Dock',
         checked: pinned,
         action: () => setPinned(app.id, !pinned),
+      },
+      {
+        label: 'Show on Desktop',
+        checked: api.isApplicationOnDesktop(app.id),
+        action: () =>
+          api.showDesktopApplication(
+            app.id,
+            !api.isApplicationOnDesktop(app.id),
+          ),
       },
       {
         label: 'Move Earlier',
@@ -158,7 +168,7 @@ export function Dock({ props, layout, api, setLayout }: DockProps) {
               type="button"
               className={`ns-dock-tile ${active ? 'is-active' : ''}`}
               aria-label={`${app.title}${running ? ` · ${windows.length} running window${windows.length > 1 ? 's' : ''}` : ''}`}
-              title={app.title}
+              title={`${app.title}${app.unavailable !== undefined ? ' — unavailable' : ''}`}
               onPointerDown={(event) => {
                 // Touch and pen keep native panning; their options menu orders entries.
                 if (event.button !== 0 || event.pointerType !== 'mouse') return;
