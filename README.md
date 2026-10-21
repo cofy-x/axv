@@ -23,7 +23,7 @@ AXV is unreleased and experimental. Interfaces and AXV-owned development data ma
 
 ## Install and use
 
-Build from source with **Go 1.27.2**, **Node 24.16.0**, and **pnpm 12.11.2**. Background startup needs a macOS GUI login or a Linux systemd user manager (254 or newer); see [startup requirements](docs/startup.md#daily-commands). Otherwise, use `axv serve` after installation:
+Build from source with **Go 1.27.3**, **Node 24.16.0**, and **pnpm 12.11.2**. Background startup needs a macOS GUI login or a Linux systemd user manager (254 or newer); see [startup requirements](docs/startup.md#daily-commands). Otherwise, use `axv serve` after installation:
 
 ```bash
 make install
