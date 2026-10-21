@@ -239,6 +239,13 @@ describe('native Firecracker acceptance authorization and inputs', () => {
     const options = acceptanceOptions(explicitArguments);
     expect(options.uid).toBe(60000);
     expect(options.gid).toBe(60000);
+    expect(options['real-codex']).toBe(false);
+    expect(
+      acceptanceOptions([...explicitArguments, '--real-codex'])['real-codex'],
+    ).toBe(true);
+    expect(() =>
+      acceptanceOptions([...explicitArguments.slice(1), '--real-codex']),
+    ).toThrow(/--yes/);
   });
 
   it('rejects relative inputs, unchecked kernels and root jailer identities', () => {

@@ -237,6 +237,7 @@ node scripts/verify-vm-firecracker.mjs --yes \\
   --version <pinned-version> --subnet <unused-private-/22>
 Optional: --executable /absolute/axv --uid 60000 --gid 60000 --dns 1.1.1.1
           --docker-uplink eth0
+          --real-codex (uses the installed CLI, existing login and model settings)
 This creates real VMs, TAPs, cgroups and one owned nftables table. It never
 downloads VM inputs, installs host dependencies or changes host sysctls.
 The project workflow downloads a pinned public repository and installs its
@@ -264,6 +265,7 @@ export function acceptanceOptions(args) {
       gid: { type: 'string', default: '60000' },
       dns: { type: 'string', default: '1.1.1.1' },
       'docker-uplink': { type: 'string' },
+      'real-codex': { type: 'boolean', default: false },
     },
     allowPositionals: false,
     strict: true,
@@ -450,6 +452,10 @@ async function acceptance(options) {
     0,
     'Run native Firecracker acceptance as root.',
   );
+  // Resolve the optional real-model harness before creating native resources.
+  const verifyLive = options['real-codex']
+    ? (await import('./lib-vm-codex-live.mjs')).verifyVMCodexLive
+    : undefined;
   const arch = { x64: 'amd64', arm64: 'arm64' }[process.arch];
   assert.ok(arch, 'Only native amd64 and arm64 are supported.');
   const bundle = await verifiedBundle(options['image-bundle'], arch);
@@ -549,6 +555,7 @@ async function acceptance(options) {
   let inCleanup = false;
   let failure;
   let codexWorkflow;
+  let closeLiveCodex;
   const work = new AbortController();
   const probes = new Set();
   console.log(`Owned verification directory: ${directory}`);
@@ -1217,6 +1224,12 @@ async function acceptance(options) {
   async function cleanup(preserve = false) {
     cleaning ??= (async () => {
       let safe = true;
+      try {
+        await closeLiveCodex?.();
+      } catch (error) {
+        safe = false;
+        console.error('Real Codex cleanup needs attention:', error);
+      }
       try {
         await codexWorkflow?.close();
       } catch (error) {
@@ -2176,6 +2189,22 @@ async function acceptance(options) {
       run: captureCommand,
       signal: work.signal,
     });
+    if (verifyLive) {
+      await verifyLive({
+        executable,
+        directory,
+        profileHome: join(shortRuntime, 'live'),
+        socket,
+        env,
+        project,
+        binding: projectBinding.binding,
+        run: captureCommand,
+        signal: work.signal,
+        registerCleanup: (close) => {
+          closeLiveCodex = close;
+        },
+      });
+    }
     projectGitState = await exec(owned.id, [
       'git',
       '-C',
