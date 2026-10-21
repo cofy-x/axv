@@ -3,10 +3,11 @@
   gap: 12px;
   padding: 4px;
 }
-.gallery-controls > .ns-button {
+.gallery-controls > .ns-button,
+.gallery-controls > .gallery-button-group {
   justify-self: start;
 }
-.gallery-controls > label {
+.gallery-controls > label:not(.ns-field-label) {
   display: flex;
   gap: 8px;
   align-items: center;

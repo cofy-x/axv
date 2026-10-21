@@ -20,7 +20,10 @@ export function operationTarget(
   );
 }
 
-export function machineGuidance(machine: Machine, operations: Operation[]) {
+export function machineGuidance(
+  machine: Machine,
+  operations: Operation[],
+): string | undefined {
   const operation = operations.find(
     (op) =>
       (op.machineId === machine.id || op.locks?.includes(machine.id)) &&
@@ -29,7 +32,7 @@ export function machineGuidance(machine: Machine, operations: Operation[]) {
   if (operation)
     return `${humanize(operation.action)} is ${operation.status}${operation.phase ? ` · ${humanize(operation.phase)}` : ''}. Open Activity for progress.`;
   if (machine.pendingSpec)
-    return 'A configuration change is pending. Inspect this VM to review or retry it.';
+    return 'Configuration change pending. Review or retry the change.';
   if (!machine.spec.volumeId)
     return 'Attach a project volume before starting this VM.';
   if (machine.status === 'running' && machine.guestState === 'not-installed')
@@ -37,16 +40,10 @@ export function machineGuidance(machine: Machine, operations: Operation[]) {
   if (machine.status === 'running' && machine.guestState === 'incompatible')
     return 'Guest protocol incompatible. Guest enhancements require a compatible AXV image.';
   if (machine.status === 'running' && !machine.ready)
-    return 'The guest is not ready. Check the Inspector; terminals require a guest connection.';
-  if (machine.ready)
-    return machine.guestCapabilities?.includes('terminals')
-      ? 'Choose New Terminal to begin.'
-      : 'Guest terminals are unavailable in this image.';
-  if (machine.status === 'stopped')
-    return 'Start to use this VM; Inspect to configure it.';
-  return (
-    machine.reason || 'Inspect this VM for its state and recovery options.'
-  );
+    return 'Guest not ready. Terminals require a guest connection.';
+  if (machine.ready && !machine.guestCapabilities?.includes('terminals'))
+    return 'Guest terminals are unavailable in this image.';
+  return machine.reason || undefined;
 }
 
 export function guestTerminalReason(machine?: Machine) {
@@ -57,8 +54,7 @@ export function guestTerminalReason(machine?: Machine) {
     return 'This image does not include AXV guest enhancements.';
   if (machine.guestState === 'incompatible')
     return 'The AXV guest protocol is incompatible. Select a compatible image.';
-  if (!machine.ready)
-    return 'The AXV guest is not ready. Check the Inspector for details.';
+  if (!machine.ready) return 'The AXV guest is not ready.';
   if (!machine.guestCapabilities?.includes('terminals'))
     return 'This image does not provide guest terminals.';
   return undefined;

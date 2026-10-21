@@ -344,6 +344,10 @@ async function openTasks(page: Page) {
   await menuItem(page, 'Project Files').click();
   await page
     .locator('[data-window-id="project-files:projects"]')
+    .getByRole('tab', { name: 'VM', exact: true })
+    .click();
+  await page
+    .locator('[data-window-id="project-files:projects"]')
     .getByRole('button', { name: /^Task repository ·/ })
     .click();
   await filesWindow(page)

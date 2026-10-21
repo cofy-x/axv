@@ -135,7 +135,7 @@ async function fixture(page: Page, registered = true) {
     if (stale || data.binding.bootId !== binding.bootId)
       return json(
         {
-          code: 'project_binding_changed',
+          code: 'binding_changed',
           error: 'The VM project binding changed. Reconnect explicitly.',
         },
         409,
@@ -289,7 +289,9 @@ async function launcher(page: Page) {
     .click();
   await menuItem(page, 'Applications').click();
   await menuItem(page, 'Project Files').click();
-  return page.locator('[data-window-id="project-files:projects"]');
+  const projects = page.locator('[data-window-id="project-files:projects"]');
+  await projects.getByRole('tab', { name: 'VM', exact: true }).click();
+  return projects;
 }
 
 async function openProject(page: Page) {
@@ -330,6 +332,7 @@ test('VM project actions reopen Projects without closing the draft', async ({
   await expect(projects).toBeVisible();
   await expect(text).toHaveValue('Keep this project draft');
   await expect(text).toBeDisabled();
+  await projects.getByRole('tab', { name: 'VM', exact: true }).click();
   await expect(
     projects.getByRole('button', { name: /^VM repository ·/ }),
   ).toBeVisible();
@@ -372,9 +375,7 @@ test('selecting the same VM file retries a failed read', async ({ page }) => {
       }),
     { times: 1 },
   );
-  await browser(page)
-    .getByRole('button', { name: 'Reload File', exact: true })
-    .click();
+  await actionMenu(page, browser(page), 'More VM project actions', 'Reload');
   await expect(browser(page).getByRole('alert')).toContainText(
     'Transient guest file read failure.',
   );
@@ -387,15 +388,82 @@ test('selecting the same VM file retries a failed read', async ({ page }) => {
   await expect(browser(page).getByRole('alert')).toHaveCount(0);
 });
 
+test('VM file recovery retries the original read and offers explicit reconnect for a changed binding', async ({
+  page,
+}) => {
+  const state = await fixture(page);
+  const text = await openProject(page);
+  await expect(
+    browser(page).getByRole('button', { name: 'Reconnect', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    browser(page).getByRole('button', { name: 'Reload', exact: true }),
+  ).toHaveCount(0);
+  const reads: unknown[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.endsWith('/files/read'))
+      reads.push(request.postDataJSON());
+  });
+  await page.route(
+    '**/api/compute/projects/*/files/read',
+    (route) =>
+      route.fulfill({
+        status: 503,
+        json: {
+          code: 'project_unavailable',
+          error: 'The guest could not read this file.',
+        },
+      }),
+    { times: 1 },
+  );
+  await actionMenu(page, browser(page), 'More VM project actions', 'Reload');
+  await expect(browser(page).getByRole('alert')).toContainText(
+    'The guest could not read this file.',
+  );
+  await browser(page)
+    .getByRole('button', { name: 'Retry', exact: true })
+    .click();
+  await expect(text).toHaveValue('Original VM file\n');
+  await expect(
+    browser(page).getByRole('region', { name: 'VM project file editor' }),
+  ).toBeFocused();
+  expect(reads).toEqual([
+    { binding: originalBinding, path: 'main.ts' },
+    { binding: originalBinding, path: 'main.ts' },
+  ]);
+  expect(state.bindingRequests).toBe(1);
+
+  await page.route(
+    '**/api/compute/projects/*/files/read',
+    (route) =>
+      route.fulfill({
+        status: 409,
+        // Recovery follows the code and operation, independently of message wording.
+        json: {
+          code: 'binding_changed',
+          error: 'The selected environment is unavailable.',
+        },
+      }),
+    { times: 1 },
+  );
+  await actionMenu(page, browser(page), 'More VM project actions', 'Reload');
+  await expect(
+    browser(page).getByRole('button', { name: 'Retry', exact: true }),
+  ).toHaveCount(0);
+  await browser(page)
+    .getByRole('button', { name: 'Reconnect', exact: true })
+    .click();
+  await expect(text).toHaveValue('Original VM file\n');
+  expect(state.bindingRequests).toBe(2);
+});
+
 test('recreating the removed selected VM file opens its new contents', async ({
   page,
 }) => {
   const state = await fixture(page);
   const text = await openProject(page);
   state.removeFile('main.ts');
-  await browser(page)
-    .getByRole('button', { name: 'New File', exact: true })
-    .click();
+  await actionMenu(page, browser(page), 'New', 'New File');
   const dialog = page.getByRole('dialog');
   await dialog
     .getByRole('textbox', { name: 'Name', exact: true })
@@ -422,12 +490,14 @@ test('VM project registration retains host controls, exact root bytes and the re
   );
   const state = await fixture(page, false);
   const projects = await launcher(page);
+  await projects.getByRole('tab', { name: 'Host', exact: true }).click();
   await expect(
     projects.getByLabel('Host project directory', { exact: true }),
   ).toBeVisible();
   await expect(
-    projects.getByRole('button', { name: 'Open Project', exact: true }),
+    projects.getByRole('button', { name: 'Open', exact: true }),
   ).toBeDisabled();
+  await projects.getByRole('tab', { name: 'VM', exact: true }).click();
   await projects
     .getByRole('combobox', { name: 'Project volume', exact: true })
     .selectOption(project.volumeId);
@@ -440,9 +510,7 @@ test('VM project registration retains host controls, exact root bytes and the re
     path: launcherImage,
     contentType: 'image/png',
   });
-  await projects
-    .getByRole('button', { name: 'Open VM Project', exact: true })
-    .click();
+  await projects.getByRole('button', { name: 'Open', exact: true }).click();
   await expect(browser(page)).toBeVisible();
   expect(state.registrations).toEqual([
     expect.objectContaining({
@@ -459,9 +527,7 @@ test('VM project registration retains host controls, exact root bytes and the re
       exact: true,
     }),
   ).toBeDisabled();
-  await browser(page)
-    .getByRole('button', { name: 'New File', exact: true })
-    .click();
+  await actionMenu(page, browser(page), 'New', 'New File');
   await page
     .getByRole('dialog')
     .getByRole('textbox', { name: 'Name', exact: true })
@@ -489,9 +555,7 @@ test('a delayed new-file response preserves navigation back to the original file
   const state = await fixture(page);
   const text = await openProject(page);
   const delayed = state.delayWrite();
-  await browser(page)
-    .getByRole('button', { name: 'New File', exact: true })
-    .click();
+  await actionMenu(page, browser(page), 'New', 'New File');
   await page
     .getByRole('dialog')
     .getByRole('textbox', { name: 'Name', exact: true })
@@ -677,6 +741,15 @@ test('stale VM bindings and conflicts keep drafts until an explicit reconnect', 
   );
   await expect(text).toHaveValue('Keep this draft');
   expect(state.bindingRequests).toBe(1);
+  await browser(page)
+    .getByRole('button', { name: 'Reload', exact: true })
+    .click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Cancel', exact: true })
+    .click();
+  await expect(text).toHaveValue('Keep this draft');
+  expect(state.bindingRequests).toBe(1);
   state.setStale();
   await browser(page)
     .getByRole('button', { name: 'Save', exact: true })
@@ -697,9 +770,7 @@ test('stale VM bindings and conflicts keep drafts until an explicit reconnect', 
   expect(state.bindingRequests).toBe(1);
   const beforeReplacement = state.fileBindings.length;
   state.replaceVM();
-  await browser(page)
-    .getByRole('button', { name: 'Reconnect', exact: true })
-    .click();
+  await actionMenu(page, browser(page), 'More VM project actions', 'Reconnect');
   await page
     .getByRole('dialog')
     .getByRole('button', { name: 'Discard', exact: true })

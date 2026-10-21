@@ -35,14 +35,6 @@
 .notes-app > .app-toolbar {
   flex-wrap: wrap;
 }
-.notes-view-controls {
-  display: inline-flex;
-  gap: 3px;
-}
-.notes-view-controls [aria-pressed='true'] {
-  background: var(--ns-face);
-  box-shadow: var(--ns-recessed);
-}
 .notes-preview {
   position: absolute;
   inset: 0;

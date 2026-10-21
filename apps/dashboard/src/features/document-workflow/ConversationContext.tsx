@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { Button, IconButton, Select } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { useFilesystemData } from '../../filesystem/context';
@@ -22,6 +23,7 @@ function AttachmentComposer({
   refreshKey,
   onBusy,
   onAdded,
+  children,
 }: {
   entryId: string;
   sessionId: string;
@@ -30,6 +32,7 @@ function AttachmentComposer({
   refreshKey: number;
   onBusy: (busy: boolean) => void;
   onAdded: (batch: ContextBatch, warning: string) => Promise<void>;
+  children: ReactNode;
 }) {
   const version = useSavedVersion(entryId, refreshKey);
   const [busy, setBusy] = useState(false);
@@ -71,13 +74,16 @@ function AttachmentComposer({
     <div className="document-attachment-composer" aria-busy={busy}>
       <SavedVersionPicker version={version} disabled={busy} />
       {error && <p role="alert">{error}</p>}
-      <Button
-        primary
-        disabled={busy || !available || version.loading || !version.choice}
-        onClick={() => void attach()}
-      >
-        {busy ? 'Adding…' : 'Add'}
-      </Button>
+      <div className="document-attachment-actions">
+        <Button
+          primary
+          disabled={busy || !available || version.loading || !version.choice}
+          onClick={() => void attach()}
+        >
+          {busy ? 'Attaching…' : 'Attach'}
+        </Button>
+        {children}
+      </div>
     </div>
   );
 }
@@ -265,34 +271,40 @@ export function ConversationContext({
   const documents = files.entries.filter(
     (entry) => entry.editable && !isInTrash(entry, files.entries),
   );
+  const cancelComposer = (
+    <Button disabled={composingBusy} onClick={closeComposer}>
+      Cancel
+    </Button>
+  );
   return (
-    <div className="document-workflow app-pad">
-      <div className="document-workflow-heading">
-        <strong>
-          {run.data ? sessionTitle(run.data) : 'Codex attachments'}
-        </strong>
-        <span>run {runId.slice(0, 8)}</span>
-      </div>
-      {run.data && (
-        <p className="document-target-summary">
-          Host · {projectName(run.data.projectPath)}
-        </p>
-      )}
-      <p className="document-hint">
-        Included with your next submitted message in this run.
-      </p>
-      <div className="app-toolbar">
-        <Button onClick={() => desktop.openApp('codex', { sessionId, runId })}>
-          Open Conversation
-        </Button>
-        <IconButton
-          icon="refresh"
-          label="Refresh"
-          onClick={() => {
-            void refresh();
-            setMetadataRevision((value) => value + 1);
-          }}
-        />
+    <div className="document-workflow document-context app-pad">
+      <div className="document-context-header">
+        <div className="document-context-target">
+          <strong className="document-context-title">
+            {run.data ? sessionTitle(run.data) : 'Codex attachments'}
+          </strong>
+          <p className="document-target-summary">
+            {run.data && <>Host · {projectName(run.data.projectPath)} · </>}
+            <span className="document-context-run">
+              run {runId.slice(0, 8)}
+            </span>
+          </p>
+        </div>
+        <div className="document-context-actions">
+          <Button
+            onClick={() => desktop.openApp('codex', { sessionId, runId })}
+          >
+            Open Codex
+          </Button>
+          <IconButton
+            icon="refresh"
+            label="Refresh"
+            onClick={() => {
+              void refresh();
+              setMetadataRevision((value) => value + 1);
+            }}
+          />
+        </div>
       </div>
       {(error || run.error) && <p role="alert">{error || run.error}</p>}
       {warning && <p role="alert">{warning}</p>}
@@ -313,70 +325,82 @@ export function ConversationContext({
           a continuation needs a new selection.
         </p>
       )}
-      <div ref={addButton} hidden={composing} inert={composing}>
-        <Button
-          primary
-          disabled={!available}
-          onClick={() => {
-            setWarning('');
-            setComposing(true);
-          }}
-        >
-          Add document
-        </Button>
-      </div>
-      {composing && (
-        <section className="document-add-section" aria-label="Add document">
-          <Select
-            label="Document"
-            autoFocus
-            value={documentId}
-            disabled={composingBusy}
-            onChange={(event) => setDocumentId(event.target.value)}
-          >
-            <option value="">Choose a document</option>
-            {documents.map((entry) => (
-              <option value={entry.id} key={entry.id}>
-                {entry.name}
-                {documents.some(
-                  (other) => other.id !== entry.id && other.name === entry.name,
-                )
-                  ? ` · ${documentLocation(entry.id, files.entries)}`
-                  : ''}
-              </option>
-            ))}
-          </Select>
-          {!documents.length && (
-            <p>
-              No saved documents. Create and save a document in Text Editor
-              first.
-            </p>
-          )}
-          {documentId && (
-            <AttachmentComposer
-              key={documentId}
-              entryId={documentId}
-              sessionId={sessionId}
-              runId={runId}
-              available={available}
-              refreshKey={metadataRevision}
-              onBusy={setComposingBusy}
-              onAdded={async (batch, message) => {
-                setLastAttachment(batch);
-                setWarning(message);
-                await refresh();
-                closeComposer();
+      <section
+        className="document-context-documents"
+        aria-label="Context deliveries"
+      >
+        <div className="document-context-documents-heading">
+          <h2>Documents</h2>
+          <div ref={addButton} hidden={composing} inert={composing}>
+            <Button
+              primary
+              aria-label="Add document"
+              disabled={!available}
+              onClick={() => {
+                setWarning('');
+                setComposing(true);
               }}
-            />
-          )}
-          <Button disabled={composingBusy} onClick={closeComposer}>
-            Cancel
-          </Button>
-        </section>
-      )}
-      <section aria-label="Context deliveries">
+            >
+              Add
+            </Button>
+          </div>
+        </div>
+        <p className="document-hint">For your next message in this run.</p>
+        {composing && (
+          <section className="document-add-section" aria-label="Add document">
+            <Select
+              label="Document"
+              autoFocus
+              value={documentId}
+              disabled={composingBusy}
+              onChange={(event) => setDocumentId(event.target.value)}
+            >
+              <option value="">Choose a document</option>
+              {documents.map((entry) => (
+                <option value={entry.id} key={entry.id}>
+                  {entry.name}
+                  {documents.some(
+                    (other) =>
+                      other.id !== entry.id && other.name === entry.name,
+                  )
+                    ? ` · ${documentLocation(entry.id, files.entries)}`
+                    : ''}
+                </option>
+              ))}
+            </Select>
+            {!documents.length && (
+              <p>
+                No saved documents. Create and save a document in Text Editor
+                first.
+              </p>
+            )}
+            {documentId ? (
+              <AttachmentComposer
+                key={documentId}
+                entryId={documentId}
+                sessionId={sessionId}
+                runId={runId}
+                available={available}
+                refreshKey={metadataRevision}
+                onBusy={setComposingBusy}
+                onAdded={async (batch, message) => {
+                  setLastAttachment(batch);
+                  setWarning(message);
+                  await refresh();
+                  closeComposer();
+                }}
+              >
+                {cancelComposer}
+              </AttachmentComposer>
+            ) : (
+              cancelComposer
+            )}
+          </section>
+        )}
         {!loaded && !error && <p role="status">Loading attachments…</p>}
-        {loaded && !batches.length && <p>No documents attached to this run.</p>}
+        {loaded && !batches.length && (
+          <p className="document-context-empty">No documents attached.</p>
+        )}
         {active.map(receipt)}
         {!!history.length && (
           <details className="document-history">

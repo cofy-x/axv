@@ -75,9 +75,7 @@ async function openProject(page: Page) {
   await launcher
     .getByLabel('Host project directory', { exact: true })
     .fill(projectPath);
-  await launcher
-    .getByRole('button', { name: 'Open Project', exact: true })
-    .click();
+  await launcher.getByRole('button', { name: 'Open', exact: true }).click();
   const browser = page.locator(
     '.ns-window.is-active[data-app-id="project-files"]:has(.project-browser)',
   );
@@ -103,18 +101,25 @@ test('a permanently deleted document retains selectable snapshots and project ex
   const draft = '# Local deleted draft\n\nPRESERVE_THIS_DRAFT';
   await text.fill(draft);
   const panel = await openDocumentTask(page, editor, 'export');
-  await panel
-    .getByRole('combobox', { name: 'Version', exact: true })
-    .selectOption(snapshot.id);
+  const versions = panel.getByRole('combobox', {
+    name: 'Version',
+    exact: true,
+  });
+  await expect(versions).toHaveValue('saved');
   expect(
     (await request.post(`/api/entries/${entry.id}/trash`)).ok(),
   ).toBeTruthy();
   expect((await request.delete(`/api/entries/${entry.id}`)).ok()).toBeTruthy();
   await panel.getByRole('button', { name: 'Refresh', exact: true }).click();
   await expect(panel).toContainText(/source document.*unavailable/i);
+  await expect(versions).toHaveValue('reviewed');
   await expect(
-    panel.getByRole('combobox', { name: 'Version', exact: true }),
-  ).toHaveValue(snapshot.id);
+    panel.getByText('Newer saved version available.', { exact: false }),
+  ).toHaveCount(0);
+  await versions.selectOption(snapshot.id);
+  await panel.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(versions).toBeEnabled();
+  await expect(versions).toHaveValue(snapshot.id);
   await panel
     .getByRole('combobox', { name: 'Destination project', exact: true })
     .selectOption(project.id);
@@ -125,7 +130,10 @@ test('a permanently deleted document retains selectable snapshots and project ex
       response.url().endsWith(`/api/projects/${project.id}/export`) &&
       response.request().method() === 'POST',
   );
-  await panel.getByRole('button', { name: 'Export file', exact: true }).click();
+  await panel
+    .getByRole('group', { name: 'Saved version actions', exact: true })
+    .getByRole('button', { name: 'Export', exact: true })
+    .click();
   const result = await exported;
   expect(result.ok(), await result.text()).toBeTruthy();
   const file = await request.get(`/api/projects/${project.id}/file`, {
@@ -135,11 +143,21 @@ test('a permanently deleted document retains selectable snapshots and project ex
     '# Original snapshot\n\nRECOVERED_ORIGINAL',
   );
   await activate(page, filesWindow(page));
-  await actionMenu(page, filesWindow(page), 'More file actions', 'Refresh');
+  await actionMenu(
+    page,
+    filesWindow(page),
+    'More file actions',
+    'Refresh Folder',
+  );
   await activate(page, editor);
   await expect(editor).toContainText('Your draft remains available');
   await expect(text).toHaveValue(draft);
-  await actionMenu(page, editor, 'More document actions', 'Save Copy');
+  const saveCopy = editor.getByRole('button', {
+    name: 'Save Copy',
+    exact: true,
+  });
+  await expect(saveCopy).toBeInViewport();
+  await saveCopy.click();
   const copyDialog = page.getByRole('dialog', {
     name: 'Save Copy',
     exact: true,
@@ -350,7 +368,7 @@ test('attachment replay feedback reflects accepted cancelled and unknown receipt
       panel = await openRunAttachments(page, codex);
     }
     await selectAttachmentVersion(panel, entry.id, snapshot.id);
-    await panel.getByRole('button', { name: 'Add', exact: true }).click();
+    await panel.getByRole('button', { name: 'Attach', exact: true }).click();
     await expect(
       panel.getByRole('button', { name: 'Add document', exact: true }),
     ).toBeFocused();
@@ -577,10 +595,10 @@ test('a fixed-run attachment panel never moves pending context to a continued ru
   await expect(runAttachmentPanel(page, codex)).toHaveClass(/is-active/);
   await expect(panel.getByText('Not delivered', { exact: true })).toBeVisible();
   await expect(
-    panel.getByRole('combobox', { name: 'Running conversation', exact: true }),
+    panel.getByRole('combobox', { name: 'Conversation', exact: true }),
   ).toHaveCount(0);
   await expect(
-    panel.getByRole('button', { name: 'Add', exact: true }),
+    panel.getByRole('button', { name: 'Attach', exact: true }),
   ).toBeDisabled();
   expect(sent).toEqual([]);
   const nextWindow = await resumeCodex(page, next.id, next.runId);
@@ -590,12 +608,12 @@ test('a fixed-run attachment panel never moves pending context to a continued ru
     .click();
   const nextPanel = runAttachmentPanel(page, next);
   await expect(nextPanel).toHaveClass(/is-active/);
-  await expect(nextPanel).toContainText('No documents attached to this run.');
+  await expect(nextPanel).toContainText('No documents attached.');
   const context = await request.get(contextEndpoint(next));
   expect(context.ok()).toBeTruthy();
   expect((await context.json()).batches).toEqual([]);
   await nextPanel
-    .getByRole('button', { name: 'Open Conversation', exact: true })
+    .getByRole('button', { name: 'Open Codex', exact: true })
     .click();
   await expect(nextWindow).toHaveClass(/is-active/);
   await endCodex(page, nextWindow);
@@ -631,16 +649,72 @@ test('an unavailable Codex list does not block saved versions or project export 
   await panel
     .getByRole('combobox', { name: 'Destination project', exact: true })
     .selectOption(project.id);
-  await panel
-    .getByLabel('New file path', { exact: true })
-    .fill(`review-${entry.id}.md`);
-  await expect(
-    panel.getByRole('button', { name: 'Export file', exact: true }),
-  ).toBeEnabled();
-  await openDocumentTask(page, editor, 'details');
+  const exportPath = `review-${entry.id}.md`;
+  await panel.getByLabel('New file path', { exact: true }).fill(exportPath);
+  const tasks = panel.getByRole('tablist', {
+    name: 'Document actions',
+    exact: true,
+  });
+  await tasks.getByRole('tab', { name: 'Details', exact: true }).click();
   await expect(
     panel.getByRole('button', { name: 'Keep version', exact: true }),
   ).toBeEnabled();
+  const exportTab = tasks.getByRole('tab', { name: 'Export', exact: true });
+  await exportTab.click();
+  const endpoint = `/api/projects/${project.id}/export`;
+  let releaseExport!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    releaseExport = resolve;
+  });
+  let exportStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    exportStarted = resolve;
+  });
+  await page.route(`**${endpoint}`, async (route) => {
+    if (route.request().method() === 'POST') {
+      exportStarted();
+      await gate;
+    }
+    await route.continue();
+  });
+  const exported = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(endpoint) &&
+      response.request().method() === 'POST',
+  );
+  try {
+    await panel
+      .getByRole('group', { name: 'Saved version actions', exact: true })
+      .getByRole('button', { name: 'Export', exact: true })
+      .click();
+    await started;
+    for (const label of ['Attach', 'Export', 'Details'])
+      await expect(
+        tasks.getByRole('tab', { name: label, exact: true }),
+      ).toBeDisabled();
+    await expect(exportTab).toHaveAttribute('aria-selected', 'true');
+    await expect(
+      panel.getByRole('combobox', { name: 'Version', exact: true }),
+    ).toBeDisabled();
+    await expect(
+      panel.getByRole('combobox', { name: 'Destination project', exact: true }),
+    ).toBeDisabled();
+    await expect(
+      panel.getByLabel('New file path', { exact: true }),
+    ).toBeDisabled();
+    releaseExport();
+    const result = await exported;
+    expect(result.ok(), await result.text()).toBeTruthy();
+    const file = await request.get(`/api/projects/${project.id}/file`, {
+      params: { path: exportPath },
+    });
+    expect(file.ok()).toBeTruthy();
+    expect((await file.json()).content).toBe(
+      '# Original snapshot\n\nRECOVERED_ORIGINAL',
+    );
+  } finally {
+    releaseExport();
+  }
 });
 
 test('a changed saved revision requires explicit review before attaching to the same run', async ({
@@ -720,7 +794,7 @@ test('a changed saved revision requires explicit review before attaching to the 
         response.url().endsWith(snapshotEndpoint) &&
         response.request().method() === 'POST',
     );
-    await panel.getByRole('button', { name: 'Add', exact: true }).click();
+    await panel.getByRole('button', { name: 'Attach', exact: true }).click();
     await capturing;
     await expectBusy();
     releaseCapture();
@@ -729,7 +803,7 @@ test('a changed saved revision requires explicit review before attaching to the 
     expect((await rejected.json()).code).toBe('revision_conflict');
     await expect(panel.getByRole('alert')).toBeVisible();
     await expect(
-      panel.getByRole('button', { name: 'Add', exact: true }),
+      panel.getByRole('button', { name: 'Attach', exact: true }),
     ).toBeEnabled();
     await expect(versions.locator('option:checked')).toHaveText(
       `Saved revision ${entry.revision}`,
@@ -763,7 +837,7 @@ test('a changed saved revision requires explicit review before attaching to the 
         response.url().endsWith(endpoint) &&
         response.request().method() === 'POST',
     );
-    await panel.getByRole('button', { name: 'Add', exact: true }).click();
+    await panel.getByRole('button', { name: 'Attach', exact: true }).click();
     await attaching;
     await expectBusy();
     releaseAttach();

@@ -367,9 +367,7 @@ test('removing the chosen attachment target never selects another VM', async ({
     spec: { ...state.machines[0].spec, name: 'Other VM' },
   });
   const manager = await host(page, state);
-  await manager
-    .getByRole('button', { name: 'Project Volumes', exact: true })
-    .click();
+  await manager.getByRole('button', { name: 'Volumes', exact: true }).click();
   await manager
     .getByRole('button', { name: 'Form project', exact: true })
     .click();
@@ -530,7 +528,7 @@ for (const resource of ['volume', 'image'] as const) {
     });
     await manager
       .getByRole('button', {
-        name: resource === 'volume' ? 'Project Volumes' : 'Images',
+        name: resource === 'volume' ? 'Volumes' : 'Images',
         exact: true,
       })
       .click();

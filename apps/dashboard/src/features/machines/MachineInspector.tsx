@@ -77,6 +77,12 @@ export function MachineInspector({ desktop, window }: AppWindowProps) {
                 snapshot.volumes,
                 provider,
               );
+  const guidance = machine
+    ? !connected
+      ? 'Reconnect to the original host before changing this VM.'
+      : (machine.status === 'stopped' ? reason('start') : undefined) ||
+        machineGuidance(machine, snapshot.operations)
+    : undefined;
 
   async function lifecycle(action: VMAction, retry = false) {
     const target = retry ? pending?.machine : machine;
@@ -169,19 +175,21 @@ export function MachineInspector({ desktop, window }: AppWindowProps) {
     <div className="machines-app">
       <div className="app-toolbar machines-toolbar">
         <IconButton
-          icon="refresh"
-          label="Refresh"
-          disabled={data.refreshing}
-          onClick={() => {
-            data.refresh();
-            setTerminalRefresh((value) => value + 1);
-          }}
-        />
-        <IconButton
           icon="back"
           label="Virtual Machines"
           onClick={() => desktop.openApp('machines')}
         />
+        <div className="machines-toolbar-actions">
+          <IconButton
+            icon="refresh"
+            label="Refresh"
+            disabled={data.refreshing}
+            onClick={() => {
+              data.refresh();
+              setTerminalRefresh((value) => value + 1);
+            }}
+          />
+        </div>
       </div>
       <div className="app-pad machines-scroll">
         {data.error && (
@@ -218,47 +226,47 @@ export function MachineInspector({ desktop, window }: AppWindowProps) {
         {machine ? (
           <>
             <header className="machines-section-heading machines-inspector-heading">
-              <PixelIcon name="virtual-machine" size={48} />
-              <div>
-                <span className="machines-eyebrow">
-                  {humanize(machine.spec.kind)} VM · {machine.spec.provider}
-                </span>
-                <h2>{machine.spec.name}</h2>
-                <p>
-                  <strong>{humanize(machine.status)}</strong> ·{' '}
-                  {machine.guestState === 'not-installed'
-                    ? 'Guest not installed'
-                    : machine.guestState === 'incompatible'
-                      ? 'Guest incompatible'
-                      : machine.ready
-                        ? 'Guest ready'
-                        : 'Guest unavailable'}
-                </p>
+              <div className="machines-inspector-identity">
+                <PixelIcon name="virtual-machine" size={48} />
+                <div>
+                  <span className="machines-eyebrow">
+                    {humanize(machine.spec.kind)} VM · {machine.spec.provider}
+                  </span>
+                  <h2>{machine.spec.name}</h2>
+                  <p>
+                    <strong>{humanize(machine.status)}</strong> ·{' '}
+                    {machine.guestState === 'not-installed'
+                      ? 'Guest not installed'
+                      : machine.guestState === 'incompatible'
+                        ? 'Guest incompatible'
+                        : machine.ready
+                          ? 'Guest ready'
+                          : 'Guest unavailable'}
+                  </p>
+                </div>
               </div>
             </header>
+            <div className="machines-inspector-actions">
+              <MachineActions
+                desktop={desktop}
+                machine={machine}
+                reason={reason}
+                terminalReason={
+                  active ? 'Wait for the current VM operation.' : terminalReason
+                }
+                onAction={(action) => void lifecycle(action)}
+                onTerminal={() => void newTerminal()}
+              />
+            </div>
             {machine.guestReason && (
               <p className="machines-form-help">{machine.guestReason}</p>
             )}
             {machine.reason && (
               <p className="machines-error">{machine.reason}</p>
             )}
-            <MachineActions
-              desktop={desktop}
-              machine={machine}
-              reason={reason}
-              terminalReason={
-                active ? 'Wait for the current VM operation.' : terminalReason
-              }
-              onAction={(action) => void lifecycle(action)}
-              onTerminal={() => void newTerminal()}
-            />
-            <p className="machines-form-help">
-              {!connected
-                ? 'Reconnect to the original host before changing this VM.'
-                : machine.status === 'stopped' && reason('start')
-                  ? reason('start')
-                  : machineGuidance(machine, snapshot.operations)}
-            </p>
+            {guidance && guidance !== machine.reason && (
+              <p className="machines-form-help">{guidance}</p>
+            )}
             {error && (
               <p className="machines-error" role="alert">
                 {error}
@@ -341,7 +349,7 @@ export function MachineInspector({ desktop, window }: AppWindowProps) {
                 <p>
                   {terminalLoading
                     ? 'Loading guest terminals…'
-                    : 'No terminals in this guest boot. Choose New Terminal.'}
+                    : 'No terminals in this guest boot.'}
                 </p>
               )}
             </details>

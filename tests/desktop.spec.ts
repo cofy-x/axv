@@ -320,7 +320,33 @@ test('columns, Inspector and file import/edit/move/recycle/download share one fi
   await files.getByRole('button', { name: 'Inspect', exact: true }).click();
   const inspector = page.locator('[data-app-id="inspector"]');
   await expect(inspector).toContainText('E2E Imported.txt');
-  await inspector.getByRole('button', { name: 'Pin', exact: true }).click();
+  const pin = inspector.getByRole('button', { name: 'Pin', exact: true });
+  await expect(pin).toHaveAttribute('aria-pressed', 'false');
+  await pin.click();
+  await expect(pin).toHaveAttribute('aria-pressed', 'true');
+  await expect(inspector).toContainText('Pinned');
+  await activate(page, files);
+  await files
+    .getByRole('option', { name: 'E2E Projects', exact: true })
+    .click();
+  await expect(inspector.getByTestId('inspector-name')).toHaveText(
+    'E2E Imported.txt',
+  );
+  await activate(page, inspector);
+  await pin.click();
+  await expect(pin).toHaveAttribute('aria-pressed', 'false');
+  await expect(inspector).toContainText('Follows selection');
+  await expect(inspector.getByTestId('inspector-name')).toHaveText(
+    'E2E Projects',
+  );
+  await activate(page, files);
+  await imported.click();
+  await expect(inspector.getByTestId('inspector-name')).toHaveText(
+    'E2E Imported.txt',
+  );
+  await activate(page, inspector);
+  await pin.click();
+  await expect(pin).toHaveAttribute('aria-pressed', 'true');
   await activate(page, files);
   await files.getByRole('button', { name: 'Open', exact: true }).click();
   const importedEntry = (await entries(request)).find(
@@ -362,7 +388,7 @@ test('columns, Inspector and file import/edit/move/recycle/download share one fi
   await files
     .getByRole('option', { name: 'E2E Final.txt', exact: true })
     .click();
-  await actionMenu(page, files, 'More file actions', 'Move to Recycler');
+  await actionMenu(page, files, 'More file actions', 'Recycle');
   await expect(inspector).toContainText(/Recycler|deleted|unavailable/);
   await launch(page, 'trash');
   const recycler = page.locator('[data-app-id="trash"]');
@@ -521,6 +547,16 @@ test('keyboard menus skip disabled items and modal dialogs restore focus', async
 }) => {
   await launch(page, 'gallery');
   const gallery = page.locator('[data-app-id="gallery"]');
+  const group = gallery.getByRole('group', {
+    name: 'Grouped buttons',
+    exact: true,
+  });
+  const first = group.getByRole('button', { name: 'First', exact: true });
+  const second = group.getByRole('button', { name: 'Second', exact: true });
+  await expect(first).toHaveAttribute('aria-pressed', 'true');
+  await second.click();
+  await expect(first).toHaveAttribute('aria-pressed', 'false');
+  await expect(second).toHaveAttribute('aria-pressed', 'true');
   await gallery
     .getByRole('tab', { name: 'Dialogs & Menus', exact: true })
     .click();
@@ -565,6 +601,12 @@ test('keyboard menus skip disabled items and modal dialogs restore focus', async
   await expect(gallery).toContainText('Nested command selected.');
   await expect(page.getByRole('menu')).toHaveCount(0);
   await expect(menu).toBeFocused();
+  await gallery.getByRole('tab', { name: 'Controls', exact: true }).click();
+  await expect(second).toHaveAttribute('aria-pressed', 'true');
+  await first.focus();
+  await first.press('Enter');
+  await expect(first).toHaveAttribute('aria-pressed', 'true');
+  await expect(second).toHaveAttribute('aria-pressed', 'false');
 });
 
 test('preferences persist and browser clients keep independent layouts', async ({
@@ -574,10 +616,27 @@ test('preferences persist and browser clients keep independent layouts', async (
 }) => {
   await launch(page, 'appearance');
   const preferences = page.locator('[data-app-id="appearance"]');
-  await preferences
-    .getByRole('button', { name: 'Dither', exact: true })
-    .click();
+  const slate = preferences.getByRole('button', {
+    name: 'Slate',
+    exact: true,
+  });
+  const dither = preferences.getByRole('button', {
+    name: 'Dither',
+    exact: true,
+  });
+  await expect(slate).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('Tab');
+  await slate.focus();
+  await expect(slate).toBeFocused();
+  await expect(slate).toHaveCSS('outline-style', 'solid');
+  await expect(slate).toHaveCSS('outline-color', 'rgb(32, 90, 138)');
+  await slate.press('Tab');
+  await expect(dither).toBeFocused();
+  await expect(slate).toHaveAttribute('aria-pressed', 'true');
+  await expect(dither).toHaveAttribute('aria-pressed', 'false');
+  await dither.press('Enter');
   await expect(preferences).toContainText('Saved.');
+  await expect(dither).toHaveAttribute('aria-pressed', 'true');
   await switchWorkspace(page, 4);
   await expect
     .poll(

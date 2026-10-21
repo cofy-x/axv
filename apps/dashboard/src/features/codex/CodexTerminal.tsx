@@ -83,7 +83,7 @@ export function CodexTerminal({
     recordPasteInput,
   } = useTerminalPaste({
     desktop,
-    title: window.title,
+    title: `${window.title} · Run ${runId.slice(0, 8)}`,
     terminal,
     connection,
     interactive: interactiveRef,
@@ -828,12 +828,24 @@ export function CodexTerminal({
           role={
             !feedback &&
             !metadataError &&
+            !resumeRecoveryError &&
             (state.phase === 'ended' || state.phase === 'reconnecting')
               ? 'status'
               : 'alert'
           }
         >
-          {resumeRecoveryError || feedback || state.message || metadataError}
+          {[
+            ...new Set(
+              [
+                resumeRecoveryError,
+                state.message,
+                feedback,
+                metadataError,
+              ].filter(Boolean),
+            ),
+          ].map((message) => (
+            <div key={message}>{message}</div>
+          ))}
         </div>
       )}
       {state.session &&

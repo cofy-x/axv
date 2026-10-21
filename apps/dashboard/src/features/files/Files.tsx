@@ -561,13 +561,12 @@ export function Files({ window, desktop }: AppWindowProps) {
           <option value="size">Size</option>
           <option value="kind">Kind</option>
         </Select>
-        <Button
-          aria-label={descending ? 'Sort ascending' : 'Sort descending'}
+        <IconButton
+          icon={descending ? 'sort-descending' : 'sort-ascending'}
+          label={descending ? 'Sort ascending' : 'Sort descending'}
           title={descending ? 'Sort ascending' : 'Sort descending'}
           onClick={() => update({ descending: !descending })}
-        >
-          {descending ? '▾' : '▴'}
-        </Button>
+        />
       </div>
       <div
         ref={browser}
@@ -663,30 +662,34 @@ export function Files({ window, desktop }: AppWindowProps) {
         >
           Open
         </Button>
-        <Button
-          disabled={selection.length !== 1}
-          onClick={() => {
-            if (selection[0]) void getInfo(desktop, selection[0], data);
-          }}
-        >
-          Inspect
-        </Button>
-        <IconButton
-          icon="more"
-          label="More file actions"
-          aria-haspopup="menu"
-          onClick={(event) => {
-            const rect = event.currentTarget.getBoundingClientRect();
-            desktop.contextMenu(
-              toolbarMenu('actions'),
-              { x: rect.left, y: rect.bottom },
-              {
-                title:
-                  selection.length === 1 ? selection[0]!.name : 'File actions',
-              },
-            );
-          }}
-        />
+        <div className="files-secondary-actions">
+          <Button
+            disabled={selection.length !== 1}
+            onClick={() => {
+              if (selection[0]) void getInfo(desktop, selection[0], data);
+            }}
+          >
+            Inspect
+          </Button>
+          <IconButton
+            icon="more"
+            label="More file actions"
+            aria-haspopup="menu"
+            onClick={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              desktop.contextMenu(
+                toolbarMenu('actions'),
+                { x: rect.left, y: rect.bottom },
+                {
+                  title:
+                    selection.length === 1
+                      ? selection[0]!.name
+                      : 'File actions',
+                },
+              );
+            }}
+          />
+        </div>
       </div>
       <StatusBar>
         {selection.length ? `${selection.length} selected` : 'Select an item.'}

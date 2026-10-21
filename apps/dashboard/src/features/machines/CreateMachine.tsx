@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, Checkbox, Field, Select } from '@cofy-x/axv-nextstep';
+import {
+  Button,
+  Checkbox,
+  Field,
+  IconButton,
+  Select,
+} from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { machinesApi } from './api';
 import type { ComputeBinding, MachineSpec } from './api';
@@ -387,8 +393,7 @@ export function CreateMachine({ desktop, window }: AppWindowProps) {
             />
           </>
         )}
-        <div className="machines-form-actions">
-          <Button onClick={data.refresh}>Check Host</Button>
+        <div className="machines-form-actions machines-create-actions">
           {unresolved && !busy ? (
             <Button
               disabled={hostChanged || !!data.error}
@@ -404,6 +409,11 @@ export function CreateMachine({ desktop, window }: AppWindowProps) {
               {busy ? 'Creating…' : 'Create VM'}
             </Button>
           )}
+          <IconButton
+            icon="refresh"
+            label="Check Host"
+            onClick={data.refresh}
+          />
         </div>
       </form>
     </div>

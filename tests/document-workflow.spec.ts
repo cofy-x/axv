@@ -147,10 +147,24 @@ for (const width of [1440, 390]) {
       if (request.url().includes('markdown-preview-probe'))
         imageRequests.push(request.url());
     });
-    await choose(
-      editor.getByRole('button', { name: 'Preview', exact: true }),
-      isMobile,
-    );
+    const views = editor.getByRole('group', {
+      name: 'Document view',
+      exact: true,
+    });
+    const edit = views.getByRole('button', { name: 'Edit', exact: true });
+    const previewButton = views.getByRole('button', {
+      name: 'Preview',
+      exact: true,
+    });
+    await expect(edit).toHaveAttribute('aria-pressed', 'true');
+    await expect(previewButton).toHaveAttribute('aria-pressed', 'false');
+    if (isMobile) await choose(previewButton, true);
+    else {
+      await previewButton.focus();
+      await previewButton.press('Enter');
+    }
+    await expect(previewButton).toHaveAttribute('aria-pressed', 'true');
+    await expect(edit).toHaveAttribute('aria-pressed', 'false');
     const preview = editor.getByRole('region', { name: 'Markdown preview' });
     await expect(
       preview.getByRole('heading', { name: 'Plan V1' }),
@@ -174,10 +188,13 @@ for (const width of [1440, 390]) {
     await expect(text).toHaveAttribute('inert', '');
     await text.evaluate((element) => element.focus());
     await expect(text).not.toBeFocused();
-    await choose(
-      editor.getByRole('button', { name: 'Edit', exact: true }),
-      isMobile,
-    );
+    if (isMobile) await choose(edit, true);
+    else {
+      await edit.focus();
+      await edit.press('Space');
+    }
+    await expect(edit).toHaveAttribute('aria-pressed', 'true');
+    await expect(previewButton).toHaveAttribute('aria-pressed', 'false');
     await expect(text).toBeFocused();
     await expect(text).toHaveAttribute(
       'data-mount-probe',
@@ -227,7 +244,7 @@ for (const width of [1440, 390]) {
         response.request().method() === 'POST',
     );
     await choose(
-      launcher.getByRole('button', { name: 'Open Project', exact: true }),
+      launcher.getByRole('button', { name: 'Open', exact: true }),
       isMobile,
     );
     const registration = await registered;
@@ -331,24 +348,66 @@ for (const width of [1440, 390]) {
     await expect(panel).not.toContainText('MUTABLE_SOURCE_V2');
     await captureScene('snapshot-preview');
 
-    await openDocumentTask(page, editor, 'export', isMobile);
+    const tasks = panel.getByRole('tablist', {
+      name: 'Document actions',
+      exact: true,
+    });
+    const detailsTab = tasks.getByRole('tab', { name: 'Details', exact: true });
+    const exportTab = tasks.getByRole('tab', { name: 'Export', exact: true });
+    const attachTab = tasks.getByRole('tab', { name: 'Attach', exact: true });
+    await expect(detailsTab).toHaveAttribute('aria-selected', 'true');
+    await detailsTab.focus();
+    await detailsTab.press('ArrowLeft');
+    await expect(exportTab).toBeFocused();
+    await expect(exportTab).toHaveAttribute('aria-selected', 'true');
+    await expect(
+      panel.getByRole('tabpanel', { name: 'Export', exact: true }),
+    ).toBeVisible();
     await expect(panel).not.toContainText('Kept revision');
-    await panel
-      .getByRole('combobox', { name: 'Version', exact: true })
-      .selectOption(snapshot.id);
+    await expect(
+      panel.getByRole('combobox', { name: 'Version', exact: true }),
+    ).toHaveValue(snapshot.id);
     await panel
       .getByRole('combobox', { name: 'Destination project', exact: true })
       .selectOption(project.id);
     const filename = `E2E Export ${width} ${entry.id.slice(0, 8)}.md`;
     const exportPath = `nested/${filename}`;
     await panel.getByLabel('New file path', { exact: true }).fill(exportPath);
+    await exportTab.focus();
+    await exportTab.press('ArrowLeft');
+    await expect(attachTab).toBeFocused();
+    await expect(attachTab).toHaveAttribute('aria-selected', 'true');
+    await panel
+      .getByRole('combobox', { name: 'Conversation', exact: true })
+      .selectOption(JSON.stringify([codex.id, codex.runId]));
+    await attachTab.focus();
+    await attachTab.press('End');
+    await expect(detailsTab).toBeFocused();
+    await expect(detailsTab).toHaveAttribute('aria-selected', 'true');
+    await detailsTab.press('ArrowLeft');
+    await expect(exportTab).toBeFocused();
+    await expect(exportTab).toHaveAttribute('aria-selected', 'true');
+    await expect(
+      panel.getByRole('combobox', { name: 'Version', exact: true }),
+    ).toHaveValue(snapshot.id);
+    await expect(
+      panel.getByRole('combobox', { name: 'Destination project', exact: true }),
+    ).toHaveValue(project.id);
+    await expect(
+      panel.getByLabel('New file path', { exact: true }),
+    ).toHaveValue(exportPath);
+    await expect(
+      panel.getByRole('heading', { name: 'Plan V1', exact: true }),
+    ).toBeVisible();
     const exported = page.waitForResponse(
       (response) =>
         response.url().endsWith(`/api/projects/${project.id}/export`) &&
         response.request().method() === 'POST',
     );
     await choose(
-      panel.getByRole('button', { name: 'Export file', exact: true }),
+      panel
+        .getByRole('group', { name: 'Saved version actions', exact: true })
+        .getByRole('button', { name: 'Export', exact: true }),
       isMobile,
     );
     const exportResult = await exported;
@@ -462,7 +521,9 @@ for (const width of [1440, 390]) {
         response.request().method() === 'POST',
     );
     await choose(
-      panel.getByRole('button', { name: 'Export file', exact: true }),
+      panel
+        .getByRole('group', { name: 'Saved version actions', exact: true })
+        .getByRole('button', { name: 'Export', exact: true }),
       isMobile,
     );
     const conflict = await repeated;
@@ -488,16 +549,18 @@ for (const width of [1440, 390]) {
     await panel
       .getByRole('combobox', { name: 'Version', exact: true })
       .selectOption('saved');
-    await panel
-      .getByRole('combobox', { name: 'Running conversation', exact: true })
-      .selectOption(JSON.stringify([codex.id, codex.runId]));
+    await expect(
+      panel.getByRole('combobox', { name: 'Conversation', exact: true }),
+    ).toHaveValue(JSON.stringify([codex.id, codex.runId]));
     const queuedFromEditor = page.waitForResponse(
       (response) =>
         response.url().endsWith(endpoint) &&
         response.request().method() === 'POST',
     );
     await choose(
-      panel.getByRole('button', { name: 'Add', exact: true }),
+      panel
+        .getByRole('group', { name: 'Saved version actions', exact: true })
+        .getByRole('button', { name: 'Attach', exact: true }),
       isMobile,
     );
     const editorAttachment = await queuedFromEditor;
@@ -506,9 +569,49 @@ for (const width of [1440, 390]) {
     expect(cancelled.runId).toBe(codex.runId);
     expect(cancelled.snapshots[0].revision).toBe(entry.revision + 1);
     const contextPanel = await openRunAttachments(page, codex, isMobile);
+    const addDocument = contextPanel.getByRole('button', {
+      name: 'Add document',
+      exact: true,
+    });
+    await expect(
+      contextPanel.getByRole('heading', { name: 'Documents', exact: true }),
+    ).toBeVisible();
+    await expect(addDocument).toHaveText('Add');
+    for (const action of [
+      addDocument,
+      contextPanel.getByRole('button', { name: 'Open Codex', exact: true }),
+      contextPanel.getByRole('button', { name: 'Refresh', exact: true }),
+    ])
+      await expect(action).toBeInViewport();
+    expect(
+      await contextPanel
+        .locator('.document-workflow')
+        .evaluate((content) => content.scrollWidth <= content.clientWidth),
+    ).toBe(true);
+    if (isMobile) await choose(addDocument, true);
+    else {
+      await addDocument.focus();
+      await addDocument.press('Enter');
+    }
+    const documentPicker = contextPanel.getByRole('combobox', {
+      name: 'Document',
+      exact: true,
+    });
+    await expect(documentPicker).toBeVisible();
+    if (!isMobile) await expect(documentPicker).toBeFocused();
+    const cancelSelection = contextPanel
+      .getByRole('region', { name: 'Add document', exact: true })
+      .getByRole('button', { name: 'Cancel', exact: true });
+    if (isMobile) await choose(cancelSelection, true);
+    else {
+      await cancelSelection.focus();
+      await cancelSelection.press('Enter');
+    }
+    await expect(documentPicker).toBeHidden();
+    await expect(addDocument).toBeFocused();
     await expect(
       contextPanel.getByRole('combobox', {
-        name: 'Running conversation',
+        name: 'Conversation',
         exact: true,
       }),
     ).toHaveCount(0);
@@ -547,7 +650,7 @@ for (const width of [1440, 390]) {
       );
       await choose(
         contextPanel.getByRole('button', {
-          name: 'Add',
+          name: 'Attach',
           exact: true,
         }),
         isMobile,
@@ -600,7 +703,7 @@ for (const width of [1440, 390]) {
     expect(pending.id).not.toBe(cancelled.id);
     await choose(
       contextPanel.getByRole('button', {
-        name: 'Open Conversation',
+        name: 'Open Codex',
         exact: true,
       }),
       isMobile,
@@ -641,7 +744,7 @@ for (const width of [1440, 390]) {
     const steering = await attach(snapshot.id);
     await choose(
       contextPanel.getByRole('button', {
-        name: 'Open Conversation',
+        name: 'Open Codex',
         exact: true,
       }),
       isMobile,

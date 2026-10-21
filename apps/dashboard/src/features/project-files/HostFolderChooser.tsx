@@ -52,7 +52,7 @@ export function HostFolderChooser({
       <h2 ref={heading} tabIndex={-1}>
         Choose a host folder
       </h2>
-      <p>Use Folder fills the path. Open Project registers it.</p>
+      <p>Use Folder fills the path. Then choose Open.</p>
       <form
         className="project-folder-path"
         onSubmit={(event) => {

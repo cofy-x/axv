@@ -275,6 +275,54 @@ test('a delayed clipboard result cannot enter a replacement Host shell', async (
   await expect.poll(() => sent(traffic[1]!)).toBe('# current shell');
 });
 
+test('a rejected clipboard paste shows one current error and keeps an explicit retry', async ({
+  page,
+  isMobile,
+}) => {
+  const traffic = recordInput(page, '/api/terminal');
+  await recordBrowserSockets(page, '/api/terminal');
+  const terminal = await openTerminal(page, isMobile);
+  const draft = '# retry this paste';
+  await mockClipboard(page, 'resolved', draft);
+  await page.evaluate(() => {
+    const socket = (window as unknown as PasteTestWindow).axvPasteSockets[0]!;
+    Object.defineProperty(socket, 'bufferedAmount', {
+      configurable: true,
+      get: () => 2 * 1024 * 1024,
+    });
+  });
+  await pressPaste(terminal, isMobile);
+  const dialog = pasteDialog(page);
+  const send = dialog.getByRole('button', { name: 'Send', exact: true });
+  const rejection = dialog.getByText(
+    'Text was not queued. Check the connection, wait, or try a smaller paste.',
+    { exact: true },
+  );
+  await expect(rejection).toHaveCount(1);
+  await choose(send, isMobile);
+  await expect(rejection).toHaveCount(1);
+  await expect(dialog.getByRole('alert')).toContainText('Text was not queued.');
+  await expect(
+    dialog.getByRole('textbox', { name: 'Text to paste', exact: true }),
+  ).toHaveValue(draft);
+  expect(sent(traffic[0]!)).toBe('');
+  await page.evaluate(() => {
+    const socket = (window as unknown as PasteTestWindow).axvPasteSockets[0]!;
+    Reflect.deleteProperty(socket, 'bufferedAmount');
+  });
+  await choose(send, isMobile);
+  await expect(dialog).toContainText('Text queued for the terminal.');
+  await expect(rejection).toHaveCount(0);
+  await expect(send).toBeDisabled();
+  await expect.poll(() => sent(traffic[0]!)).toBe(draft);
+  await choose(
+    dialog.getByRole('button', { name: 'Close', exact: true }),
+    isMobile,
+  );
+  await expect(dialog).toHaveCount(0);
+  expect(sent(traffic[0]!)).toBe(draft);
+});
+
 test('Paste text preserves edits after a rejected send and disables Send after disconnection', async ({
   page,
   isMobile,
@@ -332,6 +380,20 @@ test('Paste text preserves edits after a rejected send and disables Send after d
     isMobile,
   );
   await expect(dialog).toHaveCount(0);
+  await expect(
+    terminal.getByRole('button', { name: 'New Session', exact: true }),
+  ).toBeEnabled();
+  if (
+    (await terminal
+      .getByTestId('terminal-status')
+      .getAttribute('data-state')) === 'error'
+  )
+    await expect(terminal.locator('.terminal-message')).toContainText(
+      'Choose New Session',
+    );
+  await expect(terminal.locator('.terminal-message')).toContainText(
+    'Text was not queued.',
+  );
   expect(sent(traffic[0]!)).toBe('');
 });
 
@@ -368,6 +430,9 @@ test('a fixed Edit menu pastes into its owner while another terminal stays activ
     .getByRole('menuitem', { name: 'Paste text', exact: true })
     .click();
   const dialog = pasteDialog(page);
+  await expect(dialog.locator('strong')).toHaveText(
+    (await first.getAttribute('aria-label'))!,
+  );
   await dialog
     .getByRole('textbox', { name: 'Text to paste', exact: true })
     .fill(' ✓🙂');
@@ -378,6 +443,38 @@ test('a fixed Edit menu pastes into its owner while another terminal stays activ
   await expect(second).toHaveClass(/is-active/);
   await expect(first.getByLabel('Host terminal input')).not.toBeFocused();
 });
+
+codexTest(
+  'Paste text identifies same-named Codex runs and sends only to its selected target',
+  async ({ page, isMobile }) => {
+    const traffic = recordInput(page, '/api/host/codex/');
+    const first = await startCodex(page, isMobile);
+    const firstTitle = await first.window.getAttribute('aria-label');
+    for (const index of [0, 1]) {
+      const target = index === 0 ? first : await startCodex(page, isMobile);
+      expect(await target.window.getAttribute('aria-label')).toBe(firstTitle);
+      await codexSessionAction(page, target.window, 'Paste text', isMobile);
+      const dialog = pasteDialog(page);
+      await expect(dialog.locator('strong')).toHaveText(
+        `${firstTitle} · Run ${target.runId.slice(0, 8)}`,
+      );
+      const text = `# paste target ${index + 1}`;
+      await dialog
+        .getByRole('textbox', { name: 'Text to paste', exact: true })
+        .fill(text);
+      await choose(
+        dialog.getByRole('button', { name: 'Send', exact: true }),
+        isMobile,
+      );
+      await expect.poll(() => sent(traffic[index]!)).toContain(text);
+      if (index === 1) expect(sent(traffic[0]!)).not.toContain(text);
+      await choose(
+        dialog.getByRole('button', { name: 'Close', exact: true }),
+        isMobile,
+      );
+    }
+  },
+);
 
 codexTest(
   'a delayed clipboard read cannot enter a reconnected attachment of the same Codex run',

@@ -10,6 +10,8 @@ Use direct action labels, identify the execution target and explain capability l
 
 Keep buttons brief, usually one or two words. Use surrounding context instead of repeating object names. Put consequences in nearby guidance or confirmations, preserving execution targets and lifecycle distinctions.
 
+Show guidance when it explains a restriction, progress or recovery. Omit routine instructions already clear from the visible controls.
+
 Keep frequent actions visible and group secondary commands in one accessible menu. Name action menus for their view or selected target, including a short identifier when names can repeat. Use the shared icon button for familiar actions such as copy, paste and paging; keep lifecycle and destructive actions clearly named. Icon buttons retain accessible names, tooltips, focus feedback and touch hit areas.
 
 Use short action labels without trailing ellipses, including commands that open a picker, panel or confirmation. Reserve ellipses for loading or in-progress text and actual truncation. The standalone More icon remains a menu affordance.
@@ -41,7 +43,7 @@ Reuse shared controls and tokens. Keep feature styling scoped to its application
 - **Color:** Preserve dark selection and a distinct focus outline. Active titles are nearly black with white text; inactive application titles are gray, while utility panels keep their darker treatment. Use stronger color for meaning and pair status color with text or another cue. Wallpaper must leave windows and labels legible.
 - **Typography:** Use the shared sans-serif UI stack and monospace where alignment matters. Keep compact bold titles and readable body text, including fallback glyphs for non-Latin content. Do not shrink text to hide overflow.
 - **Icons:** Reuse the SVG system and application-tile proportions. Match silhouettes, detail and apparent size across launchers, miniwindows, menus and toolbars. Distinguish applications from their content: text files use a plain document, Text Editor adds a pencil, and Project Files adds a code panel to its folder. Application Manager uses an application drawer and cards; Checklist uses a warm paper clipboard with green checkmarks. Both are original shared drawings, and Checklist's example header uses the same artwork. Sample documents use normal file icons independent of their names. Add labels where icons are ambiguous; check thin edges at integer and fractional display scales.
-- **Spacing:** Keep related toolbar actions compact and aligned. Truncate long titles, wrap explanations and place lengthy errors with their recovery actions in a scrollable or wrapping content area.
+- **Spacing:** Keep related toolbar actions compact and aligned. Group navigation separately from item actions, keep primary actions near the target identity, and allow groups to wrap in narrow windows. Truncate long titles, wrap explanations and place lengthy errors with their recovery actions in a scrollable or wrapping content area.
 
 ## Window and control presentation
 
@@ -58,6 +60,8 @@ Applications use the shared title bar, optional toolbar, scrolling content and o
 | Error or unavailable | Nearby explanation and useful recovery action |
 
 Empty, loading, failed and unsaved states are part of the design. Preserve visible work during recovery and report success only after the action succeeds.
+
+Use shared Tabs for sections within a panel and ButtonGroup for related mode or filter buttons. Tabs join the selected section to its content surface; button groups use a shared pressed treatment. Keep each control's existing state and focus behavior, and retain panel contents when switching would otherwise discard work.
 
 Keep browser/server connectivity and application remote-access readiness distinct. The Tailscale utility controls AXV’s embedded remote entrypoint and does not display system VPN state. Status lamps need text labels, and a failed status query must not retain a current-looking success lamp. Connection diagnostics use an on-demand non-modal utility panel, reached through existing application launchers or Preferences. Optional Dock and Clip shortcuts follow their existing application roles.
 

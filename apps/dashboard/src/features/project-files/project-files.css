@@ -10,15 +10,41 @@
   overflow: auto;
   height: 100%;
 }
-.project-launcher-heading > div {
-  flex: 1;
-  min-width: 0;
+.project-launcher-identity {
+  margin-bottom: 12px;
+}
+.project-launcher-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.project-launcher-heading h2 {
+  margin: 0;
+  font-size: 13px;
+}
+.project-launcher-guidance {
+  margin-block: 8px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.project-launcher-pane[hidden] {
+  display: none;
 }
 .project-register-form {
-  display: flex;
-  align-items: end;
-  gap: 8px;
+  display: grid;
+  gap: 12px;
   margin-block: 12px;
+}
+.project-register-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.project-register-actions .ns-button {
+  flex: 0 0 auto;
 }
 .project-launcher label {
   display: grid;
@@ -34,6 +60,12 @@
   display: grid;
   gap: 6px;
   margin-block: 12px;
+}
+.project-list-heading {
+  margin: 16px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--ns-mid);
+  font-size: 12px;
 }
 .project-list .ns-button {
   display: flex;
@@ -141,6 +173,11 @@
 }
 .project-preview-heading code {
   overflow-wrap: anywhere;
+  min-width: 0;
+}
+.project-preview-heading > .ns-button,
+.project-preview-heading > strong {
+  flex-shrink: 0;
 }
 .project-source {
   white-space: pre-wrap;
@@ -158,6 +195,23 @@
 }
 .project-browser > .app-toolbar {
   flex-wrap: wrap;
+}
+.project-browser-navigation,
+.project-browser-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.project-browser-navigation {
+  flex: 0 0 auto;
+}
+.project-browser-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+.project-browser-actions > .ns-button {
+  flex-shrink: 0;
 }
 .project-folder-chooser {
   border-block: 1px solid #888;
@@ -197,18 +251,16 @@
   display: block;
   overflow-wrap: anywhere;
 }
-.vm-project-launcher {
-  border-top: 1px solid var(--ns-mid);
-  margin-top: 18px;
-  padding-top: 12px;
-}
-.vm-project-register-form {
+.project-register-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   align-items: end;
 }
-.vm-project-register-form select {
+.project-register-name {
+  grid-column: 1 / -1;
+}
+.project-register-fields .ns-select {
   width: 100%;
   min-width: 0;
 }
@@ -384,6 +436,7 @@
 .vm-task-limit-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
   gap: 8px;
   margin-block: 8px;
 }
@@ -471,7 +524,7 @@
   }
 }
 @container project-files (max-width: 599px) {
-  .vm-project-register-form {
+  .project-register-fields {
     grid-template-columns: minmax(0, 1fr);
   }
   .project-content {
@@ -483,10 +536,6 @@
   }
   .project-back {
     display: inline-flex;
-  }
-  .project-register-form {
-    flex-direction: column;
-    align-items: stretch;
   }
   .project-location-summary {
     display: grid;

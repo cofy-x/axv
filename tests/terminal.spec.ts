@@ -68,6 +68,7 @@ test('Terminal streams ANSI and control bytes, interrupts jobs, and explicitly s
     'data-state',
     'ended',
   );
+  await expect(terminal.locator('.terminal-message')).toHaveCount(0);
   await expect.poll(() => sockets[0]!.isClosed()).toBe(true);
   expect(sockets).toHaveLength(1);
   await terminal

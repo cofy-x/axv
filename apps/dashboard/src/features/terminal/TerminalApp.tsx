@@ -451,9 +451,10 @@ export function TerminalApp({
       {(state.message || feedback) && (
         <div
           className="terminal-message"
-          role={state.phase === 'ended' ? 'status' : 'alert'}
+          role={state.phase === 'ended' && !feedback ? 'status' : 'alert'}
         >
-          {feedback || state.message}
+          {state.message && <div>{state.message}</div>}
+          {feedback && feedback !== state.message && <div>{feedback}</div>}
         </div>
       )}
       <div className="terminal-screen" data-testid="terminal-screen">

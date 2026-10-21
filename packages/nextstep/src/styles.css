@@ -9,6 +9,7 @@
   --ns-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
   --ns-raised: inset 1px 1px #fff, inset -1px -1px #555;
   --ns-recessed: inset 1px 1px #555, inset -1px -1px #eee;
+  --ns-control-height: 28px;
 }
 *,
 *::before,
@@ -955,7 +956,7 @@ select:disabled {
   justify-content: center;
   gap: 5px;
   min-width: 64px;
-  min-height: 26px;
+  min-height: var(--ns-control-height);
   padding: 3px 12px;
   border: 1px solid #111;
   background: #aaa;
@@ -978,11 +979,16 @@ select:disabled {
 }
 .ns-button.ns-default {
   border: 2px solid #111;
+  padding: 2px 11px;
   box-shadow:
     inset 1px 1px #fff,
     inset -1px -1px #555,
     0 0 0 1px #ddd;
   font-weight: bold;
+}
+.ns-button.ns-default:active:not(:disabled),
+.ns-button.ns-default[aria-pressed='true'] {
+  padding: 3px 10px 1px 12px;
 }
 .ns-button:disabled {
   color: #666;
@@ -999,6 +1005,32 @@ select:disabled {
 .ns-button.ns-icon-button:active:not(:disabled),
 .ns-button.ns-icon-button[aria-pressed='true'] {
   padding: 5px 4px 3px 6px;
+}
+.ns-button-group {
+  display: inline-flex;
+  align-items: stretch;
+  max-width: 100%;
+  isolation: isolate;
+}
+.ns-button-group > .ns-button {
+  position: relative;
+  flex-shrink: 0;
+}
+.ns-button-group > .ns-button + .ns-button {
+  margin-inline-start: -1px;
+}
+.ns-button-group > .ns-button[aria-pressed='true'] {
+  color: var(--ns-light);
+  background: var(--ns-shadow);
+  box-shadow: var(--ns-recessed);
+  text-shadow: none;
+  z-index: 1;
+}
+.ns-button-group > .ns-button[aria-pressed='true']:disabled {
+  color: var(--ns-face);
+}
+.ns-button-group > .ns-button:focus-visible {
+  z-index: 2;
 }
 .ns-field-label {
   display: flex;
@@ -1019,7 +1051,7 @@ select:disabled {
   user-select: text;
 }
 .ns-field {
-  min-height: 26px;
+  min-height: var(--ns-control-height);
 }
 .ns-field:disabled,
 .ns-textarea:disabled {
@@ -1049,7 +1081,7 @@ select:disabled {
   border: 1px solid #111;
   border-radius: 0;
   box-shadow: var(--ns-raised);
-  min-height: 27px;
+  min-height: var(--ns-control-height);
 }
 .ns-select-arrows {
   position: absolute;
@@ -1060,9 +1092,12 @@ select:disabled {
   border-left: 1px solid #777;
   box-shadow: -1px 0 #ddd;
   pointer-events: none;
-  text-align: center;
-  line-height: 10px;
-  font-size: 9px;
+  display: grid;
+  place-items: center;
+}
+.ns-select-arrows svg {
+  display: block;
+  fill: currentColor;
 }
 .ns-checkbox,
 .ns-radio {
@@ -1124,24 +1159,25 @@ select:disabled {
   padding: 0 5px;
 }
 .ns-tab-list button {
-  border: 1px solid #555;
+  min-height: var(--ns-control-height);
+  border: 1px solid var(--ns-shadow);
   background: #999;
-  box-shadow: inset 1px 1px #ddd;
-  padding: 5px 13px;
+  box-shadow: inset 1px 1px var(--ns-light);
+  padding: 3px 12px;
   margin-bottom: -1px;
 }
 .ns-tab-list button[aria-selected='true'] {
-  background: #aaa;
-  border-bottom-color: #aaa;
-  box-shadow: inset 1px 1px #eee;
+  background: var(--ns-face);
+  border-bottom-color: var(--ns-face);
+  box-shadow: inset 1px 1px var(--ns-light);
   z-index: 1;
   font-weight: bold;
 }
 .ns-tab-panel {
   padding: 15px;
-  border: 1px solid #555;
-  box-shadow: inset 1px 1px #eee;
-  background: #aaa;
+  border: 1px solid var(--ns-shadow);
+  box-shadow: inset 1px 1px var(--ns-light);
+  background: var(--ns-face);
 }
 .ns-status {
   display: flex;
@@ -1278,8 +1314,8 @@ select:disabled {
   right: 5px;
 }
 @media (pointer: coarse) {
-  .ns-button {
-    min-height: 32px;
+  :root {
+    --ns-control-height: 32px;
   }
   .ns-button.ns-icon-button {
     min-width: 32px;
@@ -1291,10 +1327,6 @@ select:disabled {
   .ns-dock-tile > .ns-pixel-icon {
     width: 36px;
     height: 36px;
-  }
-  .ns-select select,
-  .ns-field {
-    min-height: 32px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -361,6 +361,8 @@ type ButtonIcon =
   | 'refresh'
   | 'back'
   | 'up'
+  | 'sort-ascending'
+  | 'sort-descending'
   | 'page-up'
   | 'page-down';
 
@@ -416,6 +418,10 @@ export function IconButton({
           <path d="m7 3-5 5 5 5M2 8h12" />
         ) : icon === 'up' ? (
           <path d="m3 7 5-5 5 5M8 2v12" />
+        ) : icon === 'sort-ascending' ? (
+          <path d="M1 3h3M1 8h5M1 13h7M12 14V2m-3 3 3-3 3 3" />
+        ) : icon === 'sort-descending' ? (
+          <path d="M1 3h7M1 8h5M1 13h3M12 2v12m-3-3 3 3 3-3" />
         ) : icon === 'page-up' ? (
           <path d="M2 2h12M4 9l4-4 4 4M8 5v9" />
         ) : (
@@ -462,7 +468,9 @@ export function Select({
         {children}
       </select>
       <span aria-hidden="true" className="ns-select-arrows">
-        ▴<br />▾
+        <svg viewBox="0 0 8 14" width="8" height="14" focusable="false">
+          <path d="M1 5 4 2 7 5ZM1 9 4 12 7 9Z" />
+        </svg>
       </span>
     </span>
   );
@@ -489,6 +497,26 @@ export function Checkbox({
       <input type="checkbox" {...props} />
       <span>{label ?? children}</span>
     </label>
+  );
+}
+
+export function ButtonGroup({
+  children,
+  label,
+  className = '',
+}: {
+  children: ReactNode;
+  label: string;
+  className?: string;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      className={`ns-button-group ${className}`}
+    >
+      {children}
+    </div>
   );
 }
 

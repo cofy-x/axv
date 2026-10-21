@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   Button,
+  ButtonGroup,
   Field,
   IconButton,
   PixelIcon,
@@ -126,6 +127,12 @@ export function Machines({ window, desktop }: AppWindowProps) {
         )
           ? 'Wait for the current VM operation.'
           : undefined);
+  const guidance = selected
+    ? data.error
+      ? 'Reconnect to the host to change this VM. Its last known details are available in the Inspector.'
+      : (selected.status === 'stopped' ? actionReason('start') : undefined) ||
+        machineGuidance(selected, data.operations)
+    : undefined;
 
   function showActivity(id?: string) {
     setShowHost(false);
@@ -201,25 +208,27 @@ export function Machines({ window, desktop }: AppWindowProps) {
             New VM
           </Button>
         )}
-        {configured && (
-          <Button
-            aria-pressed={showHost}
-            onClick={() => setShowHost(!showHost)}
-          >
-            Environment
-          </Button>
-        )}
-        <IconButton
-          icon="refresh"
-          label="Refresh"
-          disabled={data.refreshing}
-          onClick={data.refresh}
-        />
-        {data.refreshing && (
-          <span className="fine-print" role="status">
-            Refreshing…
-          </span>
-        )}
+        <div className="machines-toolbar-actions">
+          {configured && (
+            <Button
+              aria-pressed={showHost}
+              onClick={() => setShowHost(!showHost)}
+            >
+              Environment
+            </Button>
+          )}
+          <IconButton
+            icon="refresh"
+            label="Refresh"
+            disabled={data.refreshing}
+            onClick={data.refresh}
+          />
+          {data.refreshing && (
+            <span className="fine-print" role="status">
+              Refreshing…
+            </span>
+          )}
+        </div>
       </div>
       {(error || (data.error && !preparing)) && (
         <div className="machines-error" role="alert">
@@ -264,28 +273,30 @@ export function Machines({ window, desktop }: AppWindowProps) {
         </div>
       ) : (
         <>
-          <div className="machines-tabs" aria-label="VM views" ref={viewNav}>
-            {(['machines', 'volumes', 'images', 'operations'] as const).map(
-              (name) => (
-                <Button
-                  key={name}
-                  data-view={name}
-                  aria-pressed={tab === name}
-                  onClick={() => {
-                    setTab(name);
-                    setShowHost(false);
-                  }}
-                >
-                  {name === 'machines'
-                    ? 'VMs'
-                    : name === 'volumes'
-                      ? 'Project Volumes'
-                      : name === 'images'
-                        ? 'Images'
-                        : 'Activity'}
-                </Button>
-              ),
-            )}
+          <div className="machines-tabs" ref={viewNav}>
+            <ButtonGroup label="VM views">
+              {(['machines', 'volumes', 'images', 'operations'] as const).map(
+                (name) => (
+                  <Button
+                    key={name}
+                    data-view={name}
+                    aria-pressed={!showHost && tab === name}
+                    onClick={() => {
+                      setTab(name);
+                      setShowHost(false);
+                    }}
+                  >
+                    {name === 'machines'
+                      ? 'VMs'
+                      : name === 'volumes'
+                        ? 'Volumes'
+                        : name === 'images'
+                          ? 'Images'
+                          : 'Activity'}
+                  </Button>
+                ),
+              )}
+            </ButtonGroup>
           </div>
           <div className="machines-scroll">
             <div hidden={!showHost} inert={!showHost}>
@@ -330,27 +341,22 @@ export function Machines({ window, desktop }: AppWindowProps) {
                     className="machines-selection"
                     aria-label="Selected VM actions"
                   >
-                    <strong>
-                      {selected?.spec.name || 'Select a VM to manage it'}
-                    </strong>
-                    <MachineActions
-                      desktop={desktop}
-                      machine={selected}
-                      reason={actionReason}
-                      terminalReason={terminalReason}
-                      onAction={(action) => void lifecycle(action)}
-                      onTerminal={() => void terminal()}
-                      onInspect={inspect}
-                    />
-                    {selected && (
-                      <p className="machines-form-help">
-                        {data.error
-                          ? 'Reconnect to the host to change this VM. Its last known details are available in the Inspector.'
-                          : selected.status === 'stopped' &&
-                              actionReason('start')
-                            ? actionReason('start')
-                            : machineGuidance(selected, data.operations)}
-                      </p>
+                    <div className="machines-selection-heading">
+                      <strong>
+                        {selected?.spec.name || 'Select a VM to manage it'}
+                      </strong>
+                      <MachineActions
+                        desktop={desktop}
+                        machine={selected}
+                        reason={actionReason}
+                        terminalReason={terminalReason}
+                        onAction={(action) => void lifecycle(action)}
+                        onTerminal={() => void terminal()}
+                        onInspect={inspect}
+                      />
+                    </div>
+                    {guidance && (
+                      <p className="machines-form-help">{guidance}</p>
                     )}
                   </div>
                 </>

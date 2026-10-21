@@ -189,24 +189,16 @@
   color: #444;
   margin: 6px 0;
 }
-.codex-session-heading,
-.codex-session-filter {
+.codex-session-heading {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
-}
-.codex-session-heading {
   justify-content: space-between;
   margin-bottom: 6px;
 }
 .codex-session-heading h2 {
   margin: 0;
-}
-.codex-session-filter .ns-button[aria-pressed='true'] {
-  color: var(--ns-light);
-  background: var(--ns-shadow);
-  box-shadow: var(--ns-recessed);
 }
 .codex-recent-list {
   list-style: none;

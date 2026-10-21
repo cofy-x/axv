@@ -445,9 +445,7 @@ test('volume and image menus preserve reviewed targets and cancel without change
     managed: true,
   });
   const manager = await host(page, state);
-  await manager
-    .getByRole('button', { name: 'Project Volumes', exact: true })
-    .click();
+  await manager.getByRole('button', { name: 'Volumes', exact: true }).click();
   await manager
     .getByRole('button', { name: 'Menu project', exact: true })
     .click();
@@ -521,7 +519,7 @@ for (const resource of ['volume', 'image'] as const) {
     const manager = await host(page, state);
     await manager
       .getByRole('button', {
-        name: resource === 'volume' ? 'Project Volumes' : 'Images',
+        name: resource === 'volume' ? 'Volumes' : 'Images',
         exact: true,
       })
       .click();
@@ -615,6 +613,11 @@ test('filtering a selected VM disables its actions without choosing another VM',
   });
   await row.click();
   await expect(
+    manager.getByText('Start to use this VM; Inspect to configure it.', {
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await expect(
     manager.getByRole('button', { name: 'Start', exact: true }),
   ).toBeEnabled();
   const search = manager.getByLabel('Search VMs', { exact: true });
@@ -661,9 +664,18 @@ test('Environment and tabs preserve mounted volume and image drafts', async ({
     if (hasTouch) await control.tap();
     else await control.click();
   };
-  await press(
-    manager.getByRole('button', { name: 'Project Volumes', exact: true }),
-  );
+  const views = manager.getByRole('group', { name: 'VM views', exact: true });
+  const imageView = views.getByRole('button', { name: 'Images', exact: true });
+  const volumeView = views.getByRole('button', {
+    name: 'Volumes',
+    exact: true,
+  });
+  const environment = manager.getByRole('button', {
+    name: 'Environment',
+    exact: true,
+  });
+  await press(manager.getByRole('button', { name: 'Volumes', exact: true }));
+  await expect(volumeView).toHaveAttribute('aria-pressed', 'true');
   await press(manager.getByRole('button', { name: 'New Volume' }));
   const volume = manager.getByLabel('Volume name', { exact: true });
   await volume.fill('Retained volume draft');
@@ -671,6 +683,8 @@ test('Environment and tabs preserve mounted volume and image drafts', async ({
     input.dataset.mountProbe = 'volume';
   });
   await press(manager.getByRole('button', { name: 'Images', exact: true }));
+  await expect(imageView).toHaveAttribute('aria-pressed', 'true');
+  await expect(volumeView).toHaveAttribute('aria-pressed', 'false');
   await expect(volume).toBeHidden();
   await expect(volume).toHaveCount(1);
   await press(manager.getByRole('button', { name: 'Add Image' }));
@@ -688,9 +702,7 @@ test('Environment and tabs preserve mounted volume and image drafts', async ({
     mimeType: 'application/octet-stream',
     buffer: Buffer.from('Not submitted; tests retained file selection only.'),
   });
-  await press(
-    manager.getByRole('button', { name: 'Environment', exact: true }),
-  );
+  await press(environment);
   await expect(
     manager.getByRole('heading', { name: 'VM environment' }),
   ).toBeVisible();
@@ -700,6 +712,13 @@ test('Environment and tabs preserve mounted volume and image drafts', async ({
   expect(await image.evaluate((input) => !!input.closest('[inert]'))).toBe(
     true,
   );
+  await expect(environment).toHaveAttribute('aria-pressed', 'true');
+  await expect(views.getByRole('button', { pressed: true })).toHaveCount(0);
+  await press(environment);
+  await expect(image).toBeVisible();
+  await expect(imageView).toHaveAttribute('aria-pressed', 'true');
+  await expect(environment).toHaveAttribute('aria-pressed', 'false');
+  await press(environment);
   await press(manager.getByRole('button', { name: 'Images', exact: true }));
   await expect(
     manager.getByRole('heading', { name: 'VM environment' }),
@@ -710,9 +729,7 @@ test('Environment and tabs preserve mounted volume and image drafts', async ({
   await expect(image).toHaveValue('Retained image draft');
   await expect(image).toHaveAttribute('data-mount-probe', 'image');
   await expect(file).toHaveValue(/draft\.qcow2$/);
-  await press(
-    manager.getByRole('button', { name: 'Project Volumes', exact: true }),
-  );
+  await press(manager.getByRole('button', { name: 'Volumes', exact: true }));
   await expect(volume).toHaveValue('Retained volume draft');
   await expect(volume).toHaveAttribute('data-mount-probe', 'volume');
   await expect(image).toBeHidden();

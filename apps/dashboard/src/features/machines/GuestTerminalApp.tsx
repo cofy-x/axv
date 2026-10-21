@@ -49,7 +49,7 @@ export function GuestTerminalApp({
   const { pasteClipboard, pasteText, invalidatePaste, recordPasteInput } =
     useTerminalPaste({
       desktop,
-      title: window.title,
+      title: `${window.title} · Terminal ${terminalId.slice(0, 8)}`,
       terminal,
       connection: session,
       interactive: interactiveRef,
@@ -478,9 +478,10 @@ export function GuestTerminalApp({
       {(state.message || feedback) && (
         <div
           className="terminal-message"
-          role={state.phase === 'ended' ? 'status' : 'alert'}
+          role={state.phase === 'ended' && !feedback ? 'status' : 'alert'}
         >
-          {feedback || state.message}
+          {state.message && <div>{state.message}</div>}
+          {feedback && feedback !== state.message && <div>{feedback}</div>}
         </div>
       )}
       <div className="terminal-screen" data-testid="terminal-screen">
