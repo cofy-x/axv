@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { usePointerGesture } from './usePointerGesture';
 import { PixelIcon } from '../controls';
+import { resolveApplication } from './applications';
 import type {
   ClipShortcut,
   DesktopAPI,
@@ -31,7 +32,9 @@ export function Clip({
   };
   const mobile = window.innerWidth < 600;
   const shortcutMenu = (shortcut: ClipShortcut): MenuItem[] => {
-    const available = props.isShortcutAvailable?.(shortcut) !== false;
+    const available =
+      resolveApplication(props.apps, shortcut.appId).unavailable ===
+        undefined && props.isShortcutAvailable?.(shortcut) !== false;
     return [
       {
         label: 'Open',
@@ -205,9 +208,10 @@ export function Clip({
         aria-label={`${workspace.name} shortcuts`}
       >
         {workspace.clip.map((shortcut) => {
-          const app = props.apps.find((item) => item.id === shortcut.appId);
-          if (!app) return null;
-          const available = props.isShortcutAvailable?.(shortcut) !== false;
+          const app = resolveApplication(props.apps, shortcut.appId);
+          const available =
+            app.unavailable === undefined &&
+            props.isShortcutAvailable?.(shortcut) !== false;
           const open = () => {
             if (!available) return;
             if (Object.keys(shortcut.params).length)

@@ -18,6 +18,7 @@ import { createDesktopContextMenu, createDesktopMenus } from './desktop/menus';
 import { useDesktopController } from './desktop/useDesktopController';
 import { useDesktopGestures } from './desktop/useDesktopGestures';
 import { useViewport } from './desktop/useViewport';
+import { resolveApplication } from './desktop/applications';
 
 export function Desktop(props: DesktopProps) {
   const viewport = useViewport();
@@ -25,12 +26,13 @@ export function Desktop(props: DesktopProps) {
   const controller = useDesktopController(props);
   const { layout, overview, setOverview, api, menu, dialogRequest } =
     controller;
+  const desktopProps = { ...props, icons: controller.icons };
   const minimized = minimizedWindows(layout.windows, layout.currentWorkspaceId);
   const workArea = windowWorkArea(viewport, minimized.length > 0);
   const desktopItems = (ids: string[]) =>
-    createDesktopContextMenu(props, api, ids);
+    createDesktopContextMenu(desktopProps, api, ids);
   const gestures = useDesktopGestures({
-    props,
+    props: desktopProps,
     layout,
     setLayout: controller.setLayout,
     workArea,
@@ -44,7 +46,7 @@ export function Desktop(props: DesktopProps) {
     focusDesktop: controller.focusDesktop,
     desktopItems,
   });
-  const { groups } = createDesktopMenus(props, api, gestures.selection);
+  const { groups } = createDesktopMenus(desktopProps, api, gestures.selection);
   const workspace = layout.workspaces.find(
     (item) => item.id === layout.currentWorkspaceId,
   )!;
@@ -130,17 +132,17 @@ export function Desktop(props: DesktopProps) {
           </span>
         </header>
         <DesktopCanvas
-          icons={props.icons}
+          icons={desktopProps.icons}
           onTrashIcons={props.onTrashIcons}
           gestures={gestures}
         />
         <Clip
-          props={props}
+          props={desktopProps}
           api={api}
           layout={layout}
           setLayout={controller.setLayout}
         />
-        <ApplicationMenu groups={groups} api={api} props={props} />
+        <ApplicationMenu groups={groups} api={api} props={desktopProps} />
         {controller.persistenceBlocked && (
           <div className="ns-recovery" role="alert">
             This desktop layout is damaged or uses a newer version. Changes are
@@ -159,8 +161,8 @@ export function Desktop(props: DesktopProps) {
           </div>
         )}
         {layout.windows.map((win, index) => {
-          const app = props.apps.find((item) => item.id === win.appId);
-          return app ? (
+          const app = resolveApplication(props.apps, win.appId);
+          return (
             <WindowFrame
               key={win.id}
               win={win}
@@ -178,10 +180,10 @@ export function Desktop(props: DesktopProps) {
               toggleShade={controller.toggleShade}
               toggleZoom={controller.toggleZoom}
             />
-          ) : null;
+          );
         })}
         <PinnedMenus
-          props={props}
+          props={desktopProps}
           api={api}
           layout={layout}
           setLayout={controller.setLayout}
@@ -192,7 +194,7 @@ export function Desktop(props: DesktopProps) {
             aria-label="Miniaturized windows"
           >
             {minimized.map((win) => {
-              const app = props.apps.find((item) => item.id === win.appId);
+              const app = resolveApplication(props.apps, win.appId);
               return (
                 <button
                   type="button"
@@ -210,7 +212,7 @@ export function Desktop(props: DesktopProps) {
           </div>
         )}
         <Dock
-          props={props}
+          props={desktopProps}
           api={api}
           layout={layout}
           setLayout={controller.setLayout}

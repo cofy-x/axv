@@ -1,4 +1,4 @@
-import { mergeMenuGroups } from '../model';
+import { isApplicationLauncher, mergeMenuGroups } from '../model';
 import type {
   DesktopAPI,
   DesktopProps,
@@ -14,6 +14,7 @@ function openSelectedIcons(
 ) {
   for (const icon of props.icons.filter((item) => ids.includes(item.id))) {
     if (icon.onOpen) icon.onOpen();
+    else if (isApplicationLauncher(icon)) api.launchApp(icon.appId);
     else if (icon.appId) api.openApp(icon.appId, icon.params);
   }
 }
@@ -75,6 +76,22 @@ export function createDesktopContextMenu(
   api: DesktopAPI,
   ids: string[],
 ): MenuItem[] {
+  const selected = props.icons.filter((icon) => ids.includes(icon.id));
+  const applications = selected.filter(isApplicationLauncher);
+  if (applications.length) {
+    return [
+      { label: 'Open', action: () => openSelectedIcons(props, api, ids) },
+      {
+        label: 'Remove from Desktop',
+        disabled: applications.length !== ids.length,
+        action: () => {
+          if (applications.length !== ids.length) return;
+          for (const icon of applications)
+            api.showDesktopApplication(icon.appId, false);
+        },
+      },
+    ];
+  }
   const custom = props.onDesktopMenu?.(ids, api);
   if (custom && ids.length) return custom;
   return [
@@ -195,7 +212,9 @@ export function createDesktopMenus(
   return {
     groups: mergeMenuGroups(
       defaults,
-      activeWindow && activeApp?.menu ? activeApp.menu(activeWindow, api) : [],
+      activeWindow && activeApp?.unavailable === undefined && activeApp?.menu
+        ? activeApp.menu(activeWindow, api)
+        : [],
     ),
     windowItems,
   };

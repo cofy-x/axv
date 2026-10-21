@@ -19,6 +19,8 @@ function desktopAPI(): DesktopAPI {
     workspaces: defaultWorkspaces(),
     currentWorkspaceId: 'workspace-1',
     launchApp: vi.fn(),
+    isApplicationOnDesktop: vi.fn(() => false),
+    showDesktopApplication: vi.fn(),
     openApp: vi.fn(() => 'opened'),
     closeWindow: vi.fn(async () => true),
     focusWindow: vi.fn(),
@@ -65,6 +67,82 @@ function win(id: string): DesktopWindow {
 }
 
 describe('host-independent desktop commands', () => {
+  it('launches and removes application shortcuts without invoking file or host desktop actions', () => {
+    const api = desktopAPI();
+    const custom = vi.fn(() => [{ label: 'Trash' }]);
+    const props: DesktopProps = {
+      apps: [app('example')],
+      icons: [
+        {
+          id: 'application:example',
+          appId: 'example',
+          applicationLauncher: true,
+          label: 'Example',
+          icon: 'document',
+        },
+      ],
+      onDesktopMenu: custom,
+      onTrashIcons: vi.fn(),
+    };
+    const menu = createDesktopContextMenu(props, api, ['application:example']);
+    expect(menu.map((item) => item.label)).toEqual([
+      'Open',
+      'Remove from Desktop',
+    ]);
+    menu[0].action?.();
+    expect(api.launchApp).toHaveBeenCalledExactlyOnceWith('example');
+    expect(api.openApp).not.toHaveBeenCalled();
+    menu[1].action?.();
+    expect(api.showDesktopApplication).toHaveBeenCalledExactlyOnceWith(
+      'example',
+      false,
+    );
+    expect(custom).not.toHaveBeenCalled();
+    expect(props.onTrashIcons).not.toHaveBeenCalled();
+  });
+
+  it('preserves a host launcher action and refuses to remove mixed resource selections as shortcuts', () => {
+    const api = desktopAPI();
+    const onOpen = vi.fn();
+    const custom = vi.fn(() => [{ label: 'Trash' }]);
+    const props: DesktopProps = {
+      apps: [app('example')],
+      icons: [
+        {
+          id: 'system:example',
+          appId: 'example',
+          applicationLauncher: true,
+          label: 'Example',
+          icon: 'document',
+          onOpen,
+        },
+        {
+          id: 'resource',
+          appId: 'example',
+          params: { resourceId: 'original' },
+          label: 'Resource',
+          icon: 'document',
+        },
+      ],
+      onDesktopMenu: custom,
+    };
+    const mixed = createDesktopContextMenu(props, api, [
+      'system:example',
+      'resource',
+    ]);
+    mixed[0].action?.();
+    expect(onOpen).toHaveBeenCalledOnce();
+    expect(api.openApp).toHaveBeenCalledExactlyOnceWith('example', {
+      resourceId: 'original',
+    });
+    expect(mixed[1].disabled).toBe(true);
+    mixed[1].action?.();
+    expect(api.showDesktopApplication).not.toHaveBeenCalled();
+    expect(custom).not.toHaveBeenCalled();
+    createDesktopContextMenu(props, api, ['resource']);
+    expect(custom).toHaveBeenCalledExactlyOnceWith(['resource'], api);
+  });
+
   it('launches arbitrary registered app IDs through their launch hooks', () => {
     const api = desktopAPI();
     const props: DesktopProps = {
@@ -148,5 +226,29 @@ describe('host-independent desktop commands', () => {
       params: { entry: 'a' },
       title: 'a',
     });
+  });
+  it('keeps unavailable window commands bound to their owner without invoking application menus', () => {
+    const api = desktopAPI();
+    const original = win('editor:original');
+    api.windows = [original, win('editor:active')];
+    api.activeWindowId = 'editor:active';
+    const menu = vi.fn(() => []);
+    for (const apps of [
+      [],
+      [{ ...app('editor'), unavailable: 'Disabled', menu }],
+    ]) {
+      const groups = createDesktopMenus(
+        { apps, icons: [] },
+        api,
+        [],
+        original.id,
+      ).groups;
+      groups
+        .find((group) => group.id === 'file')!
+        .items.find((item) => item.label === 'Close Window')!
+        .action?.();
+      expect(api.closeWindow).toHaveBeenLastCalledWith(original.id);
+    }
+    expect(menu).not.toHaveBeenCalled();
   });
 });

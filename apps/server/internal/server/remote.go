@@ -104,7 +104,43 @@ func remoteWriteError(w http.ResponseWriter, status int, code, message string) {
 }
 
 func remoteLocalOnlyRoute(r *http.Request) bool {
+	if pathWithin(r.URL.Path, "/api/extensions") {
+		return extensionsLocalOnlyRoute(r)
+	}
 	return pathWithin(r.URL.Path, "/api/remote") || pathWithin(r.URL.Path, "/api/compute/preparation")
+}
+
+func extensionsLocalOnlyRoute(r *http.Request) bool {
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/extensions"), "/")
+	if r.URL.Path == "/api/extensions/install" {
+		return true
+	}
+	return (len(parts) == 2 && (r.Method == http.MethodPut || r.Method == http.MethodDelete)) ||
+		(len(parts) == 3 && parts[2] == "data" && r.Method == http.MethodDelete)
+}
+
+func remoteExtensionRoute(r *http.Request) bool {
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/extensions"), "/")
+	if r.URL.Path == "/api/extensions" {
+		return r.Method == http.MethodGet || r.Method == http.MethodHead
+	}
+	if len(parts) < 3 || parts[0] != "" || parts[1] == "" {
+		return false
+	}
+	switch {
+	case len(parts) == 3 && parts[2] == "data":
+		return r.Method == http.MethodGet || r.Method == http.MethodHead
+	case len(parts) == 5 && parts[2] == "content" && parts[3] != "" && parts[4] != "":
+		return r.Method == http.MethodGet || r.Method == http.MethodHead
+	case len(parts) == 3 && parts[2] == "sessions":
+		return r.Method == http.MethodPost
+	case len(parts) == 4 && parts[2] == "sessions" && parts[3] != "":
+		return r.Method == http.MethodDelete
+	case len(parts) == 5 && parts[2] == "sessions" && parts[3] != "" && parts[4] == "rpc":
+		return r.Method == http.MethodPost
+	default:
+		return false
+	}
 }
 
 // Keep new API families private until their owner explicitly opts them into the
@@ -114,6 +150,9 @@ func remoteRoute(r *http.Request) bool {
 		return false
 	}
 	if pathWithin(r.URL.Path, "/api") {
+		if pathWithin(r.URL.Path, "/api/extensions") {
+			return remoteExtensionRoute(r)
+		}
 		for _, prefix := range []string{
 			"/api/health", "/api/bootstrap", "/api/connection", "/api/entries", "/api/import",
 			"/api/preferences", "/api/layout", "/api/trash", "/api/terminal",

@@ -73,7 +73,7 @@ func TestRoutesRetainOriginChecksAndRejectFraming(t *testing.T) {
 			if w.Code != tc.status || !strings.Contains(w.Body.String(), tc.contains) {
 				t.Fatalf("HTTP %d: %s; want %d containing %q", w.Code, w.Body.String(), tc.status, tc.contains)
 			}
-			if w.Header().Get("X-Frame-Options") != "DENY" || w.Header().Get("Content-Security-Policy") != "frame-ancestors 'none'" {
+			if w.Header().Get("X-Frame-Options") != "DENY" || w.Header().Get("Content-Security-Policy") != "frame-ancestors 'none'; frame-src 'self'" {
 				t.Fatalf("missing anti-framing headers: %v", w.Header())
 			}
 		})

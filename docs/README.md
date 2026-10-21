@@ -9,6 +9,7 @@ Before application changes, read [ownership and dependencies](architecture.md#ow
 | Task | Start here | Add when affected |
 | --- | --- | --- |
 | Applications, windows, menus, workspaces or layout | [Desktop architecture](desktop.md) | [Desktop state API](api/desktop.md) for serialized state |
+| Installed applications, packages, sandbox sessions or private app data | [Installed application API](api/extensions.md) | [Desktop architecture](desktop.md) for catalog and mounted windows; [extension storage](storage.md#installed-application-storage) for database ownership |
 | Virtual documents, saves, revisions or recovery | [Document storage](storage.md) | [Files API](api/files.md); [database identity](api/desktop.md#database-identity-and-local-recovery) for browser recovery |
 | Project browsing, links, snapshots or copies | [Storage ownership](storage.md#references-snapshots-and-project-exchange) | [Project files and exchange API](api/project-files.md) |
 | Host shells or project terminals | [Terminal ownership](desktop.md#terminal-sessions) | [Host Terminal API](api/host-terminal.md) |

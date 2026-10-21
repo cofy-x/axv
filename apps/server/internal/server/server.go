@@ -19,6 +19,7 @@ import (
 	computegateway "github.com/cofy-x/axv/apps/server/internal/compute/gateway"
 	"github.com/cofy-x/axv/apps/server/internal/config"
 	"github.com/cofy-x/axv/apps/server/internal/diagnostics"
+	"github.com/cofy-x/axv/apps/server/internal/extensions"
 	hostdirhttp "github.com/cofy-x/axv/apps/server/internal/hostdir/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/projectfiles"
@@ -58,6 +59,12 @@ func RunContext(ctx context.Context, settings config.Config, options Options) (r
 		return err
 	}
 	defer store.Close()
+	extensionStore, err := extensions.Open(filepath.Join(settings.DataDir, "extensions.sqlite"))
+	if err != nil {
+		return err
+	}
+	defer extensionStore.Close()
+	extensionManager := extensions.New(extensionStore)
 	terminals := terminal.New()
 	defer terminals.Close()
 	codexSessions, err := codex.New(store, codex.Options{
@@ -87,6 +94,7 @@ func RunContext(ctx context.Context, settings config.Config, options Options) (r
 	}
 	defer computeGateway.Close()
 	application := http.NewServeMux()
+	extensionManager.Register(application)
 	projectfiles.Register(application, store)
 	if options.InstanceID != "" {
 		application.HandleFunc("GET /api/runtime", func(w http.ResponseWriter, r *http.Request) {
@@ -169,7 +177,17 @@ func newHandler(application http.Handler, terminals *terminal.Manager, codexAPI 
 	mux.Handle("/", application)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
+		w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'; frame-src 'self'")
+		// Sandboxed extensions have opaque origins. Browser GETs may omit
+		// Origin, so also reject their cross-site Fetch Metadata before any
+		// API handler (including the otherwise public document reads).
+		if pathWithin(r.URL.Path, "/api") && (r.Header.Get("Origin") == "null" || r.Header.Get("Sec-Fetch-Site") == "cross-site") {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			w.WriteHeader(http.StatusForbidden)
+			_ = json.NewEncoder(w).Encode(map[string]string{"code": "sandbox_request_forbidden", "error": "Open this operation from the AXV desktop."})
+			return
+		}
 		mux.ServeHTTP(w, r)
 	})
 }

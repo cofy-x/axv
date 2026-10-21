@@ -1,0 +1,658 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Checklist</title>
+    <style>
+      :root {
+        --ns-text: #111;
+        --ns-face: #aaa;
+        --ns-light: #eee;
+        --ns-mid: #888;
+        --ns-shadow: #555;
+        --ns-font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        --ns-raised: inset 1px 1px #fff, inset -1px -1px #555;
+        --ns-recessed: inset 1px 1px #555, inset -1px -1px #eee;
+        color: var(--ns-text);
+        font: 13px/1.4 var(--ns-font);
+        background: var(--ns-face);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+      }
+      button,
+      input {
+        font: inherit;
+        color: inherit;
+        border-radius: 0;
+      }
+      button {
+        min-height: 26px;
+        padding: 3px 12px;
+        border: 1px solid var(--ns-shadow);
+        box-shadow: var(--ns-raised);
+        background: var(--ns-face);
+      }
+      button:active:not(:disabled) {
+        box-shadow: var(--ns-recessed);
+      }
+      button:disabled {
+        color: var(--ns-shadow);
+      }
+      button:focus-visible,
+      input:focus-visible {
+        outline: 2px solid var(--ns-text);
+        outline-offset: 2px;
+      }
+      input[type='text'] {
+        min-width: 0;
+        min-height: 27px;
+        padding: 4px 6px;
+        border: 1px solid var(--ns-shadow);
+        box-shadow: var(--ns-recessed);
+        background: #fff;
+      }
+      input[type='checkbox'] {
+        width: 16px;
+        height: 16px;
+        flex-shrink: 0;
+        accent-color: var(--ns-text);
+      }
+      .heading {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 14px 10px;
+      }
+      .heading svg {
+        flex-shrink: 0;
+      }
+      h1 {
+        margin: 0;
+        font-size: 14px;
+      }
+      .heading p {
+        margin: 3px 0 0;
+        color: var(--ns-shadow);
+        font-size: 11px;
+      }
+      main {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        min-height: 0;
+      }
+      fieldset {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        gap: 10px;
+        min-height: 0;
+        margin: 0;
+        padding: 0 14px 12px;
+        border: 0;
+      }
+      .add {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .add label {
+        flex: 1;
+        min-width: 0;
+      }
+      .add input {
+        width: 100%;
+        margin-top: 4px;
+      }
+      .add button {
+        align-self: flex-end;
+      }
+      .paper {
+        flex: 1;
+        min-height: 80px;
+        overflow: auto;
+        border: 1px solid var(--ns-shadow);
+        background: var(--ns-light);
+        box-shadow: var(--ns-recessed);
+        padding: 3px;
+      }
+      #items {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .item {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 6px 5px;
+      }
+      .item + .item {
+        border-top: 1px solid #ccc;
+      }
+      .item input[type='text'] {
+        flex: 1;
+        width: 100%;
+      }
+      .item.done input[type='text'] {
+        text-decoration: line-through;
+        color: var(--ns-shadow);
+      }
+      .item button {
+        padding-inline: 8px;
+      }
+      #empty {
+        margin: 24px 12px;
+        color: var(--ns-shadow);
+        text-align: center;
+      }
+      .actions {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      #save {
+        border-color: var(--ns-text);
+        font-weight: bold;
+      }
+      #state {
+        flex: 1;
+        font-size: 11px;
+      }
+      .notice {
+        margin: 0;
+        padding: 8px 14px;
+        border-top: 1px solid var(--ns-mid);
+        background: #fff6d6;
+        color: #7a1010;
+        overflow-wrap: anywhere;
+      }
+      #reload-confirm {
+        padding: 10px 14px;
+        border-top: 1px solid var(--ns-mid);
+        background: var(--ns-light);
+      }
+      #reload-confirm p {
+        margin: 0 0 8px;
+      }
+      footer {
+        flex-shrink: 0;
+        border-top: 1px solid var(--ns-shadow);
+        box-shadow: inset 0 1px #fff;
+        padding: 4px 12px;
+        font-size: 11px;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      @media (pointer: coarse) {
+        button,
+        input[type='text'] {
+          min-height: 34px;
+        }
+        .item {
+          min-height: 44px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="heading">
+      <!-- Original checklist drawing; no external artwork or resources. -->
+      <svg
+        width="32"
+        height="32"
+        viewBox="0 0 32 32"
+        aria-hidden="true"
+        shape-rendering="crispEdges"
+      >
+        <g stroke="#262626" stroke-width="1" stroke-linejoin="miter">
+          <path fill="#777" stroke="none" d="M6 5h23v26H6z" />
+          <path fill="#b7b29f" d="M4.5 3.5h23v27h-23z" />
+          <path fill="none" stroke="#e8e5d8" d="M5 4h21M5 5v24" />
+          <path fill="#f6f4e9" d="M7.5 6.5h17v21h-17z" />
+          <path fill="none" stroke="#fff" d="M8 7h15M8 8v18" />
+          <path fill="#bbb" d="M11.5 1.5h9v6h-9z" />
+          <path fill="none" stroke="#eee" d="M12 2h7M12 3v3" />
+          <path fill="none" stroke="#777" d="M14 4h4" />
+          <path
+            fill="none"
+            stroke="#315e45"
+            stroke-width="2"
+            d="m9 12 2 2 4-4m-6 9 2 2 4-4"
+          />
+          <path fill="none" stroke="#777" d="M9.5 23.5h4v3h-4z" />
+          <path fill="none" stroke="#777" d="M17 12.5h5M17 19.5h5M17 25.5h5" />
+        </g>
+      </svg>
+      <div>
+        <h1>Checklist</h1>
+        <p>A small list for the work in front of you.</p>
+      </div>
+    </header>
+    <main>
+      <fieldset id="controls" disabled aria-label="Checklist items">
+        <div class="add">
+          <label for="entry">
+            New item
+            <input id="entry" type="text" autocomplete="off" />
+          </label>
+          <button id="add" type="button">Add</button>
+        </div>
+        <div class="paper">
+          <ul id="items" aria-label="Items"></ul>
+          <p id="empty">Your list is empty. Add an item to begin.</p>
+        </div>
+        <div class="actions">
+          <button id="save" type="button" disabled>Save</button>
+          <span id="state" role="status" aria-live="polite">Connecting…</span>
+          <button id="reload" type="button">Reload saved</button>
+        </div>
+      </fieldset>
+      <div id="reload-confirm" hidden>
+        <p>Replace this draft with the last saved list?</p>
+        <div class="actions">
+          <button id="keep" type="button">Keep editing</button>
+          <button id="discard-reload" type="button">Discard and reload</button>
+        </div>
+      </div>
+      <p id="error" class="notice" role="alert" hidden></p>
+      <p id="recovery-error" class="notice" role="alert" hidden></p>
+      <div id="load-retry" class="actions" hidden>
+        <button id="retry" type="button">Retry loading</button>
+      </div>
+    </main>
+    <footer id="count">
+      Private application storage · Save keeps your changes
+    </footer>
+    <script>
+      /* AXV_EXTENSION_SDK */
+    </script>
+    <script>
+      (() => {
+        'use strict';
+        const ui = Object.fromEntries(
+          [...document.querySelectorAll('[id]')].map((node) => [node.id, node]),
+        );
+        let items = [];
+        let entry = '';
+        let expectedRevision = 0;
+        let savedRevision = 0;
+        let savedRaw = null;
+        let baseline = '';
+        let editVersion = 0;
+        let loaded = false;
+        let loading = false;
+        let saving = false;
+        let interactive = false;
+        let connection;
+        let initialDraft;
+        let budgetError = false;
+        let draftQueue = Promise.resolve();
+        const maxDataBytes = 128 * 1024;
+        const connectionTimer = setTimeout(() => {
+          if (!connection)
+            showError('Open this application from AXV to connect its storage.');
+        }, 10000);
+
+        function value() {
+          return {
+            schemaVersion: 1,
+            items: items.map((item) => ({ ...item })),
+            entry,
+          };
+        }
+
+        function readValue(raw) {
+          if (raw === null || raw === undefined)
+            return { schemaVersion: 1, items: [], entry: '' };
+          if (
+            !raw ||
+            raw.schemaVersion !== 1 ||
+            !Array.isArray(raw.items) ||
+            typeof raw.entry !== 'string'
+          )
+            throw new Error('The saved data is not a Checklist document.');
+          const ids = new Set();
+          for (const item of raw.items) {
+            if (
+              !item ||
+              typeof item.id !== 'string' ||
+              !item.id ||
+              ids.has(item.id) ||
+              typeof item.text !== 'string' ||
+              typeof item.done !== 'boolean'
+            )
+              throw new Error('The saved list contains an invalid item.');
+            ids.add(item.id);
+          }
+          return {
+            schemaVersion: 1,
+            items: raw.items.map(({ id, text, done }) => ({ id, text, done })),
+            entry: raw.entry,
+          };
+        }
+
+        function dirty() {
+          return (
+            loaded &&
+            (JSON.stringify(value()) !== baseline ||
+              expectedRevision !== savedRevision)
+          );
+        }
+
+        function showError(message) {
+          budgetError = false;
+          ui.error.textContent = message;
+          ui.error.hidden = !message;
+        }
+
+        function acceptEdit(nextValue) {
+          if (
+            new TextEncoder().encode(JSON.stringify(nextValue)).length >
+            maxDataBytes
+          ) {
+            showError(
+              'This change exceeds Checklist’s 128 KiB limit and was not applied. Your previous text is kept. Shorten or remove an item, then retry.',
+            );
+            budgetError = true;
+            return false;
+          }
+          if (budgetError) showError('');
+          return true;
+        }
+
+        function status() {
+          ui.controls.disabled = !loaded || loading || !interactive;
+          ui.save.disabled = !dirty() || saving || loading || !interactive;
+          ui.add.disabled = !entry.trim();
+          ui.reload.disabled = saving || loading;
+          ui['discard-reload'].disabled = saving || loading || !interactive;
+          ui.keep.disabled = saving || loading || !interactive;
+          ui.retry.disabled = loading || !interactive;
+          ui.state.textContent = loading
+            ? 'Loading…'
+            : saving
+              ? 'Saving…'
+              : !loaded
+                ? connection
+                  ? 'Storage unavailable'
+                  : 'Connecting…'
+                : dirty()
+                  ? 'Unsaved changes'
+                  : 'Saved';
+          const done = items.filter((item) => item.done).length;
+          ui.count.textContent = loaded
+            ? `${done} of ${items.length} complete · Private application storage`
+            : 'Private application storage · Save keeps your changes';
+          ui.empty.hidden = items.length > 0;
+          ui['load-retry'].hidden = loaded || loading || !connection;
+        }
+
+        function recordDraft() {
+          status();
+          // Read the current value when this request runs. A Save may have
+          // advanced its revision while previous draft messages were pending.
+          draftQueue = draftQueue.then(async () => {
+            try {
+              await axv.request('draft.set', {
+                value: dirty() ? value() : savedRaw,
+                expectedRevision,
+              });
+              ui['recovery-error'].hidden = true;
+              ui['recovery-error'].textContent = '';
+            } catch (failure) {
+              ui['recovery-error'].textContent =
+                'Draft recovery could not be updated: ' + failure.message;
+              ui['recovery-error'].hidden = false;
+            }
+          });
+        }
+
+        function changed() {
+          editVersion += 1;
+          recordDraft();
+        }
+
+        function drawItems() {
+          ui.items.replaceChildren();
+          ui.entry.value = entry;
+          for (const item of items) {
+            const row = document.createElement('li');
+            row.className = 'item' + (item.done ? ' done' : '');
+            const toggle = document.createElement('input');
+            toggle.type = 'checkbox';
+            toggle.checked = item.done;
+            toggle.setAttribute(
+              'aria-label',
+              `Complete ${item.text || 'item'}`,
+            );
+            const text = document.createElement('input');
+            text.type = 'text';
+            text.value = item.text;
+            text.setAttribute('aria-label', 'Item text');
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.textContent = 'Remove';
+            remove.setAttribute('aria-label', `Remove ${item.text || 'item'}`);
+            toggle.addEventListener('change', () => {
+              const next = value();
+              next.items.find((candidate) => candidate.id === item.id).done =
+                toggle.checked;
+              if (!acceptEdit(next)) {
+                toggle.checked = item.done;
+                return;
+              }
+              item.done = toggle.checked;
+              row.classList.toggle('done', item.done);
+              changed();
+            });
+            text.addEventListener('input', () => {
+              const next = value();
+              next.items.find((candidate) => candidate.id === item.id).text =
+                text.value;
+              if (!acceptEdit(next)) {
+                text.value = item.text;
+                return;
+              }
+              item.text = text.value;
+              toggle.setAttribute(
+                'aria-label',
+                `Complete ${item.text || 'item'}`,
+              );
+              remove.setAttribute(
+                'aria-label',
+                `Remove ${item.text || 'item'}`,
+              );
+              changed();
+            });
+            remove.addEventListener('click', () => {
+              if (budgetError) showError('');
+              items = items.filter((candidate) => candidate.id !== item.id);
+              drawItems();
+              changed();
+              if (interactive) ui.entry.focus();
+            });
+            row.append(toggle, text, remove);
+            ui.items.append(row);
+          }
+          status();
+        }
+
+        function replaceValue(documentValue) {
+          items = documentValue.items;
+          entry = documentValue.entry;
+          editVersion += 1;
+          drawItems();
+        }
+
+        async function load() {
+          loading = true;
+          showError('');
+          status();
+          try {
+            const saved = await axv.request('storage.get');
+            const savedValue = readValue(saved.value);
+            baseline = JSON.stringify(savedValue);
+            savedRaw = saved.value;
+            savedRevision = saved.revision;
+            expectedRevision = saved.revision;
+            let nextValue = savedValue;
+            if (initialDraft) {
+              nextValue = readValue(initialDraft.value);
+              expectedRevision = initialDraft.expectedRevision;
+              initialDraft = undefined;
+            }
+            loaded = true;
+            replaceValue(nextValue);
+            recordDraft();
+          } catch (failure) {
+            showError('Could not load saved data: ' + failure.message);
+          } finally {
+            loading = false;
+            status();
+          }
+        }
+
+        function acceptSaved(saved, discard = false) {
+          const savedValue = readValue(saved.value);
+          const wasClean = JSON.stringify(value()) === baseline;
+          baseline = JSON.stringify(savedValue);
+          savedRaw = saved.value;
+          savedRevision = saved.revision;
+          expectedRevision = saved.revision;
+          if (discard || wasClean) replaceValue(savedValue);
+          showError('');
+          status();
+          if (!discard) recordDraft();
+        }
+
+        async function save() {
+          if (saving || !dirty() || !interactive) return;
+          const snapshot = value();
+          const revision = expectedRevision;
+          const version = editVersion;
+          saving = true;
+          showError('');
+          status();
+          try {
+            await draftQueue;
+            const saved = await axv.request('storage.set', {
+              value: snapshot,
+              expectedRevision: revision,
+            });
+            acceptSaved(saved);
+            if (version === editVersion) ui.state.textContent = 'Saved';
+          } catch (failure) {
+            showError(
+              'Save failed: ' + failure.message + ' Your draft is kept.',
+            );
+          } finally {
+            saving = false;
+            status();
+          }
+        }
+
+        function addItem() {
+          if (!entry.trim() || !loaded || !interactive) return;
+          const item = {
+            id: crypto.randomUUID(),
+            text: entry.trim(),
+            done: false,
+          };
+          if (!acceptEdit({ ...value(), items: [...items, item], entry: '' }))
+            return;
+          items.push(item);
+          entry = '';
+          drawItems();
+          changed();
+          ui.entry.focus();
+        }
+
+        ui.add.addEventListener('click', addItem);
+        ui.entry.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' && !event.isComposing) {
+            event.preventDefault();
+            addItem();
+          }
+        });
+        ui.entry.addEventListener('input', () => {
+          if (!acceptEdit({ ...value(), entry: ui.entry.value })) {
+            ui.entry.value = entry;
+            return;
+          }
+          entry = ui.entry.value;
+          changed();
+        });
+        ui.save.addEventListener('click', () => void save());
+        ui.retry.addEventListener('click', () => void load());
+        ui.reload.addEventListener('click', () => {
+          ui['reload-confirm'].hidden = false;
+        });
+        ui.keep.addEventListener('click', () => {
+          ui['reload-confirm'].hidden = true;
+          if (interactive) ui.reload.focus();
+        });
+        ui['discard-reload'].addEventListener('click', async () => {
+          if (!interactive || saving || loading) return;
+          loading = true;
+          showError('');
+          status();
+          try {
+            await draftQueue;
+            const saved = await axv.request('storage.get');
+            acceptSaved(saved, true);
+            recordDraft();
+            ui['reload-confirm'].hidden = true;
+          } catch (failure) {
+            showError('Could not reload saved data: ' + failure.message);
+          } finally {
+            loading = false;
+            status();
+          }
+        });
+        document.addEventListener(
+          'pointerdown',
+          () => {
+            if (!connection) return;
+            void axv.request('window.focus').catch((failure) => {
+              showError('Could not focus the window: ' + failure.message);
+            });
+          },
+          { capture: true, passive: true },
+        );
+        axv.onEvent((event) => {
+          if (event.type === 'lifecycle') {
+            interactive = event.interactive;
+            status();
+          } else if (event.type === 'saved' || event.type === 'discarded') {
+            try {
+              acceptSaved(event, event.type === 'discarded');
+            } catch (failure) {
+              showError('Could not read the saved list: ' + failure.message);
+            }
+          }
+        });
+        void axv.ready.then((init) => {
+          clearTimeout(connectionTimer);
+          connection = init;
+          interactive = init.interactive;
+          initialDraft = init.draft;
+          void load();
+        });
+      })();
+    </script>
+  </body>
+</html>

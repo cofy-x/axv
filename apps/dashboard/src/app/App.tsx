@@ -27,6 +27,10 @@ import {
   CodexProvider,
   useCodexAvailability,
 } from '../features/codex/CodexContext';
+import { ApplicationCatalogContext } from '../features/extensions/catalog';
+import { createExtensionDefinitions } from '../features/extensions/ExtensionWindow';
+import { extensionStore } from '../features/extensions/store';
+import { composeApplicationDefinitions } from '../features/extensions/registry';
 
 export function App() {
   return (
@@ -59,10 +63,35 @@ function DesktopApp() {
     computeStore.subscribe,
     computeStore.getSnapshot,
   );
-  const apps = useMemo(
+  const builtins = useMemo(
     () =>
       createAppRegistry(filesystem, commands, codex.info?.installed === true),
     [filesystem, commands, codex.info?.installed],
+  );
+  const extensions = useSyncExternalStore(
+    extensionStore.subscribe,
+    extensionStore.getSnapshot,
+  );
+  const apps = useMemo(
+    () =>
+      composeApplicationDefinitions(
+        builtins,
+        createExtensionDefinitions(extensions.definitionApps),
+      ),
+    [builtins, extensions.definitionApps],
+  );
+  const applicationCatalog = useMemo(
+    () => ({
+      clientId: getClientId(),
+      builtins: builtins.map((app) => ({
+        id: app.id,
+        title: app.title,
+        icon: app.icon,
+        launchable: app.launchable !== false,
+        kind: app.kind || 'application',
+      })),
+    }),
+    [builtins],
   );
   const machineIcons = createMachineDesktopIcons(compute, getDesktop);
   const icons = [
@@ -102,58 +131,61 @@ function DesktopApp() {
       <FilesystemContext.Provider value={filesystem}>
         <PreferencesContext.Provider value={appearance}>
           <WindowCommandsContext.Provider value={commands}>
-            <Desktop
-              apps={apps}
-              isShortcutAvailable={(shortcut) => {
-                const id = shortcut.params.entryId || shortcut.params.folderId;
-                return (
-                  !id ||
-                  filesystem.entries.some(
-                    (entry) => entry.id === id && !entry.trashedAt,
-                  )
-                );
-              }}
-              icons={icons}
-              initialLayout={bootstrap.layout || undefined}
-              initialLayoutError={bootstrap.layoutError}
-              initialWindows={[
-                { appId: 'welcome' },
-                {
-                  appId: 'files',
-                  params: { folderId: 'documents' },
-                  title: 'Documents',
-                },
-              ]}
-              wallpaper={preferences.wallpaper}
-              clock24Hour={preferences.clock24Hour}
-              iconSnap={preferences.iconSnap}
-              connectionStatus={connection}
-              onReady={(desktop) => {
-                desktopRef.current = desktop;
-              }}
-              onLayoutChange={onLayoutChange}
-              onTrashIcons={(ids) => {
-                const desktop = getDesktop();
-                if (desktop)
-                  void runCommand(desktop, () =>
-                    trashEntries(filesystem, desktop, ids),
+            <ApplicationCatalogContext.Provider value={applicationCatalog}>
+              <Desktop
+                apps={apps}
+                isShortcutAvailable={(shortcut) => {
+                  const id =
+                    shortcut.params.entryId || shortcut.params.folderId;
+                  return (
+                    !id ||
+                    filesystem.entries.some(
+                      (entry) => entry.id === id && !entry.trashedAt,
+                    )
                   );
-              }}
-              onDesktopMenu={(ids, desktop) =>
-                createMachineDesktopMenu(machineIcons, ids) ||
-                createDesktopMenu(filesystem, ids, desktop, icons)
-              }
-              onAppearance={() => getDesktop()?.openApp('appearance')}
-              onAbout={() => getDesktop()?.openApp('about')}
-              onHelp={() => getDesktop()?.openApp('welcome')}
-              helpLabel="Welcome"
-            />
-            {persistenceError && (
-              <div className="persistence-warning" role="alert">
-                <span>{persistenceError}</span>
-                <Button onClick={() => void flushLayout()}>Retry</Button>
-              </div>
-            )}
+                }}
+                icons={icons}
+                initialLayout={bootstrap.layout || undefined}
+                initialLayoutError={bootstrap.layoutError}
+                initialWindows={[
+                  { appId: 'welcome' },
+                  {
+                    appId: 'files',
+                    params: { folderId: 'documents' },
+                    title: 'Documents',
+                  },
+                ]}
+                wallpaper={preferences.wallpaper}
+                clock24Hour={preferences.clock24Hour}
+                iconSnap={preferences.iconSnap}
+                connectionStatus={connection}
+                onReady={(desktop) => {
+                  desktopRef.current = desktop;
+                }}
+                onLayoutChange={onLayoutChange}
+                onTrashIcons={(ids) => {
+                  const desktop = getDesktop();
+                  if (desktop)
+                    void runCommand(desktop, () =>
+                      trashEntries(filesystem, desktop, ids),
+                    );
+                }}
+                onDesktopMenu={(ids, desktop) =>
+                  createMachineDesktopMenu(machineIcons, ids) ||
+                  createDesktopMenu(filesystem, ids, desktop, icons)
+                }
+                onAppearance={() => getDesktop()?.openApp('appearance')}
+                onAbout={() => getDesktop()?.openApp('about')}
+                onHelp={() => getDesktop()?.openApp('welcome')}
+                helpLabel="Welcome"
+              />
+              {persistenceError && (
+                <div className="persistence-warning" role="alert">
+                  <span>{persistenceError}</span>
+                  <Button onClick={() => void flushLayout()}>Retry</Button>
+                </div>
+              )}
+            </ApplicationCatalogContext.Provider>
           </WindowCommandsContext.Provider>
         </PreferencesContext.Provider>
       </FilesystemContext.Provider>

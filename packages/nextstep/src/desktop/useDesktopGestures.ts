@@ -8,6 +8,7 @@ import {
   ICON_SIZE,
   fitDesktopIcons,
   inWorkspace,
+  isApplicationLauncher,
   intersects,
   marqueeBounds,
   moveIconGroup,
@@ -26,6 +27,7 @@ import type {
   Point,
 } from '../types';
 import { usePointerGesture } from './usePointerGesture';
+import { resolveApplication } from './applications';
 
 interface GestureOptions {
   props: Pick<DesktopProps, 'apps' | 'icons' | 'iconSnap' | 'onTrashIcons'>;
@@ -94,8 +96,17 @@ export function useDesktopGestures({
   }, [mobile]);
   const openIcon = (icon: DesktopIcon) => {
     if (icon.onOpen) icon.onOpen();
+    else if (isApplicationLauncher(icon)) api.launchApp(icon.appId);
     else if (icon.appId) api.openApp(icon.appId, icon.params);
   };
+  useEffect(() => {
+    setSelection((current) => {
+      const next = current.filter((id) =>
+        props.icons.some((icon) => icon.id === id),
+      );
+      return next.length === current.length ? current : next;
+    });
+  }, [props.icons]);
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       if (overlayActive) return;
@@ -186,7 +197,7 @@ export function useDesktopGestures({
     event.preventDefault();
     event.stopPropagation();
     activateWindow(win.id);
-    const app = props.apps.find((candidate) => candidate.id === win.appId)!;
+    const app = resolveApplication(props.apps, win.appId);
     const bounds = visibleBounds(win, workArea, app.minSize);
     const origin = { x: event.clientX, y: event.clientY };
     let next = bounds;

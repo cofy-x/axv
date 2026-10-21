@@ -10,7 +10,7 @@ export default defineConfig({
     strictPort: true,
     headers: {
       'X-Frame-Options': 'DENY',
-      'Content-Security-Policy': "frame-ancestors 'none'",
+      'Content-Security-Policy': "frame-ancestors 'none'; frame-src 'self'",
     },
     proxy: {
       '/api': {

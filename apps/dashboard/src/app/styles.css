@@ -11,4 +11,6 @@
 @import '../features/gallery/gallery.css';
 @import '../features/machines/machines.css';
 @import '../features/tailscale/tailscale.css';
+@import '../features/extensions/styles.css';
+@import '../features/extensions/runtime.css';
 @import './app.css';

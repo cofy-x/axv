@@ -90,6 +90,14 @@ Use **Virtual Machines** for the application/window title, **VMs** for compact l
 
 Official versioned AXV enhanced images are the intended long-term default preparation source; changing the default requires an explicit product decision. Advanced users may explicitly choose custom images, with AXV guest software supplying optional enhanced features. [VM architecture](vm-platform.md#image-and-capability-contract) owns the image and capability contract, [startup](startup.md#first-time-macos-setup) owns preparation choices, and the [README](../README.md#project-status) owns publication and validation status.
 
+## Application extensibility
+
+AXV combines feature-owned built-in applications with explicitly installed, restricted extensions. Both use the existing desktop window and launcher system. Built-ins remain compiled React features; extensions use a versioned Web runtime. Source, runtime and granted capabilities are independent concerns. Application identity does not derive from a display title, and an extension cannot override a built-in application by reusing its ID.
+
+The initial extension boundary is private application data, with explicit saves, revision conflicts and browser recovery. This supplies a complete small-application workflow before adding execution or project access. Installation changes preserve user data and existing window references. A package update is separate from replacing a live view or migrating its business data. [Desktop architecture](desktop.md#installed-extensions) owns the implementation; [usage](usage.md#applications-and-extensions) owns available actions.
+
+Future resource capabilities must pass through their existing feature owners and retain exact document, project, VM and process-run identities. An extension's location on a desktop workspace never grants an execution target. Backend programs, network integrations, distribution catalogs and data migrations need their own scoped contracts before they can be added.
+
 ## Decisions still open
 
 - The remaining Skill integration and Git/worktree management on the project volume.

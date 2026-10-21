@@ -1,0 +1,220 @@
+.applications-app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.applications-toolbar {
+  flex-wrap: wrap;
+}
+.applications-toolbar > svg {
+  flex-shrink: 0;
+}
+.applications-toolbar .toolbar-caption {
+  min-width: 75px;
+}
+.applications-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  padding: 14px;
+}
+.applications-content h2 {
+  margin: 0;
+  font-size: 13px;
+}
+.applications-content p {
+  margin: 6px 0 10px;
+}
+.applications-content section + section,
+.applications-builtins {
+  margin-top: 18px;
+}
+.applications-add-panel[hidden] + section {
+  margin-top: 0;
+}
+.applications-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+.applications-heading > span,
+.applications-meta {
+  color: var(--ns-shadow);
+  font-size: 11px;
+}
+.applications-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.applications-add-panel {
+  padding: 12px;
+  border: 1px solid var(--ns-mid);
+  box-shadow: var(--ns-raised);
+}
+.applications-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.applications-package-input {
+  width: 100%;
+  min-width: 0;
+}
+.applications-package-input input {
+  max-width: 100%;
+}
+.applications-example-actions {
+  margin-top: 10px;
+}
+.applications-content .applications-access-note {
+  margin-bottom: 0;
+}
+.applications-review {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--ns-mid);
+  background: var(--ns-light);
+  box-shadow: var(--ns-recessed);
+}
+.applications-review h3 {
+  margin: 0;
+  font-size: 13px;
+}
+.applications-review .info-list {
+  margin-top: 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+.applications-review .applications-actions {
+  margin-top: 12px;
+}
+.applications-list {
+  padding: 2px;
+  margin: 10px 0 0;
+  list-style: none;
+  border: 1px solid var(--ns-mid);
+  background: var(--ns-light);
+  box-shadow: var(--ns-recessed);
+}
+.applications-row {
+  padding: 12px;
+}
+.applications-row + .applications-row {
+  border-top: 1px solid var(--ns-mid);
+}
+.applications-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.applications-identity {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 10px;
+}
+.applications-row-head > .applications-identity {
+  flex: 1;
+  min-width: 150px;
+}
+.applications-identity > svg {
+  flex-shrink: 0;
+}
+.applications-identity-text {
+  min-width: 0;
+}
+.applications-row h3 {
+  margin: 0;
+  font-size: 13px;
+}
+.applications-row .applications-meta {
+  margin: 3px 0 0;
+}
+.applications-row-actions {
+  flex-shrink: 0;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+.applications-row-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 12px;
+}
+.applications-state {
+  color: var(--ns-shadow);
+  font-size: 11px;
+}
+.applications-desktop-option {
+  font-size: 11px;
+}
+.applications-row .applications-row-guidance {
+  margin-top: 8px;
+}
+.applications-builtins summary {
+  font-weight: bold;
+}
+.applications-builtin {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.applications-builtin > .applications-identity {
+  flex: 1;
+  min-width: 180px;
+}
+.applications-builtin-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.applications-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 24px 12px;
+  border: 1px solid var(--ns-mid);
+  background: var(--ns-light);
+  box-shadow: var(--ns-recessed);
+  text-align: center;
+}
+.applications-empty > p {
+  margin: 0;
+  color: var(--ns-shadow);
+  font-size: 11px;
+}
+.applications-message {
+  min-height: 18px;
+  font-size: 11px;
+}
+.applications-app > .app-error {
+  flex-shrink: 0;
+  margin: 0;
+}
+.applications-app > .ns-status {
+  flex-shrink: 0;
+}
+@media (max-width: 599px) {
+  .applications-content {
+    padding: 11px;
+  }
+  .applications-add-panel,
+  .applications-review,
+  .applications-row {
+    padding: 10px;
+  }
+}

@@ -14,6 +14,7 @@ import {
   createWindowMenu,
 } from './menus';
 import { usePointerGesture } from './usePointerGesture';
+import { resolveApplication } from './applications';
 
 export function ApplicationMenu({
   groups,
@@ -25,7 +26,7 @@ export function ApplicationMenu({
   props: DesktopProps;
 }) {
   const win = api.windows.find((item) => item.id === api.activeWindowId);
-  const app = props.apps.find((item) => item.id === win?.appId);
+  const app = win ? resolveApplication(props.apps, win.appId) : undefined;
   return (
     <nav className="ns-application-menu" aria-label="Application menus">
       <div className="ns-menu-title">
