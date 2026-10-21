@@ -254,6 +254,7 @@ describe('host terminal sessions', () => {
     expect(writes).toHaveLength(1);
     socket.end();
     expect(session.getSnapshot().phase).toBe('ended');
+    expect(session.getSnapshot().message).toBeUndefined();
     writes[0].done();
     expect(writes).toHaveLength(2);
     expect(new TextDecoder().decode(writes[1].data)).toBe('two');
@@ -301,6 +302,9 @@ describe('host terminal sessions', () => {
     second.socket.end(1006);
     await second.session.start();
     expect(second.session.getSnapshot().phase).toBe('error');
+    expect(second.session.getSnapshot().message).toBe(
+      'The host shell disconnected. Choose New Session to try again.',
+    );
     expect(second.options.createSocket).toHaveBeenCalledOnce();
   });
 

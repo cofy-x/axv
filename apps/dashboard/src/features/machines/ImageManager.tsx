@@ -230,46 +230,48 @@ export function ImageManager({
         >
           Add Image
         </Button>
-        <IconButton
-          icon="more"
-          label="More image actions"
-          aria-haspopup="menu"
-          disabled={!selected}
-          onClick={(event) => {
-            if (!selected) return;
-            const targetHost = hostId;
-            const targetId = selected.id;
-            const rect = event.currentTarget.getBoundingClientRect();
-            const invoke = (action: 'version' | 'remove') => {
-              const latest = current.current;
-              if (
-                latest.hostId !== targetHost ||
-                latest.selected?.id !== targetId ||
-                !(action === 'version' ? latest.canVersion : latest.canRemove)
-              )
-                return;
-              if (action === 'version') latest.begin(true);
-              else void latest.remove();
-            };
-            desktop.contextMenu(
-              [
-                {
-                  label: 'Add Version',
-                  disabled: !canVersion,
-                  action: () => invoke('version'),
-                },
-                { separator: true },
-                {
-                  label: 'Remove',
-                  disabled: !canRemove,
-                  action: () => invoke('remove'),
-                },
-              ],
-              { x: rect.left, y: rect.bottom },
-              { title: selected.name || selected.id },
-            );
-          }}
-        />
+        <div className="machines-resource-actions">
+          <IconButton
+            icon="more"
+            label="More image actions"
+            aria-haspopup="menu"
+            disabled={!selected}
+            onClick={(event) => {
+              if (!selected) return;
+              const targetHost = hostId;
+              const targetId = selected.id;
+              const rect = event.currentTarget.getBoundingClientRect();
+              const invoke = (action: 'version' | 'remove') => {
+                const latest = current.current;
+                if (
+                  latest.hostId !== targetHost ||
+                  latest.selected?.id !== targetId ||
+                  !(action === 'version' ? latest.canVersion : latest.canRemove)
+                )
+                  return;
+                if (action === 'version') latest.begin(true);
+                else void latest.remove();
+              };
+              desktop.contextMenu(
+                [
+                  {
+                    label: 'Add Version',
+                    disabled: !canVersion,
+                    action: () => invoke('version'),
+                  },
+                  { separator: true },
+                  {
+                    label: 'Remove',
+                    disabled: !canRemove,
+                    action: () => invoke('remove'),
+                  },
+                ],
+                { x: rect.left, y: rect.bottom },
+                { title: selected.name || selected.id },
+              );
+            }}
+          />
+        </div>
       </div>
       {error && (
         <p className="machines-error" role="alert">

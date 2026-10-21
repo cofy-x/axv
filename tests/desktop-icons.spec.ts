@@ -197,7 +197,7 @@ test('VM desktop icons retain identity, expose status and stay outside document 
   await expect(menuItem(page, 'Open')).toBeVisible();
   await expect(menuItem(page, 'Inspect')).toBeVisible();
   await expect(menuItem(page, 'Rename')).toHaveCount(0);
-  await expect(menuItem(page, 'Move to Recycler')).toHaveCount(0);
+  await expect(menuItem(page, 'Recycle')).toHaveCount(0);
   await page.keyboard.press('Escape');
   await icon.click();
   await page.keyboard.press('Delete');

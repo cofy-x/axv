@@ -57,14 +57,13 @@ function PasteTextEditor({
 }) {
   useSyncExternalStore(requests.subscribe, requests.getSnapshot);
   const [text, setText] = useState(initialText);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(reason);
   const current = requests.isCurrent(request);
   return (
     <div className="terminal-paste-editor">
       <p>
         Target: <strong>{title}</strong>
       </p>
-      {reason && <p>{reason}</p>}
       <p>
         Paste into the field using your device’s menu, review it, then choose
         Send. Line breaks may run commands. AXV does not add an Enter key.

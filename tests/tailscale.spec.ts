@@ -715,7 +715,7 @@ test('desktop Tailscale launcher opens one panel and stays outside document dele
   await launcher.click({ button: 'right' });
   await expect(menuItem(page, 'Open')).toBeVisible();
   await expect(menuItem(page, 'Rename')).toHaveCount(0);
-  await expect(menuItem(page, 'Move to Recycler')).toHaveCount(0);
+  await expect(menuItem(page, 'Recycle')).toHaveCount(0);
   await expect(menuItem(page, 'Delete')).toHaveCount(0);
   await page.keyboard.press('Escape');
   // A hardware keyboard activates only the single selected launcher.

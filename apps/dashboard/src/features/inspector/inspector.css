@@ -13,12 +13,21 @@
 }
 .inspector-heading {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   align-items: center;
+  margin-bottom: 12px;
   padding-bottom: 12px;
   border-bottom: 1px solid #888;
 }
-.inspector-heading > div {
+.inspector-identity {
+  display: flex;
+  flex: 1 1 210px;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.inspector-identity > div {
   min-width: 0;
 }
 .inspector-heading strong {
@@ -32,15 +41,36 @@
 }
 .inspector-metadata {
   grid-template-columns: 66px minmax(0, 1fr);
+  align-items: baseline;
   font-size: 12px;
+  line-height: 1.5;
 }
 .inspector-metadata dd {
   overflow-wrap: anywhere;
 }
 .inspector-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex: 0 0 auto;
+  align-items: center;
   gap: 5px;
+  margin-inline-start: auto;
+}
+.inspector-details {
+  margin-top: 12px;
+  border-top: 1px solid var(--ns-mid);
+}
+.inspector-details summary {
+  cursor: pointer;
+  min-height: 32px;
+  padding-block: 6px;
+  font-size: 12px;
+  line-height: 20px;
+}
+.inspector-details[open] {
+  padding-bottom: 4px;
+}
+.inspector-details .inspector-metadata {
+  margin-top: 8px;
 }
 .inspector-preview {
   margin-top: 16px;
@@ -71,11 +101,6 @@
   background: repeating-conic-gradient(#ddd 0% 25%, #fff 0% 50%) 50% / 12px 12px;
 }
 .move-destination {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.move-destination select {
-  max-width: 100%;
-  font: inherit;
+  width: 100%;
+  min-width: 0;
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   Button,
+  ButtonGroup,
   Checkbox,
   Field,
   IconButton,
@@ -17,6 +18,7 @@ export function Gallery({ desktop }: AppWindowProps) {
   const [choice, setChoice] = useState('nextstep');
   const [status, setStatus] = useState('Ready');
   const [text, setText] = useState('Hello, AXV!');
+  const [groupChoice, setGroupChoice] = useState('first');
   return (
     <div className="gallery-app">
       <div className="app-pad">
@@ -82,6 +84,23 @@ export function Gallery({ desktop }: AppWindowProps) {
                 </Button>
                 <Button disabled>Disabled</Button>
               </div>
+              <ButtonGroup
+                label="Grouped buttons"
+                className="gallery-button-group"
+              >
+                <Button
+                  aria-pressed={groupChoice === 'first'}
+                  onClick={() => setGroupChoice('first')}
+                >
+                  First
+                </Button>
+                <Button
+                  aria-pressed={groupChoice === 'second'}
+                  onClick={() => setGroupChoice('second')}
+                >
+                  Second
+                </Button>
+              </ButtonGroup>
               <div
                 className="app-actions"
                 role="group"
@@ -114,6 +133,16 @@ export function Gallery({ desktop }: AppWindowProps) {
                 />
                 <IconButton icon="page-up" label="Page Up" disabled />
                 <IconButton icon="page-down" label="Page Down" disabled />
+                <IconButton
+                  icon="sort-ascending"
+                  label="Sort ascending"
+                  onClick={() => setStatus('Sort ascending pressed.')}
+                />
+                <IconButton
+                  icon="sort-descending"
+                  label="Sort descending"
+                  onClick={() => setStatus('Sort descending pressed.')}
+                />
                 <IconButton
                   icon="refresh"
                   label="Refresh"

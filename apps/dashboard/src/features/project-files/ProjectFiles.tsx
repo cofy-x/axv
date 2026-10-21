@@ -5,6 +5,7 @@ import {
   IconButton,
   PixelIcon,
   StatusBar,
+  Tabs,
 } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { useFilesystemData } from '../../filesystem/context';
@@ -34,7 +35,8 @@ export function ProjectFiles(props: AppWindowProps) {
 }
 
 function ProjectLauncher(props: AppWindowProps) {
-  const { desktop } = props;
+  const { desktop, interactive } = props;
+  const [location, setLocation] = useState<'host' | 'vm'>('host');
   const [root, setRoot] = useState('');
   const [choosingFolder, setChoosingFolder] = useState(false);
   const [pickerPath, setPickerPath] = useState('');
@@ -44,18 +46,21 @@ function ProjectLauncher(props: AppWindowProps) {
   const load = useCallback(() => projectsAPI.list(), []);
   const result = useResource(`projects:${refresh}`, load);
   const launcher = useRef<HTMLDivElement>(null);
+  const hostPanel = useRef<HTMLElement>(null);
+  const hostInteractive = interactive && location === 'host';
 
   function closeFolderChooser() {
     setChoosingFolder(false);
-    requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      if (hostPanel.current?.hidden || hostPanel.current?.inert) return;
       launcher.current
         ?.querySelector<HTMLButtonElement>('[data-folder-picker-toggle]')
-        ?.focus(),
-    );
+        ?.focus();
+    });
   }
 
   async function register() {
-    if (busy) return;
+    if (busy || !hostInteractive) return;
     setBusy(true);
     setError('');
     try {
@@ -81,84 +86,131 @@ function ProjectLauncher(props: AppWindowProps) {
 
   return (
     <div className="project-launcher app-pad" ref={launcher}>
-      <div className="panel-heading project-launcher-heading">
-        <PixelIcon name="project" />
-        <div>
-          <strong>Project Files</strong>
-          <p>Browse host folders or edit projects inside a VM.</p>
-        </div>
-        <IconButton
-          icon="refresh"
-          label="Refresh"
-          onClick={() => setRefresh((value) => value + 1)}
-        />
+      <div className="panel-heading project-launcher-identity">
+        <PixelIcon name="project" size={24} />
+        <strong>Project Files</strong>
       </div>
-      <form
-        className="project-register-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void register();
-        }}
-      >
-        <Field
-          label="Host project directory"
-          value={root}
-          placeholder="/absolute/path/to/project"
-          disabled={choosingFolder || busy}
-          onChange={(event) => setRoot(event.target.value)}
-        />
-        <Button
-          data-folder-picker-toggle
-          aria-expanded={choosingFolder}
-          disabled={busy || choosingFolder}
-          onClick={() => {
-            setPickerPath(root.trim());
-            setChoosingFolder(true);
-          }}
+      <div className="project-launcher-tabs">
+        <Tabs
+          label="Project location"
+          value={location}
+          onChange={(value) => setLocation(value === 'vm' ? 'vm' : 'host')}
+          tabs={[
+            { id: 'host', label: 'Host', disabled: !interactive },
+            { id: 'vm', label: 'VM', disabled: !interactive },
+          ]}
         >
-          Choose Folder
-        </Button>
-        <Button
-          type="submit"
-          primary
-          disabled={!root.trim() || busy || choosingFolder}
-        >
-          {busy ? 'Opening…' : 'Open Project'}
-        </Button>
-      </form>
-      {choosingFolder && (
-        <HostFolderChooser
-          initialPath={pickerPath}
-          onCancel={closeFolderChooser}
-          onChoose={(path) => {
-            setRoot(path);
-            closeFolderChooser();
-          }}
-        />
-      )}
-      {(error || result.error) && <p role="alert">{error || result.error}</p>}
-      {!result.data && !result.error && <p role="status">Loading projects…</p>}
-      {result.data?.projects.length === 0 && <p>No projects yet.</p>}
-      <div className="project-list" aria-label="Registered projects">
-        {result.data?.projects.map((project) => (
-          <Button
-            key={project.id}
-            onClick={() =>
-              desktop.openApp(
-                'project-files',
-                { projectId: project.id },
-                { title: projectLabel(project, result.data?.projects || []) },
-              )
-            }
+          <section
+            className="project-launcher-pane"
+            aria-label="Host projects"
+            ref={hostPanel}
+            hidden={location !== 'host'}
+            inert={!hostInteractive}
           >
-            <strong>
-              {projectLabel(project, result.data?.projects || [])}
-            </strong>
-            <small>{project.rootPath}</small>
-          </Button>
-        ))}
+            <div className="project-launcher-heading">
+              <h2>Open Folder</h2>
+              <IconButton
+                icon="refresh"
+                label="Refresh"
+                disabled={!hostInteractive || busy}
+                onClick={() => setRefresh((value) => value + 1)}
+              />
+            </div>
+            <form
+              className="project-register-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void register();
+              }}
+            >
+              <Field
+                label="Host project directory"
+                value={root}
+                placeholder="/absolute/path/to/project"
+                disabled={choosingFolder || busy || !hostInteractive}
+                onChange={(event) => setRoot(event.target.value)}
+              />
+              <div className="project-register-actions">
+                <Button
+                  data-folder-picker-toggle
+                  aria-expanded={choosingFolder}
+                  disabled={busy || choosingFolder || !hostInteractive}
+                  onClick={() => {
+                    setPickerPath(root.trim());
+                    setChoosingFolder(true);
+                  }}
+                >
+                  Choose Folder
+                </Button>
+                <Button
+                  type="submit"
+                  primary
+                  disabled={
+                    !root.trim() || busy || choosingFolder || !hostInteractive
+                  }
+                >
+                  {busy ? 'Opening…' : 'Open'}
+                </Button>
+              </div>
+            </form>
+            {choosingFolder && (
+              <HostFolderChooser
+                initialPath={pickerPath}
+                onCancel={closeFolderChooser}
+                onChoose={(path) => {
+                  setRoot(path);
+                  closeFolderChooser();
+                }}
+              />
+            )}
+            {(error || result.error) && (
+              <p role="alert">{error || result.error}</p>
+            )}
+            {!result.data && !result.error && (
+              <p role="status">Loading projects…</p>
+            )}
+            {result.data?.projects.length === 0 && <p>No host projects yet.</p>}
+            {!!result.data?.projects.length && (
+              <h2 className="project-list-heading">Projects</h2>
+            )}
+            <div className="project-list" aria-label="Registered host projects">
+              {result.data?.projects.map((project) => (
+                <Button
+                  key={project.id}
+                  disabled={!hostInteractive}
+                  onClick={() =>
+                    desktop.openApp(
+                      'project-files',
+                      { projectId: project.id },
+                      {
+                        title: projectLabel(
+                          project,
+                          result.data?.projects || [],
+                        ),
+                      },
+                    )
+                  }
+                >
+                  <strong>
+                    {projectLabel(project, result.data?.projects || [])}
+                  </strong>
+                  <small>{project.rootPath}</small>
+                </Button>
+              ))}
+            </div>
+          </section>
+          <div
+            className="project-launcher-pane"
+            hidden={location !== 'vm'}
+            inert={!interactive || location !== 'vm'}
+          >
+            <VMProjectLauncher
+              {...props}
+              interactive={interactive && location === 'vm'}
+            />
+          </div>
+        </Tabs>
       </div>
-      <VMProjectLauncher {...props} />
     </div>
   );
 }
@@ -312,58 +364,70 @@ function ProjectBrowser({ window, desktop, interactive }: AppWindowProps) {
 
   return (
     <div className="project-browser">
-      <div className="app-toolbar">
-        <IconButton
-          icon="up"
-          label="Up"
-          disabled={!folder}
-          onClick={() => navigate(folder.split('/').slice(0, -1).join('/'))}
-        />
-        <IconButton
-          icon="refresh"
-          label="Refresh"
-          onClick={() => {
-            setRefresh((value) => value + 1);
-            setFeedback('');
-          }}
-        />
-        <Button
-          disabled={!selected || busy}
-          onClick={() => void copyToDocuments()}
+      <div className="app-toolbar project-browser-toolbar">
+        <div
+          className="project-browser-navigation"
+          role="group"
+          aria-label="Project navigation"
         >
-          {busy ? 'Copying…' : 'Copy to Documents'}
-        </Button>
-        <IconButton
-          icon="more"
-          label="More project actions"
-          aria-haspopup="menu"
-          onClick={(event) => {
-            const rect = event.currentTarget.getBoundingClientRect();
-            const path = file;
-            desktop.contextMenu(
-              [
-                ...(path
-                  ? [
-                      {
-                        label: downloading ? 'Downloading…' : 'Download',
-                        disabled: downloading,
-                        action: () => void download(path),
-                      },
-                      { separator: true },
-                    ]
-                  : []),
-                {
-                  label: 'Projects',
-                  action: () => {
-                    if (mounted.current) desktop.openApp('project-files');
+          <IconButton
+            icon="up"
+            label="Up"
+            disabled={!folder}
+            onClick={() => navigate(folder.split('/').slice(0, -1).join('/'))}
+          />
+          <IconButton
+            icon="refresh"
+            label="Refresh"
+            onClick={() => {
+              setRefresh((value) => value + 1);
+              setFeedback('');
+            }}
+          />
+        </div>
+        <div
+          className="project-browser-actions"
+          role="group"
+          aria-label="Project actions"
+        >
+          <Button
+            disabled={!selected || busy}
+            onClick={() => void copyToDocuments()}
+          >
+            {busy ? 'Copying…' : 'Copy to Documents'}
+          </Button>
+          <IconButton
+            icon="more"
+            label="More project actions"
+            aria-haspopup="menu"
+            onClick={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              const path = file;
+              desktop.contextMenu(
+                [
+                  ...(path
+                    ? [
+                        {
+                          label: downloading ? 'Downloading…' : 'Download',
+                          disabled: downloading,
+                          action: () => void download(path),
+                        },
+                        { separator: true },
+                      ]
+                    : []),
+                  {
+                    label: 'Projects',
+                    action: () => {
+                      if (mounted.current) desktop.openApp('project-files');
+                    },
                   },
-                },
-              ],
-              { x: rect.left, y: rect.bottom },
-              { title: path.split('/').pop() || 'Project actions' },
-            );
-          }}
-        />
+                ],
+                { x: rect.left, y: rect.bottom },
+                { title: path.split('/').pop() || 'Project actions' },
+              );
+            }}
+          />
+        </div>
       </div>
       <div className="project-location">
         <div className="project-location-summary">

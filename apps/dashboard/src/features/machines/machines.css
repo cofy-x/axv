@@ -7,9 +7,16 @@
   background: var(--ns-face);
 }
 
-.machines-toolbar,
-.machines-tabs {
+.machines-toolbar {
   flex-wrap: wrap;
+}
+.machines-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  margin-inline-start: auto;
 }
 .machines-filter {
   display: flex;
@@ -17,9 +24,14 @@
   gap: 8px;
   padding: 5px 8px;
 }
-.machines-filter .ns-field {
+.machines-filter > .ns-field-label:first-child {
   flex: 1;
   min-width: 140px;
+}
+.machines-filter .ns-field {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
 }
 .machines-warning {
   border-left: 3px solid var(--ns-shadow);
@@ -31,12 +43,7 @@
   font-size: 12px;
 }
 .machines-tabs {
-  display: flex;
-  gap: 4px;
   padding: 5px 8px;
-}
-.machines-tabs button[aria-pressed='true'] {
-  box-shadow: var(--ns-recessed);
 }
 .machines-scroll {
   flex: 1;
@@ -114,6 +121,7 @@
 .machines-resource-fields {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  align-items: end;
   gap: 10px;
 }
 .machines-resource-fields input {
@@ -189,6 +197,31 @@
   padding: 10px 8px;
   font-size: 12px;
 }
+.machines-selection-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+.machines-selection-heading > strong {
+  flex: 1 1 160px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.machines-selection-heading .machines-action-buttons {
+  margin: 0;
+  margin-inline-start: auto;
+}
+.machines-selection > .machines-form-help {
+  margin: 8px 0 0;
+}
+.machines-resource-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-inline-start: auto;
+}
 .machines-action-buttons,
 .machines-form-actions,
 .machines-operation-feedback {
@@ -199,6 +232,12 @@
 }
 .machines-action-buttons {
   margin: 8px 0;
+}
+.machines-create-actions {
+  margin-top: 12px;
+}
+.machines-create-actions .ns-icon-button {
+  margin-inline-start: auto;
 }
 .machines-operation-feedback {
   padding: 6px 8px;
@@ -251,7 +290,7 @@
   .machines-table {
     font-size: 11px;
   }
-  .machines-action-buttons .ns-button {
+  .machines-action-buttons .ns-button:not(.ns-icon-button) {
     flex: 1 0 auto;
   }
   .machines-section-heading h2 {
@@ -378,7 +417,7 @@
   .machines-preparation-stages {
     gap: 4px 12px;
   }
-  .machines-environment .machines-form-actions .ns-button {
+  .machines-environment .machines-form-actions .ns-button:not(.ns-icon-button) {
     flex: 1 1 auto;
   }
 }
@@ -425,10 +464,29 @@
 .machines-inspector-heading {
   display: flex;
   align-items: center;
-  gap: 14px;
+  margin-bottom: 12px;
 }
-.machines-inspector-heading > div {
+.machines-inspector-identity {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 14px;
   min-width: 0;
+}
+.machines-inspector-identity > div {
+  min-width: 0;
+}
+.machines-inspector-actions .machines-action-buttons {
+  margin: 0 0 12px;
+}
+.machines-inspector-actions .ns-button:not(.ns-icon-button) {
+  flex: 0 0 auto;
+}
+.machines-inspector-actions .ns-icon-button {
+  margin-inline-start: auto;
+}
+.machines-inspector-heading .machines-inspector-identity p {
+  margin-bottom: 0;
 }
 .machines-inspector-heading h2 {
   overflow-wrap: anywhere;

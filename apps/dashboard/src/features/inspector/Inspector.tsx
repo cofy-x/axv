@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, IconButton, PixelIcon, StatusBar } from '@cofy-x/axv-nextstep';
+import { Button, IconButton, PixelIcon, Select } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps, MenuItem } from '@cofy-x/axv-nextstep';
 import { useFilesystemData } from '../../filesystem/context';
 import type { FilesystemData } from '../../filesystem/context';
@@ -115,22 +115,21 @@ export function Inspector({ window, desktop }: AppWindowProps) {
     const result = await desktop.dialog({
       title: 'Move Item',
       message: (
-        <label className="move-destination">
-          Move “{target.name}” to
-          <select
-            aria-label="Destination folder"
-            defaultValue={destination}
-            onChange={(event) => {
-              destination = event.target.value;
-            }}
-          >
-            {destinations.map((folder) => (
-              <option key={folder.id} value={folder.id}>
-                {entryPath(model.entries, folder)}
-              </option>
-            ))}
-          </select>
-        </label>
+        <Select
+          className="move-destination"
+          label={<>Move “{target.name}” to</>}
+          aria-label="Destination folder"
+          defaultValue={destination}
+          onChange={(event) => {
+            destination = event.target.value;
+          }}
+        >
+          {destinations.map((folder) => (
+            <option key={folder.id} value={folder.id}>
+              {entryPath(model.entries, folder)}
+            </option>
+          ))}
+        </Select>
       ),
       buttons: [
         { label: 'Cancel', value: 'cancel', cancel: true },
@@ -241,10 +240,10 @@ export function Inspector({ window, desktop }: AppWindowProps) {
             desktop.updateWindowState(window.id, { pinned: !pinned, targetId })
           }
         >
-          {pinned ? 'Follow' : 'Pin'}
+          Pin
         </Button>
         <span className="toolbar-caption">
-          {pinned ? 'Pinned to this item' : 'Following selection'}
+          {pinned ? 'Pinned' : 'Follows selection'}
         </span>
       </div>
       {!entry ? (
@@ -264,16 +263,51 @@ export function Inspector({ window, desktop }: AppWindowProps) {
       ) : (
         <div className="inspector-content">
           <div className="inspector-heading">
-            <PixelIcon name={entryIcon(entry)} size={48} />
-            <div>
-              <strong data-testid="inspector-name">{entry.name}</strong>
-              <span>
-                {entry.kind === 'folder'
-                  ? 'Folder'
-                  : entry.editable
-                    ? 'Plain text document'
-                    : entry.mime}
-              </span>
+            <div className="inspector-identity">
+              <PixelIcon name={entryIcon(entry)} size={48} />
+              <div>
+                <strong data-testid="inspector-name">{entry.name}</strong>
+                <span>
+                  {entry.kind === 'folder'
+                    ? 'Folder'
+                    : entry.editable
+                      ? 'Plain text document'
+                      : entry.mime}
+                </span>
+              </div>
+            </div>
+            <div className="inspector-actions">
+              <Button
+                disabled={trashed}
+                onClick={() => openEntry(entry, desktop)}
+              >
+                Open
+              </Button>
+              {trashed && (
+                <Button
+                  onClick={() =>
+                    command(async () => {
+                      await filesystemApi.action(entry.id, 'restore');
+                      await data.refresh();
+                    })
+                  }
+                >
+                  Restore
+                </Button>
+              )}
+              <IconButton
+                icon="more"
+                label="More inspector actions"
+                aria-haspopup="menu"
+                onClick={(event) => {
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  desktop.contextMenu(
+                    actionMenu(entry),
+                    { x: rect.left, y: rect.bottom },
+                    { title: entry.name },
+                  );
+                }}
+              />
             </div>
           </div>
           {trashed && (
@@ -291,12 +325,6 @@ export function Inspector({ window, desktop }: AppWindowProps) {
                 ? ` · ${descendants.length} nested items`
                 : ''}
             </dd>
-            <dt>Created</dt>
-            <dd>{new Date(entry.createdAt).toLocaleString()}</dd>
-            <dt>Modified</dt>
-            <dd>{new Date(entry.updatedAt).toLocaleString()}</dd>
-            <dt>Revision</dt>
-            <dd data-testid="inspector-revision">{entry.revision}</dd>
             <dt>Access</dt>
             <dd>
               {entry.system
@@ -310,39 +338,17 @@ export function Inspector({ window, desktop }: AppWindowProps) {
                       : 'Read and download'}
             </dd>
           </dl>
-          <div className="inspector-actions">
-            <Button
-              disabled={trashed}
-              onClick={() => openEntry(entry, desktop)}
-            >
-              Open
-            </Button>
-            <IconButton
-              icon="more"
-              label="More inspector actions"
-              aria-haspopup="menu"
-              onClick={(event) => {
-                const rect = event.currentTarget.getBoundingClientRect();
-                desktop.contextMenu(
-                  actionMenu(entry),
-                  { x: rect.left, y: rect.bottom },
-                  { title: entry.name },
-                );
-              }}
-            />
-            {trashed && (
-              <Button
-                onClick={() =>
-                  command(async () => {
-                    await filesystemApi.action(entry.id, 'restore');
-                    await data.refresh();
-                  })
-                }
-              >
-                Restore
-              </Button>
-            )}
-          </div>
+          <details className="inspector-details">
+            <summary>Details</summary>
+            <dl className="info-list inspector-metadata">
+              <dt>Created</dt>
+              <dd>{new Date(entry.createdAt).toLocaleString()}</dd>
+              <dt>Modified</dt>
+              <dd>{new Date(entry.updatedAt).toLocaleString()}</dd>
+              <dt>Revision</dt>
+              <dd data-testid="inspector-revision">{entry.revision}</dd>
+            </dl>
+          </details>
           {entry.kind === 'file' && (
             <section className="inspector-preview" aria-label="File preview">
               <h2>Preview</h2>
@@ -375,10 +381,6 @@ export function Inspector({ window, desktop }: AppWindowProps) {
           )}
         </div>
       )}
-      <StatusBar>
-        {pinned ? 'Pinned inspector' : 'Selection inspector'}
-        {entry?.system ? ' · protected' : ''}
-      </StatusBar>
     </div>
   );
 }

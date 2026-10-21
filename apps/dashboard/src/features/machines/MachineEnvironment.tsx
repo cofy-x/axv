@@ -387,7 +387,6 @@ export function MachineEnvironment({
                 <li aria-current="step">2. Review</li>
                 <li>3. Prepare</li>
               </ol>
-              <p>Confirm the changes to this host before continuing.</p>
               <Checks checks={plan.checks} />
               <dl className="info-list machines-details">
                 <dt>Provider</dt>
@@ -522,7 +521,12 @@ export function MachineEnvironment({
                 <p className="machines-error">{environment.runtime.error}</p>
               )}
               {info?.providers
-                ?.filter((provider) => !provider.available)
+                ?.filter(
+                  (provider) =>
+                    !provider.available &&
+                    (!environment?.runtime?.error ||
+                      provider.reason !== environment.runtime.error),
+                )
                 .map((provider) => (
                   <p className="machines-warning" key={provider.provider}>
                     {provider.reason || `${provider.provider} is unavailable.`}
@@ -539,7 +543,6 @@ export function MachineEnvironment({
                   {configured ? (
                     <p className="machines-form-help">
                       The existing configuration and storage will be preserved.
-                      Review how to restore the VM connection.
                     </p>
                   ) : (
                     <ol

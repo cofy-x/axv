@@ -365,69 +365,71 @@ export function VolumeManager({
         >
           New Volume
         </Button>
-        <Button
-          disabled={
-            disabled ||
-            !supported ||
-            selected?.status !== 'ready' ||
-            !stopped ||
-            !!selected?.pendingSizeGiB
-          }
-          onClick={() => openEditor('copy')}
-        >
-          Copy
-        </Button>
-        <IconButton
-          icon="more"
-          label="More volume actions"
-          aria-haspopup="menu"
-          disabled={!selected}
-          onClick={(event) => {
-            if (!selected) return;
-            const targetHost = hostId;
-            const targetId = selected.id;
-            const rect = event.currentTarget.getBoundingClientRect();
-            const invoke = (action: VolumeMenuAction) => {
-              const latest = current.current;
-              if (
-                latest.hostId !== targetHost ||
-                latest.selected?.id !== targetId ||
-                !latest.menuEnabled(action)
-              )
-                return;
-              if (action === 'delete' || action === 'detach')
-                void latest.confirmAction(action);
-              else latest.openEditor(action);
-            };
-            desktop.contextMenu(
-              [
-                {
-                  label: 'Rename',
-                  disabled: !menuEnabled('rename'),
-                  action: () => invoke('rename'),
-                },
-                {
-                  label: 'Grow',
-                  disabled: !menuEnabled('resize'),
-                  action: () => invoke('resize'),
-                },
-                {
-                  label: 'Detach',
-                  disabled: !menuEnabled('detach'),
-                  action: () => invoke('detach'),
-                },
-                { separator: true },
-                {
-                  label: 'Delete',
-                  disabled: !menuEnabled('delete'),
-                  action: () => invoke('delete'),
-                },
-              ],
-              { x: rect.left, y: rect.bottom },
-              { title: selected.name || selected.id },
-            );
-          }}
-        />
+        <div className="machines-resource-actions">
+          <Button
+            disabled={
+              disabled ||
+              !supported ||
+              selected?.status !== 'ready' ||
+              !stopped ||
+              !!selected?.pendingSizeGiB
+            }
+            onClick={() => openEditor('copy')}
+          >
+            Copy
+          </Button>
+          <IconButton
+            icon="more"
+            label="More volume actions"
+            aria-haspopup="menu"
+            disabled={!selected}
+            onClick={(event) => {
+              if (!selected) return;
+              const targetHost = hostId;
+              const targetId = selected.id;
+              const rect = event.currentTarget.getBoundingClientRect();
+              const invoke = (action: VolumeMenuAction) => {
+                const latest = current.current;
+                if (
+                  latest.hostId !== targetHost ||
+                  latest.selected?.id !== targetId ||
+                  !latest.menuEnabled(action)
+                )
+                  return;
+                if (action === 'delete' || action === 'detach')
+                  void latest.confirmAction(action);
+                else latest.openEditor(action);
+              };
+              desktop.contextMenu(
+                [
+                  {
+                    label: 'Rename',
+                    disabled: !menuEnabled('rename'),
+                    action: () => invoke('rename'),
+                  },
+                  {
+                    label: 'Grow',
+                    disabled: !menuEnabled('resize'),
+                    action: () => invoke('resize'),
+                  },
+                  {
+                    label: 'Detach',
+                    disabled: !menuEnabled('detach'),
+                    action: () => invoke('detach'),
+                  },
+                  { separator: true },
+                  {
+                    label: 'Delete',
+                    disabled: !menuEnabled('delete'),
+                    action: () => invoke('delete'),
+                  },
+                ],
+                { x: rect.left, y: rect.bottom },
+                { title: selected.name || selected.id },
+              );
+            }}
+          />
+        </div>
       </div>
       {error && (
         <p className="machines-error" role="alert">

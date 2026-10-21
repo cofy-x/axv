@@ -403,6 +403,7 @@ async function openProject(page: Page) {
   await menuItem(page, 'Applications').click();
   await menuItem(page, 'Project Files').click();
   const projects = page.locator('[data-window-id="project-files:projects"]');
+  await projects.getByRole('tab', { name: 'VM', exact: true }).click();
   await projects.getByRole('button', { name: /^VM coding project ·/ }).click();
   await expect(files(page)).toBeVisible();
   await files(page)

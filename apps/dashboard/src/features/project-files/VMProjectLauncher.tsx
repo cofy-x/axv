@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Field } from '@cofy-x/axv-nextstep';
+import { Button, Field, IconButton, Select } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { useResource } from '../../shared/api/useResource';
 import { RequestIdentity } from '../../shared/api/request-identity';
@@ -96,30 +96,28 @@ export function VMProjectLauncher({ desktop, interactive }: AppWindowProps) {
 
   return (
     <section className="vm-project-launcher" aria-label="VM projects">
-      <div className="project-preview-heading">
-        <strong>VM projects</strong>
-        <Button
+      <div className="project-launcher-heading">
+        <h2>Open Folder</h2>
+        <IconButton
+          icon="refresh"
+          label="Refresh VMs"
           disabled={busy || !interactive}
           onClick={() => setRefresh((value) => value + 1)}
-        >
-          Refresh VMs
-        </Button>
+        />
       </div>
-      <p>
-        Keep project files on a retained volume. Open an existing directory
-        inside its running VM.
+      <p className="project-launcher-guidance">
+        Open an existing folder on a running VM’s retained volume.
       </p>
       <form
-        className="vm-project-register-form"
+        className="project-register-form"
         onSubmit={(event) => {
           event.preventDefault();
           void register();
         }}
       >
-        <label>
-          Project volume
-          <select
-            aria-label="Project volume"
+        <div className="project-register-fields">
+          <Select
+            label="Project volume"
             value={volumeId}
             disabled={busy || !interactive}
             onChange={(event) => setVolumeId(event.target.value)}
@@ -136,28 +134,32 @@ export function VMProjectLauncher({ desktop, interactive }: AppWindowProps) {
                 · {item.id.slice(0, 8)}
               </option>
             ))}
-          </select>
-        </label>
-        <Field
-          label="Directory in volume"
-          value={root}
-          placeholder="repo (empty for volume root)"
-          disabled={busy || !interactive}
-          onChange={(event) => setRoot(event.target.value)}
-        />
-        <Field
-          label="Project name (optional)"
-          value={name}
-          disabled={busy || !interactive}
-          onChange={(event) => setName(event.target.value)}
-        />
-        <Button
-          type="submit"
-          disabled={!volume || busy || !interactive}
-          primary
-        >
-          {busy ? 'Opening…' : 'Open VM Project'}
-        </Button>
+          </Select>
+          <Field
+            label="Directory in volume"
+            value={root}
+            placeholder="repo (empty for volume root)"
+            disabled={busy || !interactive}
+            onChange={(event) => setRoot(event.target.value)}
+          />
+          <div className="project-register-name">
+            <Field
+              label="Project name (optional)"
+              value={name}
+              disabled={busy || !interactive}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </div>
+        </div>
+        <div className="project-register-actions">
+          <Button
+            type="submit"
+            disabled={!volume || busy || !interactive}
+            primary
+          >
+            {busy ? 'Opening…' : 'Open'}
+          </Button>
+        </div>
       </form>
       {!data && !inventory.error && <p role="status">Loading VM projects…</p>}
       {(error || inventory.error) && (
@@ -166,24 +168,35 @@ export function VMProjectLauncher({ desktop, interactive }: AppWindowProps) {
       {data && eligible?.length === 0 && (
         <p>
           No ready retained volumes are attached to a running VM with project
-          file access. Manage VMs and volumes in Machines.
+          file access. Manage VMs and volumes in Virtual Machines.
         </p>
       )}
+      {!!data?.projects.length && (
+        <h2 className="project-list-heading">Projects</h2>
+      )}
       <div className="project-list" aria-label="Registered VM projects">
-        {data?.projects.map((project) => (
-          <Button
-            key={project.id}
-            disabled={!interactive}
-            onClick={() => open(project)}
-          >
-            <strong>
-              {project.name} · {project.id.slice(0, 8)}
-            </strong>
-            <small>
-              Volume {project.volumeId} / {project.root || 'Volume root'}
-            </small>
-          </Button>
-        ))}
+        {data?.projects.map((project) => {
+          const projectVolume = data.volumes.find(
+            (item) => item.id === project.volumeId,
+          );
+          return (
+            <Button
+              key={project.id}
+              disabled={!interactive}
+              onClick={() => open(project)}
+            >
+              <strong>
+                {project.name} · {project.id.slice(0, 8)}
+              </strong>
+              <small>
+                {projectVolume
+                  ? `${projectVolume.name} · ${project.volumeId.slice(0, 8)}`
+                  : `Volume ${project.volumeId.slice(0, 8)}`}{' '}
+                / {project.root || 'Volume root'}
+              </small>
+            </Button>
+          );
+        })}
       </div>
     </section>
   );

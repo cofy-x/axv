@@ -102,7 +102,7 @@ export function createFilesMenu(
           action: () => data.setClipboard({ ids, mode: 'copy' }),
         },
         {
-          label: 'Paste',
+          label: 'Paste Here',
           disabled: !data.clipboard,
           action: command(() =>
             pasteEntries(
@@ -115,7 +115,7 @@ export function createFilesMenu(
         },
         { separator: true },
         {
-          label: 'Move to Recycler',
+          label: 'Recycle',
           disabled: !ids.length || selected.some((entry) => entry.system),
           action: command(() => trashEntries(data, desktop, ids)),
         },
@@ -201,7 +201,7 @@ function createSelectionMenu(
     { separator: true },
     {
       id: 'recycle',
-      label: 'Move to Recycler',
+      label: 'Recycle',
       disabled: !targets.length || protectedSelection,
       action: () => command(() => trashEntries(data, desktop, ids)),
     },
@@ -268,7 +268,7 @@ export function createFilesContextMenu(
     { label: 'Import Files', action: () => onImport() },
     {
       id: 'paste',
-      label: 'Paste',
+      label: 'Paste Here',
       disabled: !data.clipboard,
       action: () => command(() => pasteEntries(data, folderId)),
     },
@@ -288,6 +288,10 @@ export function createFilesContextMenu(
         },
       ],
     },
-    { id: 'refresh', label: 'Refresh', action: () => command(data.refresh) },
+    {
+      id: 'refresh',
+      label: 'Refresh Folder',
+      action: () => command(data.refresh),
+    },
   ];
 }

@@ -129,6 +129,9 @@ test('file toolbar menus retain their selection and destination after metadata c
   await more.focus();
   await more.press('Enter');
   await expect(menuItem(page, 'Rename')).toBeEnabled();
+  await expect(menuItem(page, 'Recycle')).toBeEnabled();
+  await expect(menuItem(page, 'Paste Here')).toBeDisabled();
+  await expect(menuItem(page, 'Refresh Folder')).toBeEnabled();
   await page.locator('.ns-menu-layer').getByRole('menu').press('Escape');
   await expect(more).toBeFocused();
   await more.click();
@@ -193,6 +196,17 @@ test('Inspector actions reject a target recycled while its menu is open', async 
   await files.getByRole('option', { name: selected.name, exact: true }).click();
   await files.getByRole('button', { name: 'Inspect', exact: true }).click();
   const inspector = page.locator('[data-app-id="inspector"]');
+  await expect(inspector).toContainText('Follows selection');
+  await expect(
+    inspector.getByRole('button', { name: 'Open', exact: true }),
+  ).toBeInViewport();
+  const revision = inspector.getByTestId('inspector-revision');
+  await expect(revision).toBeHidden();
+  const details = inspector.locator('summary').filter({ hasText: /^Details$/ });
+  await details.click();
+  await expect(revision).toHaveText(String(selected.revision));
+  await details.click();
+  await expect(revision).toBeHidden();
   await inspector
     .getByRole('button', { name: 'More inspector actions', exact: true })
     .click();
@@ -202,6 +216,9 @@ test('Inspector actions reject a target recycled while its menu is open', async 
   ).toBeTruthy();
   await page.evaluate(() => globalThis.dispatchEvent(new Event('focus')));
   await expect(inspector).toContainText('This item is in the Recycler.');
+  await expect(
+    inspector.getByRole('button', { name: 'Open', exact: true }),
+  ).toBeDisabled();
   await menuItem(page, 'Rename').click();
   const error = page.getByRole('dialog', {
     name: 'Action failed',

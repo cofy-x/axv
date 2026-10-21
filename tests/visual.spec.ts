@@ -71,7 +71,18 @@ for (const viewport of [
     await expect(
       inspector.getByRole('button', { name: /^Close / }),
     ).toBeInViewport();
+    await expect(
+      inspector.getByRole('button', { name: 'Open', exact: true }),
+    ).toBeInViewport();
+    await expect(inspector.getByTestId('inspector-revision')).toBeHidden();
     await capture('inspector');
+    const details = inspector
+      .locator('summary')
+      .filter({ hasText: /^Details$/ });
+    await details.click();
+    await expect(inspector.getByTestId('inspector-revision')).toBeVisible();
+    await capture('inspector-details');
+    await details.click();
     await inspector
       .getByRole('button', { name: 'More inspector actions', exact: true })
       .click();

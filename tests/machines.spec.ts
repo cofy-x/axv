@@ -170,15 +170,19 @@ test('VM and volume controls respect cross-resource operation ownership', async 
   await expect(
     manager.getByRole('button', { name: 'Start', exact: true }),
   ).toBeDisabled();
+  await expect(
+    manager.getByText(/active VM or project-volume operation/),
+  ).toBeVisible();
   await manager.getByRole('button', { name: 'Inspect', exact: true }).click();
   const inspector = page.locator('[data-app-id="machine-inspector"]');
+  await expect(
+    inspector.getByText(/active VM or project-volume operation/),
+  ).toBeVisible();
   await inspector.getByRole('button', { name: 'More VM actions' }).click();
   await expect(menuItem(page, 'Delete')).toBeDisabled();
   await page.keyboard.press('Escape');
   await activate(page, manager);
-  await manager
-    .getByRole('button', { name: 'Project Volumes', exact: true })
-    .click();
+  await manager.getByRole('button', { name: 'Volumes', exact: true }).click();
   await manager
     .getByRole('button', { name: 'Review project', exact: true })
     .click();
@@ -198,6 +202,9 @@ test('guest polling preserves lifecycle failures and configuration drafts', asyn
   const manager = await host(page, state);
   await manager.getByRole('button', { name: 'Inspect', exact: true }).click();
   const inspector = page.locator('[data-app-id="machine-inspector"]');
+  await expect(
+    inspector.getByText('Choose New Terminal to begin.', { exact: true }),
+  ).toHaveCount(0);
   await inspector.getByRole('button', { name: 'Stop', exact: true }).click();
   await page
     .getByRole('dialog', { name: 'Stop VM?' })
@@ -259,9 +266,7 @@ test('uncertain project attachments cannot be deleted from the volume view', asy
   state.volume.pendingAction = 'attach-volume';
   state.volume.pendingMachineId = state.machine.id;
   const manager = await host(page, state);
-  await manager
-    .getByRole('button', { name: 'Project Volumes', exact: true })
-    .click();
+  await manager.getByRole('button', { name: 'Volumes', exact: true }).click();
   await manager
     .getByRole('button', { name: 'Review project', exact: true })
     .click();
@@ -287,9 +292,7 @@ test('volume and image forms remain usable with pointer and touch at review size
     if (hasTouch) await control.tap();
     else await control.click();
   };
-  await press(
-    manager.getByRole('button', { name: 'Project Volumes', exact: true }),
-  );
+  await press(manager.getByRole('button', { name: 'Volumes', exact: true }));
   await press(manager.getByRole('button', { name: 'New Volume', exact: true }));
   await manager
     .getByLabel('Volume name', { exact: true })

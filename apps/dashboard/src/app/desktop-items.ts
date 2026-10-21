@@ -161,7 +161,7 @@ export function createDesktopMenu(
       },
       { separator: true },
       {
-        label: 'Move to Recycler',
+        label: 'Recycle',
         action: command(() => trashEntries(data, desktop, ids)),
       },
     ];

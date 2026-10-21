@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, IconButton, PixelIcon, StatusBar } from '@cofy-x/axv-nextstep';
+import {
+  Button,
+  ButtonGroup,
+  IconButton,
+  PixelIcon,
+  StatusBar,
+} from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { filesystemApi } from '../../filesystem/api';
 import { isInTrash } from '../../filesystem/tree';
@@ -326,11 +332,7 @@ function DocumentEditor({
           {markdown ? 'Markdown' : 'Plain Text'}
         </span>
         {markdown && (
-          <span
-            className="notes-view-controls"
-            role="group"
-            aria-label="Document view"
-          >
+          <ButtonGroup label="Document view">
             <Button
               aria-pressed={!showPreview}
               onClick={() => {
@@ -347,7 +349,7 @@ function DocumentEditor({
             >
               Preview
             </Button>
-          </span>
+          </ButtonGroup>
         )}
         <Button
           disabled={
@@ -413,8 +415,20 @@ function DocumentEditor({
       </div>
       {unavailable && (
         <div className="app-error" role="status">
-          This document was moved to the Recycler or deleted. Your draft remains
-          available; use Save Copy to keep it.
+          <span>
+            This document was moved to the Recycler or deleted. Your draft
+            remains available; use Save Copy to keep it.
+          </span>
+          {!conflict && (
+            <div className="app-actions">
+              <Button
+                disabled={!loaded}
+                onClick={() => void runCommand(desktop, saveCopy)}
+              >
+                Save Copy
+              </Button>
+            </div>
+          )}
         </div>
       )}
       {note.recoveryAvailable && (

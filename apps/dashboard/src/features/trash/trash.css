@@ -19,8 +19,14 @@
   padding: 4px 9px;
 }
 .trash-row > small {
+  flex-shrink: 0;
   margin-left: auto;
   font-size: 10px;
+}
+.trash-row > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .trash-row.selected {
   background: #222;

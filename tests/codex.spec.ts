@@ -134,6 +134,31 @@ test('Codex selects a real project and preserves the same process through close,
   const row = manager.locator(
     `[data-session-id="${id}"][data-run-id="${runId}"]`,
   );
+  const filters = manager.getByRole('group', {
+    name: 'Session list',
+    exact: true,
+  });
+  const unarchived = filters.getByRole('button', {
+    name: 'Unarchived',
+    exact: true,
+  });
+  const archived = filters.getByRole('button', {
+    name: 'Archived',
+    exact: true,
+  });
+  await expect(unarchived).toHaveAttribute('aria-pressed', 'true');
+  await expect(archived).toHaveAttribute('aria-pressed', 'false');
+  await archived.focus();
+  await archived.press('Enter');
+  await expect(archived).toHaveAttribute('aria-pressed', 'true');
+  await expect(unarchived).toHaveAttribute('aria-pressed', 'false');
+  await expect(archived).toBeFocused();
+  await expect(row).toHaveCount(0);
+  await unarchived.focus();
+  await unarchived.press('Space');
+  await expect(unarchived).toHaveAttribute('aria-pressed', 'true');
+  await expect(archived).toHaveAttribute('aria-pressed', 'false');
+  await expect(unarchived).toBeFocused();
   await expect(row.getByTestId('codex-run-id')).toHaveText(`Run ${runId}`);
   await row.getByRole('button', { name: 'Open', exact: true }).click();
   const resumed = codexWindow(page, id, runId);

@@ -8,8 +8,11 @@
 .files-toolbar {
   flex-wrap: wrap;
 }
-.files-action-toolbar .ns-icon-button {
-  margin-left: auto;
+.files-secondary-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-inline-start: auto;
 }
 .files-path {
   flex: 0 0 auto;
@@ -199,6 +202,9 @@
   .files-app > .app-toolbar {
     gap: 3px;
     padding: 4px;
+  }
+  .files-secondary-actions {
+    gap: 3px;
   }
   .files-app > .app-toolbar button:not(.ns-icon-button) {
     padding-inline: 5px;

@@ -14,6 +14,8 @@ interface PreparationFixture {
   check: PreparationCheck;
   job?: PreparationJob;
   plan?: PreparationPlan;
+  runtimeError?: string;
+  unavailableProviders?: HostInfo['providers'];
   ready: boolean;
   blocked: boolean;
   loseStartResponse: boolean;
@@ -237,9 +239,12 @@ async function host(page: Page, state: PreparationFixture) {
         runtime: {
           state: state.ready
             ? 'ready'
-            : state.check.configured
-              ? 'starting'
-              : 'not_configured',
+            : state.runtimeError
+              ? 'failed'
+              : state.check.configured
+                ? 'starting'
+                : 'not_configured',
+          error: state.runtimeError,
           mode: state.check.platform === 'linux' ? 'external' : 'local',
           generation: 1,
           readOnly: false,
@@ -269,7 +274,7 @@ async function host(page: Page, state: PreparationFixture) {
                 forceStop: true,
               },
             ]
-          : [],
+          : state.unavailableProviders || [],
         capacity: {
           cpus: 4,
           memoryMiB: 4096,
@@ -580,10 +585,34 @@ test('configured service review preserves existing locations and budgets', async
   const state = fixture();
   state.check.configured = true;
   state.check.configurationSource = 'Existing profile configuration';
+  state.runtimeError = 'The saved VM service could not be started.';
+  const unavailable = {
+    available: false,
+    persistentVolumes: false,
+    snapshots: false,
+    guestExecution: false,
+  };
+  state.unavailableProviders = [
+    { ...unavailable, provider: 'lima', reason: state.runtimeError },
+    {
+      ...unavailable,
+      provider: 'firecracker',
+      reason: 'The Firecracker executable is unavailable.',
+    },
+  ];
   const manager = await host(page, state);
   await manager
     .getByRole('button', { name: 'Environment', exact: true })
     .click();
+  const environment = manager.locator('.machines-environment');
+  await expect(
+    environment.getByText(state.runtimeError, { exact: true }),
+  ).toHaveCount(1);
+  await expect(
+    environment.getByText('The Firecracker executable is unavailable.', {
+      exact: true,
+    }),
+  ).toBeVisible();
   await expect(
     manager.getByLabel('VM storage directory', { exact: true }),
   ).toHaveCount(0);

@@ -67,7 +67,7 @@ export function SavedVersionPicker({
     !snapshots.some((item) => item.id === selectedSnapshot.id);
   return (
     <div className="document-version-picker">
-      {version.loading && <p role="status">Loading saved versions…</p>}
+      {version.loading && <p role="status">Loading versions…</p>}
       {version.error && <p role="alert">{version.error}</p>}
       {data?.warnings.map((warning) => (
         <p role="alert" key={warning}>
@@ -77,9 +77,7 @@ export function SavedVersionPicker({
       {data && (
         <>
           {!current && (
-            <p>
-              The source document is unavailable. Choose a retained version.
-            </p>
+            <p>Source document unavailable. Choose a retained version.</p>
           )}
           <Select
             label="Version"
@@ -87,7 +85,7 @@ export function SavedVersionPicker({
             disabled={disabled || version.loading}
             onChange={(event) => version.choose(event.target.value)}
           >
-            {!choice && <option value="">Choose a saved version</option>}
+            {!choice && <option value="">Choose a version</option>}
             {reviewed && (
               <option value="reviewed">
                 Reviewed saved revision {choice.revision}
@@ -111,13 +109,10 @@ export function SavedVersionPicker({
               </option>
             ))}
           </Select>
-          <p className="document-hint">
-            Uses saved content. Unsaved edits are excluded.
-          </p>
-          {reviewed && (
+          <p className="document-hint">Unsaved edits excluded.</p>
+          {reviewed && current && (
             <p role="status">
-              The saved document changed. Choose its updated version to include
-              those changes.
+              Newer saved version available. Choose it to include changes.
             </p>
           )}
           {choice && (

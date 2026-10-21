@@ -118,7 +118,7 @@ export class TerminalSession {
           ...this.state,
           phase: ended ? 'ended' : 'error',
           message: ended
-            ? 'Session ended. Choose New Session to open another shell.'
+            ? undefined
             : event.reason ||
               'The host shell disconnected. Choose New Session to try again.',
         });

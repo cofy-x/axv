@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Button,
+  ButtonGroup,
   Field,
   IconButton,
   PixelIcon,
@@ -673,7 +674,7 @@ export function CodexManager({ desktop, window }: AppWindowProps) {
         <section className="codex-section" aria-label="Codex sessions">
           <div className="codex-session-heading">
             <h2>Sessions</h2>
-            <div className="codex-session-filter" aria-label="Session list">
+            <ButtonGroup label="Session list">
               <Button
                 aria-pressed={!showArchived}
                 onClick={() => setShowArchived(false)}
@@ -686,7 +687,7 @@ export function CodexManager({ desktop, window }: AppWindowProps) {
               >
                 Archived
               </Button>
-            </div>
+            </ButtonGroup>
           </div>
           <p className="codex-note">
             Archiving does not stop runs or free capacity.

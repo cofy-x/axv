@@ -8,6 +8,7 @@ import {
 } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { useResource } from '../../shared/api/useResource';
+import { APIError } from '../../shared/api/http';
 import { useDraftNamespace } from '../../shared/drafts/context';
 import { nameDialog } from '../../shared/desktop/dialogs';
 import { vmProjectsAPI } from './vm-api';
@@ -24,6 +25,35 @@ interface Editor {
 interface Recovery {
   binding: VMProjectBinding;
   editor: Editor;
+}
+
+interface FileError {
+  message: string;
+  operation: 'read' | 'save' | 'create';
+  code?: string;
+}
+
+function fileError(
+  operation: FileError['operation'],
+  error: unknown,
+): FileError {
+  return {
+    operation,
+    message: message(error),
+    code: error instanceof APIError ? error.code : undefined,
+  };
+}
+
+function needsReconnect(error: FileError | null) {
+  return (
+    !!error?.code &&
+    [
+      'binding_changed',
+      'boot_changed',
+      'instance_changed',
+      'guest_identity_mismatch',
+    ].includes(error.code)
+  );
 }
 
 const message = (error: unknown) =>
@@ -86,7 +116,7 @@ export function VMProjectFiles({
   const [reading, setReading] = useState(false);
   const [readRequest, setReadRequest] = useState(0);
   const [refresh, setRefresh] = useState(0);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<FileError | null>(null);
   const [feedback, setFeedback] = useState('');
   const folder =
     typeof window.viewState.folder === 'string' ? window.viewState.folder : '';
@@ -142,6 +172,13 @@ export function VMProjectFiles({
   const editorInput = useRef<HTMLTextAreaElement>(null);
   const returnToDirectory = useRef(false);
 
+  function focusContent() {
+    const destination = preview.current?.getClientRects().length
+      ? preview.current
+      : directory.current;
+    destination?.focus({ preventScroll: true });
+  }
+
   const persist = useCallback(
     (next: Editor | null, nextBinding = latest.current.binding) => {
       try {
@@ -180,7 +217,7 @@ export function VMProjectFiles({
       return;
     let current = true;
     setReading(true);
-    setError('');
+    setError(null);
     void vmProjectsAPI
       .read(id, binding, file)
       .then(
@@ -196,7 +233,7 @@ export function VMProjectFiles({
           }
         },
         (error: unknown) => {
-          if (current) setError(message(error));
+          if (current) setError(fileError('read', error));
         },
       )
       .finally(() => {
@@ -276,7 +313,7 @@ export function VMProjectFiles({
     return () => observer.disconnect();
   }, [interactive, isReading]);
 
-  async function discardBefore(action: string) {
+  async function discardBefore(action: string, isCurrent = () => true) {
     if (savingRef.current) return false;
     if (!latest.current.dirty && !latest.current.pendingRecovery) return true;
     const answer = await desktop.dialog({
@@ -287,7 +324,8 @@ export function VMProjectFiles({
         { label: 'Discard', value: 'discard', default: true },
       ],
     });
-    if (answer?.button !== 'discard' || !persist(null)) return false;
+    if (answer?.button !== 'discard' || !isCurrent() || !persist(null))
+      return false;
     setPendingRecovery(null);
     return true;
   }
@@ -307,7 +345,7 @@ export function VMProjectFiles({
     navigationGeneration.current++;
     setEditor(null);
     setReadRequest((value) => value + 1);
-    setError('');
+    setError(null);
     setFeedback('');
     desktop.updateWindowState(window.id, {
       folder: path,
@@ -330,7 +368,7 @@ export function VMProjectFiles({
       return;
     savingRef.current = true;
     setSaving(true);
-    setError('');
+    setError(null);
     setFeedback('');
     try {
       const value = await vmProjectsAPI.write(
@@ -362,21 +400,66 @@ export function VMProjectFiles({
       setRefresh((value) => value + 1);
     } catch (error) {
       if (mounted.current)
-        setError(
-          `${message(error)} Your draft is preserved. Reload or reconnect requires discarding it explicitly.`,
-        );
+        setError({
+          ...fileError('save', error),
+          message: `${message(error)} Your draft is preserved. Reload or reconnect requires discarding it explicitly.`,
+        });
     } finally {
       savingRef.current = false;
       if (mounted.current) setSaving(false);
     }
   }
 
-  async function reconnectProject() {
-    if (!interactive || !(await discardBefore('Reconnecting'))) return;
+  function ownsLocation(
+    target: VMProjectBinding | null,
+    generation: number,
+    path?: string,
+  ) {
+    return (
+      mounted.current &&
+      latest.current.binding === target &&
+      navigationGeneration.current === generation &&
+      (path === undefined || latest.current.editor?.path === path)
+    );
+  }
+
+  async function reloadFile(
+    target: VMProjectBinding | null,
+    path: string,
+    generation: number,
+  ) {
+    const isCurrent = () => ownsLocation(target, generation, path);
+    if (
+      !interactive ||
+      !isCurrent() ||
+      !(await discardBefore('Reloading the file', isCurrent)) ||
+      !isCurrent()
+    )
+      return;
+    navigationGeneration.current++;
+    setEditor(null);
+    setError(null);
+    setFeedback('');
+    setReadRequest((value) => value + 1);
+    desktop.updateWindowState(window.id, { reading: true });
+  }
+
+  async function reconnectProject(
+    target = latest.current.binding,
+    generation = navigationGeneration.current,
+  ) {
+    const isCurrent = () => ownsLocation(target, generation);
+    if (
+      !interactive ||
+      !isCurrent() ||
+      !(await discardBefore('Reconnecting', isCurrent)) ||
+      !isCurrent()
+    )
+      return;
     navigationGeneration.current++;
     setEditor(null);
     setOriginalBinding(null);
-    setError('');
+    setError(null);
     setFeedback('');
     setReconnect((value) => value + 1);
   }
@@ -403,11 +486,11 @@ export function VMProjectFiles({
       name === '.' ||
       name === '..'
     ) {
-      setError('Enter a single file or folder name.');
+      setError(fileError('create', 'Enter a single file or folder name.'));
       return;
     }
     const path = [folder, name].filter(Boolean).join('/');
-    setError('');
+    setError(null);
     try {
       if (kind === 'folder') await vmProjectsAPI.mkdir(id, target, path);
       else await vmProjectsAPI.write(id, target, path, '', '');
@@ -426,93 +509,128 @@ export function VMProjectFiles({
       setFeedback(`Created ${path} in VM.`);
     } catch (error) {
       if (mounted.current && latest.current.binding === target)
-        setError(message(error));
+        setError(fileError('create', error));
     }
   }
 
   const project = listing.data?.project || connection.data?.project;
   const unavailable = !binding || !!pendingRecovery || blockedRecovery;
+  const errorMessage =
+    error?.message || connection.error || listing.error || draftError;
+  const menuTitle = `${project?.name || 'VM project'} · ${id.slice(0, 8)}`;
   return (
     <div className="project-browser vm-project-browser">
-      <div className="app-toolbar">
-        <IconButton
-          icon="up"
-          label="Up"
-          disabled={!folder || saving || !interactive}
-          onClick={() =>
-            void navigate(folder.split('/').slice(0, -1).join('/'))
-          }
-        />
-        <IconButton
-          icon="refresh"
-          label="Refresh directory"
-          disabled={unavailable || !interactive}
-          onClick={() => setRefresh((value) => value + 1)}
-        />
-        <Button
-          disabled={!dirty || saving || unavailable || !interactive}
-          onClick={() => void save()}
-          primary
+      <div className="app-toolbar project-browser-toolbar">
+        <div
+          className="project-browser-navigation"
+          role="group"
+          aria-label="Project navigation"
         >
-          {saving ? 'Saving…' : 'Save'}
-        </Button>
-        <Button
-          disabled={unavailable || saving || !interactive}
-          onClick={() => void create('file')}
+          <IconButton
+            icon="up"
+            label="Up"
+            disabled={!folder || saving || !interactive}
+            onClick={() =>
+              void navigate(folder.split('/').slice(0, -1).join('/'))
+            }
+          />
+          <IconButton
+            icon="refresh"
+            label="Refresh directory"
+            disabled={unavailable || !interactive}
+            onClick={() => setRefresh((value) => value + 1)}
+          />
+        </div>
+        <div
+          className="project-browser-actions"
+          role="group"
+          aria-label="VM project actions"
         >
-          New File
-        </Button>
-        <Button
-          disabled={unavailable || saving || !interactive}
-          onClick={() => void create('folder')}
-        >
-          New Folder
-        </Button>
-        <Button
-          disabled={saving || !interactive}
-          onClick={() => void reconnectProject()}
-        >
-          Reconnect
-        </Button>
-        <Button
-          disabled={!interactive}
-          onClick={() =>
-            desktop.openApp(
-              'project-files',
-              { hostId, vmTasksProjectId: id },
-              { title: `Tasks · ${project?.name || 'VM project'}` },
-            )
-          }
-        >
-          Tasks
-        </Button>
-        <Button
-          disabled={!interactive}
-          onClick={() => openVMProjectCodex(desktop, hostId, id, project?.name)}
-        >
-          Open with Codex
-        </Button>
-        <IconButton
-          icon="more"
-          label="More VM project actions"
-          aria-haspopup="menu"
-          disabled={!interactive}
-          onClick={(event) => {
-            const rect = event.currentTarget.getBoundingClientRect();
-            desktop.contextMenu(
-              [
-                {
-                  label: 'Projects',
+          <Button
+            disabled={!dirty || saving || unavailable || !interactive}
+            onClick={() => void save()}
+            primary
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </Button>
+          <Button
+            disabled={unavailable || saving || !interactive}
+            aria-haspopup="menu"
+            onClick={(event) => {
+              const target = latest.current.binding;
+              const generation = navigationGeneration.current;
+              const rect = event.currentTarget.getBoundingClientRect();
+              desktop.contextMenu(
+                (['file', 'folder'] as const).map((kind) => ({
+                  label: kind === 'file' ? 'New File' : 'New Folder',
                   action: () => {
-                    if (mounted.current) desktop.openApp('project-files');
+                    if (ownsLocation(target, generation)) void create(kind);
                   },
-                },
-              ],
-              { x: rect.left, y: rect.bottom },
-              { title: 'VM project actions' },
-            );
-          }}
-        />
+                })),
+                { x: rect.left, y: rect.bottom },
+                { title: `${menuTitle} / ${folder || 'Project root'}` },
+              );
+            }}
+          >
+            New
+          </Button>
+          <Button
+            disabled={!interactive}
+            onClick={() =>
+              desktop.openApp(
+                'project-files',
+                { hostId, vmTasksProjectId: id },
+                { title: `Tasks · ${project?.name || 'VM project'}` },
+              )
+            }
+          >
+            Tasks
+          </Button>
+          <Button
+            disabled={!interactive}
+            onClick={() =>
+              openVMProjectCodex(desktop, hostId, id, project?.name)
+            }
+          >
+            Open with Codex
+          </Button>
+          <IconButton
+            icon="more"
+            label="More VM project actions"
+            aria-haspopup="menu"
+            disabled={!interactive}
+            onClick={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              const target = latest.current.binding;
+              const generation = navigationGeneration.current;
+              const path = editor?.path || '';
+              desktop.contextMenu(
+                [
+                  {
+                    label: 'Reload',
+                    disabled:
+                      !path || saving || !!pendingRecovery || blockedRecovery,
+                    action: () => void reloadFile(target, path, generation),
+                  },
+                  {
+                    label: 'Reconnect',
+                    disabled: saving,
+                    action: () => void reconnectProject(target, generation),
+                  },
+                  { separator: true },
+                  {
+                    label: 'Projects',
+                    action: () => {
+                      if (mounted.current) desktop.openApp('project-files');
+                    },
+                  },
+                ],
+                { x: rect.left, y: rect.bottom },
+                { title: menuTitle },
+              );
+            }}
+          />
+        </div>
       </div>
       <div className="project-location">
         <div className="project-location-summary">
@@ -555,10 +673,62 @@ export function VMProjectFiles({
           </dl>
         </details>
       </div>
-      {(error || connection.error || listing.error || draftError) && (
-        <p className="project-error" role="alert">
-          {error || connection.error || listing.error || draftError}
-        </p>
+      {errorMessage && (
+        <div className="project-error" role="alert">
+          <span>{errorMessage}</span>
+          <div className="app-actions">
+            {error?.operation === 'read' && !needsReconnect(error) && (
+              <Button
+                disabled={reading || !interactive}
+                onClick={() => {
+                  focusContent();
+                  setReadRequest((value) => value + 1);
+                }}
+              >
+                Retry
+              </Button>
+            )}
+            {error?.operation === 'save' &&
+              !needsReconnect(error) &&
+              editor && (
+                <Button
+                  disabled={saving || !interactive}
+                  onClick={() => {
+                    focusContent();
+                    void reloadFile(
+                      binding,
+                      editor.path,
+                      navigationGeneration.current,
+                    );
+                  }}
+                >
+                  Reload
+                </Button>
+              )}
+            {listing.error && (
+              <Button
+                disabled={!interactive}
+                onClick={() => {
+                  focusContent();
+                  setRefresh((value) => value + 1);
+                }}
+              >
+                Refresh
+              </Button>
+            )}
+            {(needsReconnect(error) || connection.error || listing.error) && (
+              <Button
+                disabled={saving || !interactive}
+                onClick={() => {
+                  focusContent();
+                  void reconnectProject();
+                }}
+              >
+                Reconnect
+              </Button>
+            )}
+          </div>
+        </div>
       )}
       {draftError && (error || connection.error || listing.error) && (
         <p className="project-error" role="alert">
@@ -735,23 +905,6 @@ export function VMProjectFiles({
               <div className="project-preview-heading">
                 <code>{editor.path}</code>
                 <strong>{dirty ? 'Unsaved' : 'Saved'}</strong>
-                <Button
-                  disabled={saving || !interactive}
-                  onClick={() =>
-                    void (async () => {
-                      if (await discardBefore('Reloading the file')) {
-                        navigationGeneration.current++;
-                        setEditor(null);
-                        setReadRequest((value) => value + 1);
-                        desktop.updateWindowState(window.id, {
-                          reading: true,
-                        });
-                      }
-                    })()
-                  }
-                >
-                  Reload File
-                </Button>
               </div>
               <TextArea
                 ref={editorInput}
@@ -783,6 +936,10 @@ export function VMProjectFiles({
             </>
           ) : reading ? (
             <p role="status">Loading file…</p>
+          ) : error?.operation === 'read' ? (
+            <p>
+              Could not open <code>{file}</code>.
+            </p>
           ) : (
             <p>
               Select a file to edit inside the VM. Saving checks the version you
@@ -794,7 +951,14 @@ export function VMProjectFiles({
       <StatusBar>
         {file || folder || 'Project root'}
         {dirty ? ' · Unsaved changes' : ''}
-        {binding ? ` · VM ${binding.machineId}` : ' · VM unavailable'}
+        {binding ? (
+          <span title={binding.machineId}>
+            {' '}
+            · VM {binding.machineId.slice(0, 8)}
+          </span>
+        ) : (
+          ' · VM unavailable'
+        )}
       </StatusBar>
     </div>
   );

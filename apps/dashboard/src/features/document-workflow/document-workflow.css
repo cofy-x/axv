@@ -3,15 +3,14 @@
   overflow: auto;
   box-sizing: border-box;
 }
-/* Explicit window and pane state avoids stale inherited visibility in WebKit
-   when a retained pane and its window become visible together. */
+/* Visible retained panes need an explicit visibility when their window reopens.
+   Inactive panes use hidden/inert without another visibility transition. */
 .ns-window:not([aria-hidden='true']):not(.is-shaded)
   .document-task-pane:not([hidden]) {
   visibility: visible;
 }
 .ns-window[aria-hidden='true'] .document-task-pane,
-.ns-window.is-shaded .document-task-pane,
-.document-task-pane[hidden] {
+.ns-window.is-shaded .document-task-pane {
   visibility: hidden;
 }
 .document-workflow section {
@@ -107,12 +106,7 @@
   font-size: 11px;
 }
 .document-task-tabs {
-  padding: 8px 0;
-  border-bottom: 1px solid var(--ns-mid);
-}
-.document-task-tabs [aria-pressed='true'] {
-  box-shadow: var(--ns-recessed);
-  background: var(--ns-light);
+  margin-top: 12px;
 }
 .document-workflow .document-hint {
   margin-block: 6px;
@@ -156,6 +150,72 @@
 }
 .document-add-section > .ns-button {
   margin-top: 8px;
+}
+.document-attachment-actions,
+.document-context-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.document-context-actions {
+  flex-wrap: nowrap;
+  margin-left: auto;
+}
+.document-context-header {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.document-context-target {
+  flex: 1 1 160px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.document-context-title {
+  display: block;
+  font-size: 13px;
+}
+.document-context-run {
+  white-space: nowrap;
+}
+.document-context .document-target-summary {
+  margin: 4px 0 0;
+  font-size: 11px;
+}
+.document-context-documents-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.document-context-documents-heading > h2 {
+  margin: 0;
+}
+.document-context-documents > .document-add-section {
+  border-top: 0;
+  margin-top: 8px;
+  padding-top: 0;
+}
+.document-context .document-hint {
+  margin: 4px 0 8px;
+}
+.document-context .document-context-empty {
+  margin: 0;
+  padding-block: 12px;
+}
+.document-context > .document-related {
+  margin-top: 12px;
+  padding: 0;
+}
+.document-context > .document-detail-group {
+  margin-block: 4px 0;
+  padding-top: 0;
+}
+.document-context > .document-related > summary,
+.document-context > .document-detail-group > summary {
+  box-sizing: border-box;
 }
 .document-link-list li > span {
   min-width: 0;
