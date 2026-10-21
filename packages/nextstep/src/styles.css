@@ -468,6 +468,7 @@ select:disabled {
   padding: 4px;
   touch-action: pan-y;
 }
+:where(.ns-dock-entry:hover) > .ns-dock-tile,
 .ns-dock-tile:hover {
   background: #b8b8b8;
 }
@@ -504,10 +505,22 @@ select:disabled {
   width: 19px;
   height: 15px;
   border: 0;
-  background: #aaa;
+  background: transparent;
   font-size: 11px;
   line-height: 11px;
   padding: 0;
+}
+@media (hover: hover) {
+  .ns-dock-options:hover {
+    box-shadow: var(--ns-raised);
+  }
+}
+.ns-dock-options:focus-visible {
+  outline-offset: -2px;
+  box-shadow: var(--ns-raised);
+}
+.ns-dock-options:active {
+  box-shadow: var(--ns-recessed);
 }
 .ns-dock-entry.is-dragging {
   opacity: 0.55;
