@@ -128,7 +128,7 @@ The [VM CLI](startup.md#vm-command-line) manages the same inventory without open
 
 ## Host terminal
 
-Open **Terminal** for a shell in the service user's home directory. Codex's **Host Terminal** starts a separate shell in that conversation's host project. The project name is displayed above the terminal; **Details** shows the full starting path. Inaccessible directories fail explicitly. These shells operate on the host filesystem.
+Open **Terminal** for a shell in the service user's home directory. Codex's **Host Terminal** starts a separate shell in that conversation's recorded host working directory, including the control directory for a VM project. The project name is displayed above the terminal; **Details** shows the full starting path. Inaccessible directories fail explicitly. These shells operate on the host filesystem.
 
 Closing a live window asks for confirmation and ends its shell and foreground job. Connection loss or service shutdown also ends it. **New Session** starts a fresh shell after exit or failure. Reloading the page starts fresh shells in restored windows, using the initial project directory rather than a later `cd` location.
 
@@ -150,16 +150,22 @@ Codex runs the official CLI as the service user on macOS/Linux. Install **Codex 
 
 Use [document attachments](#document-attachments) to select saved context for the next message in an exact run.
 
+For a registered VM project, choose **Open with Codex** in Project Files. Its scoped **Codex Sessions** manager shows the selected VM environment; **New Session** creates a host Codex conversation associated with that project. Files stay on the VM volume. The AXV Skill accompanies your submitted messages and supplies bound file/task tools; it does not send a prompt automatically. Complete any provider trust, sign-in or approval interaction normally. The Skill guides tool use without restricting the provider's independent host permissions.
+
+VM run windows distinguish the host agent from the VM work project. **Project Files** and **Tasks** open that VM project; **Host Terminal** remains explicitly a host shell. **Details** separates the control directory, stable project and captured VM/boot/guest identities. Ending Codex does not cancel accepted VM tasks. After a final run, **Continue** reviews the current environment for that same project before creating a new run with the existing provider conversation. A missing VM or unverifiable history fails visibly. Old windows and commands retain their original environment; reviewing a replacement creates new run context rather than rewriting them.
+
+If starting or continuing loses its response, choose **Resolve Start** or **Resolve Continue** for the original request. Session-list rows expose pending continuation recovery even when the current CLI or history is unavailable; damaged recovery data appears beside its owning row. Its payload survives page reload in the same desktop database and browser client. Recovery actions recheck their original request before submission and after confirmation. If another window resolves or changes it, review the current state; a stale recovery action never becomes a new start or continuation. Resolve that outcome before selecting another environment or starting again; AXV does not infer failure from a lost response or silently reset damaged browser recovery state. If the original run already ended, recovery opens that exact recorded run without starting another one.
+
 Session rows show their project and full run ID. Run windows keep **Sessions**, the attachment icon and **Interrupt** in the toolbar. **More** groups editing, project files and session commands; the application menus retain their full command lists. The context strip shows the host project and a shortened run ID; **Details** shows the full path, run identity and tmux attach command. History paging uses up/down icons; **Live** returns to current output.
 
 | Action | Effect |
 | --- | --- |
-| **New Session** | Start a separate conversation in the configured default host workspace, created on first use |
+| **New Session** | Start a separate conversation in the scoped VM project, or the configured default host workspace from the host manager |
 | **New in Folder** | Choose a real host project for a new conversation |
 | **Recent Projects → New Session** | Start a separate conversation in a previously used project |
 | **Open / Reconnect** | Attach to an existing run |
 | **Session / More → Rename / Archive / Unarchive** | Organize persistent records; archiving does not stop active work or free capacity |
-| **Session / More → Host Terminal** | Open an independent, ephemeral host shell in that project |
+| **Session / More → Host Terminal** | Open an independent, ephemeral shell in the recorded host working directory |
 | **Details** | View the project, runtime identity and tmux attach command |
 | **End Session** | Confirm termination of the run shown in that window, affecting its attached clients |
 | **Continue** | Confirm a new process using the same saved conversation after the previous run ends |

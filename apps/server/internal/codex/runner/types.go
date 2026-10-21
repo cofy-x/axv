@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+
+	"github.com/cofy-x/axv/apps/server/internal/vmwork"
 )
 
 const (
@@ -41,6 +43,9 @@ type Manifest struct {
 	OwnershipPath string `json:"ownershipPath"`
 	Mode          string `json:"mode"`
 	ThreadID      string `json:"threadId,omitempty"`
+	VMContextPath string `json:"vmContextPath,omitempty"`
+	VMSkillPath   string `json:"vmSkillPath,omitempty"`
+	vmWork        *vmwork.Context
 }
 
 // State publishes provider readiness separately from the final Exit proof.
@@ -76,6 +81,9 @@ func readManifest(path string) (Manifest, error) {
 		(manifest.Mode != ModeNew && manifest.Mode != ModeResume) ||
 		(manifest.Mode == ModeNew && manifest.ThreadID != "") ||
 		(manifest.Mode == ModeResume && !threadIDPattern.MatchString(manifest.ThreadID)) {
+		return manifest, ErrUnavailable
+	}
+	if validateVMWorkPaths(manifest, filepath.Dir(path)) != nil {
 		return manifest, ErrUnavailable
 	}
 	return manifest, nil

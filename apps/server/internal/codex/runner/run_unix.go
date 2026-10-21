@@ -28,7 +28,15 @@ func Run(manifestPath string) (returned error) {
 	if err != nil {
 		return err
 	}
-	return runWithExit(manifestPath, func() error { return runOwned(manifestPath, manifest) })
+	return runWithExit(manifestPath, func() error {
+		work, err := loadVMWork(manifest, filepath.Dir(manifestPath))
+		if err != nil {
+			writeFailure(filepath.Join(filepath.Dir(manifestPath), "state.json"), State{RunID: manifest.RunID, ThreadID: manifest.ThreadID, HistoryHome: manifest.HistoryHome}, "codex_vm_context_failed")
+			return ErrUnavailable
+		}
+		manifest.vmWork = work
+		return runOwned(manifestPath, manifest)
+	})
 }
 
 func runWithExit(manifestPath string, run func() error) (returned error) {

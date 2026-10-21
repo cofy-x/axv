@@ -16,6 +16,7 @@ import (
 
 	"github.com/cofy-x/axv/apps/server/internal/codex"
 	"github.com/cofy-x/axv/apps/server/internal/hostdir"
+	"github.com/cofy-x/axv/apps/server/internal/jsonunicode"
 	"github.com/cofy-x/axv/apps/server/internal/localaccess"
 	"github.com/cofy-x/axv/apps/server/internal/storage"
 )
@@ -163,9 +164,9 @@ func storageStatus(code string) int {
 		return http.StatusNotFound
 	case "invalid_metadata", "invalid_session":
 		return http.StatusBadRequest
-	case "metadata_conflict", "request_conflict", "conversation_active", "run_changed", "history_unavailable", "history_identity_conflict", "invalid_run_state":
+	case "metadata_conflict", "request_conflict", "conversation_active", "run_changed", "history_unavailable", "history_identity_conflict", "invalid_run_state", "project_changed":
 		return http.StatusConflict
-	case "codex_limit":
+	case "codex_limit", "vm_project_invalid":
 		return http.StatusServiceUnavailable
 	default:
 		return 0
@@ -225,7 +226,12 @@ func decode(w http.ResponseWriter, r *http.Request, value any) bool {
 		respond(w, nil, requestFailure(415, "invalid_content_type", "Use application/json."))
 		return false
 	}
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10))
+	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 16<<10))
+	if err != nil || !jsonunicode.Valid(data) || bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		respond(w, nil, requestFailure(400, "invalid_json", "Send a valid JSON object with complete Unicode characters."))
+		return false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(value) != nil {
 		respond(w, nil, requestFailure(400, "invalid_json", "Send a valid JSON object."))
@@ -283,15 +289,21 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		RequestID   string `json:"requestId"`
-		ProjectPath string `json:"projectPath,omitempty"`
-		Cols        *int   `json:"cols,omitempty"`
-		Rows        *int   `json:"rows,omitempty"`
+		RequestID   string          `json:"requestId"`
+		ProjectPath string          `json:"projectPath,omitempty"`
+		Cols        *int            `json:"cols,omitempty"`
+		Rows        *int            `json:"rows,omitempty"`
+		VMProject   json.RawMessage `json:"vmProject,omitempty"`
 	}
 	if !decode(w, r, &input) {
 		return
 	}
-	session, err := h.manager.Create(r.Context(), codex.StartInput{RequestID: input.RequestID, ProjectPath: input.ProjectPath, Cols: input.Cols, Rows: input.Rows})
+	vmProject, err := vmProjectInput(input.VMProject)
+	if err != nil {
+		respond(w, nil, err)
+		return
+	}
+	session, err := h.manager.Create(r.Context(), codex.StartInput{RequestID: input.RequestID, ExpectedDatabaseID: r.Header.Get("X-AXV-Database-ID"), ProjectPath: input.ProjectPath, Cols: input.Cols, Rows: input.Rows, VMProject: vmProject})
 	respond(w, map[string]any{"session": session}, err)
 }
 
@@ -300,16 +312,38 @@ func (h *Handler) resume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		RequestID     string `json:"requestId"`
-		ExpectedRunID string `json:"expectedRunId"`
-		Cols          *int   `json:"cols,omitempty"`
-		Rows          *int   `json:"rows,omitempty"`
+		RequestID     string          `json:"requestId"`
+		ExpectedRunID string          `json:"expectedRunId"`
+		Cols          *int            `json:"cols,omitempty"`
+		Rows          *int            `json:"rows,omitempty"`
+		VMProject     json.RawMessage `json:"vmProject,omitempty"`
 	}
 	if !decode(w, r, &input) {
 		return
 	}
-	session, err := h.manager.Resume(r.Context(), r.PathValue("id"), codex.ResumeInput{RequestID: input.RequestID, ExpectedRunID: input.ExpectedRunID, Cols: input.Cols, Rows: input.Rows})
+	vmProject, err := vmProjectInput(input.VMProject)
+	if err != nil {
+		respond(w, nil, err)
+		return
+	}
+	session, err := h.manager.Resume(r.Context(), r.PathValue("id"), codex.ResumeInput{RequestID: input.RequestID, ExpectedDatabaseID: r.Header.Get("X-AXV-Database-ID"), ExpectedRunID: input.ExpectedRunID, Cols: input.Cols, Rows: input.Rows, VMProject: vmProject})
 	respond(w, map[string]any{"session": session}, err)
+}
+
+func vmProjectInput(raw json.RawMessage) (*codex.VMProjectInput, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil, requestFailure(400, "invalid_session", "Provide a complete VM project binding or omit vmProject for a host project.")
+	}
+	var input codex.VMProjectInput
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&input) != nil || decoder.Decode(new(any)) != io.EOF {
+		return nil, requestFailure(400, "invalid_session", "Provide a complete VM project binding with no unknown fields.")
+	}
+	return &input, nil
 }
 
 func (h *Handler) end(w http.ResponseWriter, r *http.Request) {

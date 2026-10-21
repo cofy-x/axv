@@ -187,7 +187,7 @@ func TestInitialSchemaContainsOnlyCurrentCodexModel(t *testing.T) {
 	}
 	for table, want := range map[string][]string{
 		"codex_sessions": {"id", "project_path", "title", "archived_at", "metadata_revision", "created_at", "conversation_id", "history_home", "latest_run_id"},
-		"codex_runs":     {"id", "session_id", "request_id", "previous_run_id", "request_cols", "request_rows", "status", "created_at", "ended_at", "reason", "tmux_session", "tmux_socket"},
+		"codex_runs":     {"id", "session_id", "request_id", "previous_run_id", "request_cols", "request_rows", "status", "created_at", "ended_at", "reason", "tmux_session", "tmux_socket", "vm_project", "vm_socket", "vm_config_fingerprint"},
 		"codex_projects": {"path", "last_used_at"},
 	} {
 		rows, err := s.db.Query("SELECT name FROM pragma_table_info(?) ORDER BY cid", table)
@@ -224,6 +224,7 @@ func TestIncompatibleDatabaseFormatIsRejectedWithoutChanges(t *testing.T) {
 		version, mark int
 	}{
 		{"unmarked version one", 1, 0},
+		{"previous VM-project-free baseline", 1, 0x41585633},
 		{"other format version one", 1, 1234},
 		{"other format unversioned", 0, 1234},
 	} {

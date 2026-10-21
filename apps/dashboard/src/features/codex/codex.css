@@ -10,6 +10,18 @@
   flex: 1;
   padding: 12px;
 }
+.codex-vm-project {
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.codex-vm-project > p {
+  margin: 6px 0;
+}
+.codex-vm-project code,
+.codex-vm-target {
+  font: 11px var(--ns-mono);
+  overflow-wrap: anywhere;
+}
 .codex-default-project {
   display: flex;
   flex-wrap: wrap;
@@ -286,6 +298,16 @@
 .codex-session-context {
   flex-wrap: nowrap;
   gap: 3px 8px;
+}
+.codex-session-context.has-vm-project {
+  flex-wrap: wrap;
+}
+.codex-session-context.has-vm-project .codex-terminal-project {
+  flex: 1 1 180px;
+}
+.codex-session-context.has-vm-project .codex-vm-target {
+  flex: 1 1 100px;
+  min-width: 0;
 }
 .codex-session-context code {
   margin-left: 0;

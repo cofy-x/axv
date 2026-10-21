@@ -10,7 +10,9 @@ export async function confirmEndSession(
 ) {
   const answer = await desktop.dialog({
     title: 'End Codex session?',
-    message: `Stop this Codex run and its running work in ${session.projectPath}? Closing a window only detaches. Saved conversation history can be continued separately.`,
+    message: session.vmProject
+      ? `Stop this host Codex run for VM project ${session.vmProject.project.name}? Accepted VM tasks keep running and can be stopped separately in Tasks. Closing a window only detaches; saved history can be continued separately.`
+      : `Stop this Codex run and its running work in ${session.projectPath}? Closing a window only detaches. Saved conversation history can be continued separately.`,
     buttons: [
       { label: 'Cancel', value: 'cancel', default: true, cancel: true },
       { label: 'End Session', value: 'end' },

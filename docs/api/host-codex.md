@@ -8,6 +8,8 @@ Codex runs the official CLI as the desktop service's host user. Its persistent P
 
 The [local access rules](README.md#access-and-identity-boundaries) apply before dependency probes, filesystem access or process creation. Responses use `Cache-Control: no-store`. JSON writes require `Content-Type: application/json`, one object with no unknown fields, and at most **16 KiB**.
 
+Create and resume optionally accept `X-AXV-Database-ID`. The VM-project interface supplies the desktop identity captured with its pending request. A mismatch returns `409 database_changed` before replay lookup, environment verification, directory access or run reservation. The original pending request must be retained: it may already have committed in the previous store. Changing a browser namespace does not authorize replay into another desktop database.
+
 ## Routes
 
 - `GET /api/host/codex/info`
@@ -28,7 +30,7 @@ The [local access rules](README.md#access-and-identity-boundaries) apply before 
   - Response: `{ projects: [{ path, lastUsedAt }] }`.
 
 - `POST /api/host/codex/sessions`
-  - Request: `{ requestId, projectPath?, cols?, rows? }`.
+  - Request: `{ requestId, projectPath?, vmProject?: { binding }, cols?, rows? }`.
   - Response: `{ session }`.
 
 - `GET /api/host/codex/sessions/:id`
@@ -39,7 +41,7 @@ The [local access rules](README.md#access-and-identity-boundaries) apply before 
   - Response: `{ session }`.
 
 - `POST /api/host/codex/sessions/:id/resume`
-  - Request: `{ requestId, expectedRunId, cols?, rows? }`.
+  - Request: `{ requestId, expectedRunId, vmProject?: { binding }, cols?, rows? }`.
   - Response: `{ session }`.
 
 - `GET /api/host/codex/sessions/:id/runs/:runId`
@@ -77,7 +79,7 @@ The shared [Host directory API](host-directories.md) owns directory browsing and
 A session response combines stable conversation metadata with one exact process run. List and session-detail routes select the latest run; run detail selects the requested run.
 
 - **Conversation fields:** `id`, `target: "host"`, `projectPath`, `title`, `metadataRevision`, optional `archivedAt`, `conversationId` and `historyHome`. `conversationId` is the exact provider UUID and is absent until initialized. `historyHome` is the recorded provider state directory; its contents are not returned.
-- **Run fields:** `runId`, `tmuxSession`, `tmuxSocket`, `attachCommand`, `status`, `createdAt`, optional `endedAt` and `reason`, and live `connections`.
+- **Run fields:** `runId`, `tmuxSession`, `tmuxSocket`, `attachCommand`, `status`, `createdAt`, optional `endedAt`, `reason` and `vmProject`, and live `connections`. `vmProject` is `{ project, binding }`, using the [VM project contract](compute.md#vm-projects). Run detail returns that run's original project/environment context, even after continuation. Private compute socket paths and configuration fingerprints are never returned.
 - **Continuation:** `{ state: "available" | "active" | "unavailable", reason?, activeRunId? }`. An active run is identified by `activeRunId`. Available means identity is known and no run is active; the explicit continuation request still verifies history and dependencies.
 
 `tmuxSession` is the actual target name; `tmuxSocket` records its socket path or explicitly configured socket name (empty before the default server confirms its path). `attachCommand` is shell-quoted for that exact target. Status is one of `starting`, `running`, `stopping`, `ended`, `lost`, or `failed`. A starting run accepts attachments while the official CLI handles project trust, sign-in and conversation initialization. Running confirms initialization and runtime liveness, not a successful model request. Connection state belongs to each attachment and is separate from process lifecycle. Session and run IDs are opaque; clients must not construct tmux targets.
@@ -90,9 +92,13 @@ Recent projects are the **ten** canonical paths most recently confirmed to reach
 
 ## Creation and explicit continuation
 
-On session creation, omitted or empty `projectPath` selects the configured default workspace and creates it if needed. Explicit paths must already exist. Creation revalidates directory access and resolves the canonical path.
+For a host-project session, omitted or empty `projectPath` selects the configured default workspace and creates it if needed. Explicit paths must already exist. Creation revalidates directory access and resolves the canonical path.
 
-Generate one `requestId` per explicit start or continuation and reuse it with the same action, project/predecessor and dimensions after an uncertain outcome. IDs are **1–128 UTF-8 bytes**, without surrounding whitespace, NUL, CR or LF, and unique across Codex starts in the desktop database. A matching retry returns the original run; a changed payload returns `409 request_conflict`. A continuation also supplies the exact predecessor `expectedRunId`. After matching retries are resolved, an active run returns `409 conversation_active`: open that run instead. If the latest run is final but differs from the predecessor, `409 run_changed` requires refreshing before continuation.
+For a VM-project session, supply `vmProject: { binding }` with the complete environment explicitly reviewed through the [VM project API](compute.md#vm-projects); a nonempty `projectPath` cannot accompany it. Null, incomplete and unknown context fields are rejected. The server verifies the supplied binding and captures that compute connection before reserving a run. Codex still runs on the host, using a private AXV-owned control workspace rather than a host copy of the VM project. VM control workspaces never enter the recent host-project list.
+
+VM continuation requires another explicitly reviewed `vmProject.binding`, for the same persistent host/project/volume/root identity. It may select the current environment after VM replacement without changing any older run. Omitting it cannot convert a VM conversation into a host conversation; supplying it cannot convert a host conversation. A changed environment returns `409 vm_project_changed`; an unavailable verifier returns `503 vm_project_unavailable`; a different persistent project returns `409 project_changed`. None selects another target or creates replacement history. Matching create/resume retries recover the originally reserved run before live VM availability checks; their original binding is part of the request identity.
+
+Generate one `requestId` per explicit start or continuation and reuse it with the same action, project/predecessor and dimensions after an uncertain outcome. IDs are **1–128 UTF-8 bytes**, without surrounding whitespace, NUL, CR or LF, and unique across Codex starts in the desktop database. A matching retry returns the original run; a changed payload returns `409 request_conflict`. Retain the original request after transport failures, `server_stopping`, identity/reconciliation errors or unrecognized HTTP errors: an error status alone does not establish that no run was reserved. Only a refusal known to occur after replay lookup and before reservation permits a fresh explicit attempt. A continuation also supplies the exact predecessor `expectedRunId`. After matching retries are resolved, an active run returns `409 conversation_active`: open that run instead. If the latest run is final but differs from the predecessor, `409 run_changed` requires refreshing before continuation.
 
 Creation and continuation dimensions use the attachment limits below. The server allows one active run per conversation and **four active Codex runs** (`starting`, `running`, or `stopping`) across current and archived conversations, independently of ordinary Terminal's limit. Multiple explicit new starts in one project create independent conversations.
 

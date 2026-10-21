@@ -12,6 +12,7 @@ import { useDraftNamespace } from '../../shared/drafts/context';
 import { nameDialog } from '../../shared/desktop/dialogs';
 import { vmProjectsAPI } from './vm-api';
 import type { VMProjectBinding } from './vm-api';
+import { openVMProjectCodex } from '../codex/definition';
 
 interface Editor {
   path: string;
@@ -484,6 +485,12 @@ export function VMProjectFiles({
           }
         >
           Tasks
+        </Button>
+        <Button
+          disabled={!interactive}
+          onClick={() => openVMProjectCodex(desktop, hostId, id, project?.name)}
+        >
+          Open with Codex
         </Button>
         <IconButton
           icon="more"

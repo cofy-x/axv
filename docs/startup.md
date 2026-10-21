@@ -174,6 +174,12 @@ axv vm project task retry <project-id> <task-id> \
 
 An `unknown` attempt cannot be retried until reconciliation establishes its outcome or confirms interruption; this avoids overlapping unconfirmed work. Retry does not change argv, directory or limits. To change the specification, submit another task explicitly. Per-task disk/I/O/network throttling, backup restoration, service preview and host-agent permission constraints remain separate work.
 
+### Bound VM project tools for Codex
+
+Choose **Open with Codex** in a registered VM project's Project Files window, then explicitly start a session in its scoped manager. The host provider uses an AXV-owned control directory. Its per-run AXV Skill receives an absolute bound command of the form `AXV_EXECUTABLE internal-vm-project RUN_CONTEXT COMMAND ...`. The private command exposes the existing `files`, `read`, `write`, `mkdir` and `task` operations with the project ID already supplied; its help describes the remaining arguments. It rejects host/binding overrides and connects using its original socket, host ID and configuration fingerprint without loading another profile or activating another controller.
+
+The run context and packaged Skill remain in that run's private data directory. Keep the recorded executable and context path when recovering a task receipt; do not replace them with a current `axv` from PATH. Existing file version checks, persistent task request IDs, log offsets and exact-attempt cancellation still apply. A stale environment requires an explicit review and continuation in AXV; host configuration changes cannot silently retarget the old command. Task history can remain readable without a live VM. [Codex](codex.md#vm-project-work-context) owns this integration; [usage](usage.md#codex) describes start, reconnect and confirmation.
+
 ### SSH, file transfer and forwarding
 
 Use the installed system OpenSSH client for standard guest sessions:
