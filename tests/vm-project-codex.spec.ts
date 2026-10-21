@@ -907,6 +907,12 @@ test('the manager preserves damaged continuation recovery and blocks a fresh req
   await expect(
     row.getByRole('button', { name: 'Continue', exact: true }),
   ).toBeDisabled();
+  const terminal = runWindow(page);
+  await activate(page, terminal);
+  await expect(terminal.getByRole('alert')).toContainText('could not be read');
+  await expect(terminal.getByRole('alert')).toContainText(
+    'This Codex session has ended.',
+  );
   expect(await page.evaluate((item) => sessionStorage.getItem(item), key)).toBe(
     '{damaged',
   );
