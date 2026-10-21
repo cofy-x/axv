@@ -66,6 +66,12 @@ func commandClient(cmd *cobra.Command) (*computeclient.Client, error) {
 }
 
 func commandClientFor(cmd *cobra.Command, binding computeclient.Binding) (*computeclient.Client, error) {
+	if bound, ok := boundVMProject(cmd); ok {
+		if binding.HostID != bound.Project.Binding.HostID || (binding.ConfigFingerprint != "" && binding.ConfigFingerprint != bound.ConfigFingerprint) {
+			return nil, fmt.Errorf("the bound VM project client cannot select another host or configuration")
+		}
+		return computeclient.Connect(cmd.Context(), bound.Socket, computeclient.Binding{HostID: bound.Project.Binding.HostID, ConfigFingerprint: bound.ConfigFingerprint})
+	}
 	home, err := profile.Home()
 	if err != nil {
 		return nil, err

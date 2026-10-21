@@ -12,6 +12,7 @@ import (
 
 type Manager struct {
 	store         *storage.Store
+	databaseID    string
 	socket        string
 	namePrefix    string
 	settings      Options
@@ -51,6 +52,7 @@ func New(store *storage.Store, settings Options) (*Manager, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	m := &Manager{
 		store:         store,
+		databaseID:    id,
 		settings:      settings,
 		socket:        settings.TmuxSocket,
 		namePrefix:    "axv-codex-" + instanceID(id, dir),

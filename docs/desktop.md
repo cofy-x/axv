@@ -26,6 +26,8 @@ Nextstep reserves the desktop icon ID prefix `application:` for generated launch
 
 Tailscale is a launchable singleton utility panel. Its [feature definition](../apps/dashboard/src/features/tailscale/definition.ts) supplies the view and identity; dashboard composition supplies its system desktop icon, and the existing Applications menu, optional Dock pinning and Clip shortcuts supply launch access. Preferences also opens the same panel. The display name is **Tailscale**; its stable application ID remains `remote-access`, preserving saved windows, Dock pins and Clip shortcuts. Connection queries and local enable/disable actions belong to the feature panel, and Nextstep owns no Tailscale state or API calls. [Remote desktop usage](usage.md#remote-desktop) owns its setup and shutdown workflow.
 
+VM Project Files can open a project-scoped Codex manager. Its window key contains only opaque host/project IDs; run windows retain the exact session/run key. The Codex and Project Files features own context, request recovery and VM navigation, while Nextstep remains unaware of project bindings or provider operations. [Codex VM work context](codex.md#vm-project-work-context) owns the integration.
+
 ## Installed extensions
 
 **Application Manager** is an unpinned built-in application (`applications`) with a desktop launcher by default. It combines metadata derived from the existing built-in definitions with the installed extension catalog. Built-ins remain feature-owned React components. Dashboard [composition](../apps/dashboard/src/features/extensions/registry.ts) rejects duplicate IDs; installed package IDs are namespaced separately as `extension.<package-id>` desktop definitions. No directory precedence can override a built-in definition.

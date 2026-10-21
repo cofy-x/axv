@@ -3,31 +3,39 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"io"
+	"strings"
+
+	"github.com/cofy-x/axv/apps/server/internal/vmwork"
 )
 
 // CodexSession combines stable conversation metadata with one exact run.
 type CodexSession struct {
-	ID               string `json:"id"`
-	RunID            string `json:"runId"`
-	RequestID        string `json:"-"`
-	PreviousRunID    string `json:"-"`
-	RequestCols      int    `json:"-"`
-	RequestRows      int    `json:"-"`
-	Target           string `json:"target"`
-	ProjectPath      string `json:"projectPath"`
-	ConversationID   string `json:"conversationId,omitempty"`
-	HistoryHome      string `json:"historyHome,omitempty"`
-	Status           string `json:"status"`
-	CreatedAt        string `json:"createdAt"`
-	EndedAt          string `json:"endedAt,omitempty"`
-	Reason           string `json:"reason,omitempty"`
-	Connections      int    `json:"connections"`
-	TmuxSession      string `json:"tmuxSession"`
-	TmuxSocket       string `json:"tmuxSocket"`
-	Title            string `json:"title"`
-	ArchivedAt       string `json:"archivedAt,omitempty"`
-	MetadataRevision int    `json:"metadataRevision"`
+	ID                  string          `json:"id"`
+	RunID               string          `json:"runId"`
+	RequestID           string          `json:"-"`
+	PreviousRunID       string          `json:"-"`
+	RequestCols         int             `json:"-"`
+	RequestRows         int             `json:"-"`
+	Target              string          `json:"target"`
+	ProjectPath         string          `json:"projectPath"`
+	ConversationID      string          `json:"conversationId,omitempty"`
+	HistoryHome         string          `json:"historyHome,omitempty"`
+	Status              string          `json:"status"`
+	CreatedAt           string          `json:"createdAt"`
+	EndedAt             string          `json:"endedAt,omitempty"`
+	Reason              string          `json:"reason,omitempty"`
+	Connections         int             `json:"connections"`
+	TmuxSession         string          `json:"tmuxSession"`
+	TmuxSocket          string          `json:"tmuxSocket"`
+	Title               string          `json:"title"`
+	ArchivedAt          string          `json:"archivedAt,omitempty"`
+	MetadataRevision    int             `json:"metadataRevision"`
+	VMProject           *vmwork.Project `json:"vmProject,omitempty"`
+	VMSocket            string          `json:"-"`
+	VMConfigFingerprint string          `json:"-"`
 }
 
 func (s CodexSession) RunMode() string {
@@ -39,16 +47,26 @@ func (s CodexSession) RunMode() string {
 
 const codexSelect = `SELECT s.id,r.id,r.request_id,COALESCE(r.previous_run_id,''),r.request_cols,r.request_rows,
  s.project_path,s.conversation_id,s.history_home,r.status,r.created_at,r.ended_at,r.reason,
- r.tmux_session,r.tmux_socket,s.title,s.archived_at,s.metadata_revision
+ r.tmux_session,r.tmux_socket,s.title,s.archived_at,s.metadata_revision,r.vm_project,r.vm_socket,r.vm_config_fingerprint
  FROM codex_sessions s JOIN codex_runs r ON r.session_id=s.id`
 
 func scanCodex(row interface{ Scan(...any) error }) (CodexSession, error) {
 	s := CodexSession{Target: "host"}
+	var vmProject string
 	err := row.Scan(&s.ID, &s.RunID, &s.RequestID, &s.PreviousRunID, &s.RequestCols, &s.RequestRows,
 		&s.ProjectPath, &s.ConversationID, &s.HistoryHome, &s.Status, &s.CreatedAt, &s.EndedAt, &s.Reason,
-		&s.TmuxSession, &s.TmuxSocket, &s.Title, &s.ArchivedAt, &s.MetadataRevision)
+		&s.TmuxSession, &s.TmuxSocket, &s.Title, &s.ArchivedAt, &s.MetadataRevision, &vmProject, &s.VMSocket, &s.VMConfigFingerprint)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = problem("not_found", "The Codex session or run does not exist.")
+	}
+	if err == nil && vmProject != "" {
+		project := new(vmwork.Project)
+		decoder := json.NewDecoder(strings.NewReader(vmProject))
+		decoder.DisallowUnknownFields()
+		if decoder.Decode(project) != nil || decoder.Decode(new(any)) != io.EOF || vmwork.ValidateProject(*project) != nil {
+			return s, problem("vm_project_invalid", "The recorded VM project context is invalid. It was not replaced or reset.")
+		}
+		s.VMProject = project
 	}
 	return s, err
 }
@@ -86,6 +104,12 @@ func (s *Store) CodexSession(ctx context.Context, sessionID string) (CodexSessio
 
 func (s *Store) CodexRun(ctx context.Context, sessionID, runID string) (CodexSession, error) {
 	return scanCodex(s.db.QueryRowContext(ctx, codexSelect+" WHERE s.id=? AND r.id=?", sessionID, runID))
+}
+
+// CodexInitialRun retains the original workspace ownership identity across
+// continuations without inferring it from the conversation's newest request.
+func (s *Store) CodexInitialRun(ctx context.Context, sessionID string) (CodexSession, error) {
+	return scanCodex(s.db.QueryRowContext(ctx, codexSelect+" WHERE s.id=? AND r.previous_run_id IS NULL", sessionID))
 }
 
 func (s *Store) CodexRunByID(ctx context.Context, runID string) (CodexSession, error) {

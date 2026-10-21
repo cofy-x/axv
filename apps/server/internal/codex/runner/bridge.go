@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/cofy-x/axv/apps/server/internal/vmwork"
 )
 
 const managedConversationMessage = "This AXV session keeps one Codex conversation. Use New Session in AXV to start another conversation."
@@ -37,6 +38,8 @@ type protocolBridge struct {
 	deadline        <-chan time.Time
 	ready           bool
 	contextRequests map[string]contextRequest
+	vmWork          *vmwork.Context
+	vmWorkLoaded    bool
 }
 
 func newBridge(manifest Manifest, statePath string, stdin io.Writer, client *websocket.Conn) *protocolBridge {
@@ -51,6 +54,7 @@ func newBridge(manifest Manifest, statePath string, stdin io.Writer, client *web
 		path: statePath, stdin: stdin, client: client,
 		pending: make(map[string]string), persistID: "axv-runner-persist-" + hex.EncodeToString(nonce),
 		contextRequests: make(map[string]contextRequest),
+		vmWork:          manifest.vmWork, vmWorkLoaded: manifest.VMContextPath == "" || manifest.vmWork != nil,
 	}
 }
 
@@ -327,11 +331,17 @@ func (bridge *protocolBridge) forwardTurn(ctx context.Context, raw []byte, messa
 	if _, exists := bridge.contextRequests[string(message.ID)]; exists {
 		return bridge.reject(ctx, message.ID)
 	}
+	workInput, err := bridge.vmWorkInput()
+	if err != nil {
+		return bridge.fail("codex_vm_context_failed")
+	}
+	input = append(input, workInput...)
+	workOnly := append([]json.RawMessage(nil), input...)
 	documents, ids, err := bridge.contextQueue().claim(ctx)
 	if err != nil {
 		return bridge.fail("codex_context_state_failed")
 	}
-	if len(ids) == 0 {
+	if len(ids) == 0 && len(workInput) == 0 {
 		return writeRawMessage(bridge.stdin, raw)
 	}
 	for _, document := range documents {
@@ -346,11 +356,25 @@ func (bridge *protocolBridge) forwardTurn(ctx context.Context, raw []byte, messa
 	outer["params"], _ = json.Marshal(params)
 	augmented, err := json.Marshal(outer)
 	if err != nil || len(augmented) >= maxMessageBytes {
-		if err := bridge.contextQueue().acknowledge(ctx, ids, "", "failed", "The combined message exceeded the Codex protocol limit. The original message was submitted without these snapshots."); err != nil {
-			return bridge.fail("codex_context_state_failed")
+		if len(ids) > 0 {
+			if err := bridge.contextQueue().acknowledge(ctx, ids, "", "failed", "The combined message exceeded the Codex protocol limit. These snapshots were not submitted."); err != nil {
+				return bridge.fail("codex_context_state_failed")
+			}
 		}
-		return writeRawMessage(bridge.stdin, raw)
+		if len(workInput) == 0 {
+			return writeRawMessage(bridge.stdin, raw)
+		}
+		params["input"], _ = json.Marshal(workOnly)
+		outer["params"], _ = json.Marshal(params)
+		augmented, err = json.Marshal(outer)
+		if err != nil || len(augmented) >= maxMessageBytes {
+			rejection, _ := json.Marshal(map[string]any{"id": message.ID, "error": map[string]any{"code": -32602, "message": "This message leaves no room for its VM project context. Reduce the input and submit it again."}})
+			return bridge.send(ctx, rejection)
+		}
+		return writeRawMessage(bridge.stdin, augmented)
 	}
-	bridge.contextRequests[string(message.ID)] = contextRequest{batchIDs: ids, method: message.Method, expectedTurnID: expectedTurnID}
+	if len(ids) > 0 {
+		bridge.contextRequests[string(message.ID)] = contextRequest{batchIDs: ids, method: message.Method, expectedTurnID: expectedTurnID}
+	}
 	return writeRawMessage(bridge.stdin, augmented)
 }

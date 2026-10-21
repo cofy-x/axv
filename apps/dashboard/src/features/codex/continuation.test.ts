@@ -5,6 +5,7 @@ import { codexAPI } from './api';
 import type { CodexSessionRecord } from './api';
 import { confirmEndSession } from './actions';
 import { CodexResumeRequests, continueConversation } from './continuation';
+import { vmProjectsAPI } from '../project-files/vm-api';
 
 const previous: CodexSessionRecord = {
   id: 'session',
@@ -30,9 +31,368 @@ const running: CodexSessionRecord = {
   continuation: { state: 'active', activeRunId: 'new-run' },
 };
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe('explicit Codex conversation continuation', () => {
+  const vmProject = {
+    project: {
+      id: 'vm-project',
+      hostId: 'host',
+      kind: 'vm' as const,
+      name: 'VM repository',
+      volumeId: 'volume',
+      root: 'repo',
+      rootIdentity: 'root',
+      revision: 1,
+      createdAt: previous.createdAt,
+    },
+    binding: {
+      hostId: 'host',
+      projectId: 'vm-project',
+      projectRevision: 1,
+      volumeId: 'volume',
+      volumeRevision: 1,
+      machineId: 'old-vm',
+      bootId: 'old-boot',
+      instanceId: 'old-instance',
+    },
+  };
+
+  it('reviews a fresh VM binding and confirms it explicitly while preserving the old run', async () => {
+    const source = { ...previous, vmProject };
+    const fresh = {
+      ...vmProject,
+      binding: {
+        ...vmProject.binding,
+        machineId: 'replacement-vm',
+        bootId: 'new-boot',
+      },
+    };
+    vi.spyOn(codexAPI, 'get').mockResolvedValue(source);
+    const binding = vi.spyOn(vmProjectsAPI, 'binding').mockResolvedValue(fresh);
+    const resume = vi
+      .spyOn(codexAPI, 'resume')
+      .mockResolvedValue({ ...running, vmProject: fresh });
+    const dialog = vi
+      .fn<DesktopAPI['dialog']>()
+      .mockResolvedValue({ button: 'continue', value: '' });
+    await continueConversation({ dialog }, source, new CodexResumeRequests());
+    expect(binding).toHaveBeenCalledExactlyOnceWith('vm-project', 'host');
+    expect(resume).toHaveBeenCalledExactlyOnceWith(
+      'session',
+      expect.any(String),
+      'old-run',
+      { binding: fresh.binding },
+    );
+    expect(source.vmProject.binding.machineId).toBe('old-vm');
+  });
+
+  it('recovers an unknown VM continuation across reload without selecting a newer environment', async () => {
+    const saved = new Map<string, string>();
+    vi.stubGlobal('sessionStorage', {
+      getItem: (key: string) => saved.get(key) ?? null,
+      setItem: (key: string, value: string) => void saved.set(key, value),
+      removeItem: (key: string) => void saved.delete(key),
+    });
+    const source = { ...previous, vmProject };
+    const resume = vi
+      .spyOn(codexAPI, 'resume')
+      .mockRejectedValueOnce(new TypeError('Response lost'))
+      .mockResolvedValueOnce({ ...running, vmProject });
+    const first = new CodexResumeRequests('test-scope', 'original-desktop-db');
+    await expect(first.resume(source, vmProject.binding)).rejects.toThrow(
+      'Response lost',
+    );
+    const reloaded = new CodexResumeRequests(
+      'test-scope',
+      'original-desktop-db',
+    );
+    reloaded.restore(source);
+    vi.spyOn(codexAPI, 'get').mockResolvedValue({ ...running, vmProject });
+    const binding = vi.spyOn(vmProjectsAPI, 'binding');
+    const dialog = vi
+      .fn<DesktopAPI['dialog']>()
+      .mockResolvedValue({ button: 'continue', value: '' });
+    await continueConversation({ dialog }, source, reloaded);
+    expect(binding).not.toHaveBeenCalled();
+    expect(resume.mock.calls[1]).toEqual(resume.mock.calls[0]);
+    expect(resume.mock.calls[1][4]).toBe('original-desktop-db');
+    expect(saved.size).toBe(0);
+  });
+
+  it('removes a cached VM continuation after another mounted view resolves it', async () => {
+    const saved = new Map<string, string>();
+    vi.stubGlobal('sessionStorage', {
+      getItem: (key: string) => saved.get(key) ?? null,
+      setItem: (key: string, value: string) => void saved.set(key, value),
+      removeItem: (key: string) => void saved.delete(key),
+    });
+    const source = { ...previous, vmProject };
+    const resumed = { ...running, vmProject };
+    const resume = vi
+      .spyOn(codexAPI, 'resume')
+      .mockRejectedValueOnce(new TypeError('Response lost'))
+      .mockResolvedValueOnce(resumed)
+      .mockResolvedValueOnce({ ...resumed, runId: 'third-run' });
+    const terminal = new CodexResumeRequests('shared-scope', 'original-db');
+    const manager = new CodexResumeRequests('shared-scope', 'original-db');
+    await expect(terminal.resume(source, vmProject.binding)).rejects.toThrow(
+      'Response lost',
+    );
+    expect(manager.restore(source)).toBeDefined();
+    await terminal.resume(source, vmProject.binding);
+    expect(saved.size).toBe(0);
+    expect(manager.restore(resumed)).toBeUndefined();
+    expect(manager.hasPending(source.id)).toBe(false);
+
+    await manager.resume(
+      { ...resumed, status: 'ended', continuation: { state: 'available' } },
+      { ...vmProject.binding, machineId: 'replacement-vm' },
+    );
+    expect(resume.mock.calls[1]).toEqual(resume.mock.calls[0]);
+    expect(resume.mock.calls[2][1]).not.toBe(resume.mock.calls[0][1]);
+    expect(resume.mock.calls[2][2]).toBe(resumed.runId);
+    expect(resume.mock.calls[2][3]?.binding.machineId).toBe('replacement-vm');
+  });
+
+  it('retains this view’s in-flight VM request while another view resolves its shared receipt', async () => {
+    const saved = new Map<string, string>();
+    vi.stubGlobal('sessionStorage', {
+      getItem: (key: string) => saved.get(key) ?? null,
+      setItem: (key: string, value: string) => void saved.set(key, value),
+      removeItem: (key: string) => void saved.delete(key),
+    });
+    const source = { ...previous, vmProject };
+    const resumed = { ...running, vmProject };
+    let finish: (result: CodexSessionRecord) => void = () => undefined;
+    const response = new Promise<CodexSessionRecord>((resolve) => {
+      finish = resolve;
+    });
+    const resume = vi
+      .spyOn(codexAPI, 'resume')
+      .mockReturnValueOnce(response)
+      .mockResolvedValueOnce(resumed);
+    const terminal = new CodexResumeRequests('shared-scope', 'original-db');
+    const manager = new CodexResumeRequests('shared-scope', 'original-db');
+    const active = terminal.resume(source, vmProject.binding);
+    const original = manager.restore(source);
+    await manager.resume(source, vmProject.binding);
+    expect(resume.mock.calls[1]).toEqual(resume.mock.calls[0]);
+    expect(saved.size).toBe(0);
+    expect(terminal.restore(source)).toEqual(original);
+    expect(terminal.resume(source, vmProject.binding)).toBe(active);
+    finish(resumed);
+    await active;
+    expect(terminal.restore(resumed)).toBeUndefined();
+    expect(terminal.hasPending(source.id)).toBe(false);
+  });
+
+  it('does not clear another view’s newer pending request when an older in-flight response arrives', async () => {
+    const saved = new Map<string, string>();
+    vi.stubGlobal('sessionStorage', {
+      getItem: (key: string) => saved.get(key) ?? null,
+      setItem: (key: string, value: string) => void saved.set(key, value),
+      removeItem: (key: string) => void saved.delete(key),
+    });
+    const source = { ...previous, vmProject };
+    const resumed = { ...running, vmProject };
+    let finish: (result: CodexSessionRecord) => void = () => undefined;
+    const response = new Promise<CodexSessionRecord>((resolve) => {
+      finish = resolve;
+    });
+    const resume = vi
+      .spyOn(codexAPI, 'resume')
+      .mockReturnValueOnce(response)
+      .mockResolvedValueOnce(resumed)
+      .mockRejectedValueOnce(new TypeError('New response lost'));
+    const terminal = new CodexResumeRequests('shared-scope', 'original-db');
+    const manager = new CodexResumeRequests('shared-scope', 'original-db');
+    const older = terminal.resume(source, vmProject.binding);
+    await manager.resume(source, vmProject.binding);
+    await expect(
+      manager.resume(
+        { ...resumed, status: 'ended', continuation: { state: 'available' } },
+        { ...vmProject.binding, machineId: 'replacement-vm' },
+      ),
+    ).rejects.toThrow('New response lost');
+    const newer = terminal.restore(resumed);
+    expect(newer?.requestId).not.toBe(resume.mock.calls[0][1]);
+    expect(newer?.expectedRunId).toBe(resumed.runId);
+    finish(resumed);
+    await older;
+    expect(terminal.hasPending(source.id)).toBe(true);
+    expect(terminal.restore(resumed)).toEqual(newer);
+    expect(manager.restore(resumed)).toEqual(newer);
+    expect(saved.size).toBe(1);
+  });
+
+  it.each(['before-action', 'during-confirmation'] as const)(
+    'does not turn an already resolved recovery into a fresh continuation %s',
+    async (completion) => {
+      const saved = new Map<string, string>();
+      vi.stubGlobal('sessionStorage', {
+        getItem: (key: string) => saved.get(key) ?? null,
+        setItem: (key: string, value: string) => void saved.set(key, value),
+        removeItem: (key: string) => void saved.delete(key),
+      });
+      const source = { ...previous, vmProject };
+      const resumed = { ...running, vmProject };
+      const resume = vi
+        .spyOn(codexAPI, 'resume')
+        .mockRejectedValueOnce(new TypeError('Response lost'))
+        .mockResolvedValueOnce(resumed);
+      const terminal = new CodexResumeRequests('shared-scope', 'original-db');
+      const manager = new CodexResumeRequests('shared-scope', 'original-db');
+      await expect(terminal.resume(source, vmProject.binding)).rejects.toThrow(
+        'Response lost',
+      );
+      manager.restore(source);
+      vi.spyOn(codexAPI, 'get').mockResolvedValue({
+        ...resumed,
+        status: 'ended',
+        continuation: { state: 'available' },
+      });
+      const binding = vi.spyOn(vmProjectsAPI, 'binding');
+      const dialog = vi
+        .fn<DesktopAPI['dialog']>()
+        .mockImplementation(async () => {
+          await terminal.resume(source, vmProject.binding);
+          return { button: 'continue', value: '' };
+        });
+      if (completion === 'before-action')
+        await terminal.resume(source, vmProject.binding);
+      await expect(
+        continueConversation({ dialog }, source, manager),
+      ).rejects.toThrow('continuation request changed in another window');
+      expect(binding).not.toHaveBeenCalled();
+      expect(dialog).toHaveBeenCalledTimes(
+        completion === 'before-action' ? 0 : 1,
+      );
+      expect(resume).toHaveBeenCalledTimes(2);
+      expect(resume.mock.calls[1]).toEqual(resume.mock.calls[0]);
+      expect(saved.size).toBe(0);
+    },
+  );
+
+  it('does not accept a different pending request behind a rendered fresh continuation action', async () => {
+    const saved = new Map<string, string>();
+    vi.stubGlobal('sessionStorage', {
+      getItem: (key: string) => saved.get(key) ?? null,
+      setItem: (key: string, value: string) => void saved.set(key, value),
+      removeItem: (key: string) => void saved.delete(key),
+    });
+    const source = { ...previous, vmProject };
+    const resume = vi
+      .spyOn(codexAPI, 'resume')
+      .mockRejectedValueOnce(new TypeError('Response lost'));
+    const terminal = new CodexResumeRequests('shared-scope', 'original-db');
+    await expect(terminal.resume(source, vmProject.binding)).rejects.toThrow(
+      'Response lost',
+    );
+    vi.spyOn(codexAPI, 'get').mockResolvedValue(source);
+    const binding = vi.spyOn(vmProjectsAPI, 'binding');
+    const dialog = vi.fn<DesktopAPI['dialog']>();
+    const manager = new CodexResumeRequests('shared-scope', 'original-db');
+    await expect(
+      continueConversation({ dialog }, source, manager, null),
+    ).rejects.toThrow('continuation request changed in another window');
+    expect(binding).not.toHaveBeenCalled();
+    expect(dialog).not.toHaveBeenCalled();
+    expect(resume).toHaveBeenCalledTimes(1);
+    expect(saved.size).toBe(1);
+  });
+
+  it.each([
+    [503, 'server_stopping'],
+    [409, 'history_identity_conflict'],
+  ])(
+    'retains an existing VM continuation after HTTP %s / %s and reload',
+    async (status, code) => {
+      const saved = new Map<string, string>();
+      vi.stubGlobal('sessionStorage', {
+        getItem: (key: string) => saved.get(key) ?? null,
+        setItem: (key: string, value: string) => void saved.set(key, value),
+        removeItem: (key: string) => void saved.delete(key),
+      });
+      const source = { ...previous, vmProject };
+      const resume = vi
+        .spyOn(codexAPI, 'resume')
+        .mockRejectedValueOnce(
+          new APIError(
+            'The reserved run could not be reconciled',
+            status,
+            code,
+          ),
+        )
+        .mockResolvedValueOnce({ ...running, vmProject });
+      const first = new CodexResumeRequests('original-scope', 'original-db');
+      await expect(first.resume(source, vmProject.binding)).rejects.toThrow(
+        'could not be reconciled',
+      );
+      expect(first.hasPending(source.id)).toBe(true);
+      expect(saved.size).toBe(1);
+      const reloaded = new CodexResumeRequests('original-scope', 'original-db');
+      await reloaded.resume(
+        { ...source, runId: 'newer-observation' },
+        { ...vmProject.binding, machineId: 'replacement-vm' },
+      );
+      expect(resume.mock.calls[1]).toEqual(resume.mock.calls[0]);
+      expect(resume.mock.calls[1][2]).toBe('old-run');
+      expect(resume.mock.calls[1][3]).toEqual({ binding: vmProject.binding });
+      expect(saved.size).toBe(0);
+    },
+  );
+  it.each(['ended', 'failed', 'lost'] as const)(
+    'opens the exact %s run when resolving an earlier unknown continuation',
+    async (status) => {
+      const source = { ...previous, vmProject };
+      const recovered = {
+        ...running,
+        vmProject,
+        status,
+        continuation: { state: 'available' as const },
+      };
+      const resume = vi
+        .spyOn(codexAPI, 'resume')
+        .mockRejectedValueOnce(new TypeError('Response lost'))
+        .mockResolvedValueOnce(recovered);
+      const requests = new CodexResumeRequests();
+      await expect(requests.resume(source, vmProject.binding)).rejects.toThrow(
+        'Response lost',
+      );
+      vi.spyOn(codexAPI, 'get').mockResolvedValue(recovered);
+      const binding = vi.spyOn(vmProjectsAPI, 'binding');
+      const dialog = vi
+        .fn<DesktopAPI['dialog']>()
+        .mockResolvedValue({ button: 'continue', value: '' });
+      expect(await continueConversation({ dialog }, source, requests)).toBe(
+        recovered,
+      );
+      expect(resume.mock.calls[1]).toEqual(resume.mock.calls[0]);
+      expect(binding).not.toHaveBeenCalled();
+      expect(requests.hasPending(source.id)).toBe(false);
+    },
+  );
+
+  it('keeps a fresh failed continuation visible as a startup error', async () => {
+    vi.spyOn(codexAPI, 'get').mockResolvedValue(previous);
+    vi.spyOn(codexAPI, 'resume').mockResolvedValue({
+      ...running,
+      status: 'failed',
+      reason: 'The provider could not start.',
+      continuation: { state: 'available' },
+    });
+    const dialog = vi
+      .fn<DesktopAPI['dialog']>()
+      .mockResolvedValue({ button: 'continue', value: '' });
+    await expect(
+      continueConversation({ dialog }, previous, new CodexResumeRequests()),
+    ).rejects.toThrow('The provider could not start.');
+  });
+
   it('checks the latest run for confirmation but creates nothing when cancelled', async () => {
     vi.spyOn(codexAPI, 'get').mockResolvedValue(previous);
     const resume = vi.spyOn(codexAPI, 'resume');

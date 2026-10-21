@@ -14,6 +14,7 @@ import (
 
 	"github.com/cofy-x/axv/apps/server/internal/codex/runner"
 	"github.com/cofy-x/axv/apps/server/internal/storage"
+	"github.com/cofy-x/axv/apps/server/internal/vmwork"
 )
 
 var conversationIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -134,6 +135,12 @@ func (m *Manager) prepareRunner(info Info, session storage.CodexSession) ([]stri
 		return nil, err
 	}
 	manifest := runner.Manifest{SessionID: session.ID, RunID: session.RunID, ProjectPath: session.ProjectPath, CodexPath: info.CodexPath, HistoryHome: session.HistoryHome, SocketRoot: socketRoot, OwnershipPath: ownershipPath, Mode: session.RunMode()}
+	if session.VMProject != nil {
+		manifest.VMContextPath, manifest.VMSkillPath, err = vmwork.Publish(dir, vmwork.Context{Version: vmwork.Version, SessionID: session.ID, RunID: session.RunID, Project: *session.VMProject, Socket: session.VMSocket, ConfigFingerprint: session.VMConfigFingerprint, Executable: m.settings.RunnerExecutable})
+		if err != nil {
+			return nil, failure(Unavailable, "vm_project_unavailable", "The private VM project context could not be published. No project content was changed.")
+		}
+	}
 	if session.RunMode() == "resume" {
 		manifest.ThreadID = session.ConversationID
 	}

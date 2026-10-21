@@ -35,6 +35,7 @@ import { CodexResumeRequests, continueConversation } from './continuation';
 import { useCodexAvailability } from './CodexContext';
 import { projectsAPI } from '../project-files/api';
 import { runCommand } from '../../shared/desktop/dialogs';
+import { useDraftNamespace } from '../../shared/drafts/context';
 
 function mayFocus() {
   return !document.querySelector('.ns-dialog-layer, .ns-menu-layer');
@@ -60,11 +61,14 @@ export function CodexTerminal({
   const activeRef = useRef(active);
   const interactiveRef = useRef(interactive && active);
   const mounted = useRef(false);
+  const namespace = useDraftNamespace();
   const scrolling = useRef(false);
   const endingRef = useRef(false);
   const changingMetadataRef = useRef(false);
   const continuingRef = useRef(false);
-  const resumeRequests = useRef(new CodexResumeRequests());
+  const resumeRequests = useRef(
+    new CodexResumeRequests(JSON.stringify(namespace), namespace.databaseId),
+  );
   const commands = useWindowCommands();
   const [state, setState] = useState<CodexConnectionState>({
     phase: 'connecting',
@@ -90,8 +94,24 @@ export function CodexTerminal({
   const [changingMetadata, setChangingMetadata] = useState(false);
   const [metadataError, setMetadataError] = useState('');
   const [continuing, setContinuing] = useState(false);
+  const [resumePending, setResumePending] = useState<string>();
+  const [resumeRecoveryError, setResumeRecoveryError] = useState('');
   const live =
     state.phase !== 'ended' && !!state.session && sessionCanEnd(state.session);
+
+  useEffect(() => {
+    if (!state.session) return;
+    try {
+      setResumePending(
+        resumeRequests.current.restore(state.session)?.requestId,
+      );
+      setResumeRecoveryError('');
+    } catch (error) {
+      setResumeRecoveryError(
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }, [state.session]);
 
   useLayoutEffect(() => {
     interactiveRef.current = interactive && active;
@@ -444,10 +464,12 @@ export function CodexTerminal({
     state.retryable !== false;
   const canContinue =
     !!state.session &&
-    sessionCanContinue(state.session) &&
-    info?.ready === true &&
-    !loading &&
-    !environmentError &&
+    (!!resumePending ||
+      (sessionCanContinue(state.session) &&
+        info?.ready === true &&
+        !loading &&
+        !environmentError)) &&
+    !resumeRecoveryError &&
     !continuing;
   const activeRun = state.session ? otherActiveRun(state.session) : undefined;
   const continueSession = useCallback(async () => {
@@ -461,6 +483,7 @@ export function CodexTerminal({
         desktop,
         source,
         resumeRequests.current,
+        resumePending || null,
       );
       if (!result || !mounted.current) return false;
       connection.current?.updateRunInfo({
@@ -486,9 +509,12 @@ export function CodexTerminal({
       return false;
     } finally {
       continuingRef.current = false;
-      if (mounted.current) setContinuing(false);
+      if (mounted.current) {
+        setContinuing(false);
+        setResumePending(resumeRequests.current.pendingRequestId(source.id));
+      }
     }
-  }, [desktop]);
+  }, [desktop, resumePending]);
   const openRunning = useCallback(async () => {
     const source = connection.current?.getSnapshot().session;
     const active = source ? otherActiveRun(source) : undefined;
@@ -563,6 +589,15 @@ export function CodexTerminal({
   const projectFiles = useCallback(async () => {
     const session = connection.current?.getSnapshot().session;
     if (!session) return;
+    if (session.vmProject) {
+      const project = session.vmProject.project;
+      desktop.openApp(
+        'project-files',
+        { vmProjectId: project.id, hostId: project.hostId },
+        { title: `VM · ${project.name}` },
+      );
+      return;
+    }
     const { project } = await projectsAPI.register(session.projectPath);
     desktop.openApp(
       'project-files',
@@ -680,6 +715,26 @@ export function CodexTerminal({
             desktop.openApp('conversation-context', { sessionId: id, runId })
           }
         />
+        {state.session?.vmProject && (
+          <>
+            <Button onClick={() => void runCommand(desktop, projectFiles)}>
+              Project Files
+            </Button>
+            <Button
+              onClick={() => {
+                const project = state.session?.vmProject?.project;
+                if (project)
+                  desktop.openApp(
+                    'project-files',
+                    { hostId: project.hostId, vmTasksProjectId: project.id },
+                    { title: `Tasks · ${project.name}` },
+                  );
+              }}
+            >
+              Tasks
+            </Button>
+          </>
+        )}
         <Button
           disabled={state.phase !== 'connected'}
           onClick={() => void interrupt()}
@@ -689,7 +744,14 @@ export function CodexTerminal({
         {canReconnect && (
           <Button onClick={() => void reconnect()}>Reconnect</Button>
         )}
-        {activeRun ? (
+        {resumePending ? (
+          <Button
+            disabled={!canContinue}
+            onClick={() => void continueSession()}
+          >
+            {continuing ? 'Continuing…' : 'Resolve Continue'}
+          </Button>
+        ) : activeRun ? (
           <Button onClick={() => void openRunning()}>
             Open Running Session
           </Button>
@@ -725,7 +787,9 @@ export function CodexTerminal({
           }}
         />
       </div>
-      <div className="terminal-host-info codex-session-context">
+      <div
+        className={`terminal-host-info codex-session-context${state.session?.vmProject ? ' has-vm-project' : ''}`}
+      >
         <span>Host</span>
         {state.session && (
           <>
@@ -733,8 +797,15 @@ export function CodexTerminal({
               className="codex-terminal-project"
               data-testid="codex-project-name"
             >
-              {projectName(state.session.projectPath)}
+              {state.session.vmProject
+                ? `VM · ${state.session.vmProject.project.name}`
+                : projectName(state.session.projectPath)}
             </code>
+            {state.session.vmProject && (
+              <span className="codex-vm-target">
+                via AXV · {state.session.vmProject.binding.machineId}
+              </span>
+            )}
             {state.session.archivedAt && (
               <span className="codex-archived-label">Archived</span>
             )}
@@ -751,7 +822,7 @@ export function CodexTerminal({
           Details
         </Button>
       </div>
-      {(state.message || feedback || metadataError) && (
+      {(state.message || feedback || metadataError || resumeRecoveryError) && (
         <div
           className="terminal-message"
           role={
@@ -762,7 +833,7 @@ export function CodexTerminal({
               : 'alert'
           }
         >
-          {feedback || state.message || metadataError}
+          {resumeRecoveryError || feedback || state.message || metadataError}
         </div>
       )}
       {state.session &&

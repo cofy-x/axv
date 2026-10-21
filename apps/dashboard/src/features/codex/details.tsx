@@ -27,10 +27,42 @@ function SessionDetails({ session }: { session: CodexSessionRecord }) {
         <dd>{session.archivedAt ? 'Archived' : 'Unarchived'}</dd>
         <dt>Target</dt>
         <dd>Host</dd>
-        <dt>Project</dt>
+        <dt>{session.vmProject ? 'Host working directory' : 'Project'}</dt>
         <dd>
           <code>{session.projectPath}</code>
         </dd>
+        {session.vmProject && (
+          <>
+            <dt>VM project</dt>
+            <dd>{session.vmProject.project.name}</dd>
+            <dt>Project ID</dt>
+            <dd>
+              <code>{session.vmProject.project.id}</code>
+            </dd>
+            <dt>Host ID</dt>
+            <dd>
+              <code>{session.vmProject.project.hostId}</code>
+            </dd>
+            <dt>Volume / directory</dt>
+            <dd>
+              <code>
+                {session.vmProject.binding.volumeId} /{' '}
+                {session.vmProject.project.root || 'Volume root'}
+              </code>
+            </dd>
+            <dt>VM</dt>
+            <dd>
+              <code>{session.vmProject.binding.machineId}</code>
+            </dd>
+            <dt>Boot / instance</dt>
+            <dd>
+              <code>
+                {session.vmProject.binding.bootId} /{' '}
+                {session.vmProject.binding.instanceId}
+              </code>
+            </dd>
+          </>
+        )}
         <dt>Run</dt>
         <dd>
           <code>{session.runId}</code>
@@ -86,6 +118,12 @@ function SessionDetails({ session }: { session: CodexSessionRecord }) {
         runs.
       </p>
       <p>Choose New Session for a different conversation.</p>
+      {session.vmProject && (
+        <p>
+          The agent runs on the host. Its AXV Skill uses this captured VM
+          environment; project files and persistent tasks remain compute-owned.
+        </p>
+      )}
     </div>
   );
 }

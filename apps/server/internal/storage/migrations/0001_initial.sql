@@ -1,5 +1,5 @@
--- AXV3 identifies this development baseline independently of migration versions.
-PRAGMA application_id = 0x41585633;
+-- AXV4 identifies this development baseline independently of migration versions.
+PRAGMA application_id = 0x41585634;
 
 -- Virtual documents.
 CREATE TABLE entries (
@@ -62,7 +62,12 @@ CREATE TABLE codex_runs (
     ended_at TEXT NOT NULL DEFAULT '',
     reason TEXT NOT NULL DEFAULT '',
     tmux_session TEXT NOT NULL CHECK (tmux_session <> ''),
-    tmux_socket TEXT NOT NULL
+    tmux_socket TEXT NOT NULL,
+    vm_project TEXT NOT NULL DEFAULT '',
+    vm_socket TEXT NOT NULL DEFAULT '',
+    vm_config_fingerprint TEXT NOT NULL DEFAULT '',
+    CHECK ((vm_project = '' AND vm_socket = '' AND vm_config_fingerprint = '') OR
+           (vm_project <> '' AND vm_socket <> '' AND vm_config_fingerprint <> ''))
 );
 
 CREATE UNIQUE INDEX codex_one_active_run ON codex_runs (session_id)

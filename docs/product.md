@@ -37,7 +37,7 @@ VMs provide the development environment for VM projects: project code, Git workt
 
 For a VM workflow, the authoritative project code and Git worktrees belong on its persistent project volume. The host agent operates on that copy through AXV tools. Existing host projects remain independent workflows; AXV does not automatically migrate, mount or synchronize them with VM projects.
 
-The agent-to-VM integration uses explicit AXV interfaces for project files, commands, task status and development services. The [VM project CLI](startup.md#vm-project-files) supplies file access and [persistent project tasks](startup.md#vm-project-tasks); development services and an AXV Skill remain goals. A Skill does not redirect an agent's built-in host tools or change its permissions. [Guest API](api/guest.md) documents execution and its limits.
+The agent-to-VM integration uses explicit AXV interfaces for project files, commands, task status and development services. The [VM project CLI](startup.md#vm-project-files) supplies file access and [persistent project tasks](startup.md#vm-project-tasks). Project-scoped Codex sessions use a bundled AXV Skill and immutable per-run tools; development services remain a goal. A Skill does not redirect an agent's built-in host tools or change its permissions. [Guest API](api/guest.md) documents execution and its limits.
 
 ### VM project workspace constraints
 
@@ -100,7 +100,7 @@ Future resource capabilities must pass through their existing feature owners and
 
 ## Decisions still open
 
-- The remaining Skill integration and Git/worktree management on the project volume.
+- Git/worktree management on the project volume and future provider-specific VM work-project integration.
 - Automatic session supervision after host boot, project backup restoration/rebinding and recovery policy after VM replacement. Persistent task attempts never automatically move between VMs.
 - Development-service discovery, access and preview.
 - Provider-specific session integration, including Claude Code and structured agent interfaces.

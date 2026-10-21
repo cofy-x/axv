@@ -24,7 +24,16 @@ func (o *projectTaskHost) flags(cmd *cobra.Command) {
 	cmd.Flags().Bool("json", false, "write machine-readable JSON (also the default)")
 }
 
-func (o projectTaskHost) binding(projectID string, required bool) (compute.ProjectBinding, error) {
+func (o projectTaskHost) binding(cmd *cobra.Command, projectID string, required bool) (compute.ProjectBinding, error) {
+	if bound, ok := boundVMProject(cmd); ok {
+		if cmd.Flags().Changed("host-id") || cmd.Flags().Changed("binding-file") || o.hostID != "" || o.bindingFile != "" || projectID != bound.Project.Project.ID {
+			return compute.ProjectBinding{}, usageError(fmt.Errorf("the bound VM project command cannot replace its original project, host or environment"))
+		}
+		if required {
+			return bound.Project.Binding, nil
+		}
+		return compute.ProjectBinding{HostID: bound.Project.Binding.HostID}, nil
+	}
 	if !utf8.ValidString(projectID) || !utf8.ValidString(o.hostID) {
 		return compute.ProjectBinding{}, usageError(fmt.Errorf("VM project task identities must be valid UTF-8"))
 	}
@@ -89,7 +98,10 @@ func taskReceipt(cmd *cobra.Command, projectID, requestID string, binding comput
 	return nil
 }
 
-func taskSubmissionError(projectID, requestID, hostID string, err error) error {
+func taskSubmissionError(cmd *cobra.Command, projectID, requestID, hostID string, err error) error {
+	if _, ok := boundVMProject(cmd); ok {
+		return fmt.Errorf("project task request %s: %w; inspect this same bound command with task receipt %s before submitting more work; preserve its original executable and context file", requestID, err, requestID)
+	}
 	return fmt.Errorf("project task request %s: %w; inspect axv vm project task receipt %s %s --host-id %s before submitting more work", requestID, err, projectID, requestID, hostID)
 }
 
@@ -112,7 +124,7 @@ func newSubmitVMProjectTask() *cobra.Command {
 		if err := compute.ValidateTaskSpec(spec); err != nil {
 			return usageError(err)
 		}
-		binding, err := host.binding(args[0], true)
+		binding, err := host.binding(cmd, args[0], true)
 		if err != nil {
 			return err
 		}
@@ -130,7 +142,7 @@ func newSubmitVMProjectTask() *cobra.Command {
 		}
 		result, err := c.SubmitProjectTask(cmd.Context(), args[0], compute.SubmitProjectTaskRequest{RequestID: requestID, Binding: binding, Spec: spec})
 		if err != nil {
-			return taskSubmissionError(args[0], requestID, binding.HostID, err)
+			return taskSubmissionError(cmd, args[0], requestID, binding.HostID, err)
 		}
 		return jsonResult(cmd.OutOrStdout(), result)
 	}}
@@ -158,7 +170,7 @@ func newVMProjectTaskQuery(action string) *cobra.Command {
 		if err := taskIdentities(args...); err != nil {
 			return err
 		}
-		binding, err := host.binding(args[0], false)
+		binding, err := host.binding(cmd, args[0], false)
 		if err != nil {
 			return err
 		}
@@ -193,7 +205,7 @@ func newRetryVMProjectTask() *cobra.Command {
 		if err := taskIdentities(args...); err != nil {
 			return err
 		}
-		binding, err := host.binding(args[0], true)
+		binding, err := host.binding(cmd, args[0], true)
 		if err != nil {
 			return err
 		}
@@ -211,7 +223,7 @@ func newRetryVMProjectTask() *cobra.Command {
 		}
 		result, err := c.RetryProjectTask(cmd.Context(), args[0], args[1], compute.RetryProjectTaskRequest{RequestID: requestID, Binding: binding})
 		if err != nil {
-			return taskSubmissionError(args[0], requestID, binding.HostID, err)
+			return taskSubmissionError(cmd, args[0], requestID, binding.HostID, err)
 		}
 		return jsonResult(cmd.OutOrStdout(), result)
 	}}
@@ -226,7 +238,7 @@ func newCancelVMProjectTask() *cobra.Command {
 		if err := taskIdentities(args...); err != nil {
 			return err
 		}
-		binding, err := host.binding(args[0], false)
+		binding, err := host.binding(cmd, args[0], false)
 		if err != nil {
 			return err
 		}
@@ -277,7 +289,7 @@ func newVMProjectTaskLogs() *cobra.Command {
 		if raw && cmd.Flags().Changed("json") {
 			return usageError(fmt.Errorf("choose either --raw or --json log output"))
 		}
-		binding, err := host.binding(args[0], false)
+		binding, err := host.binding(cmd, args[0], false)
 		if err != nil {
 			return err
 		}

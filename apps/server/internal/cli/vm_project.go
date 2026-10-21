@@ -192,7 +192,7 @@ func newVMProjectFile(action string) *cobra.Command {
 		if action != "files" && args[1] == "" {
 			return usageError(fmt.Errorf("a nonempty project-relative file path is required"))
 		}
-		binding, err := readProjectBinding(bindingFile, args[0])
+		binding, err := projectBindingForCommand(cmd, bindingFile, args[0])
 		if err != nil {
 			return err
 		}

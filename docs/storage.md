@@ -60,7 +60,7 @@ After receipt commitment, replay can finish staging cleanup when the original pr
 
 ## Desktop database baseline
 
-`desktop.sqlite` starts from one consolidated [`0001_initial.sql`](../apps/server/internal/storage/migrations/0001_initial.sql), organized by feature. Its current format marker is **AXV3** (`0x41585633`). It defines virtual documents, desktop preferences and layouts, the stable database identity, Codex conversations and runs with their actual tmux routing, explicit project references, document links, snapshots, import origins and transfer receipts. These features do not have independent migration sequences.
+`desktop.sqlite` starts from one consolidated [`0001_initial.sql`](../apps/server/internal/storage/migrations/0001_initial.sql), organized by feature. Its current format marker is **AXV4** (`0x41585634`). It defines virtual documents, desktop preferences and layouts, the stable database identity, Codex conversations and runs with their actual tmux routing and optional immutable VM project/connection context, explicit project references, document links, snapshots, import origins and transfer receipts. These features do not have independent migration sequences.
 
 SQLite's `application_id` is a file-format marker, separate from the migration version in `user_version`. Its value must agree between `databaseApplicationID` in [`migrations.go`](../apps/server/internal/storage/migrations.go) and the initial SQL migration. It distinguishes incompatible development baselines even when their migration versions match. Startup rejects incompatible or invalid databases without deleting, resetting or destructively repairing them.
 

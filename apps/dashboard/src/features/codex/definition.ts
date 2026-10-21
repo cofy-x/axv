@@ -112,6 +112,19 @@ export function openCodexEnvironment(desktop: DesktopAPI) {
   return desktop.openApp('codex-environment');
 }
 
+export function openVMProjectCodex(
+  desktop: Pick<DesktopAPI, 'openApp'>,
+  hostId: string,
+  projectId: string,
+  name?: string,
+) {
+  return desktop.openApp(
+    'codex',
+    { hostId, vmProjectId: projectId },
+    { title: `Codex Sessions · ${name || 'VM project'}` },
+  );
+}
+
 export const codexEnvironmentApp: AppDefinition = {
   id: 'codex-environment',
   title: 'Codex Environment',
@@ -137,7 +150,9 @@ export function createCodexApp(
     windowKey: (params) =>
       params.sessionId && params.runId
         ? `${params.sessionId}:${params.runId}`
-        : 'manager',
+        : params.vmProjectId
+          ? `vm:${params.hostId}:${params.vmProjectId}`
+          : 'manager',
     launch: (desktop) => {
       desktop.openApp('codex');
     },

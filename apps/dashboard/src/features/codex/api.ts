@@ -1,4 +1,10 @@
 import { request } from '../../shared/api/http';
+import type { VMProject, VMProjectBinding } from '../project-files/vm-api';
+
+export interface CodexVMProject {
+  project: VMProject;
+  binding: VMProjectBinding;
+}
 
 export interface CodexInfo {
   supported: boolean;
@@ -31,6 +37,7 @@ export interface CodexSessionRecord {
   runId: string;
   target: 'host';
   projectPath: string;
+  vmProject?: CodexVMProject;
   title: string;
   archivedAt?: string;
   metadataRevision: number;
@@ -89,11 +96,17 @@ export const codexAPI = {
         { signal },
       )
     ).session,
-  create: async (requestId: string, projectPath?: string) =>
+  create: async (
+    requestId: string,
+    projectPath?: string,
+    vmProject?: { binding: VMProjectBinding },
+    databaseId?: string,
+  ) =>
     (
       await request<{ session: CodexSessionRecord }>(`${root}/sessions`, {
         method: 'POST',
-        body: JSON.stringify({ requestId, projectPath }),
+        ...(databaseId ? { headers: { 'X-AXV-Database-ID': databaseId } } : {}),
+        body: JSON.stringify({ requestId, projectPath, vmProject }),
       })
     ).session,
   end: async (id: string, runId: string) =>
@@ -103,11 +116,23 @@ export const codexAPI = {
         { method: 'POST' },
       )
     ).session,
-  resume: async (id: string, requestId: string, expectedRunId: string) =>
+  resume: async (
+    id: string,
+    requestId: string,
+    expectedRunId: string,
+    vmProject?: { binding: VMProjectBinding },
+    databaseId?: string,
+  ) =>
     (
       await request<{ session: CodexSessionRecord }>(
         `${root}/sessions/${encodeURIComponent(id)}/resume`,
-        { method: 'POST', body: JSON.stringify({ requestId, expectedRunId }) },
+        {
+          method: 'POST',
+          ...(databaseId
+            ? { headers: { 'X-AXV-Database-ID': databaseId } }
+            : {}),
+          body: JSON.stringify({ requestId, expectedRunId, vmProject }),
+        },
       )
     ).session,
   update: async (id: string, patch: CodexMetadataPatch) =>
@@ -143,7 +168,11 @@ export function projectName(path: string) {
 }
 
 export function sessionTitle(session: CodexSessionRecord) {
-  return session.title || projectName(session.projectPath);
+  return (
+    session.title ||
+    session.vmProject?.project.name ||
+    projectName(session.projectPath)
+  );
 }
 
 export function sessionWindowTitle(session: CodexSessionRecord) {

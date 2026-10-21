@@ -35,7 +35,7 @@ type bridgeHarness struct {
 	path     string
 }
 
-func newBridgeHarness(t *testing.T, mode string) *bridgeHarness {
+func newBridgeHarness(t *testing.T, mode string, configure ...func(*Manifest, string)) *bridgeHarness {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	reader, writer := io.Pipe()
@@ -50,6 +50,9 @@ func newBridgeHarness(t *testing.T, mode string) *bridgeHarness {
 	manifest := Manifest{SessionID: "session", RunID: "run", HistoryHome: "/private/history", Mode: mode}
 	if mode == ModeResume {
 		manifest.ThreadID = testThreadID
+	}
+	for _, apply := range configure {
+		apply(&manifest, directory)
 	}
 	if err := writeState(harness.path, State{RunID: "run", HistoryHome: manifest.HistoryHome, ThreadID: manifest.ThreadID, Status: StatusStarting}); err != nil {
 		t.Fatal(err)

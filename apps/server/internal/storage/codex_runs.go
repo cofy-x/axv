@@ -3,20 +3,30 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"path/filepath"
 	"time"
+
+	"github.com/cofy-x/axv/apps/server/internal/compute"
+	"github.com/cofy-x/axv/apps/server/internal/vmwork"
 )
 
 type CodexRunInput struct {
 	RequestID, Mode, SessionID, ExpectedRunID    string
 	ProjectPath, NamePrefix, Socket, HistoryHome string
 	Cols, Rows                                   int
+	VMProjectBinding                             *compute.ProjectBinding
+	VMProject                                    *vmwork.Project
+	VMSocket, VMConfigFingerprint                string
 }
 
 func MatchCodexRequest(session CodexSession, in CodexRunInput) error {
 	if session.RunMode() != in.Mode || session.PreviousRunID != in.ExpectedRunID ||
 		(in.Mode == "resume" && session.ID != in.SessionID) ||
-		(in.Mode == "new" && session.ProjectPath != in.ProjectPath) ||
+		(in.Mode == "new" && in.VMProjectBinding == nil && session.ProjectPath != in.ProjectPath) ||
+		(session.VMProject == nil) != (in.VMProjectBinding == nil) ||
+		(session.VMProject != nil && session.VMProject.Binding != *in.VMProjectBinding) ||
 		session.RequestCols != in.Cols || session.RequestRows != in.Rows {
 		return problem("request_conflict", "This request identifier already belongs to a different start action.")
 	}
@@ -37,6 +47,19 @@ func (s *Store) ReserveCodexRun(ctx context.Context, in CodexRunInput) (CodexSes
 	}
 	if in.NamePrefix == "" || in.Mode == "new" && in.HistoryHome == "" {
 		return session, false, problem("invalid_session", "A managed run requires a tmux name prefix and conversation history directory.")
+	}
+	var vmProject string
+	if in.VMProjectBinding != nil {
+		if in.VMProject == nil || in.VMProject.Binding != *in.VMProjectBinding || vmwork.ValidateProject(*in.VMProject) != nil || !filepath.IsAbs(in.VMSocket) || in.VMConfigFingerprint == "" {
+			return session, false, problem("invalid_session", "A VM project run requires its verified project and original compute connection.")
+		}
+		data, err := json.Marshal(in.VMProject)
+		if err != nil {
+			return session, false, err
+		}
+		vmProject = string(data)
+	} else if in.VMProject != nil || in.VMSocket != "" || in.VMConfigFingerprint != "" {
+		return session, false, problem("invalid_session", "A host project run cannot contain a VM connection.")
 	}
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
 		// Acquire SQLite's writer reservation before reading capacity. A deferred
@@ -67,6 +90,9 @@ func (s *Store) ReserveCodexRun(ctx context.Context, in CodexRunInput) (CodexSes
 			if session.ConversationID == "" || session.HistoryHome == "" {
 				return problem("history_unavailable", "The official conversation identity was not recorded for this session.")
 			}
+			if !sameCodexWorkProject(session.VMProject, in.VMProject) {
+				return problem("project_changed", "This conversation belongs to a different work project. Start a separate conversation instead.")
+			}
 		} else {
 			session = CodexSession{ID: id(), Target: "host", ProjectPath: in.ProjectPath, HistoryHome: in.HistoryHome, MetadataRevision: 1}
 		}
@@ -81,6 +107,7 @@ func (s *Store) ReserveCodexRun(ctx context.Context, in CodexRunInput) (CodexSes
 		session.RunID, session.RequestID = id(), in.RequestID
 		session.PreviousRunID, session.RequestCols, session.RequestRows = in.ExpectedRunID, in.Cols, in.Rows
 		session.Status, session.CreatedAt = "starting", now
+		session.VMProject, session.VMSocket, session.VMConfigFingerprint = in.VMProject, in.VMSocket, in.VMConfigFingerprint
 		session.EndedAt, session.Reason = "", ""
 		session.TmuxSession, session.TmuxSocket = in.NamePrefix+"-"+session.RunID, in.Socket
 		if in.Mode == "new" {
@@ -95,12 +122,19 @@ func (s *Store) ReserveCodexRun(ctx context.Context, in CodexRunInput) (CodexSes
 		if session.PreviousRunID != "" {
 			previousRunID = session.PreviousRunID
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO codex_runs(id,session_id,request_id,previous_run_id,request_cols,request_rows,status,created_at,tmux_session,tmux_socket)
-			VALUES(?,?,?,?,?,?,?,?,?,?)`, session.RunID, session.ID, session.RequestID, previousRunID, session.RequestCols, session.RequestRows, session.Status, now, session.TmuxSession, session.TmuxSocket)
+		_, err = tx.ExecContext(ctx, `INSERT INTO codex_runs(id,session_id,request_id,previous_run_id,request_cols,request_rows,status,created_at,tmux_session,tmux_socket,vm_project,vm_socket,vm_config_fingerprint)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, session.RunID, session.ID, session.RequestID, previousRunID, session.RequestCols, session.RequestRows, session.Status, now, session.TmuxSession, session.TmuxSocket, vmProject, session.VMSocket, session.VMConfigFingerprint)
 		created = err == nil
 		return err
 	})
 	return session, created && err == nil, err
+}
+
+func sameCodexWorkProject(a, b *vmwork.Project) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return vmwork.SameProjectIdentity(*a, *b)
 }
 
 func codexFinal(status string) bool {
@@ -192,11 +226,13 @@ func (s *Store) StartCodexRun(ctx context.Context, runID string) (CodexSession, 
 		if _, err = tx.ExecContext(ctx, "UPDATE codex_runs SET status='running',reason='' WHERE id=?", runID); err != nil {
 			return err
 		}
-		if _, err = tx.ExecContext(ctx, "INSERT INTO codex_projects(path,last_used_at) VALUES(?,?) ON CONFLICT(path) DO UPDATE SET last_used_at=excluded.last_used_at", session.ProjectPath, now); err != nil {
-			return err
-		}
-		if _, err = tx.ExecContext(ctx, "DELETE FROM codex_projects WHERE path NOT IN (SELECT path FROM codex_projects ORDER BY last_used_at DESC,path LIMIT 10)"); err != nil {
-			return err
+		if session.VMProject == nil {
+			if _, err = tx.ExecContext(ctx, "INSERT INTO codex_projects(path,last_used_at) VALUES(?,?) ON CONFLICT(path) DO UPDATE SET last_used_at=excluded.last_used_at", session.ProjectPath, now); err != nil {
+				return err
+			}
+			if _, err = tx.ExecContext(ctx, "DELETE FROM codex_projects WHERE path NOT IN (SELECT path FROM codex_projects ORDER BY last_used_at DESC,path LIMIT 10)"); err != nil {
+				return err
+			}
 		}
 		session.Status, session.Reason = "running", ""
 		return nil

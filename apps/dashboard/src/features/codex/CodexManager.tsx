@@ -32,8 +32,19 @@ import {
 } from './metadata';
 import { openTerminalWindow } from '../terminal/definition';
 import { CodexResumeRequests, continueConversation } from './continuation';
+import { useVMProject } from './use-vm-project';
+import { useDraftNamespace } from '../../shared/drafts/context';
+
+interface ContinuationRecovery {
+  requestId?: string;
+  error?: string;
+}
 
 export function CodexManager({ desktop, window }: AppWindowProps) {
+  const vmProjectId = window.params.vmProjectId || '';
+  const vmHostId = window.params.hostId || '';
+  const vm = useVMProject(vmHostId, vmProjectId);
+  const namespace = useDraftNamespace();
   const { info, loading, error, status } = useCodexAvailability();
   const canStart = info?.ready === true && !loading && !error;
   const environmentIssue =
@@ -48,6 +59,9 @@ export function CodexManager({ desktop, window }: AppWindowProps) {
   const [showArchived, setShowArchived] = useState(false);
   const [changingMetadata, setChangingMetadata] = useState<string | null>(null);
   const [continuing, setContinuing] = useState<string | null>(null);
+  const [continuationRecovery, setContinuationRecovery] = useState(
+    new Map<string, ContinuationRecovery>(),
+  );
   const [sessionError, setSessionError] = useState('');
   const [directories, setDirectories] = useState<HostDirectories | null>(null);
   const [path, setPath] = useState('');
@@ -63,10 +77,34 @@ export function CodexManager({ desktop, window }: AppWindowProps) {
   const browsingRequest = useRef<AbortController | null>(null);
   const creatingRequest = useRef(false);
   const requestKey = useRef<{ path?: string; id: string } | null>(null);
-  const resumeRequests = useRef(new CodexResumeRequests());
+  const resumeRequests = useRef(
+    new CodexResumeRequests(JSON.stringify(namespace), namespace.databaseId),
+  );
   const continuingRequest = useRef(false);
 
-  useEffect(() => setTitle(window.id, 'Codex'), [setTitle, window.id]);
+  useEffect(() => {
+    const recovery = new Map<string, ContinuationRecovery>();
+    for (const session of sessions) {
+      try {
+        recovery.set(session.id, {
+          requestId: resumeRequests.current.restore(session)?.requestId,
+        });
+      } catch (error) {
+        recovery.set(session.id, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    setContinuationRecovery(recovery);
+  }, [sessions, continuing]);
+
+  const vmName = vm.data?.project.name || 'VM project';
+  const resolvedVMName = vm.data?.project.name;
+  useEffect(() => {
+    if (!vmProjectId) setTitle(window.id, 'Codex');
+    else if (resolvedVMName)
+      setTitle(window.id, `Codex Sessions · ${resolvedVMName}`);
+  }, [setTitle, window.id, vmProjectId, resolvedVMName]);
 
   const refresh = useCallback(async () => {
     if (listing.current) return;
@@ -97,6 +135,7 @@ export function CodexManager({ desktop, window }: AppWindowProps) {
   }, []);
 
   const refreshProjects = useCallback(async () => {
+    if (vmProjectId) return;
     listingProjects.current?.abort();
     const controller = new AbortController();
     listingProjects.current = controller;
@@ -117,7 +156,7 @@ export function CodexManager({ desktop, window }: AppWindowProps) {
       if (listingProjects.current === controller)
         listingProjects.current = null;
     }
-  }, []);
+  }, [vmProjectId]);
 
   const browse = useCallback(async (next?: string) => {
     browsingRequest.current?.abort();
@@ -184,17 +223,29 @@ export function CodexManager({ desktop, window }: AppWindowProps) {
   };
 
   const create = async (project?: string) => {
-    if (!canStart || creatingRequest.current) return;
+    if (
+      creatingRequest.current ||
+      (vmProjectId
+        ? (!vm.pending && (!canStart || !vm.data)) || !!vm.recoveryError
+        : !canStart)
+    )
+      return;
     creatingRequest.current = true;
     setCreating(project ? 'folder' : 'default');
     setActionError('');
     if (!requestKey.current || requestKey.current.path !== project)
       requestKey.current = { path: project, id: crypto.randomUUID() };
     try {
-      const session = await codexAPI.create(requestKey.current.id, project);
+      const result = vmProjectId
+        ? await vm.create()
+        : {
+            session: await codexAPI.create(requestKey.current.id, project),
+            recovered: false,
+          };
+      const { session } = result;
       requestKey.current = null;
       if (mounted.current) {
-        if (sessionIsLive(session)) {
+        if (sessionIsLive(session) || result.recovered) {
           closeFolderPicker();
           setShowArchived(false);
           openCodexSession(desktop, session);
@@ -268,7 +319,10 @@ export function CodexManager({ desktop, window }: AppWindowProps) {
       if (mounted.current) setChangingMetadata(null);
     }
   };
-  const continueSession = async (session: CodexSessionRecord) => {
+  const continueSession = async (
+    session: CodexSessionRecord,
+    expectedRequestId: string | null,
+  ) => {
     if (continuingRequest.current) return;
     continuingRequest.current = true;
     setContinuing(session.id);
@@ -278,6 +332,7 @@ export function CodexManager({ desktop, window }: AppWindowProps) {
         desktop,
         session,
         resumeRequests.current,
+        expectedRequestId,
       );
       if (result && mounted.current) openCodexSession(desktop, result);
     } catch (error) {
@@ -302,7 +357,11 @@ export function CodexManager({ desktop, window }: AppWindowProps) {
     }
   };
   const visibleSessions = sessions.filter(
-    (session) => !!session.archivedAt === showArchived,
+    (session) =>
+      !!session.archivedAt === showArchived &&
+      (!vmProjectId ||
+        (session.vmProject?.project.id === vmProjectId &&
+          session.vmProject.project.hostId === vmHostId)),
   );
 
   return (
@@ -311,25 +370,68 @@ export function CodexManager({ desktop, window }: AppWindowProps) {
         <PixelIcon name="companion" size={16} />
         <Button
           primary
-          disabled={!canStart || creating !== null}
+          disabled={
+            creating !== null ||
+            (vmProjectId
+              ? !!vm.recoveryError || (!vm.pending && (!canStart || !vm.data))
+              : !canStart)
+          }
           onClick={() => void create()}
         >
-          {creating === 'default' ? 'Starting…' : 'New Session'}
+          {creating === 'default'
+            ? 'Starting…'
+            : vmProjectId && vm.pending
+              ? 'Resolve Start'
+              : 'New Session'}
         </Button>
-        <Button
-          disabled={creating !== null || (!choosingFolder && !canStart)}
-          aria-expanded={choosingFolder}
-          aria-controls="codex-folder-picker"
-          onClick={() => {
-            if (choosingFolder) closeFolderPicker();
-            else {
-              setChoosingFolder(true);
-              void browse(path || undefined);
-            }
-          }}
-        >
-          New in Folder
-        </Button>
+        {!vmProjectId && (
+          <Button
+            disabled={creating !== null || (!choosingFolder && !canStart)}
+            aria-expanded={choosingFolder}
+            aria-controls="codex-folder-picker"
+            onClick={() => {
+              if (choosingFolder) closeFolderPicker();
+              else {
+                setChoosingFolder(true);
+                void browse(path || undefined);
+              }
+            }}
+          >
+            New in Folder
+          </Button>
+        )}
+        {vmProjectId && (
+          <>
+            <Button
+              disabled={creating !== null || !!vm.pending || !!vm.recoveryError}
+              onClick={vm.reconnect}
+            >
+              Reconnect Project
+            </Button>
+            <Button
+              onClick={() =>
+                desktop.openApp(
+                  'project-files',
+                  { hostId: vmHostId, vmProjectId },
+                  { title: `VM · ${vmName}` },
+                )
+              }
+            >
+              Project Files
+            </Button>
+            <Button
+              onClick={() =>
+                desktop.openApp(
+                  'project-files',
+                  { hostId: vmHostId, vmTasksProjectId: vmProjectId },
+                  { title: `Tasks · ${vmName}` },
+                )
+              }
+            >
+              Tasks
+            </Button>
+          </>
+        )}
         <div className="codex-manager-tools">
           <IconButton
             icon="refresh"
@@ -360,12 +462,70 @@ export function CodexManager({ desktop, window }: AppWindowProps) {
         </div>
       </div>
       <div className="codex-manager-content">
-        <p className="codex-default-project">
-          <span>Default host folder</span>{' '}
-          <code data-testid="codex-default-project">
-            {info?.defaultProjectPath || '~/.axv/workspace'}
-          </code>
-        </p>
+        {vmProjectId ? (
+          <section className="codex-vm-project" aria-label="VM project context">
+            <strong>VM · {vmName}</strong>
+            <p>
+              Codex runs on the host. The AXV Skill guides it to read and edit
+              this VM project and run persistent tasks through AXV. Host-agent
+              permissions remain unchanged.
+            </p>
+            {vm.pending ? (
+              <p role="status">
+                The previous start is unconfirmed. Resolve Start checks the same
+                request for VM <code>{vm.pending.binding.machineId}</code>; it
+                does not select another environment.
+              </p>
+            ) : vm.data ? (
+              <p>
+                New session environment:{' '}
+                <code>{vm.data.binding.machineId}</code> ·{' '}
+                {vm.data.project.root || 'Volume root'}
+              </p>
+            ) : (
+              !vm.error && <p role="status">Connecting to VM project…</p>
+            )}
+            {(vm.error || vm.recoveryError) && (
+              <p className="app-error" role="alert">
+                {vm.recoveryError || vm.error}
+              </p>
+            )}
+            <details>
+              <summary>Details</summary>
+              <dl className="info-list">
+                <dt>Host</dt>
+                <dd>
+                  <code>{vmHostId}</code>
+                </dd>
+                <dt>Project</dt>
+                <dd>
+                  <code>{vmProjectId}</code>
+                </dd>
+                {vm.data && (
+                  <>
+                    <dt>Volume</dt>
+                    <dd>
+                      <code>{vm.data.binding.volumeId}</code>
+                    </dd>
+                    <dt>Boot / instance</dt>
+                    <dd>
+                      <code>
+                        {vm.data.binding.bootId} / {vm.data.binding.instanceId}
+                      </code>
+                    </dd>
+                  </>
+                )}
+              </dl>
+            </details>
+          </section>
+        ) : (
+          <p className="codex-default-project">
+            <span>Default host folder</span>{' '}
+            <code data-testid="codex-default-project">
+              {info?.defaultProjectPath || '~/.axv/workspace'}
+            </code>
+          </p>
+        )}
         {environmentIssue && (
           <div className="app-error codex-environment-notice" role="alert">
             <p>{environmentIssue}</p>
@@ -374,7 +534,7 @@ export function CodexManager({ desktop, window }: AppWindowProps) {
             </Button>
           </div>
         )}
-        {(projects.length > 0 || projectError) && (
+        {!vmProjectId && (projects.length > 0 || projectError) && (
           <section
             className="codex-section codex-recent"
             aria-label="Recent projects"
@@ -544,110 +704,146 @@ export function CodexManager({ desktop, window }: AppWindowProps) {
             </p>
           )}
           <ul className="codex-session-list">
-            {visibleSessions.map((session) => (
-              <li
-                key={session.id}
-                data-session-id={session.id}
-                data-run-id={session.runId}
-              >
-                <div className="codex-session-summary">
-                  <strong>{sessionTitle(session)}</strong>
-                  <code title={session.projectPath}>{session.projectPath}</code>
-                  <code data-testid="codex-run-id">Run {session.runId}</code>
-                  <span>
-                    {ending === session.id ? 'Ending…' : session.status} ·{' '}
-                    {new Date(session.createdAt).toLocaleString()}
-                  </span>
-                  {session.reason && <span>{session.reason}</span>}
-                  {!sessionCanEnd(session) &&
-                    session.continuation.state === 'unavailable' && (
-                      <span>
-                        {session.continuation.reason ||
-                          'Conversation history is unavailable.'}
-                      </span>
+            {visibleSessions.map((session) => {
+              const recovery = continuationRecovery.get(session.id);
+              const shouldContinue =
+                !!recovery?.requestId || sessionCanContinue(session);
+              const canContinue =
+                !recovery?.error &&
+                (!!recovery?.requestId ||
+                  (sessionCanContinue(session) && canStart));
+              return (
+                <li
+                  key={session.id}
+                  data-session-id={session.id}
+                  data-run-id={session.runId}
+                >
+                  <div className="codex-session-summary">
+                    <strong>{sessionTitle(session)}</strong>
+                    <code
+                      title={
+                        session.vmProject
+                          ? session.vmProject.project.root
+                          : session.projectPath
+                      }
+                    >
+                      {session.vmProject
+                        ? `Host → VM · ${session.vmProject.project.name} · ${session.vmProject.binding.machineId}`
+                        : session.projectPath}
+                    </code>
+                    <code data-testid="codex-run-id">Run {session.runId}</code>
+                    <span>
+                      {ending === session.id ? 'Ending…' : session.status} ·{' '}
+                      {new Date(session.createdAt).toLocaleString()}
+                    </span>
+                    {session.reason && <span>{session.reason}</span>}
+                    {recovery?.error && (
+                      <span role="alert">{recovery.error}</span>
                     )}
-                </div>
-                <div className="codex-session-actions">
-                  <Button
-                    disabled={
-                      continuing === session.id ||
-                      (sessionCanContinue(session) && !canStart)
-                    }
-                    onClick={() => {
-                      if (sessionCanContinue(session))
-                        void continueSession(session);
-                      else openCodexSession(desktop, session);
-                    }}
-                  >
-                    {continuing === session.id
-                      ? 'Continuing…'
-                      : sessionIsLive(session)
-                        ? 'Open'
-                        : sessionCanContinue(session)
-                          ? 'Continue'
-                          : 'View'}
-                  </Button>
-                  <Button
-                    onClick={() => void showSessionDetails(desktop, session)}
-                  >
-                    Details
-                  </Button>
-                  <IconButton
-                    icon="more"
-                    label={`More session actions for ${sessionTitle(session)}, run ${session.runId.slice(0, 8)}`}
-                    aria-haspopup="menu"
-                    disabled={
-                      changingMetadata === session.id || ending === session.id
-                    }
-                    onClick={(event) => {
-                      const rect = event.currentTarget.getBoundingClientRect();
-                      desktop.contextMenu(
-                        [
-                          {
-                            label: 'Continue',
-                            disabled:
-                              !sessionCanContinue(session) ||
-                              !canStart ||
-                              continuing !== null,
-                            action: () => void continueSession(session),
-                          },
-                          { separator: true },
-                          {
-                            label: 'Rename',
-                            disabled: changingMetadata !== null,
-                            action: () =>
-                              void changeMetadata(session, 'rename'),
-                          },
-                          {
-                            label: session.archivedAt ? 'Unarchive' : 'Archive',
-                            disabled: changingMetadata !== null,
-                            action: () =>
-                              void changeMetadata(session, 'archive'),
-                          },
-                          {
-                            label: 'Host Terminal',
-                            action: () => {
-                              openTerminalWindow(desktop, session.projectPath);
+                    {!sessionCanEnd(session) &&
+                      session.continuation.state === 'unavailable' && (
+                        <span>
+                          {session.continuation.reason ||
+                            'Conversation history is unavailable.'}
+                        </span>
+                      )}
+                  </div>
+                  <div className="codex-session-actions">
+                    <Button
+                      disabled={
+                        continuing === session.id ||
+                        (shouldContinue && !canContinue)
+                      }
+                      onClick={() => {
+                        if (shouldContinue)
+                          void continueSession(
+                            session,
+                            recovery?.requestId || null,
+                          );
+                        else openCodexSession(desktop, session);
+                      }}
+                    >
+                      {continuing === session.id
+                        ? 'Continuing…'
+                        : recovery?.requestId
+                          ? 'Resolve Continue'
+                          : sessionIsLive(session)
+                            ? 'Open'
+                            : sessionCanContinue(session)
+                              ? 'Continue'
+                              : 'View'}
+                    </Button>
+                    <Button
+                      onClick={() => void showSessionDetails(desktop, session)}
+                    >
+                      Details
+                    </Button>
+                    <IconButton
+                      icon="more"
+                      label={`More session actions for ${sessionTitle(session)}, run ${session.runId.slice(0, 8)}`}
+                      aria-haspopup="menu"
+                      disabled={
+                        changingMetadata === session.id || ending === session.id
+                      }
+                      onClick={(event) => {
+                        const rect =
+                          event.currentTarget.getBoundingClientRect();
+                        desktop.contextMenu(
+                          [
+                            {
+                              label: recovery?.requestId
+                                ? 'Resolve Continue'
+                                : 'Continue',
+                              disabled: !canContinue || continuing !== null,
+                              action: () =>
+                                void continueSession(
+                                  session,
+                                  recovery?.requestId || null,
+                                ),
                             },
-                          },
-                          { separator: true },
+                            { separator: true },
+                            {
+                              label: 'Rename',
+                              disabled: changingMetadata !== null,
+                              action: () =>
+                                void changeMetadata(session, 'rename'),
+                            },
+                            {
+                              label: session.archivedAt
+                                ? 'Unarchive'
+                                : 'Archive',
+                              disabled: changingMetadata !== null,
+                              action: () =>
+                                void changeMetadata(session, 'archive'),
+                            },
+                            {
+                              label: 'Host Terminal',
+                              action: () => {
+                                openTerminalWindow(
+                                  desktop,
+                                  session.projectPath,
+                                );
+                              },
+                            },
+                            { separator: true },
+                            {
+                              label: 'End Session',
+                              disabled:
+                                !sessionCanEnd(session) || ending !== null,
+                              action: () => void end(session),
+                            },
+                          ],
+                          { x: rect.left, y: rect.bottom },
                           {
-                            label: 'End Session',
-                            disabled:
-                              !sessionCanEnd(session) || ending !== null,
-                            action: () => void end(session),
+                            title: `Run ${session.runId.slice(0, 8)} · ${sessionTitle(session)}`,
                           },
-                        ],
-                        { x: rect.left, y: rect.bottom },
-                        {
-                          title: `Run ${session.runId.slice(0, 8)} · ${sessionTitle(session)}`,
-                        },
-                      );
-                    }}
-                  />
-                </div>
-              </li>
-            ))}
+                        );
+                      }}
+                    />
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </section>
       </div>

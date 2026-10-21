@@ -22,6 +22,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { dispose, go, root, scratch, spawnChild, stop } from './lib.mjs';
 import { verifyProjectWorkflow } from './lib-vm-project-workflow.mjs';
+import { verifyVMCodexWorkflow } from './lib-vm-codex-workflow.mjs';
 
 export function machineJSONArguments(args) {
   const separator = args.indexOf('--');
@@ -547,6 +548,7 @@ async function acceptance(options) {
   let failed = false;
   let inCleanup = false;
   let failure;
+  let codexWorkflow;
   const work = new AbortController();
   const probes = new Set();
   console.log(`Owned verification directory: ${directory}`);
@@ -1215,6 +1217,12 @@ async function acceptance(options) {
   async function cleanup(preserve = false) {
     cleaning ??= (async () => {
       let safe = true;
+      try {
+        await codexWorkflow?.close();
+      } catch (error) {
+        safe = false;
+        console.error('Codex workflow cleanup needs attention:', error);
+      }
       try {
         await Promise.all([...probes].map(stop));
       } catch (error) {
@@ -2157,6 +2165,17 @@ async function acceptance(options) {
       directory,
       token,
     });
+    codexWorkflow = await verifyVMCodexWorkflow({
+      executable,
+      directory,
+      profileHome: join(shortRuntime, 'cx'),
+      socket,
+      env,
+      project,
+      binding: projectBinding.binding,
+      run: captureCommand,
+      signal: work.signal,
+    });
     projectGitState = await exec(owned.id, [
       'git',
       '-C',
@@ -2384,6 +2403,8 @@ async function acceptance(options) {
       token,
       'Retained volume metadata survived but its project data did not.',
     );
+    await codexWorkflow.verifyReplacement(replacementBinding.binding);
+    await codexWorkflow.close();
     await action(recovered, 'rm');
     console.log(
       'A new VM reattached the retained project volume: project identity, edited/untracked code and Git worktrees survived, and all old file bindings were rejected.',
