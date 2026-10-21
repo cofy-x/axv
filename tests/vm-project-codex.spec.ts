@@ -510,6 +510,7 @@ test('VM project Codex keeps drafts and routes files and tasks to the captured p
 
 test('an unknown VM Codex start reuses its full original request after reload and VM replacement', async ({
   page,
+  request,
 }) => {
   const state = await fixture(page);
   state.loseNextCreate();
@@ -532,6 +533,14 @@ test('an unknown VM Codex start reuses its full original request after reload an
     manager(page).getByRole('button', { name: 'Resolve Start', exact: true }),
   ).toBeEnabled();
   state.replaceVM();
+  await expect
+    .poll(async () =>
+      (await persistedLayout(page, request))?.windows.some(
+        (win: { id: string }) =>
+          win.id === `codex:vm:${project.hostId}:${project.id}`,
+      ),
+    )
+    .toBe(true);
   await page.reload();
   await activate(page, manager(page));
   await expect(
@@ -630,6 +639,7 @@ test('a reopened manager does not turn a stale Resolve Start action into another
 
 test('a reserved history conflict and desktop store replacement preserve the original VM start request', async ({
   page,
+  request,
 }) => {
   const state = await fixture(page);
   state.conflictNextReservedStart();
@@ -658,6 +668,14 @@ test('a reserved history conflict and desktop store replacement preserve the ori
       exact: true,
     }),
   ).toBeDisabled();
+  await expect
+    .poll(async () =>
+      (await persistedLayout(page, request))?.windows.some(
+        (win: { id: string }) =>
+          win.id === `codex:vm:${project.hostId}:${project.id}`,
+      ),
+    )
+    .toBe(true);
   await page.reload();
   await expect(resolve).toBeEnabled();
   await resolve.click();
