@@ -22,6 +22,9 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { dispose, go, root, scratch, spawnChild, stop } from './lib.mjs';
 import { verifyProjectWorkflow } from './lib-vm-project-workflow.mjs';
+import { verifyProjectInitialization } from './lib-vm-project-initialization.mjs';
+import { verifyProjectBackupWorkflow } from './lib-vm-project-backup.mjs';
+import { verifyVMProjectPreview } from './lib-vm-project-preview.mjs';
 import { verifyVMCodexWorkflow } from './lib-vm-codex-workflow.mjs';
 
 export function machineJSONArguments(args) {
@@ -380,6 +383,7 @@ export async function verifiedBundle(path, arch) {
     'network',
     'project-files',
     'project-tasks',
+    'project-previews',
   ])
     assert.ok(
       bundle.guest?.capabilities?.includes(capability),
@@ -546,6 +550,7 @@ async function acceptance(options) {
     machines: [],
     operations: [],
     projects: [],
+    volumes: [],
   };
   let hostRunning = false;
   let unitSubmitted = false;
@@ -818,6 +823,7 @@ async function acceptance(options) {
           'network',
           'project-files',
           'project-tasks',
+          'project-previews',
         ])
           assert.ok(machine.guestCapabilities.includes(capability));
         const health = await request(`/machines/${id}/guest/health`);
@@ -1286,6 +1292,18 @@ async function acceptance(options) {
             if (submitted.machineId)
               assert.equal(result.machineId, submitted.machineId);
             submitted.id = result.id;
+            if (
+              ['project-backup', 'project-restore'].includes(submitted.kind)
+            ) {
+              assert.ok(
+                result.volumeId,
+                'Original project copy must identify its volume.',
+              );
+              if (
+                !state.volumes.some((volume) => volume.id === result.volumeId)
+              )
+                state.volumes.push({ id: result.volumeId });
+            }
             if (submitted.kind === 'create') {
               assert.ok(
                 result.machineId,
@@ -1309,7 +1327,8 @@ async function acceptance(options) {
                 (owned) =>
                   (pending.machineId && owned.id === pending.machineId) ||
                   (pending.volumeId && owned.volumeId === pending.volumeId),
-              ),
+              ) ||
+                state.volumes.some((volume) => volume.id === pending.volumeId),
               'An unexpected active operation is using this host; refusing cleanup mutations.',
             );
             const result = await cliJSON(
@@ -1346,7 +1365,8 @@ async function acceptance(options) {
           });
           for (const volume of volumes) {
             assert.ok(
-              state.machines.some((owned) => owned.volumeId === volume.id),
+              state.machines.some((owned) => owned.volumeId === volume.id) ||
+                state.volumes.some((owned) => owned.id === volume.id),
               'Unexpected volume in the owned host.',
             );
             if (volume.status === 'deleted') continue;
@@ -2178,6 +2198,67 @@ async function acceptance(options) {
       directory,
       token,
     });
+    const volumeWorkspace = { volumeId: project.volumeId, root: '' };
+    state.projects.push(volumeWorkspace);
+    await save();
+    const workspaceRegistration = await request('/projects', 'POST', {
+      requestId: `volume-workspace-${randomUUID()}`,
+      volumeId: project.volumeId,
+      volumeRevision: projectBinding.binding.volumeRevision,
+      machineId: owned.id,
+      root: '',
+      name: 'Native volume workspace',
+    });
+    Object.assign(volumeWorkspace, workspaceRegistration.project);
+    await save();
+    const workspaceBinding = await request(
+      `/projects/${volumeWorkspace.id}/binding`,
+    );
+    await verifyProjectInitialization({
+      request,
+      project: volumeWorkspace,
+      binding: workspaceBinding.binding,
+      directory,
+      token,
+      recordProject: async (registration) => {
+        const prior = state.projects.find(
+          (p) =>
+            p.volumeId === registration.volumeId &&
+            p.root === registration.root,
+        );
+        if (prior) Object.assign(prior, registration);
+        else state.projects.push(registration);
+        await save();
+      },
+    });
+    console.log(
+      'Native empty project creation, HTTPS clone, durable initialization/finish replay and existing-directory protection passed.',
+    );
+    await verifyVMProjectPreview({
+      executable,
+      directory,
+      profileHome: join(directory, 'preview-profile'),
+      socket,
+      env,
+      project,
+      binding: projectBinding.binding,
+      request,
+      cleanupRequest: (path, method, body) =>
+        hostJSON(
+          {
+            socket,
+            hostId: state.hostId,
+            configFingerprint: state.configFingerprint,
+          },
+          path,
+          method,
+          body,
+        ),
+      signal: work.signal,
+    });
+    console.log(
+      'Native independent-origin development preview, modules, WebSocket, control-origin isolation, stale binding refusal and exact preview revocation passed.',
+    );
     codexWorkflow = await verifyVMCodexWorkflow({
       executable,
       directory,
@@ -2348,6 +2429,42 @@ async function acceptance(options) {
     await action(owned, 'stop');
     await startHost(true);
     assert.equal((await cliJSON(['inspect', owned.id])).status, 'stopped');
+    const backupResult = await verifyProjectBackupWorkflow({
+      request,
+      operation,
+      create,
+      action,
+      ready,
+      exec,
+      restartHost: () => startHost(true),
+      source: owned,
+      project,
+      originalBinding: beforeControllerRestart.binding,
+      recordMutation: async (mutation) => {
+        if (!state.operations.includes(mutation))
+          state.operations.push(mutation);
+        await save();
+      },
+      recordVolume: async (volume) => {
+        state.volumes.push(volume);
+        await save();
+      },
+      recordProject: async (registration) => {
+        const prior = state.projects.find(
+          (p) =>
+            p.volumeId === registration.volumeId &&
+            p.root === registration.root,
+        );
+        if (prior) Object.assign(prior, registration);
+        else state.projects.push(registration);
+        await save();
+      },
+    });
+    assert.equal(backupResult.git, projectGitState);
+    assert.equal(backupResult.worktrees, worktreeState);
+    console.log(
+      'Native stopped-volume backup, copy recovery, immutable backup, restore into a new volume/VM/project and Git/worktree preservation passed.',
+    );
     await action(owned, 'rm');
     const { volumes: retainedVolumes } = await request('/volumes');
     const retained = retainedVolumes.find(

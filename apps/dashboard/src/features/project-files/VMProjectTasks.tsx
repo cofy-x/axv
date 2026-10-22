@@ -30,9 +30,11 @@ import type {
 const describe = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 const commandLabel = (result: VMTaskResult) =>
-  result.task.spec.argv.slice(0, 2).join(' ') === '/bin/sh -lc'
-    ? result.task.spec.argv[2]
-    : result.task.spec.argv.join(' ');
+  result.task.spec.initialization
+    ? `${result.task.spec.initialization.repository ? 'Clone Repository' : 'Create Project'} · ${result.task.spec.initialization.directory}`
+    : result.task.spec.argv.slice(0, 2).join(' ') === '/bin/sh -lc'
+      ? result.task.spec.argv[2]
+      : result.task.spec.argv.join(' ');
 const dateLabel = (value: string) => new Date(value).toLocaleString();
 const timeLabel = (value: string) =>
   new Date(value).toLocaleTimeString([], {
@@ -980,25 +982,26 @@ export function VMProjectTasks({
                       {attempt.cancelRequested ? 'Cancelling…' : 'Cancel'}
                     </Button>
                   )}
-                  {(taskFinished(currentTaskAttempt(selected)?.status || '') ||
-                    attempt.status === 'unknown') && (
-                    <Button
-                      disabled={
-                        !interactive ||
-                        busy ||
-                        !!pending ||
-                        !!recoveryError ||
-                        !binding ||
-                        !taskFinished(
-                          currentTaskAttempt(selected)?.status || '',
-                        )
-                      }
-                      aria-label="Retry Task"
-                      onClick={() => void retry(selected)}
-                    >
-                      Retry
-                    </Button>
-                  )}
+                  {!selected.task.spec.initialization &&
+                    (taskFinished(currentTaskAttempt(selected)?.status || '') ||
+                      attempt.status === 'unknown') && (
+                      <Button
+                        disabled={
+                          !interactive ||
+                          busy ||
+                          !!pending ||
+                          !!recoveryError ||
+                          !binding ||
+                          !taskFinished(
+                            currentTaskAttempt(selected)?.status || '',
+                          )
+                        }
+                        aria-label="Retry Task"
+                        onClick={() => void retry(selected)}
+                      >
+                        Retry
+                      </Button>
+                    )}
                 </div>
               </div>
               <p className="vm-task-origin" title={attempt.binding.machineId}>

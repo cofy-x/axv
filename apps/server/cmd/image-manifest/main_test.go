@@ -31,6 +31,17 @@ func TestPublishedBundleIdentityBindsRootfsAndRemainsImportable(t *testing.T) {
 			t.Fatalf("changed bytes reused an immutable identity: %+v %v", bundle, err)
 		}
 		previous = bundle.ID
+		if err := run([]string{"--check-bundle", output}); err != nil {
+			t.Fatalf("release validation diverged from builder/import: %v", err)
+		}
+		bundle.Guest.Capabilities = append(bundle.Guest.Capabilities, bundle.Guest.Capabilities[0])
+		invalid, _ := json.Marshal(bundle)
+		if err := os.WriteFile(output, invalid, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := run([]string{"--check-bundle", output}); err == nil {
+			t.Fatal("release accepted duplicate guest capabilities")
+		}
 		if err := os.Remove(output); err != nil {
 			t.Fatal(err)
 		}

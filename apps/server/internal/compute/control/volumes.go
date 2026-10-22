@@ -57,6 +57,9 @@ func (s *Store) CreateVolume(ctx context.Context, c compute.Config, req compute.
 			if source.Status != "ready" || source.PendingSizeGiB != 0 {
 				return compute.Problem("volume_conflict", "The source volume must be ready before copying it.")
 			}
+			if source.Backup != nil {
+				return compute.Problem("volume_conflict", "Use the explicit backup restore operation for protected backup or restored project storage.")
+			}
 			if source.MachineID != "" {
 				if _, err = stoppedVolumeMachine(ctx, tx, source.MachineID, 0); err != nil {
 					return err
@@ -121,6 +124,9 @@ func (s *Store) VolumeAction(ctx context.Context, c compute.Config, id string, r
 		}
 		if v.Revision != req.Revision {
 			return compute.Problem("revision_conflict", "The volume changed. Refresh before editing it.")
+		}
+		if v.IsProjectBackup() {
+			return compute.Problem("volume_conflict", "Project backups are immutable. Restore to a new volume or explicitly delete the backup.")
 		}
 		if v.Status != "ready" && v.Status != "failed" {
 			return compute.Problem("volume_conflict", "Finish the current volume operation first.")
@@ -220,10 +226,6 @@ func (s *Service) performVolume(ctx context.Context, op operationRecord) (comput
 	if op.Action == "delete-volume" {
 		return compute.Observation{}, driver.DeleteVolume(ctx, v)
 	}
-	d, ok := driver.(compute.VolumeDriver)
-	if !ok {
-		return compute.Observation{}, compute.Problem("unsupported", "This provider does not support volume management.")
-	}
 	var change volumeChange
 	if err = json.Unmarshal(op.Payload, &change); err != nil {
 		return compute.Observation{}, err
@@ -234,14 +236,20 @@ func (s *Service) performVolume(ctx context.Context, op operationRecord) (comput
 	if err = s.phase(ctx, op, op.Action); err != nil {
 		return compute.Observation{}, err
 	}
+	if op.Action == "copy-volume" {
+		copier, ok := driver.(compute.VolumeCopier)
+		if !ok || change.Source == nil {
+			return compute.Observation{}, compute.Problem("unsupported", "The volume provider cannot copy this source.")
+		}
+		return compute.Observation{Volume: &change.Target}, copier.CopyVolume(ctx, *change.Source, change.Target)
+	}
+	d, ok := driver.(compute.VolumeDriver)
+	if !ok {
+		return compute.Observation{}, compute.Problem("unsupported", "This provider does not support volume management.")
+	}
 	switch op.Action {
 	case "create-volume":
 		err = d.EnsureVolume(ctx, change.Target)
-	case "copy-volume":
-		if change.Source == nil {
-			return compute.Observation{}, compute.Problem("invalid_request", "The volume copy has no source.")
-		}
-		err = d.CopyVolume(ctx, *change.Source, change.Target)
 	case "resize-volume":
 		err = d.ResizeVolume(ctx, v, change.Target.SizeGiB)
 	case "attach-volume", "detach-volume":

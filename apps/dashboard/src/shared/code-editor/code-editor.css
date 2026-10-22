@@ -1,0 +1,66 @@
+.code-editor {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 140px;
+  min-width: 0;
+  border: 1px solid var(--ns-shadow);
+  background: white;
+}
+.code-editor-surface {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.code-editor-loading {
+  padding: 8px;
+}
+.code-editor-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+}
+.code-editor-plain > p {
+  margin: 6px;
+}
+.code-editor-plain textarea {
+  flex: 1;
+  min-height: 100px;
+  resize: none;
+  width: 100%;
+  font: 13px/1.5 var(--ns-mono);
+}
+.code-editor .cm-panels {
+  color: var(--ns-text);
+  background: var(--ns-face);
+}
+.code-editor .cm-panel.cm-search {
+  padding: 6px;
+  font: 12px var(--ns-font);
+}
+.code-editor .cm-textfield,
+.code-editor .cm-button {
+  box-sizing: border-box;
+  min-height: var(--ns-control-height);
+  font: inherit;
+  border-radius: 0;
+}
+.code-editor .cm-textfield {
+  max-width: 100%;
+  color: var(--ns-text);
+  background: white;
+}
+.code-editor .cm-button {
+  color: var(--ns-text);
+  background: var(--ns-face);
+  border: 1px solid var(--ns-shadow);
+  box-shadow:
+    inset 1px 1px var(--ns-light),
+    inset -1px -1px var(--ns-shadow);
+}
+.code-editor .cm-panels :focus-visible {
+  outline: 2px solid #205a8a;
+  outline-offset: 1px;
+}

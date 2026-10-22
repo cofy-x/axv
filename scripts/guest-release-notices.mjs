@@ -14,6 +14,20 @@ import { collectGoNotices } from './release-notices.mjs';
 import { initializeTestTemp } from './test-temp.mjs';
 
 export function validateGuestBuild(build, image, digest, expectedGo) {
+  if (!Array.isArray(build?.Settings))
+    throw new Error('Guest build metadata must include its build settings.');
+  const keys = new Set();
+  for (const entry of build.Settings ?? []) {
+    if (
+      typeof entry?.Key !== 'string' ||
+      typeof entry.Value !== 'string' ||
+      keys.has(entry.Key)
+    )
+      throw new Error(
+        'Guest build settings must have unique string keys and values.',
+      );
+    keys.add(entry.Key);
+  }
   const settings = Object.fromEntries(
     (build.Settings ?? []).map(({ Key, Value }) => [Key, Value]),
   );

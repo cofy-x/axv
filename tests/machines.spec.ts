@@ -57,7 +57,13 @@ function fixture() {
     status: 'ready',
     machineId: machine.id,
   };
-  return { machine, volume, operations: [] as Operation[], terminalReads: 0 };
+  return {
+    machine,
+    volume,
+    additionalVolumes: [] as Volume[],
+    operations: [] as Operation[],
+    terminalReads: 0,
+  };
 }
 
 async function host(page: Page, state: ReturnType<typeof fixture>) {
@@ -123,7 +129,8 @@ async function host(page: Page, state: ReturnType<typeof fixture>) {
         ],
       };
     else if (path === '/machines') value = { machines: [state.machine] };
-    else if (path === '/volumes') value = { volumes: [state.volume] };
+    else if (path === '/volumes')
+      value = { volumes: [state.volume, ...state.additionalVolumes] };
     else if (path === '/operations') value = { operations: state.operations };
     else if (path === '/images')
       value = {
@@ -279,7 +286,7 @@ test('uncertain project attachments cannot be deleted from the volume view', asy
     ),
   ).toBeVisible();
   await expect(
-    manager.getByRole('button', { name: 'Attach Volume', exact: true }),
+    manager.getByRole('button', { name: 'Attach', exact: true }),
   ).toBeEnabled();
 });
 
@@ -599,4 +606,115 @@ test('narrow guest terminal menus keep clear and end bound to their original she
     'running',
   ]);
   expect([...sockets.keys()]).toEqual(['guest-shell-1', 'guest-shell-2']);
+});
+
+function backupProvenance(): NonNullable<Volume['backup']> {
+  return {
+    hostId: 'host-review',
+    sourceVolumeId: 'source-volume',
+    sourceVolumeRevision: 1,
+    sourceMachineId: 'source-vm',
+    sourceMachineRevision: 1,
+    projects: [],
+    createdAt: '2026-10-22T00:00:00Z',
+  };
+}
+
+test('immutable project backups expose deletion but cannot attach or change', async ({
+  page,
+}) => {
+  const state = fixture();
+  state.machine.spec.volumeId = '';
+  state.volume.machineId = '';
+  state.volume.backup = backupProvenance();
+  const manager = await host(page, state);
+  await manager.getByRole('button', { name: 'Volumes', exact: true }).click();
+  await manager
+    .getByRole('button', { name: 'Review project', exact: true })
+    .click();
+  await expect(
+    manager.getByText('Immutable backup', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    manager.getByRole('button', { name: 'Copy', exact: true }),
+  ).toBeDisabled();
+  await expect(
+    manager.getByLabel('Keep this volume after VM deletion', { exact: true }),
+  ).toBeDisabled();
+  await expect(
+    manager.getByRole('combobox', {
+      name: 'VM without a project volume',
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await manager.getByRole('button', { name: 'More volume actions' }).click();
+  for (const label of ['Rename', 'Grow', 'Detach'])
+    await expect(menuItem(page, label)).toBeDisabled();
+  await expect(menuItem(page, 'Delete')).toBeEnabled();
+  await menuItem(page, 'Delete').click();
+  const dialog = page.getByRole('dialog', { name: 'Delete project volume?' });
+  await expect(dialog).toContainText('Permanently delete');
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+});
+
+test('restored working volumes remain attachable and editable without generic copying', async ({
+  page,
+}) => {
+  const state = fixture();
+  state.machine.spec.volumeId = '';
+  state.volume.machineId = '';
+  state.volume.backup = backupProvenance();
+  state.volume.restoredFrom = 'backup-original';
+  const manager = await host(page, state);
+  await manager.getByRole('button', { name: 'Volumes', exact: true }).click();
+  await manager
+    .getByRole('button', { name: 'Review project', exact: true })
+    .click();
+  await expect(
+    manager.getByText('Restored working volume', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    manager.getByRole('button', { name: 'Copy', exact: true }),
+  ).toBeDisabled();
+  await expect(
+    manager.getByLabel('Keep this volume after VM deletion', { exact: true }),
+  ).toBeEnabled();
+  await manager
+    .getByRole('combobox', { name: 'VM without a project volume', exact: true })
+    .selectOption(state.machine.id);
+  await expect(
+    manager.getByRole('button', { name: 'Attach', exact: true }),
+  ).toBeEnabled();
+  await manager.getByRole('button', { name: 'More volume actions' }).click();
+  await expect(menuItem(page, 'Rename')).toBeEnabled();
+  await expect(menuItem(page, 'Grow')).toBeEnabled();
+  await page.keyboard.press('Escape');
+});
+
+test('VM creation excludes immutable backups and offers restored working volumes', async ({
+  page,
+}) => {
+  const state = fixture();
+  state.volume.machineId = '';
+  state.volume.backup = backupProvenance();
+  state.additionalVolumes.push({
+    ...state.volume,
+    id: 'restored-working',
+    name: 'Restored project',
+    restoredFrom: state.volume.id,
+  });
+  const manager = await host(page, state);
+  await manager.getByRole('button', { name: 'New VM', exact: true }).click();
+  const create = page.locator('[data-app-id="machine-create"]');
+  const select = create.getByRole('combobox', { name: 'Volume', exact: true });
+  await expect(
+    select.locator(`option[value="${state.volume.id}"]`),
+  ).toHaveCount(0);
+  await expect(select.locator('option[value="restored-working"]')).toHaveCount(
+    1,
+  );
+  await select.selectOption('restored-working');
+  await expect(
+    create.getByLabel('Project disk (GiB)', { exact: true }),
+  ).toHaveValue('1');
 });

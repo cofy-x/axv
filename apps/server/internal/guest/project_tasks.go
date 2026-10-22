@@ -19,6 +19,7 @@ import (
 
 	"github.com/cofy-x/axv/apps/server/internal/atomicfile"
 	"github.com/cofy-x/axv/apps/server/internal/filelock"
+	"github.com/cofy-x/axv/apps/server/internal/guest/image"
 	"github.com/cofy-x/axv/apps/server/internal/guest/protocol"
 	"github.com/cofy-x/axv/apps/server/internal/jsonunicode"
 )
@@ -101,7 +102,11 @@ func validateGuestTaskSpec(spec protocol.TaskSpec) error {
 	if _, err := projectRelative(spec.Directory, true); err != nil {
 		return err
 	}
-	if len(spec.Argv) == 0 || len(spec.Argv) > 128 || spec.Argv[0] == "" {
+	if spec.Initialization != nil {
+		if len(spec.Argv) != 0 || spec.Directory != "" || spec.Initialization.Validate() != nil {
+			return projectProblem(400, "invalid_request", "Typed initialization cannot contain an ordinary command or starting directory.")
+		}
+	} else if len(spec.Argv) == 0 || len(spec.Argv) > 128 || spec.Argv[0] == "" {
 		return projectProblem(400, "invalid_request", "Supply 1–128 task arguments and a nonempty executable.")
 	}
 	size := 0
@@ -124,7 +129,15 @@ func taskSubmitIdentity(in protocol.TaskSubmit) protocol.TaskIdentity {
 
 func copyTaskExecution(record *guestTaskRecord) protocol.TaskExecution {
 	result := record.TaskExecution
-	result.Spec.Argv = append([]string(nil), result.Spec.Argv...)
+	result.Spec.Argv = append([]string{}, result.Spec.Argv...)
+	if result.Spec.Initialization != nil {
+		intent := *result.Spec.Initialization
+		result.Spec.Initialization = &intent
+	}
+	if result.CreatedRoot != nil {
+		root := *result.CreatedRoot
+		result.CreatedRoot = &root
+	}
 	return result
 }
 
@@ -190,6 +203,9 @@ func (t *projectTasks) recover() error {
 	for id, record := range t.journal.Attempts {
 		if record == nil || id != record.AttemptID || validateGuestTaskIdentity(record.TaskIdentity) != nil || validateGuestTaskSpec(record.Spec) != nil || record.CreatedAt.IsZero() || record.LogBytes < 0 || record.LogBytes > record.Spec.Limits.MaxLogBytes || record.Reason != boundedTaskReason(record.Reason) || (!guestTaskFinal(record.Status) && record.Status != "accepted" && record.Status != "running") || (record.Status == "running" && (!record.LogReady || !record.LaunchIntent)) || (guestTaskFinal(record.Status) && record.FinishedAt == nil) {
 			return errors.New("guest task journal contains an invalid attempt; refusing to reset it")
+		}
+		if err := validateInitializationResult(record); err != nil {
+			return err
 		}
 		reservedLogs += record.Spec.Limits.MaxLogBytes
 		if reservedLogs > maxGuestTaskLogs {
@@ -263,6 +279,9 @@ func (t *projectTasks) submit(in protocol.TaskSubmit) (protocol.TaskExecution, e
 	if err := validateGuestTaskSpec(in.Spec); err != nil {
 		return protocol.TaskExecution{}, err
 	}
+	if in.Spec.Initialization != nil && !image.Has(t.service.capabilities, "project-initialization") {
+		return protocol.TaskExecution{}, projectProblem(501, "unsupported", "The guest image does not declare typed project initialization.")
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.fault != nil || t.closed {
@@ -307,7 +326,11 @@ func (t *projectTasks) submit(in protocol.TaskSubmit) (protocol.TaskExecution, e
 		return protocol.TaskExecution{}, err
 	}
 	record := &guestTaskRecord{TaskExecution: protocol.TaskExecution{TaskIdentity: id, Spec: in.Spec, Status: "accepted", CreatedAt: time.Now().UTC()}}
-	record.Spec.Argv = append([]string(nil), in.Spec.Argv...)
+	record.Spec.Argv = append([]string{}, in.Spec.Argv...)
+	if in.Spec.Initialization != nil {
+		intent := *in.Spec.Initialization
+		record.Spec.Initialization = &intent
+	}
 	t.journal.Attempts[in.AttemptID] = record
 	encoded, err := json.Marshal(t.journal)
 	// A valid 4096-byte reason can expand to 24 KiB when JSON escapes '<', '>'
@@ -472,6 +495,9 @@ func (t *projectTasks) run(record *guestTaskRecord, runtime *guestTaskRuntime) {
 			}
 			group.Close()
 		}
+		if record.Spec.Initialization != nil && runErr == nil {
+			runErr = t.service.verifyInitializedRoot(record)
+		}
 		if log != nil {
 			runErr = errors.Join(runErr, log.Sync(), log.Close())
 		}
@@ -480,6 +506,10 @@ func (t *projectTasks) run(record *guestTaskRecord, runtime *guestTaskRuntime) {
 		status, reason := "succeeded", ""
 		if runErr != nil {
 			status, reason = "failed", runErr.Error()
+			var exit *exec.ExitError
+			if record.Spec.Initialization != nil && record.Spec.Initialization.Repository != "" && errors.As(runErr, &exit) {
+				reason = "Clone failed. Check the repository URL and guest authentication. The created directory was preserved for inspection."
+			}
 		}
 		if record.StopReason != "" {
 			status, reason = "failed", record.StopReason
@@ -512,6 +542,25 @@ func (t *projectTasks) run(record *guestTaskRecord, runtime *guestTaskRuntime) {
 	}
 	defer root.Close()
 	name, _ := projectRelative(record.Spec.Directory, true)
+	if intent := record.Spec.Initialization; intent != nil {
+		t.mu.Lock()
+		if record.StopReason != "" || t.closed || t.fault != nil {
+			t.mu.Unlock()
+			return
+		}
+		var created *protocol.ProjectFileRoot
+		created, err = t.createInitializationRoot(record, root, rootInfo)
+		if err == nil {
+			record.CreatedRoot = created
+			err = t.persistLocked()
+		}
+		t.mu.Unlock()
+		if err != nil {
+			runErr = err
+			return
+		}
+		name = intent.Directory
+	}
 	dir, dirInfo, err := projectDirectory(root, name)
 	if err != nil {
 		runErr = err
@@ -541,9 +590,16 @@ func (t *projectTasks) run(record *guestTaskRecord, runtime *guestTaskRuntime) {
 		return
 	}
 	writer := &guestTaskLogWriter{tasks: t, record: record, file: log}
-	cmd = exec.Command(record.Spec.Argv[0], record.Spec.Argv[1:]...)
+	argv := record.Spec.Argv
+	if record.Spec.Initialization != nil {
+		argv, _ = initializationCommand(record.Spec.Initialization)
+	}
+	cmd = exec.Command(argv[0], argv[1:]...)
 	cmd.Dir = taskCommandDirectory(cwd)
 	cmd.Stdout, cmd.Stderr = writer, writer
+	if record.Spec.Initialization != nil {
+		configureInitializationCommand(cmd, record.Spec.Initialization)
+	}
 	cmd.WaitDelay = 2 * time.Second
 	if err = group.Configure(cmd); err != nil {
 		runErr = err

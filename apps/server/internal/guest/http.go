@@ -39,10 +39,12 @@ func (s *service) handler() http.Handler {
 	})
 	mux.HandleFunc("POST /v1/exec", s.execute)
 	mux.HandleFunc("POST /v1/project-files/inspect", s.inspectProjectFiles)
+	mux.HandleFunc("POST /v1/project-files/restore-check", s.checkRestoredProject)
 	mux.HandleFunc("POST /v1/project-files/list", s.listProjectFiles)
 	mux.HandleFunc("POST /v1/project-files/read", s.readProjectFile)
 	mux.HandleFunc("POST /v1/project-files/write", s.writeProjectFile)
 	mux.HandleFunc("POST /v1/project-files/mkdir", s.mkdirProjectFile)
+	mux.HandleFunc("/v1/project-preview", s.projectPreview)
 	for _, action := range []string{"submit", "inspect", "logs", "cancel"} {
 		mux.HandleFunc("POST /v1/project-tasks/"+action, func(w http.ResponseWriter, r *http.Request) { s.projectTaskRequest(w, r, action) })
 	}
@@ -68,6 +70,10 @@ func (s *service) handler() http.Handler {
 		}
 		capability := ""
 		switch {
+		case r.URL.Path == "/v1/project-files/restore-check":
+			capability = "project-restore"
+		case r.URL.Path == "/v1/project-preview":
+			capability = "project-previews"
 		case r.URL.Path == "/v1/exec":
 			capability = "exec"
 		case strings.HasPrefix(r.URL.Path, "/v1/project-files"):

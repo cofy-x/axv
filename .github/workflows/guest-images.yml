@@ -1,0 +1,62 @@
+name: Guest image candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Candidate version matching package.json, for example 0.1.0-rc.1
+        required: true
+        type: string
+      base_image:
+        description: Reviewed native ubuntu:24.04@sha256 digest
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: guest-candidate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  firecracker:
+    name: Firecracker amd64 candidate
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      VERSION: ${{ inputs.version }}
+      BASE_IMAGE: ${{ inputs.base_image }}
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .go-version
+          cache-dependency-path: apps/server/go.sum
+      - name: Validate version and reviewed input
+        run: |
+          node scripts/package-release.mjs --check-version
+          [[ "$BASE_IMAGE" =~ ^ubuntu:24\.04@sha256:[a-f0-9]{64}$ ]]
+      - name: Build and verify complete enhanced bundle
+        run: |
+          mkdir -p dist
+          sudo env "PATH=$PATH" "BASE_IMAGE=$BASE_IMAGE" GOTOOLCHAIN=local \
+            GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory "GIT_CONFIG_VALUE_0=$GITHUB_WORKSPACE" \
+            bash images/guest/build-rootfs.sh "$GITHUB_WORKSPACE/dist/guest-bundle"
+          sudo env "PATH=$PATH" "VERSION=$VERSION" GOTOOLCHAIN=local \
+            GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory "GIT_CONFIG_VALUE_0=$GITHUB_WORKSPACE" \
+            node scripts/package-guest-release.mjs --bundle "$GITHUB_WORKSPACE/dist/guest-bundle"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: axv-guest-${{ inputs.version }}-firecracker-amd64-candidate
+          path: dist/guest-release/${{ inputs.version }}/firecracker_amd64/
+          if-no-files-found: error
+          retention-days: 14

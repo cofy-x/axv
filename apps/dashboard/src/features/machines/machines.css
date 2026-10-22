@@ -236,6 +236,13 @@
 .machines-create-actions {
   margin-top: 12px;
 }
+.machines-create-start,
+.machines-volume-editor .ns-checkbox {
+  display: flex;
+}
+.machines-volume-editor .machines-form-actions {
+  margin-top: 12px;
+}
 .machines-create-actions .ns-icon-button {
   margin-inline-start: auto;
 }

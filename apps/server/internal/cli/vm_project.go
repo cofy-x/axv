@@ -57,7 +57,8 @@ func newVMProject() *cobra.Command {
 		return jsonResult(cmd.OutOrStdout(), result)
 	}}
 	binding.Flags().BoolVar(&bindingJSON, "json", false, "write machine-readable JSON (also the default)")
-	parent.AddCommand(list, newRegisterVMProject(), binding, newVMProjectTask())
+	parent.AddCommand(list, newRegisterVMProject(), binding, newVMProjectTask(), newVMProjectInitialize(), newVMProjectFinishInitialization())
+	parent.AddCommand(newVMProjectBackup())
 	for _, action := range []string{"files", "read", "write", "mkdir"} {
 		parent.AddCommand(newVMProjectFile(action))
 	}

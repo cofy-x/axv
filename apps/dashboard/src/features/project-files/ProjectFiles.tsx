@@ -13,6 +13,7 @@ import { useDraftNamespace } from '../../shared/drafts/context';
 import { useResource } from '../../shared/api/useResource';
 import { RequestIdentity } from '../../shared/api/request-identity';
 import { MarkdownPreview, isMarkdownFilename } from '../../shared/markdown';
+import { CodeEditor } from '../../shared/code-editor';
 import { RelatedDocuments } from '../document-workflow/RelatedDocuments';
 import { projectsAPI } from './api';
 import { projectLabel } from './presentation';
@@ -539,7 +540,7 @@ function ProjectBrowser({ window, desktop, interactive }: AppWindowProps) {
           </div>
         </nav>
         <section
-          className="project-preview"
+          className={`project-preview${selected && (!isMarkdownFilename(file) || raw) ? ' project-code-preview' : ''}`}
           aria-label="Project file preview"
           ref={preview}
           tabIndex={0}
@@ -580,13 +581,14 @@ function ProjectBrowser({ window, desktop, interactive }: AppWindowProps) {
               ) : isMarkdownFilename(file) && !raw ? (
                 <MarkdownPreview content={selected.content} />
               ) : (
-                <pre
-                  className="project-source"
-                  tabIndex={0}
-                  aria-label="Project file source"
-                >
-                  {selected.content}
-                </pre>
+                <CodeEditor
+                  documentId={`${id}:${file}`}
+                  filename={file}
+                  label="Project file source"
+                  value={selected.content}
+                  readOnly
+                  disabled={!interactive}
+                />
               )}
             </>
           )}

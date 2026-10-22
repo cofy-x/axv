@@ -106,7 +106,7 @@ An unknown request ID is not proof that submission failed; `operation wait --req
 
 ### VM project files
 
-`axv vm project` is the explicit host-agent interface for projects on retained VM volumes. First put a real Git repository and its worktree metadata on the VM's project volume using [guest SSH](#ssh-file-transfer-and-forwarding). Then register its existing volume-relative directory while that VM is running with the `project-files` capability:
+`axv vm project` is the explicit host-agent interface for projects on retained VM volumes. Put an existing repository and its worktree metadata on the volume using [guest SSH](#ssh-file-transfer-and-forwarding), or use [project initialization](#vm-project-initialization) to create an empty project or clone a repository. Register an existing volume-relative directory while that VM is running with the `project-files` capability:
 
 ```bash
 axv vm volumes --json
@@ -128,7 +128,27 @@ Binding and file commands return JSON by default; `--json` is also accepted. The
 
 File paths are relative to the project; the empty path lists its root. `files` accepts `--limit` and the returned `--cursor`. `read` returns UTF-8 content and its SHA-256; `write` requires exactly one of `--expected-sha256` or `--create`, reads stdin by default (`--file -`) and accepts up to 1 MiB. Writes reject stale versions and preserve existing files on create-only conflicts. Errors do not retry, replace the binding or fetch a new hash. If a write/mkdir response is uncertain, inspect that original path before deciding what to do. [Compute project API](api/compute.md#vm-projects) owns limits and concurrency guarantees.
 
-Projects retain their identity through desktop/controller restart and replacement of a VM using the same retained volume. [Project tasks](#vm-project-tasks) provide persistent command execution separately from file writes. Restore-to-copy rebinding, automatic Git cloning/worktree repair and a host-agent sandbox remain unavailable. Existing synchronous guest commands and SSH retain their [separate lifetimes](api/guest.md).
+Projects retain their identity through desktop/controller restart and replacement of a VM using the same retained volume. [Project tasks](#vm-project-tasks) provide persistent command execution separately from file writes. Restore-to-copy rebinding, automatic worktree repair and a host-agent sandbox remain unavailable. Existing synchronous guest commands and SSH retain their [separate lifetimes](api/guest.md).
+
+### VM project initialization
+
+Register the retained volume root as a parent workspace, capture its binding, then initialize a new directory with an explicit persistent request ID. The selected image and guest need both `project-files` and `project-tasks`:
+
+```bash
+axv vm project register --machine dev --volume <volume-id> --name 'Volume workspace' --json
+axv vm project binding <parent-project-id> > workspace-binding.json
+axv vm project initialize <parent-project-id> my-repository \
+  --binding-file workspace-binding.json --request-id clone-repository-001 \
+  --repository https://github.com/owner/repository.git --name 'My repository'
+axv vm project task receipt <parent-project-id> clone-repository-001 \
+  --binding-file workspace-binding.json
+axv vm project finish-initialization <parent-project-id> clone-repository-001 \
+  --binding-file workspace-binding.json
+```
+
+Omit `--repository` to create an empty project directory. Only one new directory component is accepted; the parent must exist. HTTPS and SSH URLs must omit inline passwords, HTTPS credentials, query parameters and fragments. Existing guest Git authentication is used without interactive prompts; SSH also requires existing host trust. An existing destination fails without changing its files. A failed clone preserves its partial directory; inspect it in the parent workspace before explicitly choosing another destination or performing manual cleanup. AXV does not automatically overwrite or delete it.
+
+Initialization returns an accepted persistent task, not a completed project. Inspect its original task receipt and logs until it succeeds, then explicitly finish with the original binding to register the new project. After a lost response, query the same receipt or repeat the exact initialize command with its original request ID and arguments. Replaying finish returns its original project; neither command silently selects a replacement VM. In the desktop, use **Project Files → VM → Create Project / Clone Repository**, then **Open Project** and **Codex**. [Compute initialization](api/compute.md#vm-project-initialization) owns defaults and retry boundaries.
 
 ### VM project tasks
 
@@ -172,11 +192,40 @@ axv vm project task retry <project-id> <task-id> \
   --binding-file retry-binding.json --request-id retry-original
 ```
 
-An `unknown` attempt cannot be retried until reconciliation establishes its outcome or confirms interruption; this avoids overlapping unconfirmed work. Retry does not change argv, directory or limits. To change the specification, submit another task explicitly. Per-task disk/I/O/network throttling, backup restoration, service preview and host-agent permission constraints remain separate work.
+An `unknown` attempt cannot be retried until reconciliation establishes its outcome or confirms interruption; this avoids overlapping unconfirmed work. Retry does not change argv, directory or limits. To change the specification, submit another task explicitly. Per-task disk/I/O/network throttling and host-agent permission constraints remain separate work. [Offline backups](#vm-project-backups) preserve project volumes independently of task execution history.
+
+### VM project backups
+
+Save or explicitly preserve editor drafts, finish/cancel accepted tasks, and stop the source VM explicitly before copying. Reconcile `unknown` attempts until they have a final outcome. Inspect the project, volume and stopped VM revisions; backup creation requires those exact reviewed identities. This copies the entire retained project volume, including registered roots, Git metadata, linked worktrees, untracked files and installed dependencies. It excludes the VM root disk, guest task journal, host task history, Codex history and unsaved browser drafts.
+
+```bash
+axv vm project backup list --host-id <host-id>
+axv vm project backup create <project-id> --host-id <host-id> \
+  --request-id backup-original --name "Before upgrade" \
+  --project-revision <project-revision> --volume-revision <volume-revision> \
+  --machine <stopped-machine-id> --machine-revision <machine-revision>
+axv vm operation wait --host-id <host-id> --request-id backup-original
+axv vm project backup restore <backup-volume-id> --host-id <host-id> \
+  --request-id restore-original --revision <ready-backup-revision> \
+  --name "Recovered volume"
+axv vm operation wait --host-id <host-id> --request-id restore-original
+```
+
+All commands return JSON. Preserve `--host-id`, `--request-id` and every original argument when recovering a lost response. Creation and restore return accepted durable operations; wait for success and inspect the volume before continuing. The backup remains detached and immutable. The restored volume has a new ID; create a compatible VM explicitly selecting that ID (for example through Virtual Machines or `axv vm create --volume <restored-volume-id>`), then start it. Preserve the original guest mount/root locations so Git worktree metadata continues to resolve inside the copied volume.
+
+```bash
+axv vm project backup bind <backup-volume-id> --host-id <host-id> \
+  --request-id bind-original --source-project <original-project-id> \
+  --volume <restored-volume-id> --volume-revision <current-volume-revision> \
+  --machine <new-running-machine-id> --name "Recovered project"
+axv vm project binding <new-project-id> > restored-binding.json
+```
+
+Binding requires a selected image and running guest declaring `project-restore` as well as `project-files`. It validates the original project filesystem identity and Git/worktree paths, including each linked worktree's common directory and private configuration, then returns a separate project identity. It rejects external or missing worktree paths and Git configuration includes until reviewed and repaired explicitly on the recovered copy. Old bindings and agent run contexts remain attached to their original project and volume. Capture the new binding explicitly for subsequent file/task commands; no old run is redirected. [The backup API](api/compute.md#vm-project-backups) owns provider, identity and consistency limits. The Project Files **Backup and restore** panel provides the same staged workflow and preserves uncertain request payloads for explicit recovery.
 
 ### Bound VM project tools for Codex
 
-Choose **Open with Codex** in a registered VM project's Project Files window, then explicitly start a session in its scoped manager. The host provider uses an AXV-owned control directory. Its per-run AXV Skill receives an absolute bound command of the form `AXV_EXECUTABLE internal-vm-project RUN_CONTEXT COMMAND ...`. The private command exposes the existing `files`, `read`, `write`, `mkdir` and `task` operations with the project ID already supplied; its help describes the remaining arguments. It rejects host/binding overrides and connects using its original socket, host ID and configuration fingerprint without loading another profile or activating another controller.
+Choose **Codex** in a registered VM project's Project Files window, then explicitly start a session in its scoped manager. The host provider uses an AXV-owned control directory. Its per-run AXV Skill receives an absolute bound command of the form `AXV_EXECUTABLE internal-vm-project RUN_CONTEXT COMMAND ...`. The private command exposes the existing `files`, `read`, `write`, `mkdir` and `task` operations with the project ID already supplied; its help describes the remaining arguments. It rejects host/binding overrides and connects using its original socket, host ID and configuration fingerprint without loading another profile or activating another controller.
 
 The run context and packaged Skill remain in that run's private data directory. Keep the recorded executable and context path when recovering a task receipt; do not replace them with a current `axv` from PATH. Existing file version checks, persistent task request IDs, log offsets and exact-attempt cancellation still apply. A stale environment requires an explicit review and continuation in AXV; host configuration changes cannot silently retarget the old command. Task history can remain readable without a live VM. [Codex](codex.md#vm-project-work-context) owns this integration; [usage](usage.md#codex) describes start, reconnect and confirmation.
 
@@ -344,6 +393,8 @@ Installed applications use `extensions.sqlite` beside `desktop.sqlite` in the sa
 Daemon ownership records use format **4**, allowing separate host and optional desktop jobs; older formats are rejected without rewriting them. Database formats belong to the [desktop baseline](storage.md#desktop-database-baseline), [extension store](storage.md#installed-application-storage) and [compute/preparation owners](vm-platform.md#ownership). Do not remove ownership records while their processes remain live or edit format markers to bypass validation.
 
 The unified root contains AXV-owned data, not copies of every dependency or project. Existing host projects, provider-owned authentication/history and the shared tmux server retain their own locations. Explicit desktop/VM storage overrides remain supported; independently administered Linux VM services retain their configured paths. Backups must include these external locations when used. Stop writers before taking a filesystem backup, including independent Codex runs when copying their records and SQLite sidecars.
+
+Development preview registrations and request receipts end with the desktop service. Their random hostnames isolate browser origins while ephemeral ports are released on Stop; there is no persistent port-reservation store. [Preview access](api/project-previews.md#browser-and-authorization-boundaries) owns local origins and application-session boundaries. Offline project-volume copies cover only retained guest data, not this profile or provider-owned history.
 
 The desktop operational log is `AXV_HOME/logs/daemon.log`. Foreground and native desktops, offline setup and cache mutations append JSON lines with timestamps, severity, process role, event names and available job/operation/request IDs. Preparation phases, throttled transfer progress and desktop connection failures share this profile sink. Service composition also routes standard Go log messages through the sanitizing logger. It does not record terminal/Codex streams, guest session output, document contents, request bodies or complete configuration/environment snapshots. Credential values and URL authentication, queries and fragments are redacted; individual diagnostics and records are bounded.
 

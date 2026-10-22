@@ -1,3 +1,8 @@
+import {
+  codeEditor,
+  editVMFile,
+  expectEditorText,
+} from './code-editor-helpers';
 import type { Locator, Page } from '@playwright/test';
 import {
   expect,
@@ -353,18 +358,15 @@ async function openTasks(page: Page) {
   await filesWindow(page)
     .getByRole('button', { name: 'main.ts', exact: true })
     .click();
-  const editor = filesWindow(page).getByRole('textbox', {
-    name: 'VM project file text',
-  });
-  await expect(editor).toHaveValue('Saved file');
+  const editor = codeEditor(filesWindow(page));
+  await expectEditorText(editor, 'Saved file');
+  await editVMFile(filesWindow(page));
   await editor.fill('Keep unsaved file typing');
   await filesWindow(page)
     .getByRole('button', { name: 'Tasks', exact: true })
     .click();
   await expect(tasksWindow(page)).toBeVisible();
-  return filesWindow(page).locator(
-    'textarea[aria-label="VM project file text"]',
-  );
+  return codeEditor(filesWindow(page));
 }
 
 async function selectTask(page: Page, command: string | RegExp) {
@@ -496,8 +498,8 @@ test('task overview keeps secondary actions and detailed output metadata out of 
   await more.click();
   await menuItem(page, 'Project Files').click();
   await expect(editor).toBeVisible();
-  await expect(editor).toBeEnabled();
-  await expect(editor).toHaveValue('Keep unsaved file typing');
+  await expect(editor).toBeEditable();
+  await expectEditorText(editor, 'Keep unsaved file typing');
   await expect(panel).toHaveCount(1);
 });
 
@@ -564,8 +566,8 @@ test('project tasks preserve file drafts, submit an exact VM command and recover
       }),
     }),
   ]);
-  await expect(editor).toHaveValue('Keep unsaved file typing');
-  await expect(editor).toBeDisabled();
+  await expectEditorText(editor, 'Keep unsaved file typing');
+  await expect(editor).not.toBeEditable();
   expect(
     await page.evaluate(
       () =>
@@ -579,10 +581,17 @@ test('project tasks preserve file drafts, submit an exact VM command and recover
     path: screenshot,
     contentType: 'image/png',
   });
+  const [accepted] = state.values.values();
   await expect
     .poll(async () =>
       (await persistedLayout(page, request))?.windows.some(
-        (item: { id: string }) => item.id === taskWindowId,
+        (item: {
+          id: string;
+          viewState: { taskId?: string; attemptId?: string };
+        }) =>
+          item.id === taskWindowId &&
+          item.viewState.taskId === accepted.task.id &&
+          item.viewState.attemptId === accepted.attempt.id,
       ),
     )
     .toBe(true);
@@ -931,7 +940,7 @@ test('deferred task history focus respects a newly activated window', async ({
   });
   expect(frames).toBeGreaterThan(0);
   await filesWindow(page).dispatchEvent('pointerdown');
-  await expect(editor).toBeEnabled();
+  await expect(editor).toBeEditable();
   await editor.focus();
   await expect(editor).toBeFocused();
   await page.evaluate(() => {

@@ -217,6 +217,7 @@ async function fixture(change = {}) {
         'network',
         'project-files',
         'project-tasks',
+        'project-previews',
       ],
     },
     rootfs: { file: 'root.ext4', sha256: await sha256(rootfs) },

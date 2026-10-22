@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto';
+import { readFile, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 import type { Page } from '@playwright/test';
 import {
@@ -25,6 +28,11 @@ import {
   openRunAttachments,
   selectAttachmentVersion,
 } from './document-workflow-helpers';
+import {
+  codeEditor,
+  copyEditorText,
+  expectEditorText,
+} from './code-editor-helpers';
 
 interface ProjectIdentity {
   id: string;
@@ -62,6 +70,111 @@ async function openProjectLauncher(page: Page, touch: boolean) {
 }
 
 test.setTimeout(120_000);
+
+test('host source highlighting remains read-only and treats HTML as literal text', async ({
+  page,
+  isMobile,
+}) => {
+  const suffix = randomUUID();
+  const samples = [
+    {
+      name: `readonly-${suffix}.ts`,
+      content: [
+        '// Host source is displayed without running it.',
+        'export const markup = \'<script>globalThis.axvHostSourceExecuted = true</script><img src="/axv-host-source-probe" onerror="globalThis.axvHostSourceExecuted = true">\';',
+        'export const enabled: boolean = true;',
+        '',
+      ].join('\n'),
+      highlighted: true,
+    },
+    {
+      name: `readonly-${suffix}.axvtext`,
+      content:
+        '<script>globalThis.axvHostSourceExecuted = true</script>\nUnknown extension: keep this source as plain text.\n',
+      highlighted: false,
+    },
+  ];
+  const paths = samples.map((sample) => join(projectPath, sample.name));
+  const createdPaths: string[] = [];
+  const probeRequests: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/axv-host-source-probe')
+      probeRequests.push(request.url());
+  });
+  try {
+    for (const [index, sample] of samples.entries()) {
+      await writeFile(paths[index], sample.content, { flag: 'wx' });
+      createdPaths.push(paths[index]);
+    }
+    const launcher = await openProjectLauncher(page, isMobile);
+    await launcher
+      .getByLabel('Host project directory', { exact: true })
+      .fill(projectPath);
+    const registered = page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/api/projects') &&
+        response.request().method() === 'POST',
+    );
+    await choose(
+      launcher.getByRole('button', { name: 'Open', exact: true }),
+      isMobile,
+    );
+    const registration = await registered;
+    expect(registration.ok(), await registration.text()).toBeTruthy();
+    const project = (await registration.json()).project as ProjectIdentity;
+    const browser = page.locator(
+      `[data-window-id="project-files:${project.id}"]`,
+    );
+    for (const [index, sample] of samples.entries()) {
+      if (index && isMobile)
+        await choose(
+          browser.getByRole('button', { name: 'Back', exact: true }),
+          true,
+        );
+      await choose(
+        browser.getByRole('button', { name: sample.name, exact: true }),
+        isMobile,
+      );
+      const source = codeEditor(browser, 'Project file source');
+      await expect(source).toBeVisible();
+      await expect(source).toHaveAttribute('aria-readonly', 'true');
+      await expectEditorText(source, sample.content);
+      expect(await copyEditorText(source)).toBe(sample.content);
+      if (sample.highlighted)
+        await expect
+          .poll(() =>
+            source
+              .locator('span')
+              .evaluateAll(
+                (spans) =>
+                  new Set(
+                    spans
+                      .filter((span) => span.textContent)
+                      .map((span) => getComputedStyle(span).color),
+                  ).size,
+              ),
+          )
+          .toBeGreaterThan(1);
+      await source.press('ControlOrMeta+End');
+      await source.pressSequentially('READ_ONLY_PROBE');
+      await expectEditorText(source, sample.content);
+      await expect(
+        browser
+          .getByRole('region', { name: 'Project file preview' })
+          .locator('script, img'),
+      ).toHaveCount(0);
+      expect(
+        await page.evaluate(() =>
+          Reflect.get(globalThis, 'axvHostSourceExecuted'),
+        ),
+      ).toBeUndefined();
+      expect(await readFile(paths[index])).toEqual(Buffer.from(sample.content));
+    }
+    expect(probeRequests).toEqual([]);
+  } finally {
+    await Promise.all(createdPaths.map((path) => rm(path, { force: true })));
+  }
+});
 
 for (const width of [1440, 390]) {
   test(`saved Markdown follows the host project and exact Codex run at ${width}px`, async ({

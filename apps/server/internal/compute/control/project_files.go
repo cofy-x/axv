@@ -98,7 +98,10 @@ func (s *Service) RegisterProject(ctx context.Context, req compute.RegisterProje
 	if err != nil {
 		return compute.Project{}, err
 	}
-	_, m, err := projectEnvironment(ctx, s.store.db, req.VolumeID, req.MachineID, req.VolumeRevision)
+	v, m, err := projectEnvironment(ctx, s.store.db, req.VolumeID, req.MachineID, req.VolumeRevision)
+	if err == nil && v.RestoredFrom != "" {
+		err = compute.Problem("volume_conflict", "Use explicit restored-project binding to verify this backup's original project and Git paths.")
+	}
 	var root protocol.ProjectFileRoot
 	if err == nil {
 		var driver compute.Driver

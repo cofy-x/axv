@@ -269,6 +269,9 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func privateGuestAccess(value string) bool {
 	value = strings.TrimPrefix(value, "/api/compute/")
+	if value == "project-preview" || strings.HasPrefix(value, "project-preview/") {
+		return true
+	}
 	parts := strings.Split(strings.TrimPrefix(path.Clean("/"+value), "/"), "/")
 	return len(parts) >= 3 && parts[0] == "machines" && parts[2] == "ssh"
 }

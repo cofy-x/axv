@@ -22,25 +22,26 @@ type ProjectTask struct {
 }
 
 type TaskAttempt struct {
-	ID           string         `json:"id"`
-	TaskID       string         `json:"taskId"`
-	Number       int            `json:"number"`
-	Binding      ProjectBinding `json:"binding"`
-	Root         string         `json:"root"`
-	RootIdentity string         `json:"rootIdentity"`
-	RequestID    string         `json:"requestId"`
-	Status       string         `json:"status"`
-	Reason       string         `json:"reason,omitempty"`
-	SyncError    string         `json:"syncError,omitempty"`
-	ExitCode     *int           `json:"exitCode,omitempty"`
-	CreatedAt    time.Time      `json:"createdAt"`
-	StartedAt    *time.Time     `json:"startedAt,omitempty"`
-	FinishedAt   *time.Time     `json:"finishedAt,omitempty"`
-	LogBytes     int64          `json:"logBytes"`
-	CachedBytes  int64          `json:"cachedBytes"`
-	LogLimited   bool           `json:"logLimited"`
-	GuestFinal   bool           `json:"guestFinal"`
-	Cancel       bool           `json:"cancelRequested"`
+	CreatedRoot  *protocol.ProjectFileRoot `json:"createdRoot,omitempty"`
+	ID           string                    `json:"id"`
+	TaskID       string                    `json:"taskId"`
+	Number       int                       `json:"number"`
+	Binding      ProjectBinding            `json:"binding"`
+	Root         string                    `json:"root"`
+	RootIdentity string                    `json:"rootIdentity"`
+	RequestID    string                    `json:"requestId"`
+	Status       string                    `json:"status"`
+	Reason       string                    `json:"reason,omitempty"`
+	SyncError    string                    `json:"syncError,omitempty"`
+	ExitCode     *int                      `json:"exitCode,omitempty"`
+	CreatedAt    time.Time                 `json:"createdAt"`
+	StartedAt    *time.Time                `json:"startedAt,omitempty"`
+	FinishedAt   *time.Time                `json:"finishedAt,omitempty"`
+	LogBytes     int64                     `json:"logBytes"`
+	CachedBytes  int64                     `json:"cachedBytes"`
+	LogLimited   bool                      `json:"logLimited"`
+	GuestFinal   bool                      `json:"guestFinal"`
+	Cancel       bool                      `json:"cancelRequested"`
 }
 
 type ProjectTaskResult struct {
@@ -100,6 +101,26 @@ func NormalizeTaskSpec(spec TaskSpec) TaskSpec {
 }
 
 func ValidateTaskSpec(spec TaskSpec) error {
+	if spec.Initialization != nil {
+		return Problem("invalid_request", "Project initialization intent is reserved for the initialization API.")
+	}
+	return validateTaskSpec(spec)
+}
+
+func ValidateInitializationTaskSpec(spec TaskSpec) error {
+	if spec.Initialization == nil || len(spec.Argv) != 0 || spec.Directory != "" {
+		return Problem("invalid_request", "Initialization requires typed intent without an ordinary command or starting directory.")
+	}
+	if err := spec.Initialization.Validate(); err != nil {
+		return Problem("invalid_request", "%v", err)
+	}
+	validation := spec
+	validation.Initialization = nil
+	validation.Argv = []string{"/bin/true"}
+	return validateTaskSpec(validation)
+}
+
+func validateTaskSpec(spec TaskSpec) error {
 	if err := ValidateProjectRoot(spec.Directory); err != nil {
 		return err
 	}

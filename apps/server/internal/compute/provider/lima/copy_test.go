@@ -71,3 +71,38 @@ func TestCopyArtifactCancellationPreservesPublishedFile(t *testing.T) {
 		t.Fatalf("cancelled capture left temporary resources: %v %v", entries, err)
 	}
 }
+
+func TestCopyArtifactReclaimsOnlyItsFixedIncompleteCapture(t *testing.T) {
+	dir := t.TempDir()
+	source, err := os.Create(filepath.Join(dir, "original.raw"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	if _, err := source.WriteString("retained source"); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(dir, "source.raw")
+	unknown := filepath.Join(dir, ".axv-copy-unrecognized")
+	if err := os.WriteFile(unknown, []byte("preserve unknown storage"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for attempt := 0; attempt < 3; attempt++ {
+		if err := os.WriteFile(destination+".copy", []byte("incomplete killed capture"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := copyArtifact(context.Background(), source, destination); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Lstat(destination + ".copy"); !os.IsNotExist(err) {
+			t.Fatal("recovered capture retained staging", err)
+		}
+	}
+	data, err := os.ReadFile(destination)
+	if err != nil || string(data) != "retained source" {
+		t.Fatalf("recovery lost source: %q %v", data, err)
+	}
+	if data, err := os.ReadFile(unknown); err != nil || string(data) != "preserve unknown storage" {
+		t.Fatal("recovery changed unrelated storage", err)
+	}
+}

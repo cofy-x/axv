@@ -1,0 +1,41 @@
+# VM project development previews
+
+Previews attach a registered HTTP port of an already running development service to a captured VM project environment. They do not start a command or move an agent into the VM. The desktop owns registration and independent local browser listeners; the compute host and guest verify the original project, retained volume, VM, boot and guest-service identities on every request. Remote preview browsing is unavailable; the authenticated remote desktop can inspect and stop existing registrations.
+
+## Desktop controls
+
+| Method | Route | Result |
+| --- | --- | --- |
+| GET | `/api/project-previews/:projectId` | `{ instanceId, supported, reason?, previews }` for the original host and project |
+| POST | `/api/project-previews/:projectId` | Register `{ instanceId, requestId, binding, port }`; returns one preview with `201` |
+| POST | `/api/project-previews/:projectId/:id/stop` | Revoke the exact preview with `{}`; returns its stopped record |
+
+Controls require `X-AXV-Host-ID` and the exact desktop Origin on mutations. List and Stop accept the existing local guard or the remote transport's authenticated owner context; headers cannot manufacture remote authorization. Remote lists return `supported: false`, a visible reason and records without loopback URLs; remote registration returns `501 preview_remote_unsupported` without creating a listener. Local lists return `supported: true`. JSON mutations require `application/json`, one object without unknown fields, valid Unicode and at most **8 KiB**. Queries are rejected.
+
+Registration accepts a guest loopback TCP port from **1024 to 65535** and the complete reviewed project binding. The instance ID identifies this desktop preview manager incarnation. Preserve it, the request ID and the entire payload after a lost response. Replaying the same request returns the original record, including a later stopped or unavailable state; a changed payload returns `409 idempotency_conflict`. Restart creates a different manager identity: old requests fail with `409 preview_instance_changed`, rather than silently registering another preview. Inspect current registrations before explicitly releasing browser recovery state and issuing a new request.
+
+The manager captures the gateway's verified private host socket/configuration identity, then performs a bounded HTTP HEAD request to the service root. HTTP **5xx** or a failed connection rejects registration; other HTTP statuses establish that the application is responding. Accepted registration work belongs to the manager and finishes even if its browser disconnects. Both successes and failures retain their original request receipt. A `ready` record describes registration-time readiness; subsequent requests still verify the original binding. Independent five-second checks, each bounded to five seconds, revoke streams when an environment can no longer be verified. A slow check for one preview does not delay checks for others.
+
+Records contain `{ id, projectId, port, binding, state, error?, url?, remoteError? }`. States are `ready`, `stopped` and `unavailable`. Generated URLs are transport capabilities and must not be logged. At most **64 previews may be active**; stopping them releases listeners, upstream connections and active capacity. Lists contain active records and the latest **64** retired records for that project. Up to **4096** request receipts remain recoverable per manager lifetime, including records outside recent history. Receipt-capacity exhaustion rejects new registrations visibly without evicting old identities; restart AXV before explicitly registering new previews.
+
+Closing a window or browser leaves accepted previews active. **Stop** cancels in-flight validation/forwarding, disconnects HTTP/WebSocket streams, waits for handlers to finish and releases the exact listener and target. It does not cancel a project task or terminate an independently started development service. Stopped/unavailable URLs cease responding or fail access checks. Registration records are not restored after desktop restart; explicitly register again.
+
+## Browser and authorization boundaries
+
+Every local preview uses a fresh high-entropy `.localhost` hostname and an operating-system-assigned loopback port. The hostname is never reused. Stop and shutdown release ports for ordinary reuse; exact Host and Origin checks ensure an old hostname cannot acquire another preview even if its port is reused by another profile or invocation. Only actual loopback peers are accepted. Preview listeners contain no AXV frontend or control routes, and desktop local-access rules do not accept these wildcard hostnames. No permanent port ledger or tailnet preview listener is created.
+
+Remote browsing requires a separately isolated, authenticated HTTPS origin. Different ports on the embedded node's single hostname do not provide independent cookie domains, and permanently consuming ports is not a sustainable substitute. AXV therefore leaves remote preview browsing explicitly unavailable until that origin/TLS capability is designed.
+
+Opening a generated URL sets an entry-specific HttpOnly, SameSite=Strict bootstrap cookie and serves a constant AXV-owned page that commits the independent origin before navigating to the application root. The page contains no project content or capability token. Later requests require that exact entry capability. Bootstrap cookies use the reserved `axv_preview_` name prefix and are removed before forwarding. Normal application cookies pass through; application `Set-Cookie` responses are made host-only, reserved bootstrap names are rejected, and `Clear-Site-Data` is removed. This permits normal application sessions without publishing transport capabilities or server-set parent-domain cookies. Applications should use ordinary host-only cookies and origin-scoped storage; AXV does not rewrite JavaScript that deliberately creates parent-domain cookies.
+
+Application Authorization headers pass through a separate private routing header while the host authenticates to the guest with its per-machine token. After authentication, the guest removes private AXV headers and restores the application's Authorization value. Guest credentials never reach the application. Root-relative assets, queries and ordinary HTTP/WebSocket upgrades retain their application paths; AXV does not rewrite application HTML or inject scripts. Services hard-coding their original host, development port or WebSocket URL must be configured for the browser's current origin.
+
+Project responses set a CSP sandbox allowing scripts, same-origin resources, forms and downloads while withholding popups, top-level navigation and document-domain relaxation. They also set `frame-ancestors 'none'`, `Cross-Origin-Opener-Policy: same-origin`, `Origin-Agent-Cluster: ?1` and `Referrer-Policy: no-referrer`. Preview scripts receive no AXV control permissions. Open links use `noopener noreferrer`.
+
+## Private forwarding
+
+The private host-only `/v1/project-preview` route receives the original project binding and registered port/path in AXV headers. It revalidates project access and `project-previews` capability before forwarding through the machine's authenticated guest transport. The browser compute gateway rejects this route; only the independent local preview listener composes it.
+
+The guest's private route requires its per-machine token, explicit `project-previews` image capability and original boot, service-instance and project-root identities. It connects only to `127.0.0.1` at the reviewed unprivileged port and preserves the escaped absolute application path and query. VM replacement, guest restart or root replacement rejects old requests; guest shutdown cancels upgraded streams. Routing does not sandbox ordinary guest commands or prove which process owns a listening port.
+
+Implementations start in [`projectpreview`](../../apps/server/internal/projectpreview), [private host forwarding](../../apps/server/internal/compute/httpapi/project_preview.go), [binding validation](../../apps/server/internal/compute/control/project_preview.go) and [guest forwarding](../../apps/server/internal/guest/project_preview.go). [VM project tasks](compute.md#vm-project-tasks) retain their independent execution and cancellation contract.

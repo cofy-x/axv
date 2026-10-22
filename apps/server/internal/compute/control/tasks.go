@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"path"
 	"sync"
 	"time"
 	"unicode"
@@ -92,6 +93,10 @@ func (s *Service) taskEnvironment(ctx context.Context, projectID string, b compu
 }
 
 func (s *Service) SubmitProjectTask(ctx context.Context, projectID string, r compute.SubmitProjectTaskRequest) (compute.ProjectTaskResult, error) {
+	return s.submitProjectTask(ctx, projectID, r, false)
+}
+
+func (s *Service) submitProjectTask(ctx context.Context, projectID string, r compute.SubmitProjectTaskRequest, initialization bool) (compute.ProjectTaskResult, error) {
 	if err := s.requireProjectHost(r.Binding.HostID); err != nil {
 		return compute.ProjectTaskResult{}, err
 	}
@@ -102,13 +107,21 @@ func (s *Service) SubmitProjectTask(ctx context.Context, projectID string, r com
 		return compute.ProjectTaskResult{}, err
 	}
 	r.Spec = compute.NormalizeTaskSpec(r.Spec)
-	if err := compute.ValidateTaskSpec(r.Spec); err != nil {
+	validate := compute.ValidateTaskSpec
+	if initialization {
+		validate = compute.ValidateInitializationTaskSpec
+	}
+	if err := validate(r.Spec); err != nil {
 		return compute.ProjectTaskResult{}, err
 	}
 	if err := validateTaskBinding(projectID, r.Binding); err != nil {
 		return compute.ProjectTaskResult{}, err
 	}
-	hash := fingerprint([]any{"submit", projectID, r})
+	operation := "submit"
+	if initialization {
+		operation = "initialize"
+	}
+	hash := fingerprint([]any{operation, projectID, r})
 	if result, exists, err := s.store.taskByRequest(ctx, projectID, r.RequestID, hash); exists || err != nil {
 		return result, err
 	}
@@ -117,8 +130,14 @@ func (s *Service) SubmitProjectTask(ctx context.Context, projectID string, r com
 		return compute.ProjectTaskResult{}, err
 	}
 	defer release()
-	if _, _, _, err = s.taskEnvironment(ctx, projectID, r.Binding); err != nil {
+	_, machine, _, err := s.taskEnvironment(ctx, projectID, r.Binding)
+	if err != nil {
 		return compute.ProjectTaskResult{}, err
+	}
+	if initialization {
+		if err = s.RequireGuest(ctx, machine, "project-initialization"); err != nil {
+			return compute.ProjectTaskResult{}, err
+		}
 	}
 	return s.store.admitTask(ctx, projectID, "", r.RequestID, hash, r.Binding, r.Spec)
 }
@@ -143,6 +162,9 @@ func (s *Service) RetryProjectTask(ctx context.Context, projectID, id string, r 
 	result, err := s.store.taskResult(ctx, projectID, id, "")
 	if err != nil {
 		return result, err
+	}
+	if result.Task.Spec.Initialization != nil {
+		return compute.ProjectTaskResult{}, compute.Problem("task_conflict", "Create a separate initialization request after reviewing the existing destination; initialization attempts cannot be retried as ordinary commands.")
 	}
 	release, err := s.store.projectLeases.acquire(ctx, false, r.Binding.MachineID, r.Binding.VolumeID)
 	if err != nil {
@@ -255,6 +277,17 @@ func validateTaskExecution(a compute.TaskAttempt, t compute.ProjectTask, e proto
 	valid := compute.TaskFinal(e.Status) || e.Status == "accepted" || e.Status == "running"
 	if !valid || e.LogBytes < a.LogBytes || e.LogBytes > t.Spec.Limits.MaxLogBytes || e.LogBytes < a.CachedBytes || (a.LogLimited && !e.LogLimited) || len(e.Reason) > 4096 || !utf8.ValidString(e.Reason) || stringsContainControl(e.Reason) || (compute.TaskFinal(e.Status) && e.FinishedAt == nil) {
 		return compute.Problem("guest_identity_mismatch", "The guest returned invalid task state or log bounds.")
+	}
+	if e.CreatedRoot != nil {
+		if t.Spec.Initialization == nil || e.CreatedRoot.Root != path.Join(a.Root, t.Spec.Initialization.Directory) || e.CreatedRoot.RootIdentity == "" || len(e.CreatedRoot.RootIdentity) > 128 || !utf8.ValidString(e.CreatedRoot.RootIdentity) || stringsContainControl(e.CreatedRoot.RootIdentity) {
+			return compute.Problem("guest_identity_mismatch", "The guest initialization root receipt does not match this task.")
+		}
+	}
+	if t.Spec.Initialization != nil && e.Status == "succeeded" && e.CreatedRoot == nil {
+		return compute.Problem("guest_identity_mismatch", "A successful initialization requires its created root receipt.")
+	}
+	if a.CreatedRoot != nil && (e.CreatedRoot == nil || *a.CreatedRoot != *e.CreatedRoot) {
+		return compute.Problem("guest_identity_mismatch", "The guest changed the initialization's created directory identity.")
 	}
 	return validateFinalTaskLog(a, e)
 }

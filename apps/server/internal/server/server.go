@@ -24,6 +24,7 @@ import (
 	hostdirhttp "github.com/cofy-x/axv/apps/server/internal/hostdir/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/projectfiles"
+	"github.com/cofy-x/axv/apps/server/internal/projectpreview"
 	"github.com/cofy-x/axv/apps/server/internal/storage"
 	"github.com/cofy-x/axv/apps/server/internal/terminal"
 	"github.com/cofy-x/axv/apps/server/internal/vmwork"
@@ -102,6 +103,9 @@ func RunContext(ctx context.Context, settings config.Config, options Options) (r
 		codexAPI.Close()
 	}()
 	application := http.NewServeMux()
+	previews := projectpreview.New(ctx, projectpreview.GatewayResolver(computeGateway))
+	defer previews.Close()
+	previews.Register(application)
 	extensionManager.Register(application)
 	projectfiles.Register(application, store)
 	if options.InstanceID != "" {
@@ -185,11 +189,13 @@ func newHandler(application http.Handler, terminals *terminal.Manager, codexAPI 
 	mux.Handle("/", application)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Origin-Agent-Cluster", "?1")
 		w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'; frame-src 'self'")
-		// Sandboxed extensions have opaque origins. Browser GETs may omit
-		// Origin, so also reject their cross-site Fetch Metadata before any
-		// API handler (including the otherwise public document reads).
-		if pathWithin(r.URL.Path, "/api") && (r.Header.Get("Origin") == "null" || r.Header.Get("Sec-Fetch-Site") == "cross-site") {
+		// Sandboxed extensions and independent preview ports have no direct
+		// API authority. Browser GETs may omit Origin, so reject both cross-site
+		// and same-site cross-origin Fetch Metadata before any API handler.
+		fetchSite := r.Header.Get("Sec-Fetch-Site")
+		if pathWithin(r.URL.Path, "/api") && (r.Header.Get("Origin") == "null" || fetchSite == "cross-site" || fetchSite == "same-site") {
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Cache-Control", "no-store")
 			w.WriteHeader(http.StatusForbidden)

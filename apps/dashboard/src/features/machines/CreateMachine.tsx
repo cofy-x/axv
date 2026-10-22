@@ -14,13 +14,13 @@ import {
   integer,
   machineNameError,
   normalizeMachineName,
-  resourceBusy,
 } from './form-state';
 import { OperationRequest, operationError } from './operation-requests';
 import { useCompute } from './useCompute';
 import { computeStore } from './compute-store';
 import { RequestDetails } from './OperationFeedback';
 import { openMachineInspector } from './desktop-icons';
+import { volumeAvailableForMachine } from './volume-policy';
 
 export function CreateMachine({ desktop, window }: AppWindowProps) {
   const { setTitle } = desktop;
@@ -86,15 +86,8 @@ export function CreateMachine({ desktop, window }: AppWindowProps) {
     (item) => item.provider === image?.provider,
   );
   const volume = data.volumes.find((item) => item.id === volumeId);
-  const availableVolumes = data.volumes.filter(
-    (item) =>
-      !item.machineId &&
-      !item.pendingMachineId &&
-      !item.pendingSizeGiB &&
-      item.status === 'ready' &&
-      item.provider === image?.provider &&
-      (kind !== 'development' || item.retain) &&
-      !resourceBusy(data.operations, item.id),
+  const availableVolumes = data.volumes.filter((item) =>
+    volumeAvailableForMachine(item, image?.provider, kind, data.operations),
   );
   const selectedVolumeAvailable =
     !volumeId || availableVolumes.some((item) => item.id === volumeId);
@@ -368,6 +361,7 @@ export function CreateMachine({ desktop, window }: AppWindowProps) {
           </fieldset>
         )}
         <Checkbox
+          className="machines-create-start"
           label="Start after creation"
           checked={start}
           disabled={locked}
@@ -399,14 +393,14 @@ export function CreateMachine({ desktop, window }: AppWindowProps) {
               disabled={hostChanged || !!data.error}
               onClick={() => void submit(true)}
             >
-              Retry Original Request
+              Retry Original
             </Button>
           ) : (
             <Button
               type="submit"
               disabled={locked || !!unavailable || !!validation}
             >
-              {busy ? 'Creating…' : 'Create VM'}
+              {busy ? 'Creating…' : 'Create'}
             </Button>
           )}
           <IconButton

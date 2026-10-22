@@ -137,20 +137,22 @@ type Machine struct {
 }
 
 type Volume struct {
-	ID               string    `json:"id"`
-	Name             string    `json:"name"`
-	Revision         int64     `json:"revision"`
-	Provider         string    `json:"provider"`
-	SizeGiB          int64     `json:"sizeGiB"`
-	PendingSizeGiB   int64     `json:"pendingSizeGiB,omitempty"`
-	TransientGiB     int64     `json:"transientGiB,omitempty"`
-	PendingAction    string    `json:"pendingAction,omitempty"`
-	PendingMachineID string    `json:"pendingMachineId,omitempty"`
-	Retain           bool      `json:"retain"`
-	MachineID        string    `json:"machineId,omitempty"`
-	Status           string    `json:"status"`
-	Reason           string    `json:"reason,omitempty"`
-	CreatedAt        time.Time `json:"createdAt"`
+	Backup           *ProjectVolumeBackup `json:"backup,omitempty"`
+	RestoredFrom     string               `json:"restoredFrom,omitempty"`
+	ID               string               `json:"id"`
+	Name             string               `json:"name"`
+	Revision         int64                `json:"revision"`
+	Provider         string               `json:"provider"`
+	SizeGiB          int64                `json:"sizeGiB"`
+	PendingSizeGiB   int64                `json:"pendingSizeGiB,omitempty"`
+	TransientGiB     int64                `json:"transientGiB,omitempty"`
+	PendingAction    string               `json:"pendingAction,omitempty"`
+	PendingMachineID string               `json:"pendingMachineId,omitempty"`
+	Retain           bool                 `json:"retain"`
+	MachineID        string               `json:"machineId,omitempty"`
+	Status           string               `json:"status"`
+	Reason           string               `json:"reason,omitempty"`
+	CreatedAt        time.Time            `json:"createdAt"`
 }
 
 type Operation struct {
@@ -201,6 +203,7 @@ type Capability struct {
 	ForceStop         bool   `json:"forceStop"`
 	SnapshotReason    string `json:"snapshotReason,omitempty"`
 	Volumes           bool   `json:"volumes"`
+	VolumeCopy        bool   `json:"volumeCopy"`
 	Images            bool   `json:"images"`
 }
 

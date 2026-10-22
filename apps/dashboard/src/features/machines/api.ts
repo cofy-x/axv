@@ -1,4 +1,5 @@
 import { request } from '../../shared/api/http';
+import type { VMProject } from '../project-files/vm-api';
 
 export interface Resources {
   cpus: number;
@@ -37,6 +38,16 @@ export interface Machine {
   expiresAt?: string;
 }
 
+export interface VolumeBackup {
+  hostId: string;
+  sourceVolumeId: string;
+  sourceVolumeRevision: number;
+  sourceMachineId: string;
+  sourceMachineRevision: number;
+  projects: VMProject[];
+  createdAt: string;
+}
+
 export interface Volume {
   id: string;
   name: string;
@@ -51,9 +62,12 @@ export interface Volume {
   machineId?: string;
   status: string;
   reason?: string;
+  backup?: VolumeBackup;
+  restoredFrom?: string;
 }
 
 export interface Operation {
+  requestId?: string;
   packageSource?: 'official' | 'aliyun';
   id: string;
   machineId: string;
@@ -217,6 +231,7 @@ export interface HostInfo {
     forceStop?: boolean;
     snapshotReason?: string;
     volumes?: boolean;
+    volumeCopy?: boolean;
     images?: boolean;
   }[];
   images?: ImageInfo[];

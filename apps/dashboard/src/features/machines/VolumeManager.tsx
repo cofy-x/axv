@@ -14,6 +14,8 @@ import { OperationFeedback, RequestDetails } from './OperationFeedback';
 import { computeStore } from './compute-store';
 import { OperationRequest, operationError } from './operation-requests';
 import type { useCompute } from './useCompute';
+import { isProjectBackup, volumeActionAllowed } from './volume-policy';
+import type { VolumePolicyAction } from './volume-policy';
 
 type VolumeChange = Parameters<typeof machinesApi.volumeAction>[1];
 type VolumeMenuAction = 'rename' | 'resize' | 'detach' | 'delete';
@@ -114,9 +116,11 @@ export function VolumeManager({
       attached.status === 'stopped' &&
       attached.desired === 'stopped' &&
       !attached.pendingSpec);
-  const canAction = (action: string) =>
+  const canAction = (action: VolumePolicyAction) =>
     !disabled &&
     !!supported &&
+    !!selected &&
+    volumeActionAllowed(selected, action) &&
     (selected?.status === 'ready' ||
       selected?.pendingAction === `${action}-volume`);
   const menuEnabled = (action: VolumeMenuAction) =>
@@ -160,6 +164,11 @@ export function VolumeManager({
         ? 'This draft belongs to another VM host. Cancel it and open a new form for the current host.'
         : '') ||
       data.error ||
+      (latestEditorVolume &&
+      editor.kind !== 'create' &&
+      !volumeActionAllowed(latestEditorVolume, editor.kind)
+        ? 'This protected project volume cannot use this action. Use the backup and restore workflow in Project Files.'
+        : '') ||
       (!editorProvider?.available || !editorProvider.volumes
         ? editorProvider?.reason || 'This volume provider is unavailable.'
         : editorChanged
@@ -182,6 +191,11 @@ export function VolumeManager({
         : '');
 
   function openEditor(kind: VolumeEditor['kind'], retain?: boolean) {
+    if (
+      kind !== 'create' &&
+      (!selected || !volumeActionAllowed(selected, kind))
+    )
+      return;
     const previous =
       selected?.status === 'failed' &&
       selected.pendingAction === `${kind}-volume`
@@ -231,6 +245,23 @@ export function VolumeManager({
     if (latest.error) {
       setError('Reconnect to the host before making changes.');
       return;
+    }
+    if (input) {
+      const sourceId =
+        input.kind === 'create' ? input.spec.sourceVolumeId : input.volume.id;
+      const action =
+        input.kind === 'create'
+          ? 'copy'
+          : input.kind === 'delete'
+            ? 'delete'
+            : input.change.action;
+      const source = latest.volumes.find((volume) => volume.id === sourceId);
+      if (source && !volumeActionAllowed(source, action)) {
+        setError(
+          'This protected project volume cannot use this action. Use the backup and restore workflow in Project Files.',
+        );
+        return;
+      }
     }
     setBusy(true);
     setError('');
@@ -370,6 +401,8 @@ export function VolumeManager({
             disabled={
               disabled ||
               !supported ||
+              !selected ||
+              !volumeActionAllowed(selected, 'copy') ||
               selected?.status !== 'ready' ||
               !stopped ||
               !!selected?.pendingSizeGiB
@@ -456,7 +489,7 @@ export function VolumeManager({
             }
             onClick={() => void run()}
           >
-            Retry Original Request
+            Retry Original
           </Button>
           <RequestDetails
             requestId={requests.pending.requestId}
@@ -483,6 +516,16 @@ export function VolumeManager({
           copying, growing or detaching this volume.
         </p>
       )}
+      {selected && isProjectBackup(selected) && (
+        <p className="machines-form-help">
+          Restore this backup in Project Files to use its files in a VM.
+        </p>
+      )}
+      {selected?.restoredFrom && (
+        <p className="machines-form-help">
+          Use Project Files to back up this working volume.
+        </p>
+      )}
       {selected?.status === 'failed' && (
         <p className="machines-warning">
           {selected.pendingAction === 'create-volume' ||
@@ -493,7 +536,7 @@ export function VolumeManager({
       )}
       {editor && (
         <form
-          className="app-pad machines-form"
+          className="app-pad machines-form machines-volume-editor"
           onSubmit={(event) => {
             event.preventDefault();
             applyEditor();
@@ -570,11 +613,11 @@ export function VolumeManager({
                 {editor.kind === 'copy'
                   ? 'Create Copy'
                   : editor.kind === 'create'
-                    ? 'Create Volume'
+                    ? 'Create'
                     : editor.kind === 'rename'
-                      ? 'Rename Volume'
+                      ? 'Rename'
                       : editor.kind === 'resize'
-                        ? 'Grow Volume'
+                        ? 'Grow'
                         : 'Apply'}
               </Button>
               <Button onClick={() => setEditor(undefined)}>Cancel</Button>
@@ -608,7 +651,15 @@ export function VolumeManager({
                 <details>
                   <summary>Details</summary>
                   <code>{volume.id}</code>
+                  {volume.backup && (
+                    <small>Source volume: {volume.backup.sourceVolumeId}</small>
+                  )}
+                  {volume.restoredFrom && (
+                    <small>Restored from backup: {volume.restoredFrom}</small>
+                  )}
                 </details>
+                {isProjectBackup(volume) && <small>Immutable backup</small>}
+                {volume.restoredFrom && <small>Restored working volume</small>}
                 <small>
                   {volume.retain ? 'Retained' : 'Delete with attached VM'}
                 </small>
@@ -722,14 +773,15 @@ export function VolumeManager({
                   );
               }}
             >
-              Attach Volume
+              Attach
             </Button>
           </fieldset>
         </div>
       )}
       <p className="app-pad machines-form-help">
         A project volume attaches to one VM at a time. Development VMs require
-        retained storage. Retained storage is not a backup.
+        retained storage. Keeping a working volume after VM deletion does not
+        create a separate backup.
       </p>
     </div>
   );

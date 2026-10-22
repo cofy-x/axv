@@ -328,6 +328,9 @@ func (s *Store) Create(ctx context.Context, config compute.Config, req compute.C
 			if err != nil {
 				return err
 			}
+			if v.IsProjectBackup() {
+				return compute.Problem("volume_conflict", "Backups cannot be attached to VMs. Restore into a new volume first.")
+			}
 			if v.MachineID != "" || v.Status != "ready" || v.Provider != m.Spec.Provider || v.SizeGiB != m.Spec.ProjectGiB || v.Retain != m.Spec.RetainVolume {
 				return compute.Problem("volume_conflict", "The volume must be detached, ready, and match this provider, size and retention policy.")
 			}
