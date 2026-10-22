@@ -12,6 +12,7 @@ These pages own routes, request/response shapes, limits, errors and caller retry
 - [Host directories](host-directories.md): Shared local directory selection and path validation for host tools.
 - [Host Codex](host-codex.md): Conversations, exact process runs and attachments.
 - [Compute](compute.md): Environment preparation, service readiness, machines, volumes, images, durable operations and VM project bindings/files.
+- [VM project previews](project-previews.md): Explicit guest HTTP/WebSocket services on independent local origins, with exact registration recovery and remote owner inspection/revocation.
 - [Guest execution](guest.md): Guest health, commands, detachable guest terminals, network observation and local SSH access.
 - [Tailscale remote access](tailscale.md): Optional private HTTPS, enrollment identity, owner authorization, route restrictions and local status.
 
@@ -46,7 +47,7 @@ Request shapes, revision rules, idempotency scope and limits belong to their fun
 
 On the local listener, desktop-state and virtual-file mutations validate a supplied Origin against the request Host or a loopback development host; they permit an omitted Origin.
 
-The shared desktop boundary rejects all `/api` requests with `Origin: null` or `Sec-Fetch-Site: cross-site`, including simple GETs without Origin. This prevents sandboxed application frames from directly using existing API families. Their trusted browser host uses the [installed-application broker](extensions.md#browser-broker) and backend session scope instead.
+The shared desktop boundary rejects all `/api` requests with `Origin: null` or `Sec-Fetch-Site: cross-site` or `same-site`, including simple GETs without Origin. This prevents sandboxed application frames and different-origin project preview pages from directly using existing API families. Their trusted browser host uses the [installed-application broker](extensions.md#browser-broker) and backend session scope instead.
 
 Host Terminal, host-directory, Codex and compute gateway routes use the shared [access validator](../../apps/server/internal/localaccess/request.go): locally, a loopback peer, a Host of `localhost` or a loopback address, and an exact scheme/Host match when Origin is supplied. Their WebSocket upgrades and mutations require Origin. Forwarded headers do not bypass these checks. The private compute socket is authorized through OS permissions.
 
