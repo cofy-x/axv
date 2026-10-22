@@ -49,6 +49,8 @@ Build scratch files and helper executables stay in `.data/test/image-build-*` an
 
 Publishing still requires a reviewed clean source revision matching `build-info.json`, the base URL/digest or OCI digest, a package/license and corresponding-source review, a reviewed versioned catalog entry, and native lifecycle plus enhanced guest/SSH acceptance for that exact provider/architecture bundle. Keep the exported materials with the disk; separately supplied kernels need their own provenance and distribution review. Neither base images nor generated disks are committed to the repository. Current availability remains in [project status](../../README.md#project-status).
 
+The [guest candidate packager](../../docs/releasing.md#vm-image-publication) verifies the complete output and produces a distributable archive, raw disk and checksum manifest. The manual Firecracker amd64 workflow supplies a clean-source candidate; an explicit `--local` build supports testing without claiming an official release. Application startup and VM Start never invoke either workflow.
+
 ## Package source selection
 
 Both builders accept `AXV_GUEST_PACKAGE_SOURCE=preserve|official|aliyun`; unset defaults to preserve, retaining the input's software sources. An explicit selection runs the shared [Ubuntu source script](../../apps/server/internal/compute/ubuntusources/configure.sh) on the private build target before dependency installation. [Source policy](../../docs/startup.md#download-mirrors-and-guest-package-sources) owns supported releases/layouts, URLs, signing checks, backups and recovery.

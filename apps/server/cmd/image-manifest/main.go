@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -36,6 +37,7 @@ func digest(path string) (string, error) {
 }
 func run(args []string) error {
 	flags := flag.NewFlagSet("image-manifest", flag.ContinueOnError)
+	checkBundle := flags.String("check-bundle", "", "validate a complete current-release bundle manifest without executing its guest")
 	provider := flags.String("provider", "", "lima or firecracker")
 	arch := flags.String("arch", "", "amd64 or arm64")
 	guest := flags.String("guest", "", "preinstalled guest executable")
@@ -45,6 +47,12 @@ func run(args []string) error {
 	name := flags.String("name", "", "bundle display name")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	if *checkBundle != "" {
+		if flags.NArg() != 0 || flags.NFlag() != 1 {
+			return fmt.Errorf("--check-bundle cannot be combined with image build arguments")
+		}
+		return checkReleaseBundle(*checkBundle)
 	}
 	if flags.NArg() != 0 || *output == "" {
 		return fmt.Errorf("supply --output and image build arguments")
@@ -89,6 +97,50 @@ func run(args []string) error {
 		return err
 	}
 	return f.Close()
+}
+
+// Keep release checks on the same contract as imports and image construction.
+// The complete release must advertise every feature this guest implements.
+func checkReleaseBundle(path string) error {
+	var metadata guestimage.Bundle
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || info.Size() > 64<<10 {
+		return fmt.Errorf("image manifest must be a regular file of at most 65536 bytes")
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, (64<<10)+1))
+	if err != nil {
+		return err
+	}
+	if len(data) > 64<<10 {
+		return fmt.Errorf("image manifest is too large")
+	}
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return err
+	}
+	bundle, err := guestimage.LoadBundle(context.Background(), path, metadata.Provider, metadata.Arch)
+	if err != nil {
+		return err
+	}
+	if bundle.Guest == nil || bundle.Guest.BinarySHA256 == "" {
+		return fmt.Errorf("release bundle must declare an enhanced AXV guest and its digest")
+	}
+	if err := bundle.Guest.Compatible(); err != nil {
+		return err
+	}
+	for _, capability := range guestimage.Capabilities() {
+		if !guestimage.Has(bundle.Guest.Capabilities, capability) {
+			return fmt.Errorf("release bundle is missing guest capability %s", capability)
+		}
+	}
+	return json.NewEncoder(os.Stdout).Encode(bundle)
 }
 func main() {
 	if err := run(os.Args[1:]); err != nil {

@@ -66,4 +66,18 @@ For a draft through GitHub's web interface, follow [managing releases](https://d
 
 Application packaging does not publish VM images or promote upstream bases to AXV releases. The [image recipes](../images/guest/README.md#per-machine-initialization-and-release-work) own generated guest notices, OS package inventories, source/provenance review, identity cleanup and native acceptance. Keep their exported `distribution/` materials with each exact provider/architecture bundle; guest and OS components retain their own terms. A completed builder run does not approve an image for publication.
 
+The manual [Guest image candidate workflow](../.github/workflows/guest-images.yml) builds a native Firecracker amd64 bundle from an explicitly supplied, reviewed Ubuntu 24.04 OCI digest. It uses the pinned Go and Node toolchains, then verifies and packages the disk, manifest, base identity and exported distribution materials. Its repository permission is read-only; the workflow neither starts a VM nor publishes a release. Run the separate native acceptance against the exact downloaded bundle before promoting it.
+
+To package an existing image-builder output locally:
+
+```sh
+VERSION=0.1.0-rc.1 node scripts/package-guest-release.mjs --bundle /absolute/new-firecracker-bundle
+```
+
+This requires a clean checkout and matching clean guest-binary VCS metadata. The output in `dist/guest-release/<version>/<provider>_<arch>/` contains the complete compressed bundle, a separately named raw disk for catalog downloads, and `candidate.json` with their source/build identities; `SHA256SUMS` covers all three. The packager validates the current guest contract through the same Go owner as image building and importing, then assembles the archive and disk from a private snapshot whose files match the verified input checksums. It rejects unlisted files, symlinks, changed bytes, missing license/package inventories and mismatched guest capabilities or build metadata. It refuses to overwrite an existing candidate.
+
+For implementation testing with uncommitted changes, add `--local`. This writes an explicitly `localOnly` candidate beneath this checkout's `.data/test/guest-candidate-*`; it is retained for inspection and cannot establish release readiness or an official catalog entry. Review and remove only that generated directory when finished. Dirty source metadata remains visible.
+
+Upload the reviewed disk and complete bundle alongside their checksum manifest to the same immutable prerelease. Preserve provider/architecture filenames, exported notices and the exact bundle used for native acceptance. Only after those downloads exist should a reviewed `artifacts.Official` entry bind the actual disk URL, digest and guest contract. Selecting a new default enhanced image remains an explicit product decision.
+
 Publish only those provider/architecture artifacts that have passed their own checks. A reviewed versioned catalog entry must reference the actual immutable artifacts and digests. Update availability in the README and affected references only when the artifacts exist.
