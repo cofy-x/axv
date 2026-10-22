@@ -273,12 +273,12 @@ test('removing the selected creation image requires a new explicit choice', asyn
   ).toBeVisible();
   await expect(image).toHaveValue('linux-two');
   await expect(
-    create.getByRole('button', { name: 'Create VM', exact: true }),
+    create.getByRole('button', { name: 'Create', exact: true }),
   ).toBeDisabled();
   expect(state.mutations).toHaveLength(0);
   await image.selectOption('linux-one');
   await expect(
-    create.getByRole('button', { name: 'Create VM', exact: true }),
+    create.getByRole('button', { name: 'Create', exact: true }),
   ).toBeEnabled();
 });
 
@@ -305,7 +305,7 @@ test('creation shares host defaults and preserves drafts while validating name c
   await manager.getByRole('button', { name: 'New VM', exact: true }).click();
   const create = page.locator('[data-app-id="machine-create"]');
   const name = create.getByLabel('Name', { exact: true });
-  const submit = create.getByRole('button', { name: 'Create VM', exact: true });
+  const submit = create.getByRole('button', { name: 'Create', exact: true });
   await expect(name).toHaveValue('my-vm');
   await expect(create.getByLabel('CPUs', { exact: true })).toHaveValue('3');
   await expect(create.getByLabel('Memory (MiB)', { exact: true })).toHaveValue(
@@ -376,7 +376,7 @@ test('removing the chosen attachment target never selects another VM', async ({
     exact: true,
   });
   const attach = manager.getByRole('button', {
-    name: 'Attach Volume',
+    name: 'Attach',
     exact: true,
   });
   await expect(target).toHaveValue('');
@@ -419,8 +419,8 @@ test('creation retries retain their host and survive a reconnect to that same ho
   const create = page.locator('[data-window-id="machine-create:main"]');
   const name = create.getByLabel('Name', { exact: true });
   await name.fill('Preserved draft VM');
-  await create.getByRole('button', { name: 'Create VM', exact: true }).click();
-  const retry = create.getByRole('button', { name: 'Retry Original Request' });
+  await create.getByRole('button', { name: 'Create', exact: true }).click();
+  const retry = create.getByRole('button', { name: 'Retry Original' });
   await expect(retry).toBeEnabled();
   state.generation++;
   await create.getByRole('button', { name: 'Check Host' }).click();
@@ -553,11 +553,11 @@ for (const resource of ['volume', 'image'] as const) {
       { exact: true },
     );
     const submit = manager.getByRole('button', {
-      name: resource === 'volume' ? 'Rename Volume' : 'Download and Verify',
+      name: resource === 'volume' ? 'Rename' : 'Download and Verify',
       exact: true,
     });
     const retry = manager.getByRole('button', {
-      name: 'Retry Original Request',
+      name: resource === 'volume' ? 'Retry Original' : 'Retry Original Request',
       exact: true,
     });
     await name.fill('Preserved resource draft');

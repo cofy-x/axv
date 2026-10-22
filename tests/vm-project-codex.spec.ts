@@ -1,3 +1,8 @@
+import {
+  codeEditor,
+  editVMFile,
+  expectEditorText,
+} from './code-editor-helpers';
 import type { Page } from '@playwright/test';
 import { activate, expect, menuItem, persistedLayout, test } from './helpers';
 import type { CodexSessionRecord } from '../apps/dashboard/src/features/codex/api';
@@ -416,7 +421,7 @@ async function openProject(page: Page) {
 
 async function openManager(page: Page, touch = false) {
   const open = files(page).getByRole('button', {
-    name: 'Open with Codex',
+    name: 'Codex',
     exact: true,
   });
   if (touch) await open.tap();
@@ -432,9 +437,8 @@ test('VM project Codex keeps drafts and routes files and tasks to the captured p
 }, testInfo) => {
   const state = await fixture(page);
   await openProject(page);
-  const text = files(page).getByRole('textbox', {
-    name: 'VM project file text',
-  });
+  const text = codeEditor(files(page));
+  await editVMFile(files(page));
   await text.fill('Unsaved VM draft');
   const touch = !!testInfo.project.use.hasTouch;
   await openManager(page, touch);
@@ -468,7 +472,7 @@ test('VM project Codex keeps drafts and routes files and tasks to the captured p
   await runWindow(page)
     .getByRole('button', { name: 'Project Files', exact: true })
     .click();
-  await expect(text).toHaveValue('Unsaved VM draft');
+  await expectEditorText(text, 'Unsaved VM draft');
   expect(state.writes).toBe(0);
   await activate(page, runWindow(page));
   await runWindow(page)
@@ -504,7 +508,7 @@ test('VM project Codex keeps drafts and routes files and tasks to the captured p
   await files(page)
     .getByRole('button', { name: 'Restore Draft', exact: true })
     .click();
-  await expect(text).toHaveValue('Unsaved VM draft');
+  await expectEditorText(text, 'Unsaved VM draft');
   expect(state.writes).toBe(0);
 });
 
@@ -583,7 +587,7 @@ test('a reopened manager does not turn a stale Resolve Start action into another
     await expect(manager(page)).toHaveCount(0);
     await activate(page, files(page));
     await files(page)
-      .getByRole('button', { name: 'Open with Codex', exact: true })
+      .getByRole('button', { name: 'Codex', exact: true })
       .click();
     const resolve = manager(page).getByRole('button', {
       name: 'Resolve Start',

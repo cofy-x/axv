@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
 	"github.com/cofy-x/axv/apps/server/internal/atomicfile"
+	"github.com/cofy-x/axv/apps/server/internal/compute/internal/providerutil"
 )
 
 // copyArtifact reads an already-open, confined source and publishes a flushed,
@@ -24,20 +24,15 @@ func copyArtifact(ctx context.Context, source *os.File, destination string) erro
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("artifact source must be a regular file")
 	}
-	temporary, err := os.CreateTemp(filepath.Dir(destination), ".axv-copy-")
-	if err != nil {
+	// The caller reserves destination and its fixed staging name inside an
+	// owned copy directory. Retry reclaims only this operation's partial file.
+	name := destination + ".copy"
+	if err := providerutil.RemoveCopyScratch(name); err != nil {
 		return err
 	}
-	name := temporary.Name()
 	defer os.Remove(name)
-	if err = temporary.Close(); err != nil {
-		return err
-	}
-	if err = os.Remove(name); err != nil {
-		return err
-	}
 	if cloneErr := cloneOpenFile(source, name); cloneErr != nil {
-		temporary, err = os.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
+		temporary, err := os.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
 		if err != nil {
 			return err
 		}

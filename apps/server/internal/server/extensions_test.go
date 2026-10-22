@@ -40,7 +40,7 @@ func TestOpaqueExtensionRequestsCannotReachAnyDesktopAPI(t *testing.T) {
 	defer extensionsStore.Close()
 	extensions.New(extensionsStore).Register(app)
 	h := newHandler(app, terminals, agents)
-	for _, path := range []string{"/api/runtime", "/api/entries", "/api/terminal/info", "/api/host/codex/info", "/api/extensions"} {
+	for _, path := range []string{"/api/runtime", "/api/entries", "/api/terminal/info", "/api/host/codex/info", "/api/extensions", "/api/project-previews/project-one"} {
 		for _, origin := range []string{"null", ""} {
 			r := httptest.NewRequest("GET", "http://localhost:3001"+path, nil)
 			r.RemoteAddr = "127.0.0.1:1234"
@@ -54,6 +54,16 @@ func TestOpaqueExtensionRequestsCannotReachAnyDesktopAPI(t *testing.T) {
 			if w.Code != 403 || !strings.Contains(w.Body.String(), "sandbox_request_forbidden") || reached {
 				t.Fatalf("opaque API reached %s: %d %s", path, w.Code, w.Body.String())
 			}
+		}
+	}
+	for _, site := range []string{"same-site", "cross-site"} {
+		r := httptest.NewRequest("GET", "http://localhost:3001/api/entries", nil)
+		r.RemoteAddr = "127.0.0.1:1234"
+		r.Header.Set("Sec-Fetch-Site", site)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != 403 || reached {
+			t.Fatalf("preview-origin API read was accepted: %s %d", site, w.Code)
 		}
 	}
 	// Content alone may be framed. Even direct navigation receives a CSP

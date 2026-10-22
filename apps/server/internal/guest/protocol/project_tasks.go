@@ -12,9 +12,10 @@ type TaskLimits struct {
 }
 
 type TaskSpec struct {
-	Argv      []string   `json:"argv"`
-	Directory string     `json:"directory"`
-	Limits    TaskLimits `json:"limits"`
+	Initialization *ProjectInitialization `json:"initialization,omitempty"`
+	Argv           []string               `json:"argv"`
+	Directory      string                 `json:"directory"`
+	Limits         TaskLimits             `json:"limits"`
 }
 
 type TaskSubmit struct {
@@ -39,6 +40,7 @@ type TaskLogRequest struct {
 // TaskExecution is the durable guest receipt/result for exactly one attempt.
 // Unknown/interrupted attempts are never implicitly launched again.
 type TaskExecution struct {
+	CreatedRoot *ProjectFileRoot `json:"createdRoot,omitempty"`
 	TaskIdentity
 	Spec       TaskSpec   `json:"spec"`
 	Status     string     `json:"status"`

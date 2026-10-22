@@ -7,6 +7,7 @@ import { useDraftNamespace } from '../../shared/drafts/context';
 import { machinesApi } from '../machines/api';
 import { vmProjectsAPI } from './vm-api';
 import type { VMProject } from './vm-api';
+import { VMProjectInitialize } from './VMProjectInitialize';
 
 export function VMProjectLauncher({ desktop, interactive }: AppWindowProps) {
   const [refresh, setRefresh] = useState(0);
@@ -15,7 +16,18 @@ export function VMProjectLauncher({ desktop, interactive }: AppWindowProps) {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const { databaseId } = useDraftNamespace();
+  const { databaseId, clientId } = useDraftNamespace();
+  const [mode, setMode] = useState<'open' | 'create' | 'clone'>(() => {
+    try {
+      return localStorage.getItem(
+        JSON.stringify(['axv-vm-project-initialization', databaseId, clientId]),
+      )
+        ? 'create'
+        : 'open';
+    } catch {
+      return 'create';
+    }
+  });
   const requests = useRef(new RequestIdentity(`${databaseId}:vm-projects`));
   const mounted = useRef(false);
   useEffect(() => {
@@ -48,7 +60,10 @@ export function VMProjectLauncher({ desktop, interactive }: AppWindowProps) {
           machine.hostId === data.hostId &&
           machine.status === 'running' &&
           machine.ready &&
-          machine.guestCapabilities?.includes('project-files'),
+          machine.guestCapabilities?.includes('project-files') &&
+          (mode === 'open' ||
+            (machine.guestCapabilities?.includes('project-tasks') &&
+              machine.guestCapabilities?.includes('project-initialization'))),
       ),
   );
   const volume = eligible?.find((item) => item.id === volumeId);
@@ -97,7 +112,7 @@ export function VMProjectLauncher({ desktop, interactive }: AppWindowProps) {
   return (
     <section className="vm-project-launcher" aria-label="VM projects">
       <div className="project-launcher-heading">
-        <h2>Open Folder</h2>
+        <h2>VM Projects</h2>
         <IconButton
           icon="refresh"
           label="Refresh VMs"
@@ -105,8 +120,22 @@ export function VMProjectLauncher({ desktop, interactive }: AppWindowProps) {
           onClick={() => setRefresh((value) => value + 1)}
         />
       </div>
+      <Select
+        label="Project action"
+        value={mode}
+        disabled={busy || !interactive}
+        onChange={(event) =>
+          setMode(event.target.value as 'open' | 'create' | 'clone')
+        }
+      >
+        <option value="open">Open Folder</option>
+        <option value="create">Create Project</option>
+        <option value="clone">Clone Repository</option>
+      </Select>
       <p className="project-launcher-guidance">
-        Open an existing folder on a running VM’s retained volume.
+        {mode === 'open'
+          ? 'Open an existing directory on the selected VM volume.'
+          : 'Create a new directory on the selected VM volume. Tasks continue after this window closes.'}
       </p>
       <form
         className="project-register-form"
@@ -135,40 +164,69 @@ export function VMProjectLauncher({ desktop, interactive }: AppWindowProps) {
               </option>
             ))}
           </Select>
-          <Field
-            label="Directory in volume"
-            value={root}
-            placeholder="repo (empty for volume root)"
-            disabled={busy || !interactive}
-            onChange={(event) => setRoot(event.target.value)}
-          />
-          <div className="project-register-name">
-            <Field
-              label="Project name (optional)"
-              value={name}
-              disabled={busy || !interactive}
-              onChange={(event) => setName(event.target.value)}
-            />
+          {mode === 'open' && (
+            <>
+              <Field
+                label="Directory"
+                value={root}
+                placeholder="repo (empty for volume root)"
+                disabled={busy || !interactive}
+                onChange={(event) => setRoot(event.target.value)}
+              />
+              <div className="project-register-name">
+                <Field
+                  label="Project name"
+                  value={name}
+                  placeholder="Optional"
+                  disabled={busy || !interactive}
+                  onChange={(event) => setName(event.target.value)}
+                />
+              </div>
+            </>
+          )}
+        </div>
+        {mode === 'open' && (
+          <div className="project-register-actions">
+            <Button
+              type="submit"
+              disabled={!volume || busy || !interactive}
+              primary
+            >
+              {busy ? 'Opening…' : 'Open'}
+            </Button>
           </div>
-        </div>
-        <div className="project-register-actions">
-          <Button
-            type="submit"
-            disabled={!volume || busy || !interactive}
-            primary
-          >
-            {busy ? 'Opening…' : 'Open'}
-          </Button>
-        </div>
+        )}
       </form>
+      <div hidden={mode === 'open'} inert={mode === 'open' || !interactive}>
+        <VMProjectInitialize
+          desktop={desktop}
+          interactive={!!interactive && mode !== 'open'}
+          mode={mode === 'clone' ? 'clone' : 'create'}
+          target={
+            data && volume?.machineId
+              ? {
+                  hostId: data.hostId,
+                  volumeId: volume.id,
+                  volumeRevision: volume.revision,
+                  machineId: volume.machineId,
+                  label: `${volume.name} · ${data.machines.find((machine) => machine.id === volume.machineId)?.spec.name || volume.machineId}`,
+                }
+              : null
+          }
+          onCreated={() => setRefresh((value) => value + 1)}
+        />
+      </div>
       {!data && !inventory.error && <p role="status">Loading VM projects…</p>}
-      {(error || inventory.error) && (
-        <p role="alert">{error || inventory.error}</p>
-      )}
+      {[...new Set([error, inventory.error].filter(Boolean))].map((reason) => (
+        <p role="alert" key={reason}>
+          {reason}
+        </p>
+      ))}
       {data && eligible?.length === 0 && (
         <p>
           No ready retained volumes are attached to a running VM with project
-          file access. Manage VMs and volumes in Virtual Machines.
+          file access{mode !== 'open' ? ' and persistent task support' : ''}.
+          Manage VMs and volumes in Virtual Machines.
         </p>
       )}
       {!!data?.projects.length && (
@@ -186,7 +244,10 @@ export function VMProjectLauncher({ desktop, interactive }: AppWindowProps) {
               onClick={() => open(project)}
             >
               <strong>
-                {project.name} · {project.id.slice(0, 8)}
+                {project.root === ''
+                  ? `Volume workspace · ${project.name}`
+                  : project.name}{' '}
+                · {project.id.slice(0, 8)}
               </strong>
               <small>
                 {projectVolume

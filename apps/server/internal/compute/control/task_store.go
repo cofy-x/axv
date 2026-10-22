@@ -251,6 +251,11 @@ func (s *Store) saveTaskExecution(ctx context.Context, id string, e protocol.Tas
 		if err := validateFinalTaskLog(a, e); err != nil {
 			return err
 		}
+		// Recheck inside the write transaction: another reconciliation may have
+		// captured the root after this response was validated against a snapshot.
+		if a.CreatedRoot != nil && e.CreatedRoot != nil && *a.CreatedRoot != *e.CreatedRoot {
+			return compute.Problem("guest_identity_mismatch", "The guest changed the initialization's captured directory identity.")
+		}
 		// A verified terminal result is immutable; later stale observations or
 		// cancellation acknowledgements cannot resurrect it.
 		if !compute.TaskFinal(a.Status) {
@@ -264,6 +269,10 @@ func (s *Store) saveTaskExecution(ctx context.Context, id string, e protocol.Tas
 			}
 		}
 		a.LogBytes, a.LogLimited = e.LogBytes, e.LogLimited
+		if e.CreatedRoot != nil {
+			root := *e.CreatedRoot
+			a.CreatedRoot = &root
+		}
 		a.GuestFinal = a.GuestFinal || compute.TaskFinal(e.Status)
 		a.SyncError = ""
 		if chunk != nil {

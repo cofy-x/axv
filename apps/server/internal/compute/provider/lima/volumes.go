@@ -165,6 +165,10 @@ func (d *Driver) EnsureVolume(ctx context.Context, v compute.Volume) error {
 }
 
 func (d *Driver) ResizeVolume(ctx context.Context, v compute.Volume, size int64) error {
+	return d.resizeVolume(ctx, v, size, nil)
+}
+
+func (d *Driver) resizeVolume(ctx context.Context, v compute.Volume, size int64, files []*os.File) error {
 	if size < v.SizeGiB {
 		return fmt.Errorf("volume shrinking is not supported")
 	}
@@ -183,7 +187,7 @@ func (d *Driver) ResizeVolume(ctx context.Context, v compute.Volume, size int64)
 	if err := diskspace.Require(d.root, (size-v.SizeGiB)<<30); err != nil {
 		return err
 	}
-	if _, err := d.command(ctx, nil, "disk", "resize", v.ID, "--size", fmt.Sprintf("%dGiB", size)); err != nil {
+	if _, err := d.commandWithFiles(ctx, nil, files, "disk", "resize", v.ID, "--size", fmt.Sprintf("%dGiB", size)); err != nil {
 		return err
 	}
 	info, found, err := d.inspectDisk(ctx, v.ID)
@@ -235,6 +239,9 @@ func (d *Driver) AttachVolume(ctx context.Context, m compute.Machine, v compute.
 }
 
 func (d *Driver) CopyVolume(ctx context.Context, source, target compute.Volume) error {
+	if source.ID == "" || target.ID == "" || source.ID == target.ID || source.Provider != "lima" || target.Provider != source.Provider || target.SizeGiB < source.SizeGiB {
+		return fmt.Errorf("an offline Lima copy requires independent volume identities, the same provider and a target at least as large as its source")
+	}
 	if source.MachineID != "" {
 		o, err := d.Inspect(ctx, compute.Machine{ID: source.MachineID})
 		if err != nil {
@@ -251,7 +258,24 @@ func (d *Driver) CopyVolume(ctx context.Context, source, target compute.Volume) 
 	if err := providerutil.PinJSON(filepath.Join(dir, "copy.json"), []any{source.ID, target.SizeGiB}); err != nil {
 		return err
 	}
-	if _, err := os.Stat(filepath.Join(dir, "copy-complete")); err == nil {
+	lock, err := lockVolumeCopy(ctx, dir)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	file, err := d.volumeFile(ctx, source)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	if source.IsProjectBackup() {
+		if err := providerutil.VerifyCopyCompletion(ctx, filepath.Join(d.root, "volumes", source.ID, "copy-complete"), source.Backup.SourceVolumeID, source.ID, source.SizeGiB, file); err != nil {
+			return err
+		}
+	}
+	if _, exists, err := providerutil.ReadCopyCompletion(filepath.Join(dir, "copy-complete"), source.ID, target.ID, target.SizeGiB); err != nil {
+		return err
+	} else if exists {
 		info, found, err := d.inspectDisk(ctx, target.ID)
 		if err != nil {
 			return err
@@ -259,23 +283,21 @@ func (d *Driver) CopyVolume(ctx context.Context, source, target compute.Volume) 
 		if !found || info.Size != target.SizeGiB<<30 {
 			return fmt.Errorf("the completed volume copy is missing or changed; no replacement was created")
 		}
-		return nil
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-	file, err := d.volumeFile(ctx, source)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	if err = diskspace.Require(d.root, (target.SizeGiB+source.SizeGiB)<<30); err != nil {
-		return err
+		targetFile, err := d.volumeFile(ctx, target)
+		if err != nil {
+			return err
+		}
+		defer targetFile.Close()
+		return providerutil.VerifyCopyCompletion(ctx, filepath.Join(dir, "copy-complete"), source.ID, target.ID, target.SizeGiB, targetFile)
 	}
 	copyPath := filepath.Join(dir, "source.raw")
-	if err = copyArtifact(ctx, file, copyPath); err != nil {
-		return err
+	// A crash may retain either the capture or its partial staging file. Both
+	// belong to this pinned intent; release them before reserving disk space.
+	for _, name := range []string{copyPath, copyPath + ".copy"} {
+		if err := providerutil.RemoveCopyScratch(name); err != nil {
+			return err
+		}
 	}
-	defer os.Remove(copyPath)
 	info, exists, err := d.inspectDisk(ctx, target.ID)
 	if err != nil {
 		return err
@@ -284,14 +306,21 @@ func (d *Driver) CopyVolume(ctx context.Context, source, target compute.Volume) 
 		if info.Instance != "" {
 			return fmt.Errorf("an incomplete volume copy is attached; refusing replacement")
 		}
-		if _, err = d.command(ctx, nil, "disk", "delete", target.ID); err != nil {
+		if _, err = d.commandWithFiles(ctx, nil, []*os.File{lock}, "disk", "delete", target.ID); err != nil {
 			return err
 		}
 		if _, stillExists, err := d.inspectDisk(ctx, target.ID); err != nil || stillExists {
 			return fmt.Errorf("the incomplete copy could not be removed safely: %v", err)
 		}
 	}
-	if _, err = d.command(ctx, nil, "disk", "import", target.ID, copyPath); err != nil {
+	if err = diskspace.Require(d.root, (target.SizeGiB+source.SizeGiB)<<30); err != nil {
+		return err
+	}
+	if err = copyArtifact(ctx, file, copyPath); err != nil {
+		return err
+	}
+	defer os.Remove(copyPath)
+	if _, err = d.commandWithFiles(ctx, nil, []*os.File{lock}, "disk", "import", target.ID, copyPath); err != nil {
 		return err
 	}
 	imported, err := d.volumeFile(ctx, compute.Volume{ID: target.ID})
@@ -311,7 +340,7 @@ func (d *Driver) CopyVolume(ctx context.Context, source, target compute.Volume) 
 		return fmt.Errorf("the imported volume copy failed its checksum verification")
 	}
 	if target.SizeGiB > source.SizeGiB {
-		if err = d.ResizeVolume(ctx, compute.Volume{ID: target.ID, SizeGiB: source.SizeGiB}, target.SizeGiB); err != nil {
+		if err = d.resizeVolume(ctx, compute.Volume{ID: target.ID, SizeGiB: source.SizeGiB}, target.SizeGiB, []*os.File{lock}); err != nil {
 			return err
 		}
 	}
@@ -325,5 +354,9 @@ func (d *Driver) CopyVolume(ctx context.Context, source, target compute.Volume) 
 	if err = atomicfile.Write(filepath.Join(dir, "created"), []byte(target.ID), 0600); err != nil {
 		return err
 	}
-	return atomicfile.Write(filepath.Join(dir, "copy-complete"), []byte(target.ID), 0600)
+	got, err = filedigest.Sum(ctx, imported)
+	if err != nil {
+		return err
+	}
+	return providerutil.WriteCopyCompletion(filepath.Join(dir, "copy-complete"), source.ID, target.ID, target.SizeGiB, got)
 }

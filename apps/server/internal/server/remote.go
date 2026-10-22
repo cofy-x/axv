@@ -35,7 +35,9 @@ func startRemote(ctx context.Context, home string, settings profile.Remote, hand
 			if err != nil {
 				return nil, nil, err
 			}
-			return middleware.Wrap(handler), middleware.Close, nil
+			return middleware.Wrap(handler), func() {
+				middleware.Close()
+			}, nil
 		},
 		Update: func(status tailnet.Status) {
 			// Enrollment URLs are bearer capabilities. AXV's operational log
@@ -158,6 +160,7 @@ func remoteRoute(r *http.Request) bool {
 			"/api/preferences", "/api/layout", "/api/trash", "/api/terminal",
 			"/api/projects", "/api/documents", "/api/document-links", "/api/document-snapshots",
 			"/api/host/directories", "/api/host/codex", "/api/compute",
+			"/api/project-previews",
 		} {
 			if pathWithin(r.URL.Path, prefix) {
 				return true

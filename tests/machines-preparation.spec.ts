@@ -471,7 +471,7 @@ test('macOS preparation reviews before changes, preserves drafts and resumes one
   await expect(
     page
       .locator('[data-window-id="machine-create:main"]')
-      .getByRole('button', { name: 'Create VM', exact: true }),
+      .getByRole('button', { name: 'Create', exact: true }),
   ).toBeEnabled();
 });
 

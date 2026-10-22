@@ -13,11 +13,15 @@ type ForceStopper interface {
 	ForceStop(context.Context, Machine) error
 }
 
+type VolumeCopier interface {
+	CopyVolume(context.Context, Volume, Volume) error
+}
+
 type VolumeDriver interface {
+	VolumeCopier
 	EnsureVolume(context.Context, Volume) error
 	ResizeVolume(context.Context, Volume, int64) error
 	AttachVolume(context.Context, Machine, Volume) error
-	CopyVolume(context.Context, Volume, Volume) error
 }
 
 // Driver methods must be idempotent and inspect ownership before any mutation.

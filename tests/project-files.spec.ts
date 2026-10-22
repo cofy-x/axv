@@ -139,7 +139,7 @@ test('project location switching preserves both forms and an in-flight registrat
   const hostPath = launcher.getByLabel('Host project directory', {
     exact: true,
   });
-  const vmPath = launcher.getByLabel('Directory in volume', { exact: true });
+  const vmPath = launcher.getByLabel('Directory', { exact: true });
   await expect(host).toHaveAttribute('aria-selected', 'true');
   await expect(vm).toBeInViewport();
   await hostPath.fill('/fixture/host-draft');
@@ -173,7 +173,7 @@ test('project location switching preserves both forms and an in-flight registrat
     .selectOption(volumeId);
   await vmPath.fill(' repo ');
   await launcher
-    .getByLabel('Project name (optional)', { exact: true })
+    .getByLabel('Project name', { exact: true })
     .fill('Draft project');
   await expect(
     launcher.getByRole('button', { name: /Shared name · aaaaaaaa/ }),
@@ -193,7 +193,7 @@ test('project location switching preserves both forms and an in-flight registrat
   await choose(vm);
   await expect(vmPath).toHaveValue(' repo ');
   await expect(
-    launcher.getByLabel('Project name (optional)', { exact: true }),
+    launcher.getByLabel('Project name', { exact: true }),
   ).toHaveValue('Draft project');
   await choose(launcher.getByRole('button', { name: 'Open', exact: true }));
   await expect.poll(() => fixture.registrations.length).toBe(1);

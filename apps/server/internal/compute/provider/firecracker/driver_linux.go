@@ -87,7 +87,7 @@ func New(root, owner string, config compute.FirecrackerConfig) (compute.Driver, 
 }
 
 func (d *Driver) Probe(ctx context.Context) compute.Capability {
-	c := compute.Capability{Provider: "firecracker", PersistentVolumes: true, GuestExecution: true}
+	c := compute.Capability{Provider: "firecracker", PersistentVolumes: true, GuestExecution: true, VolumeCopy: true}
 	if os.Geteuid() != 0 {
 		c.Reason = "Run the isolated Firecracker host service with privileges for jailer, TAP and cgroups."
 		return c

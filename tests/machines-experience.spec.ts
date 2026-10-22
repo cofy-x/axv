@@ -350,7 +350,7 @@ test('empty hosts distinguish unavailable providers, missing images and configur
     create.getByRole('combobox', { name: 'Image', exact: true }),
   ).toHaveValue(image.id);
   await expect(
-    create.getByRole('button', { name: 'Create VM', exact: true }),
+    create.getByRole('button', { name: 'Create', exact: true }),
   ).toBeEnabled();
   expect(state.writes).toEqual([]);
 });

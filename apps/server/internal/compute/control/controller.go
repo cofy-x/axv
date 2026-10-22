@@ -65,9 +65,7 @@ func (s *Service) worker(ctx context.Context) {
 		if found && err == nil {
 			logger := s.Logger.With("operationId", op.ID, "requestId", op.RequestID, "machineId", op.MachineID, "volumeId", op.VolumeID, "resourceId", op.ResourceID, "resourceKind", op.ResourceKind, "action", op.Action)
 			logger.Info("operation.started")
-			work, cancel := context.WithTimeout(diagnostics.Context(ctx, logger), 10*time.Minute)
-			observation, operationErr := s.perform(work, op)
-			cancel()
+			observation, operationErr := s.performOperation(diagnostics.Context(ctx, logger), op, 10*time.Minute, 500*time.Millisecond)
 			if operationErr != nil {
 				logger.Error("operation.execution_failed", operationErr, "status", observation.Status)
 			} else {

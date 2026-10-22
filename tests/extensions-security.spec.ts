@@ -187,9 +187,20 @@ axv.ready.then(async () => {
   );
   const win = page.locator(`[data-app-id="extension.${id}"]`);
   const frame = win.frameLocator('iframe');
-  await choose(
-    frame.getByRole('button', { name: 'Create oversized draft', exact: true }),
+  const reject = frame.getByRole('button', {
+    name: 'Create oversized draft',
+    exact: true,
+  });
+  await expect(win.locator('iframe')).not.toHaveAttribute('inert', '');
+  await expect(reject).toBeEnabled();
+  // Let iframe activation reach browser hit testing before the first input.
+  await reject.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
   );
+  await choose(reject);
   await expect(frame.getByRole('status')).toHaveText(
     'Oversized draft rejected',
   );

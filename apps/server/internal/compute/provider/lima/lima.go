@@ -90,10 +90,24 @@ func New(root, owner string, config compute.LimaConfig) (*Driver, error) {
 }
 
 func (d *Driver) command(ctx context.Context, input io.Reader, args ...string) ([]byte, error) {
+	return d.commandWithFiles(ctx, input, nil, args...)
+}
+
+func (d *Driver) commandWithFiles(ctx context.Context, input io.Reader, files []*os.File, args ...string) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	logger := diagnostics.FromContext(ctx).With("provider", "lima", "command", args[0])
 	started := time.Now()
 	logger.Info("provider.command_started")
 	cmd := exec.CommandContext(ctx, d.config.Binary, append([]string{"--tty=false"}, args...)...)
+	if len(files) != 0 {
+		// A disk mutation must retain its inherited lock until limactl and its
+		// synchronous helpers finish. Killing only the CLI on cancellation can
+		// orphan a helper after releasing the lock that protects its storage.
+		cmd.Cancel = nil
+	}
+	cmd.ExtraFiles = files
 	cmd.Dir = d.root
 	cmd.Env = d.environment()
 	cmd.Stdin = input
@@ -128,7 +142,7 @@ func (d *Driver) environment() []string {
 }
 
 func (d *Driver) Probe(ctx context.Context) compute.Capability {
-	c := compute.Capability{Provider: "lima", PersistentVolumes: true, GuestExecution: true, Version: d.config.Version, Configuration: true, ForceStop: true, Volumes: true, Images: true, SnapshotReason: "Lima/VZ does not implement native snapshots. Use an AXV cold checkpoint or backup when available."}
+	c := compute.Capability{Provider: "lima", PersistentVolumes: true, GuestExecution: true, Version: d.config.Version, Configuration: true, ForceStop: true, Volumes: true, VolumeCopy: true, Images: true, SnapshotReason: "Lima/VZ does not implement native snapshots. Use an AXV cold checkpoint or backup when available."}
 	if runtime.GOOS != "darwin" {
 		c.Reason = "This adapter currently supports macOS with VZ."
 		return c
@@ -512,12 +526,17 @@ func (d *Driver) DeleteVolume(ctx context.Context, v compute.Volume) error {
 	} else if err != nil {
 		return err
 	}
+	lock, err := lockVolumeCopy(ctx, dir)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
 	exists, err := d.diskExists(ctx, v.ID)
 	if err != nil {
 		return err
 	}
 	if exists {
-		if _, err = d.command(ctx, nil, "disk", "delete", v.ID); err != nil {
+		if _, err = d.commandWithFiles(ctx, nil, []*os.File{lock}, "disk", "delete", v.ID); err != nil {
 			return err
 		}
 		if stillExists, inspectErr := d.diskExists(ctx, v.ID); inspectErr != nil {

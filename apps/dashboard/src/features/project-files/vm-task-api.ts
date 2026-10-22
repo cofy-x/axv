@@ -10,12 +10,14 @@ export interface VMTaskLimits {
 }
 
 export interface VMTaskSpec {
+  initialization?: { directory: string; repository?: string; name?: string };
   argv: string[];
   directory: string;
   limits: VMTaskLimits;
 }
 
 export interface VMTaskAttempt {
+  createdRoot?: { root: string; rootIdentity: string };
   id: string;
   taskId: string;
   number: number;
@@ -93,6 +95,7 @@ export function validVMTaskSubmission(
   const spec = saved.spec;
   if (
     !spec ||
+    spec.initialization !== undefined ||
     !Array.isArray(spec.argv) ||
     !spec.argv.length ||
     spec.argv.length > 128 ||
@@ -144,12 +147,19 @@ function call<T>(
 }
 
 export const vmTasksAPI = {
-  recover: (projectId: string, hostId: string, requestId: string) =>
+  recover: (
+    projectId: string,
+    hostId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ) =>
     request<VMTaskResult>(
       `/compute/projects/${encodeURIComponent(projectId)}/task-requests/${encodeURIComponent(requestId)}`,
       {
         headers: { 'X-AXV-Host-ID': hostId },
-        signal: AbortSignal.timeout(30000),
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
+          : AbortSignal.timeout(30000),
       },
     ),
   list: (projectId: string, hostId: string, signal?: AbortSignal) =>

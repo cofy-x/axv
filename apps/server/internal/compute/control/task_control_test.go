@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path"
 	"strings"
 	"sync"
 	"testing"
@@ -30,9 +31,9 @@ type taskFixture struct {
 	offline          bool
 }
 
-func newTaskFixture(t *testing.T) *taskFixture {
+func newTaskFixture(t *testing.T, capabilities ...string) *taskFixture {
 	t.Helper()
-	project := newProjectFixture(t, "project-tasks")
+	project := newProjectFixture(t, append([]string{"project-tasks"}, capabilities...)...)
 	f := &taskFixture{projectFixture: project, bound: project.registered(t), records: map[string]protocol.TaskExecution{}, logs: map[string][]byte{}, submits: map[string]int{}}
 	project.mu.Lock()
 	project.file = f.serve
@@ -155,6 +156,9 @@ func (f *taskFixture) finish(id string, data []byte) {
 	record := f.records[id]
 	now, code := time.Now().UTC(), 0
 	record.Status, record.FinishedAt, record.ExitCode, record.LogBytes = "succeeded", &now, &code, int64(len(data))
+	if record.Spec.Initialization != nil {
+		record.CreatedRoot = &protocol.ProjectFileRoot{Root: path.Join(record.Root, record.Spec.Initialization.Directory), RootIdentity: "inode:123"}
+	}
 	f.records[id], f.logs[id] = record, append([]byte{}, data...)
 }
 

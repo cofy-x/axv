@@ -103,5 +103,14 @@ export default defineConfig(
     ],
     languageOptions: { globals: globals.node },
   },
+  {
+    files: ['scripts/lib-vm-project-preview.mjs'],
+    languageOptions: {
+      globals: {
+        document: globals.browser.document,
+        window: globals.browser.window,
+      },
+    },
+  },
   prettier,
 );

@@ -43,12 +43,15 @@ function operation<T>(
   binding: VMProjectBinding,
   action: string,
   values: object,
+  signal?: AbortSignal,
 ) {
   return request<T>(`${projectPath(id)}/files/${action}`, {
     method: 'POST',
     headers: headers(binding.hostId),
     body: JSON.stringify({ binding, ...values }),
-    signal: AbortSignal.timeout(30000),
+    signal: signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
+      : AbortSignal.timeout(30000),
   });
 }
 
@@ -85,8 +88,12 @@ export const vmProjectsAPI = {
       nextCursor?: string;
       truncated?: boolean;
     }>(id, binding, 'list', { path, cursor }),
-  read: (id: string, binding: VMProjectBinding, path: string) =>
-    operation<VMProjectContent>(id, binding, 'read', { path }),
+  read: (
+    id: string,
+    binding: VMProjectBinding,
+    path: string,
+    signal?: AbortSignal,
+  ) => operation<VMProjectContent>(id, binding, 'read', { path }, signal),
   write: (
     id: string,
     binding: VMProjectBinding,
