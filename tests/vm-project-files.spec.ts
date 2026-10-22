@@ -1210,6 +1210,7 @@ test('stale VM bindings and conflicts keep drafts until an explicit reconnect', 
 
 test('lost preview replies recover the original registration after reload', async ({
   page,
+  request,
 }) => {
   await fixture(page);
   const registrations: unknown[] = [];
@@ -1249,6 +1250,13 @@ test('lost preview replies recover the original registration after reload', asyn
     .click();
   await panel.getByRole('button', { name: 'Add' }).click();
   await expect(panel.getByRole('alert')).toContainText('response was lost');
+  await expect
+    .poll(async () =>
+      (await persistedLayout(page, request))?.windows.some(
+        (item: { id: string }) => item.id === browserId,
+      ),
+    )
+    .toBe(true);
   await page.reload();
   panel = browser(page).locator('.vm-project-previews');
   await browser(page)
@@ -1266,6 +1274,7 @@ test('lost preview replies recover the original registration after reload', asyn
 
 test('preview recovery never substitutes a restarted manager instance', async ({
   page,
+  request,
 }) => {
   await fixture(page);
   const registrations: Array<{ instanceId: string }> = [];
@@ -1296,6 +1305,13 @@ test('preview recovery never substitutes a restarted manager instance', async ({
     'original AXV preview instance',
   );
   instanceId = 'preview-manager-after';
+  await expect
+    .poll(async () =>
+      (await persistedLayout(page, request))?.windows.some(
+        (item: { id: string }) => item.id === browserId,
+      ),
+    )
+    .toBe(true);
   await page.reload();
   panel = browser(page).locator('.vm-project-previews');
   await browser(page)

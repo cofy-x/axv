@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, menuItem, test } from './helpers';
+import { expect, menuItem, persistedLayout, test } from './helpers';
 import type {
   VMProject,
   VMProjectBinding,
@@ -245,6 +245,7 @@ async function launcher(page: Page) {
 
 test('clone recovers its original task after reload and opens the initialized project', async ({
   page,
+  request,
 }) => {
   const state = await fixture(page, true);
   let panel = await launcher(page);
@@ -257,6 +258,13 @@ test('clone recovers its original task after reload and opens the initialized pr
   await panel.getByRole('button', { name: 'Clone', exact: true }).click();
   await expect(panel.getByRole('alert')).toContainText('The response was lost');
   expect(state.submissions).toHaveLength(1);
+  await expect
+    .poll(async () =>
+      (await persistedLayout(page, request))?.windows.some(
+        (item: { id: string }) => item.id === 'project-files:projects',
+      ),
+    )
+    .toBe(true);
   await page.reload();
   panel = projects(page);
   await panel.getByRole('tab', { name: 'VM', exact: true }).click();

@@ -581,10 +581,17 @@ test('project tasks preserve file drafts, submit an exact VM command and recover
     path: screenshot,
     contentType: 'image/png',
   });
+  const [accepted] = state.values.values();
   await expect
     .poll(async () =>
       (await persistedLayout(page, request))?.windows.some(
-        (item: { id: string }) => item.id === taskWindowId,
+        (item: {
+          id: string;
+          viewState: { taskId?: string; attemptId?: string };
+        }) =>
+          item.id === taskWindowId &&
+          item.viewState.taskId === accepted.task.id &&
+          item.viewState.attemptId === accepted.attempt.id,
       ),
     )
     .toBe(true);

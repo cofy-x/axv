@@ -490,6 +490,13 @@ test('VM project Codex keeps drafts and routes files and tasks to the captured p
     path: screenshot,
     contentType: 'image/png',
   });
+  await expect
+    .poll(async () =>
+      (await persistedLayout(page, request))?.windows.some(
+        (win: { id: string }) => win.id === 'codex:vm-session:vm-run-1',
+      ),
+    )
+    .toBe(true);
   const layout = await persistedLayout(page, request);
   expect(JSON.stringify(layout)).not.toContain(
     '/axv-owned/empty-host-workspace',
