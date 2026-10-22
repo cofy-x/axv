@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, menuItem, test } from './helpers';
+import { expect, menuItem, persistedLayout, test } from './helpers';
 import type { VMProject } from '../apps/dashboard/src/features/project-files/vm-api';
 
 const project: VMProject = {
@@ -238,6 +238,7 @@ async function open(page: Page) {
 
 test('offline backup recovery retains its exact payload and restores a new project on narrow screens', async ({
   page,
+  request,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const state = await fixture(page, true);
@@ -246,6 +247,14 @@ test('offline backup recovery retains its exact payload and restores a new proje
   await panel.getByRole('button', { name: 'Back Up', exact: true }).click();
   await expect(panel.getByRole('button', { name: 'Recover' })).toBeVisible();
   expect(state.submissions).toHaveLength(1);
+  await expect
+    .poll(async () =>
+      (await persistedLayout(page, request))?.windows.some(
+        (window: { id: string }) =>
+          window.id === `project-files:vm:${project.hostId}:${project.id}`,
+      ),
+    )
+    .toBe(true);
   await page.reload();
   panel = projectWindow(page).locator('.vm-project-backups');
   await projectWindow(page)
@@ -333,6 +342,7 @@ test('invalid backup recovery bytes remain intact until explicit release', async
 
 test('accepted backup operations retain their identity across reload without resubmission', async ({
   page,
+  request,
 }) => {
   const state = await fixture(page, false, true);
   let panel = await open(page);
@@ -340,6 +350,14 @@ test('accepted backup operations retain their identity across reload without res
   await panel.getByRole('button', { name: 'Back Up', exact: true }).click();
   await panel.getByText('Request Details', { exact: true }).click();
   await expect(panel.getByText('Operation backup-op: running')).toBeVisible();
+  await expect
+    .poll(async () =>
+      (await persistedLayout(page, request))?.windows.some(
+        (window: { id: string }) =>
+          window.id === `project-files:vm:${project.hostId}:${project.id}`,
+      ),
+    )
+    .toBe(true);
   await page.reload();
   await projectWindow(page)
     .getByRole('tab', { name: 'Backups', exact: true })
