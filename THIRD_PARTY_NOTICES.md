@@ -21,6 +21,8 @@ The collector preserves upstream text and refuses a dependency without a license
 
 The [release procedure](https://github.com/cofy-x/axv/blob/main/docs/releasing.md) owns generation and review. Keep this file and `licenses/` with a redistributed application archive. A source checkout does not include downloaded dependency trees; obtain their original terms from the exact locked packages and module sources.
 
+Project Files uses [CodeMirror 6](https://codemirror.net/) and its CodeMirror/Lezer packages for syntax-aware source views and mapping reading positions after external changes. These packages retain their upstream MIT licenses. Their exact versions are locked in the JavaScript dependency graph above; the release collector includes their original license files with the application distribution.
+
 ## Separately installed software and VM images
 
 The application archive does not bundle the following tools, base images or kernels. Setup may download selected tools or images separately, and guest-image recipes combine upstream packages with AXV's guest service.
