@@ -1,6 +1,4 @@
 import { encoded, openTerminal, output, run } from './terminal-helpers';
-import { mkdir } from 'node:fs/promises';
-import { resolve } from 'node:path';
 
 import {
   activate,
@@ -23,11 +21,8 @@ for (const viewport of [
     page,
     request,
   }, info) => {
-    const screenshotDir = resolve('screenshots', `final-${info.project.name}`);
-    await mkdir(screenshotDir, { recursive: true });
     const capture = async (name: string) => {
-      const path = resolve(
-        screenshotDir,
+      const path = info.outputPath(
         `${viewport.width}x${viewport.height}-${name}.png`,
       );
       await page.screenshot({ path, fullPage: true });
@@ -168,11 +163,8 @@ for (const viewport of [
       await expect(
         terminal.getByRole('button', { name: label, exact: true }),
       ).toBeInViewport();
-    const screenshotDir = resolve('screenshots', `final-${info.project.name}`);
-    await mkdir(screenshotDir, { recursive: true });
     const capture = async (name: string) => {
-      const path = resolve(
-        screenshotDir,
+      const path = info.outputPath(
         `${viewport.width}x${viewport.height}-${name}.png`,
       );
       await page.screenshot({ path, fullPage: true });

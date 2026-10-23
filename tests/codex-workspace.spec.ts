@@ -6,6 +6,7 @@ import {
   endCodex,
   expect,
   openCodexManager,
+  openCodexFolderPicker,
   projectPath,
   readState,
   runCodex,
@@ -101,35 +102,60 @@ test('a conflicting Codex rename keeps the draft and does not overwrite another 
   await endCodex(page, window);
 });
 
-test('a recent project starts a distinct Codex session directly without browsing folders', async ({
+test('a recent project selects a directory before explicitly starting a distinct Codex session', async ({
   page,
   request,
 }) => {
   const first = await startCodexInFolder(page);
   await first.window.getByRole('button', { name: /^Close / }).click();
   const manager = await openCodexManager(page);
+  await expect(
+    manager.getByRole('region', { name: 'Recent projects' }),
+  ).toHaveCount(0);
+  await openCodexFolderPicker(page);
   const recent = manager.getByRole('button', {
-    name: `New session in ${projectPath}`,
+    name: 'Recent Projects',
     exact: true,
   });
-  await expect(recent).toHaveCount(1);
-  const directoryRequests: string[] = [];
+  await expect(recent).toBeVisible();
+  const submissions: string[] = [];
   page.on('request', (request) => {
-    if (request.url().includes('/api/host/directories'))
-      directoryRequests.push(request.url());
+    if (
+      request.url().endsWith('/api/host/codex/sessions') &&
+      request.method() === 'POST'
+    )
+      submissions.push(request.url());
   });
+  await recent.click();
+  const menu = page.getByRole('menu', { name: 'Recent Projects', exact: true });
+  await menu
+    .getByRole('menuitem', {
+      name: `${projectPath.split('/').at(-1)} ${projectPath.slice(0, projectPath.lastIndexOf('/'))}`,
+      exact: true,
+    })
+    .click();
+  await expect(
+    manager.getByLabel('Project directory', { exact: true }),
+  ).toHaveValue(projectPath);
+  const start = manager.getByRole('button', {
+    name: 'Start Here',
+    exact: true,
+  });
+  await expect(start).toBeEnabled();
+  expect(submissions).toEqual([]);
+  await expect(manager.getByTestId('codex-directory-context')).toHaveCount(0);
+  await expect(recent).toBeFocused();
   const created = page.waitForResponse(
     (response) =>
       response.url().endsWith('/api/host/codex/sessions') &&
       response.request().method() === 'POST',
   );
-  await recent.click();
+  await start.click();
   const response = await created;
   expect(response.ok()).toBeTruthy();
   const current = (await response.json()).session;
   expect(current.id).not.toBe(first.id);
   expect(current.projectPath).toBe(projectPath);
-  expect(directoryRequests).toEqual([]);
   await expect(
     codexWindow(page, current.id, current.runId).getByTestId('codex-status'),
   ).toHaveAttribute('data-state', 'connected');
@@ -146,6 +172,52 @@ test('a recent project starts a distinct Codex session directly without browsing
         .sort(),
     )
     .toEqual([first.id, current.id].sort());
+});
+
+test('recent-project refresh errors stay visible outside the folder picker and recover without losing shortcuts', async ({
+  page,
+}) => {
+  const first = await startCodexInFolder(page);
+  await first.window.getByRole('button', { name: /^Close / }).click();
+  const manager = await openCodexFolderPicker(page);
+  const recent = manager.getByRole('button', {
+    name: /^Recent Projects/,
+    exact: true,
+  });
+  await expect(recent).toBeVisible();
+  await manager.getByRole('button', { name: 'Cancel', exact: true }).click();
+  const url = '**/api/host/codex/projects';
+  const diagnostic = 'Recent projects could not be refreshed.';
+  await page.route(url, (route) =>
+    route.fulfill({
+      status: 503,
+      json: { code: 'fixture_unavailable', error: diagnostic },
+    }),
+  );
+  try {
+    await manager.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await expect(manager.getByRole('alert')).toHaveText(diagnostic);
+    await expect(
+      manager.getByRole('region', { name: 'Recent projects' }),
+    ).toHaveCount(0);
+    await openCodexFolderPicker(page);
+    await expect(manager.getByRole('alert')).toHaveText(diagnostic);
+    await expect(
+      manager.getByRole('button', {
+        name: 'Recent Projects · Outdated',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(recent).toBeEnabled();
+  } finally {
+    await page.unroute(url);
+  }
+  await manager.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(manager.getByRole('alert')).toHaveCount(0);
+  await expect(
+    manager.getByRole('button', { name: 'Recent Projects', exact: true }),
+  ).toBeVisible();
+  await expect(recent).toBeEnabled();
 });
 
 test('Host Terminal uses the Codex directory and closing it leaves Codex running', async ({

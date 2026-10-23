@@ -3,6 +3,7 @@ import { IconButton } from '@cofy-x/axv-nextstep';
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
 import type { CodexSessionRecord } from './api';
 import { sessionTitle } from './api';
+import { activityLabel } from './activity';
 import { openTerminalWindow } from '../terminal/definition';
 
 function SessionDetails({ session }: { session: CodexSessionRecord }) {
@@ -25,6 +26,14 @@ function SessionDetails({ session }: { session: CodexSessionRecord }) {
         <dd>{sessionTitle(session)}</dd>
         <dt>List</dt>
         <dd>{session.archivedAt ? 'Archived' : 'Unarchived'}</dd>
+        <dt>Activity</dt>
+        <dd>{activityLabel(session.activity)}</dd>
+        {session.activity?.updatedAt && (
+          <>
+            <dt>Last activity</dt>
+            <dd>{new Date(session.activity.updatedAt).toLocaleString()}</dd>
+          </>
+        )}
         <dt>Target</dt>
         <dd>Host</dd>
         <dt>{session.vmProject ? 'Host working directory' : 'Project'}</dt>
@@ -92,10 +101,16 @@ function SessionDetails({ session }: { session: CodexSessionRecord }) {
             'Default server'
           )}
         </dd>
-        <dt>Status</dt>
+        <dt>Run status</dt>
         <dd>{session.status}</dd>
         <dt>Run started</dt>
         <dd>{new Date(session.createdAt).toLocaleString()}</dd>
+        {session.endedAt && (
+          <>
+            <dt>Run ended</dt>
+            <dd>{new Date(session.endedAt).toLocaleString()}</dd>
+          </>
+        )}
       </dl>
       {session.attachCommand && (
         <>
@@ -112,6 +127,7 @@ function SessionDetails({ session }: { session: CodexSessionRecord }) {
         </>
       )}
       {session.reason && <p>{session.reason}</p>}
+      {session.activity?.reason && <p>{session.activity.reason}</p>}
       <p>
         Closing a Codex run window only detaches. End Session stops its run.
         Continue starts a new run with saved history. Archiving does not stop

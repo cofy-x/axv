@@ -1,5 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import type { RefObject } from 'react';
 import { Button, Field, PixelIcon } from './controls';
+import { MenuLabel } from './MenuLabel';
 import { usePointerGesture } from './desktop/usePointerGesture';
 import { useViewport } from './desktop/useViewport';
 import type {
@@ -30,10 +32,12 @@ const firstEnabled = (items: MenuItem[]) =>
 
 export function MenuOverlay({
   request,
+  pointerPosition,
   close,
   pin,
 }: {
   request: MenuRequest;
+  pointerPosition: RefObject<Point | null>;
   close: (action?: () => void) => void;
   pin?: (point: Point) => void;
 }) {
@@ -62,18 +66,32 @@ export function MenuOverlay({
       const width = rect?.width ?? 200;
       const height = rect?.height ?? 100;
       const point = compact ? request.point : level.point;
-      let x = point.x;
+      const alignEnd =
+        request.options?.align === 'end' && (compact || index === 0);
+      const margin = request.options?.width === 'wide' ? 8 : 2;
+      let x = point.x - (alignEnd ? width : 0);
       if (!compact && index > 0 && x + width > viewport.width - 4) {
         const previous = refs.current[index - 1]?.getBoundingClientRect();
         x = (previous?.left ?? x) - width + 2;
       }
       return {
-        x: Math.max(2, Math.min(x, viewport.width - width - 2)),
+        x: Math.max(margin, Math.min(x, viewport.width - width - margin)),
         y: Math.max(22, Math.min(point.y, viewport.height - height - 3)),
       };
     });
     setPositions(next);
-    refs.current[levels.length - 1]?.focus({ preventScroll: true });
+    const active = refs.current[levels.length - 1];
+    active?.focus({ preventScroll: true });
+    const selected = active?.querySelector<HTMLElement>('.is-selected');
+    if (active && selected) {
+      const row = selected.getBoundingClientRect();
+      const top = active.getBoundingClientRect().top + active.clientTop;
+      const bottom = top + active.clientHeight;
+      if (row.top < top || row.height > active.clientHeight)
+        active.scrollTop += Math.floor(row.top - top);
+      else if (row.bottom > bottom)
+        active.scrollTop += Math.ceil(row.bottom - bottom);
+    }
   }, [levels, request, compact, viewport.width, viewport.height]);
 
   const openSubmenu = (
@@ -147,7 +165,7 @@ export function MenuOverlay({
               ? `${menuId}-${levelIndex}-${level.selected}`
               : undefined
           }
-          className="ns-menu"
+          className={`ns-menu${request.options?.width === 'wide' ? ' is-wide' : ''}`}
           style={{
             left:
               levelIndex === 0 && dragPoint
@@ -312,8 +330,22 @@ export function MenuOverlay({
                 }
                 tabIndex={-1}
                 className={`ns-menu-item ${level.selected === index && !item.disabled ? 'is-selected' : ''}`}
-                onPointerEnter={(event) => {
-                  if (event.pointerType !== 'touch')
+                onPointerMove={(event) => {
+                  const previous = pointerPosition.current;
+                  // Scrolling can synthesize pointer events without a mouse move.
+                  const moved =
+                    !previous ||
+                    previous.x !== event.clientX ||
+                    previous.y !== event.clientY;
+                  if (
+                    moved &&
+                    event.pointerType !== 'touch' &&
+                    (latest.current[levelIndex]?.selected !== index ||
+                      (!compact &&
+                        item.children &&
+                        latest.current[levelIndex + 1]?.items !==
+                          item.children))
+                  )
                     openSubmenu(levelIndex, index, !compact);
                 }}
                 onClick={() => activate(levelIndex, index)}
@@ -321,7 +353,7 @@ export function MenuOverlay({
                 <span aria-hidden="true" className="ns-menu-mark">
                   {item.checked ? '✓' : ''}
                 </span>
-                <span className="ns-menu-label">{item.label}</span>
+                <MenuLabel label={item.label} description={item.description} />
                 <span aria-hidden="true" className="ns-menu-shortcut">
                   {item.shortcut}
                 </span>

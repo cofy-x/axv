@@ -7,8 +7,6 @@ import {
   run,
   terminalAction,
 } from './terminal-helpers';
-import { mkdir } from 'node:fs/promises';
-import { resolve } from 'node:path';
 import type { Point } from '@cofy-x/axv-nextstep';
 
 import {
@@ -281,9 +279,7 @@ test('touch can navigate columns, inspect, edit and switch workspaces without ri
   await expect(
     editor.getByRole('button', { name: /^Close / }),
   ).toBeInViewport();
-  const screenshotDir = resolve('screenshots', `final-${info.project.name}`);
-  await mkdir(screenshotDir, { recursive: true });
-  const path = resolve(screenshotDir, '390x844-touch-editor.png');
+  const path = info.outputPath('390x844-touch-editor.png');
   await page.screenshot({ path, fullPage: true });
   await info.attach('touch-editor', { path, contentType: 'image/png' });
 });
@@ -331,9 +327,7 @@ test('touch Terminal supports input, explicit controls and workspace restoration
   await expect(
     terminal.getByRole('button', { name: /^Close / }),
   ).toBeInViewport();
-  const screenshotDir = resolve('screenshots', `final-${info.project.name}`);
-  await mkdir(screenshotDir, { recursive: true });
-  const path = resolve(screenshotDir, '390x844-touch-terminal.png');
+  const path = info.outputPath('390x844-touch-terminal.png');
   await page.screenshot({ path, fullPage: true });
   await info.attach('touch-terminal', { path, contentType: 'image/png' });
   await terminal.getByRole('button', { name: /^Close / }).tap();

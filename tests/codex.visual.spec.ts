@@ -1,5 +1,3 @@
-import { mkdir } from 'node:fs/promises';
-import { resolve } from 'node:path';
 import {
   codexOutput,
   codexSessionAction,
@@ -7,6 +5,7 @@ import {
   expect,
   openCodexManager,
   openCodexEnvironment,
+  openCodexFolderPicker,
   requestEndCodex,
   runCodex,
   selectCodexProject,
@@ -30,11 +29,8 @@ for (const viewport of [
         .locator('[data-app-id="welcome"]')
         .getByRole('button', { name: 'Refresh', exact: true }),
     ).toHaveCount(0);
-    const screenshotDir = resolve('screenshots', `final-${info.project.name}`);
-    await mkdir(screenshotDir, { recursive: true });
     const capture = async (name: string) => {
-      const path = resolve(
-        screenshotDir,
+      const path = info.outputPath(
         `${viewport.width}x${viewport.height}-${name}.png`,
       );
       await page.screenshot({ path, fullPage: true });
@@ -43,6 +39,10 @@ for (const viewport of [
     const manager = await openCodexManager(page);
     await expect(manager.getByTestId('codex-default-project')).toHaveText(
       defaultProjectPath,
+    );
+    await expect(manager.getByTestId('codex-default-project')).toBeHidden();
+    await expect(manager.getByTestId('codex-default-project-name')).toHaveText(
+      defaultProjectPath.split('/').filter(Boolean).at(-1)!,
     );
     await expect(
       manager.getByRole('button', { name: 'New Session', exact: true }),
@@ -175,13 +175,32 @@ for (const viewport of [
       .click();
     await expect(terminal).toHaveCount(0);
     await openCodexManager(page);
+    await openCodexFolderPicker(page);
     const recent = manager.getByRole('button', {
-      name: `New session in ${defaultProjectPath}`,
+      name: 'Recent Projects',
       exact: true,
     });
-    await recent.scrollIntoViewIfNeeded();
-    await expect(recent).toBeInViewport();
-    await capture('codex-recent-projects');
+    if (await recent.count()) {
+      await recent.click();
+      const menu = page.getByRole('menu', {
+        name: 'Recent Projects',
+        exact: true,
+      });
+      await expect(
+        menu.getByRole('menuitem', {
+          name: `${defaultProjectPath.split('/').at(-1)} ${defaultProjectPath.slice(0, defaultProjectPath.lastIndexOf('/'))}`,
+          exact: true,
+        }),
+      ).toHaveCount(0);
+      await capture('codex-recent-projects-menu');
+      await page.keyboard.press('Escape');
+      await expect(recent).toBeFocused();
+    } else
+      await expect(
+        manager.getByRole('region', { name: 'Recent projects', exact: true }),
+      ).toHaveCount(0);
+    await capture('codex-folder-picker-default-excluded');
+    await manager.getByRole('button', { name: 'Cancel', exact: true }).click();
     const row = manager.locator(`[data-session-id="${id}"]`);
     const rowAction = async (label: string, screenshot?: string) => {
       await row

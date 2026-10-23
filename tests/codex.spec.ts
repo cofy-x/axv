@@ -8,6 +8,7 @@ import {
 import { applicationMenu } from './terminal-helpers';
 import {
   codexOutput,
+  codexRowMenu,
   codexWindow,
   configPath,
   defaultProjectPath,
@@ -43,6 +44,16 @@ test('New Session uses the default workspace immediately and exposes tmux detail
   await expect(manager.getByTestId('codex-default-project')).toHaveText(
     defaultProjectPath,
   );
+  const defaultDetails = manager.locator('.codex-default-project');
+  await expect(manager.getByTestId('codex-default-project-name')).toHaveText(
+    defaultProjectPath.split('/').filter(Boolean).at(-1)!,
+  );
+  await expect(manager.getByTestId('codex-default-project')).toBeHidden();
+  await defaultDetails.locator('summary').focus();
+  await page.keyboard.press('Enter');
+  await expect(manager.getByTestId('codex-default-project')).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(manager.getByTestId('codex-default-project')).toBeHidden();
   await expect(
     manager.getByLabel('Project directory', { exact: true }),
   ).toHaveCount(0);
@@ -112,6 +123,30 @@ test('New Session uses the default workspace immediately and exposes tmux detail
   await expect(window.getByLabel('Codex terminal input')).not.toBeFocused();
   await details.getByRole('button', { name: 'Close', exact: true }).click();
   await endCodex(page, window);
+  await openCodexFolderPicker(page);
+  const recent = manager.getByRole('button', {
+    name: 'Recent Projects',
+    exact: true,
+  });
+  if (await recent.count()) {
+    await recent.click();
+    await expect(
+      page
+        .getByRole('menu', { name: 'Recent Projects', exact: true })
+        .getByRole('menuitem', {
+          name: `${defaultProjectPath.split('/').at(-1)} ${defaultProjectPath.slice(0, defaultProjectPath.lastIndexOf('/'))}`,
+          exact: true,
+        }),
+    ).toHaveCount(0);
+    await page.keyboard.press('Escape');
+  } else
+    await expect(
+      manager.getByRole('region', { name: 'Recent projects', exact: true }),
+    ).toHaveCount(0);
+  await manager.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(
+    manager.getByRole('button', { name: 'New in Folder', exact: true }),
+  ).toBeFocused();
 });
 
 test('Codex selects a real project and preserves the same process through close, reopen and reload', async ({
@@ -159,7 +194,25 @@ test('Codex selects a real project and preserves the same process through close,
   await expect(unarchived).toHaveAttribute('aria-pressed', 'true');
   await expect(archived).toHaveAttribute('aria-pressed', 'false');
   await expect(unarchived).toBeFocused();
-  await expect(row.getByTestId('codex-run-id')).toHaveText(`Run ${runId}`);
+  await expect(row.getByTestId('codex-session-project')).toHaveText(
+    projectPath.split('/').filter(Boolean).at(-1)!,
+  );
+  await expect(row.getByTestId('codex-session-project')).toHaveAttribute(
+    'title',
+    projectPath,
+  );
+  await expect(
+    row.getByRole('button', { name: 'Details', exact: true }),
+  ).toHaveCount(0);
+  const rowMenu = await codexRowMenu(page, row);
+  await rowMenu.getByRole('menuitem', { name: 'Details', exact: true }).click();
+  const details = page.getByRole('dialog', { name: 'Codex Session Details' });
+  await expect(details).toContainText(runId);
+  await expect(details).toContainText(projectPath);
+  await details.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(
+    row.getByRole('button', { name: /^More session actions for / }),
+  ).toBeFocused();
   await row.getByRole('button', { name: 'Open', exact: true }).click();
   const resumed = codexWindow(page, id, runId);
   await expect(resumed.getByTestId('codex-status')).toHaveAttribute(
@@ -203,10 +256,39 @@ test('Codex keeps separate sessions and lets multiple clients share one without 
     const peer = await context.newPage();
     await peer.goto(process.env.E2E_BASE_URL!);
     const manager = await openCodexManager(peer);
-    await manager
-      .locator(`[data-session-id="${first.id}"]`)
-      .getByRole('button', { name: 'Open', exact: true })
+    const firstRow = manager.locator(
+      `[data-session-id="${first.id}"][data-run-id="${first.runId}"]`,
+    );
+    const secondRow = manager.locator(
+      `[data-session-id="${second.id}"][data-run-id="${second.runId}"]`,
+    );
+    // Untitled sessions in the same project keep a short run reference so
+    // their compact rows are distinguishable before opening either one.
+    for (const [row, runId] of [
+      [firstRow, first.runId],
+      [secondRow, second.runId],
+    ] as const) {
+      await expect(row.getByTestId('codex-run-id')).toHaveText(
+        `Run ${runId.slice(0, 8)}`,
+      );
+      await expect(row.getByTestId('codex-run-id')).toHaveAttribute(
+        'title',
+        runId,
+      );
+    }
+    const rowMenu = await codexRowMenu(peer, firstRow);
+    await rowMenu
+      .getByRole('menuitem', { name: 'Details', exact: true })
       .click();
+    const details = peer.getByRole('dialog', { name: 'Codex Session Details' });
+    await expect(details).toContainText(first.runId);
+    await expect(details).not.toContainText(second.runId);
+    await expect(details).toContainText(defaultProjectPath);
+    await details.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(
+      firstRow.getByRole('button', { name: /^More session actions for / }),
+    ).toBeFocused();
+    await firstRow.getByRole('button', { name: 'Open', exact: true }).click();
     const peerWindow = codexWindow(peer, first.id, first.runId);
     await expect(peerWindow.getByTestId('codex-status')).toHaveAttribute(
       'data-state',
@@ -414,7 +496,7 @@ test('closing the Codex picker cancels pending directory loading and reopening i
     await expect.poll(() => !!delayedRequest).toBe(true);
     await expect(
       manager.getByLabel('Project directory', { exact: true }),
-    ).toBeDisabled();
+    ).toBeEditable();
     for (const name of ['Go', 'Home', 'Up', 'Start Here'])
       await expect(
         manager.getByRole('button', { name, exact: true }),
@@ -443,8 +525,8 @@ test('closing the Codex picker cancels pending directory loading and reopening i
     await expect(
       reopened.getByLabel('Project directory', { exact: true }),
     ).toHaveValue(selected);
-    await expect(reopened.locator('.codex-project-choice code')).toHaveText(
-      selected,
+    await expect(reopened.getByTestId('codex-directory-context')).toHaveCount(
+      0,
     );
     await expect(
       reopened.getByRole('button', {

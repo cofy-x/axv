@@ -36,6 +36,13 @@ import { useCodexAvailability } from './CodexContext';
 import { projectsAPI } from '../project-files/api';
 import { runCommand } from '../../shared/desktop/dialogs';
 import { useDraftNamespace } from '../../shared/drafts/context';
+import { CodexActivity } from './CodexActivity';
+import {
+  canReviewActivity,
+  publishSessionActivity,
+  reviewSessionActivity,
+  subscribeSessionActivity,
+} from './activity';
 
 function mayFocus() {
   return !document.querySelector('.ns-dialog-layer, .ns-menu-layer');
@@ -45,6 +52,7 @@ export function CodexTerminal({
   window,
   desktop,
   interactive = true,
+  visible = true,
 }: AppWindowProps) {
   const id = window.params.sessionId;
   const runId = window.params.runId;
@@ -93,6 +101,9 @@ export function CodexTerminal({
   const [ending, setEnding] = useState(false);
   const [changingMetadata, setChangingMetadata] = useState(false);
   const [metadataError, setMetadataError] = useState('');
+  const [reviewing, setReviewing] = useState(false);
+  const reviewingRef = useRef(false);
+  const reviewFocus = useRef<HTMLButtonElement | null>(null);
   const [continuing, setContinuing] = useState(false);
   const [resumePending, setResumePending] = useState<string>();
   const [resumeRecoveryError, setResumeRecoveryError] = useState('');
@@ -115,13 +126,29 @@ export function CodexTerminal({
 
   useLayoutEffect(() => {
     interactiveRef.current = interactive && active;
+    if (!interactive || !active || !visible) reviewFocus.current = null;
     if (terminal.current) {
       terminal.current.options.disableStdin =
         !interactiveRef.current ||
         connection.current?.getSnapshot().phase !== 'connected';
       if (!interactiveRef.current) terminal.current.blur();
     }
-  }, [interactive, active]);
+  }, [interactive, active, visible]);
+
+  useLayoutEffect(() => {
+    const button = reviewFocus.current;
+    if (!button || button.isConnected) return;
+    reviewFocus.current = null;
+    if (
+      visible &&
+      active &&
+      interactiveRef.current &&
+      mayFocus() &&
+      document.hasFocus() &&
+      document.activeElement === document.body
+    )
+      terminal.current?.focus();
+  }, [state.session?.activity, reviewing, active, interactive, visible]);
 
   useEffect(() => {
     const newlyActive = active && !activeRef.current;
@@ -343,6 +370,7 @@ export function CodexTerminal({
       disposed = true;
       invalidatePaste();
       mounted.current = false;
+      reviewFocus.current = null;
       cancelAnimationFrame(frame);
       observer.disconnect();
       host.removeEventListener('wheel', wheel, true);
@@ -359,18 +387,35 @@ export function CodexTerminal({
   }, [id, runId, invalidatePaste, recordPasteInput]);
 
   useEffect(() => {
-    let disposed = false;
-    let pending: AbortController | null = null;
     const unsubscribe = subscribeSessionMetadata((session) => {
       if (session.id === id) connection.current?.updateMetadata(session);
     });
+    const unsubscribeActivity = subscribeSessionActivity((session) => {
+      if (connection.current?.updateActivity(session)) setMetadataError('');
+    });
+    return () => {
+      unsubscribe();
+      unsubscribeActivity();
+    };
+  }, [id, runId]);
+
+  useEffect(() => {
+    let disposed = false;
+    let pending: AbortController | null = null;
     const refresh = async () => {
-      if (pending || disposed) return;
+      if (
+        pending ||
+        disposed ||
+        !visible ||
+        document.visibilityState !== 'visible'
+      )
+        return;
       const controller = new AbortController();
       pending = controller;
       try {
-        const session = await codexAPI.getRun(id, runId, controller.signal);
+        const received = await codexAPI.getRun(id, runId, controller.signal);
         if (!disposed && !controller.signal.aborted) {
+          const session = publishSessionActivity(received);
           connection.current?.updateRunInfo(session);
           publishSessionMetadata(session);
           setMetadataError('');
@@ -378,25 +423,58 @@ export function CodexTerminal({
       } catch (error) {
         if (!disposed && !controller.signal.aborted)
           setMetadataError(
-            `Could not refresh session details. ${error instanceof Error ? error.message : 'Choose Refresh in the manager.'}`,
+            `Session activity may be outdated. ${error instanceof Error ? error.message : 'Choose Refresh in the manager.'}`,
           );
       } finally {
         if (pending === controller) pending = null;
       }
     };
     const focus = () => void refresh();
+    const visibility = () => {
+      if (document.visibilityState !== 'visible') pending?.abort();
+      else void refresh();
+    };
+    void refresh();
     const timer = setInterval(() => {
       if (document.visibilityState === 'visible') void refresh();
     }, 4000);
     globalThis.addEventListener('focus', focus);
+    document.addEventListener('visibilitychange', visibility);
     return () => {
       disposed = true;
       pending?.abort();
       clearInterval(timer);
       globalThis.removeEventListener('focus', focus);
-      unsubscribe();
+      document.removeEventListener('visibilitychange', visibility);
     };
-  }, [id, runId]);
+  }, [id, runId, visible]);
+
+  const review = async (button: HTMLButtonElement) => {
+    const session = connection.current?.getSnapshot().session;
+    if (
+      !session ||
+      reviewingRef.current ||
+      !canReviewActivity(session.activity)
+    )
+      return;
+    reviewingRef.current = true;
+    reviewFocus.current = document.activeElement === button ? button : null;
+    setReviewing(true);
+    setFeedback('');
+    try {
+      await reviewSessionActivity(session);
+    } catch (error) {
+      if (mounted.current)
+        setFeedback(
+          error instanceof Error
+            ? error.message
+            : 'Could not dismiss this alert.',
+        );
+    } finally {
+      reviewingRef.current = false;
+      if (mounted.current) setReviewing(false);
+    }
+  };
 
   const copy = useCallback(async () => {
     const target = terminal.current;
@@ -705,6 +783,17 @@ export function CodexTerminal({
       data-testid="codex-session"
       data-session-id={id}
       data-run-id={runId}
+      onFocusCapture={(event) => {
+        if (reviewFocus.current && !reviewFocus.current.contains(event.target))
+          reviewFocus.current = null;
+      }}
+      onPointerDownCapture={(event) => {
+        if (
+          reviewFocus.current &&
+          !reviewFocus.current.contains(event.target as Node)
+        )
+          reviewFocus.current = null;
+      }}
     >
       <div className="app-toolbar terminal-toolbar codex-primary-toolbar">
         <Button onClick={() => desktop.openApp('codex')}>Sessions</Button>
@@ -821,6 +910,25 @@ export function CodexTerminal({
         >
           Details
         </Button>
+      </div>
+      <div className="codex-terminal-activity">
+        <CodexActivity
+          activity={state.session?.activity}
+          stale={!!metadataError}
+        />
+        {state.session?.activity?.reason && (
+          <span className="codex-activity-reason">
+            {state.session.activity.reason}
+          </span>
+        )}
+        {canReviewActivity(state.session?.activity) && (
+          <Button
+            disabled={reviewing}
+            onClick={(event) => void review(event.currentTarget)}
+          >
+            {reviewing ? 'Dismissing…' : 'Dismiss alert'}
+          </Button>
+        )}
       </div>
       {(state.message || feedback || metadataError || resumeRecoveryError) && (
         <div

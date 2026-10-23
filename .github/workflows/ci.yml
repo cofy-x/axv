@@ -47,6 +47,8 @@ jobs:
             apps/server/go.sum
       - name: Install host test prerequisites
         run: |
+          # Keep the runner's official HTTPS mirrors; Azure downloads can be very slow.
+          sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
           sudo apt-get update
           sudo apt-get install --yes tmux
       - name: Install locked dependencies
@@ -141,12 +143,20 @@ jobs:
           test "$SECURITY_RESULT" = success
 
   browsers:
-    name: browser (${{ matrix.project }})
+    name: browser (${{ matrix.project }}, shard ${{ matrix.shard }}/3)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
+        project:
+          - chromium
+          - firefox
+          - webkit
+          - chromium-dpr2
+          - chromium-touch
+          - webkit-touch
+        shard: [1, 2, 3]
         include:
           - project: chromium
             browser: chromium
@@ -185,6 +195,8 @@ jobs:
             apps/server/go.sum
       - name: Install host test prerequisites
         run: |
+          # Keep the runner's official HTTPS mirrors; Azure downloads can be very slow.
+          sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
           sudo apt-get update
           sudo apt-get install --yes tmux
       - name: Install locked dependencies
@@ -196,12 +208,13 @@ jobs:
       - name: Check browser project
         env:
           BROWSER_PROJECT: ${{ matrix.project }}
-        run: pnpm test:e2e --project="$BROWSER_PROJECT"
+          BROWSER_SHARD: ${{ matrix.shard }}
+        run: pnpm test:e2e --project="$BROWSER_PROJECT" --shard="$BROWSER_SHARD/3"
       - name: Upload failed browser diagnostics
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: browser-diagnostics-${{ matrix.project }}
+          name: browser-diagnostics-${{ matrix.project }}-${{ matrix.shard }}
           path: |
             playwright-report/
             test-results/

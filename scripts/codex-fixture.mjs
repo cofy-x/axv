@@ -225,6 +225,8 @@ async function codexFixtureMain(proxyKeys) {
   if (args[0] === 'app-server') {
     const threads = new Map();
     const input = createInterface({ input: process.stdin });
+    const notify = (method, params) =>
+      process.stdout.write(`${JSON.stringify({ method, params })}\n`);
     const reply = (id, result) =>
       process.stdout.write(`${JSON.stringify({ id, result })}\n`);
     const load = async (id) => {
@@ -246,6 +248,7 @@ async function codexFixtureMain(proxyKeys) {
               name: null,
               value: 'initial',
               cwd: params.cwd || process.cwd(),
+              status: { type: 'idle' },
             };
             threads.set(thread.id, thread);
             reply(id, { thread });
@@ -261,9 +264,12 @@ async function codexFixtureMain(proxyKeys) {
             reply(id, { thread: await load(params.threadId) });
           } else if (method === 'turn/start') {
             const thread = await load(params.threadId);
+            if (thread.activeTurnId)
+              throw new Error('The fixture already has an active turn.');
             if (!Array.isArray(params.input) || params.input.length === 0)
               throw new Error('Fixture user input is required.');
             thread.activeTurnId = randomUUID();
+            thread.status = { type: 'active', activeFlags: [] };
             reply(id, {
               turn: {
                 id: thread.activeTurnId,
@@ -272,6 +278,15 @@ async function codexFixtureMain(proxyKeys) {
                 error: null,
               },
               fixtureInput: params.input,
+            });
+            notify('turn/started', {
+              threadId: thread.id,
+              turn: {
+                id: thread.activeTurnId,
+                status: 'inProgress',
+                items: [],
+                error: null,
+              },
             });
           } else if (method === 'turn/steer') {
             const thread = await load(params.threadId);
@@ -292,6 +307,119 @@ async function codexFixtureMain(proxyKeys) {
             const thread = await load(params.threadId);
             thread.value = params.value;
             await saveThread(thread);
+            reply(id, {});
+          } else if (method === 'fixture/activity') {
+            const thread = await load(params.threadId);
+            if (!thread.activeTurnId)
+              throw new Error(
+                'Start a fixture message before activity events.',
+              );
+            const threadId = thread.id;
+            const turnId = thread.activeTurnId;
+            if (['approval', 'input'].includes(params.state)) {
+              thread.pendingRequestId = `fixture-request-${randomUUID()}`;
+              thread.status = {
+                type: 'active',
+                activeFlags: [
+                  params.state === 'approval'
+                    ? 'waitingOnApproval'
+                    : 'waitingOnUserInput',
+                ],
+              };
+              process.stdout.write(
+                `${JSON.stringify({
+                  id: thread.pendingRequestId,
+                  method:
+                    params.state === 'approval'
+                      ? 'item/commandExecution/requestApproval'
+                      : 'item/tool/requestUserInput',
+                  params:
+                    params.state === 'approval'
+                      ? {
+                          threadId,
+                          turnId,
+                          itemId: 'fixture-item',
+                          reason:
+                            'Review the fixture request in the official terminal.',
+                          command: 'echo fixture',
+                          cwd: thread.cwd,
+                        }
+                      : {
+                          threadId,
+                          turnId,
+                          itemId: 'fixture-item',
+                          questions: [
+                            {
+                              id: 'next-step',
+                              header: 'Next step',
+                              question: 'Choose the next step.',
+                              isOther: false,
+                              isSecret: false,
+                              options: [
+                                {
+                                  label: 'Continue',
+                                  description: 'Continue the fixture.',
+                                },
+                              ],
+                            },
+                          ],
+                        },
+                })}\n`,
+              );
+            } else if (params.state === 'resolve') {
+              if (!thread.pendingRequestId)
+                throw new Error('The fixture has no pending request.');
+              notify('serverRequest/resolved', {
+                threadId,
+                requestId: thread.pendingRequestId,
+              });
+              delete thread.pendingRequestId;
+              thread.status = { type: 'active', activeFlags: [] };
+            } else if (['unknown', 'working'].includes(params.state)) {
+              thread.status =
+                params.state === 'unknown'
+                  ? { type: 'systemError' }
+                  : { type: 'active', activeFlags: [] };
+              notify('thread/status/changed', {
+                threadId,
+                status: thread.status,
+              });
+            } else {
+              const status = {
+                complete: 'completed',
+                'complete-later': 'completed',
+                fail: 'failed',
+                interrupt: 'interrupted',
+              }[params.state];
+              if (!status) throw new Error('Unknown fixture activity.');
+              const complete = async () => {
+                // Final turns cannot receive another steer or be completed again.
+                // Save the final status before emitting the provider notification.
+                delete thread.activeTurnId;
+                delete thread.pendingRequestId;
+                thread.status = { type: 'idle' };
+                const turn = {
+                  id: turnId,
+                  status,
+                  items: [],
+                  error:
+                    status === 'failed'
+                      ? { message: 'The fixture turn failed.' }
+                      : null,
+                };
+                thread.turns = [turn];
+                await saveThread(thread);
+                notify('turn/completed', {
+                  threadId,
+                  turn,
+                });
+              };
+              if (params.state === 'complete-later')
+                setTimeout(() => {
+                  queue = queue.then(complete);
+                }, 1000);
+              else await complete();
+            }
             reply(id, {});
           } else if (method === 'fixture/forget') {
             await unlink(pathFor(params.threadId));
@@ -463,6 +591,10 @@ async function codexFixtureMain(proxyKeys) {
             input: [{ type: 'text', text: line.slice(6), text_elements: [] }],
           });
           console.log('TURN_INPUT ' + JSON.stringify(result.fixtureInput));
+        } else if (line.startsWith('activity ') && rpc) {
+          const state = line.slice(9);
+          await rpc('fixture/activity', { threadId: threadID, state });
+          console.log('ACTIVITY ' + state);
         } else if (line.startsWith('inspect ')) {
           console.log(
             'STATE ' +

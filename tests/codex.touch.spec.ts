@@ -1,5 +1,3 @@
-import { mkdir } from 'node:fs/promises';
-import { resolve } from 'node:path';
 import {
   codexOutput,
   codexSessionAction,
@@ -7,6 +5,7 @@ import {
   endCodex,
   expect,
   openCodexManager,
+  openCodexFolderPicker,
   projectPath,
   readState,
   runCodex,
@@ -25,10 +24,8 @@ test('touch Codex supports project selection, history, session organization, pro
     !isMobile,
     'Runs in the explicit Chromium and WebKit touch projects.',
   );
-  const screenshotDir = resolve('screenshots', `final-${info.project.name}`);
-  await mkdir(screenshotDir, { recursive: true });
   const capture = async (name: string) => {
-    const path = resolve(screenshotDir, `390x844-${name}.png`);
+    const path = info.outputPath(`390x844-${name}.png`);
     await page.screenshot({ path, fullPage: true });
     await info.attach(name, { path, contentType: 'image/png' });
   };
@@ -183,19 +180,40 @@ test('touch Codex supports project selection, history, session organization, pro
     .tap();
   await expect(terminal).toHaveCount(0);
   await openCodexManager(page, true);
+  await openCodexFolderPicker(page, true);
   const recent = manager.getByRole('button', {
-    name: `New session in ${projectPath}`,
+    name: 'Recent Projects',
     exact: true,
   });
   await recent.scrollIntoViewIfNeeded();
   await expect(recent).toBeInViewport();
   await capture('touch-codex-recent-projects');
+  await recent.tap();
+  const recentMenu = page.getByRole('menu', {
+    name: 'Recent Projects',
+    exact: true,
+  });
+  await capture('touch-codex-recent-menu');
+  await recentMenu
+    .getByRole('menuitem', {
+      name: `${projectPath.split('/').at(-1)} ${projectPath.slice(0, projectPath.lastIndexOf('/'))}`,
+      exact: true,
+    })
+    .tap();
+  await expect(
+    manager.getByLabel('Project directory', { exact: true }),
+  ).toHaveValue(projectPath);
+  const start = manager.getByRole('button', {
+    name: 'Start Here',
+    exact: true,
+  });
+  await expect(start).toBeEnabled();
   const created = page.waitForResponse(
     (response) =>
       response.url().endsWith('/api/host/codex/sessions') &&
       response.request().method() === 'POST',
   );
-  await recent.tap();
+  await start.tap();
   const response = await created;
   expect(response.ok()).toBeTruthy();
   const fresh = (await response.json()) as {

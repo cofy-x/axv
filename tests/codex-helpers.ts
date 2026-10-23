@@ -19,6 +19,16 @@ export interface CodexSession {
   tmuxSession: string;
   tmuxSocket: string;
   attachCommand: string;
+  activity?: {
+    observation: { instanceId: string; revision: number };
+    state: string;
+    sequence?: number;
+    eventId?: string;
+    turnId?: string;
+    updatedAt?: string;
+    needsAttention: boolean;
+    reason?: string;
+  };
 }
 
 export const projectPath = process.env.E2E_CODEX_PROJECT || '';
@@ -32,6 +42,25 @@ export async function sessions(
   const response = await request.get('/api/host/codex/sessions');
   expect(response.ok()).toBeTruthy();
   return (await response.json()).sessions;
+}
+
+export async function dismissCodexAlerts(request: APIRequestContext) {
+  for (const current of await sessions(request)) {
+    if (
+      !current.activity?.needsAttention ||
+      !current.activity.eventId ||
+      !['failed', 'interrupted'].includes(current.activity.state)
+    )
+      continue;
+    const response = await request.post(
+      `/api/host/codex/sessions/${current.id}/runs/${current.runId}/activity/review`,
+      {
+        headers: { Origin: process.env.E2E_BASE_URL! },
+        data: { eventId: current.activity.eventId },
+      },
+    );
+    expect(response.ok(), await response.text()).toBeTruthy();
+  }
 }
 
 export async function session(
@@ -75,6 +104,20 @@ export const test = desktopTest.extend<{ codexReady: void }>({
 export async function choose(target: Locator, touch = false) {
   if (touch) await target.tap();
   else await target.click();
+}
+
+export async function codexRowMenu(page: Page, row: Locator, touch = false) {
+  const runId = await row.getAttribute('data-run-id');
+  expect(runId).toBeTruthy();
+  await choose(
+    row.getByRole('button', { name: /^More session actions for / }),
+    touch,
+  );
+  const menu = page.locator('.ns-menu-layer').getByRole('menu', {
+    name: new RegExp(`^Run ${runId!.slice(0, 8)} · `),
+  });
+  await expect(menu).toBeVisible();
+  return menu;
 }
 
 export async function openCodexManager(page: Page, touch = false) {

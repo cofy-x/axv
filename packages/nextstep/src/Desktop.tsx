@@ -8,7 +8,7 @@ import {
   windowWorkArea,
 } from './model';
 import { DialogOverlay, MenuOverlay } from './overlays';
-import type { DesktopProps } from './types';
+import type { DesktopProps, Point } from './types';
 import { Clip } from './desktop/Clip';
 import { Dock } from './desktop/Dock';
 import { DesktopCanvas } from './desktop/DesktopCanvas';
@@ -21,6 +21,7 @@ import { useViewport } from './desktop/useViewport';
 import { resolveApplication } from './desktop/applications';
 
 export function Desktop(props: DesktopProps) {
+  const pointerPosition = useRef<Point | null>(null);
   const viewport = useViewport();
   const mobile = viewport.width < 600;
   const controller = useDesktopController(props);
@@ -88,9 +89,14 @@ export function Desktop(props: DesktopProps) {
       { title: 'Workspace', pin: { kind: 'desktop', title: 'Workspace' } },
     );
   };
+  const recordPointer = (event: { clientX: number; clientY: number }) => {
+    pointerPosition.current = { x: event.clientX, y: event.clientY };
+  };
   return (
     <div
       className={`ns-desktop ns-wallpaper-${props.wallpaper ?? 'slate'} ${mobile ? 'is-mobile' : ''} ${overview ? 'is-overview' : ''}`}
+      onPointerDownCapture={recordPointer}
+      onPointerMove={recordPointer}
       style={
         {
           '--ns-viewport-height': `${viewport.height}px`,
@@ -221,6 +227,7 @@ export function Desktop(props: DesktopProps) {
           <MenuOverlay
             key={menu.id}
             request={menu}
+            pointerPosition={pointerPosition}
             close={controller.dismissMenu}
             pin={controller.pinMenu}
           />

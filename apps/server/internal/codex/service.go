@@ -27,12 +27,19 @@ func (m *Manager) List(ctx context.Context) ([]Session, error) {
 		return nil, err
 	}
 	defer done()
-	sessions, err := m.list(ctx)
+	sessions, err := m.store.CodexSessions(ctx)
+	if err != nil {
+		return nil, err
+	}
 	result := make([]Session, 0, len(sessions))
 	for _, session := range sessions {
-		result = append(result, m.describe(session))
+		observed, err := m.observedSession(ctx, session)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, observed)
 	}
-	return result, err
+	return result, nil
 }
 
 func (m *Manager) list(ctx context.Context) ([]storage.CodexSession, error) {
@@ -51,13 +58,38 @@ func (m *Manager) list(ctx context.Context) ([]storage.CodexSession, error) {
 
 // Runtime uncertainty preserves known identity and durable status for reads.
 func (m *Manager) visibleSession(ctx context.Context, session storage.CodexSession) (storage.CodexSession, error) {
-	current, err := m.reconcile(ctx, session)
+	release, err := m.runGates.acquire(ctx, session.RunID)
+	if err != nil {
+		return session, err
+	}
+	defer release()
+	return m.visibleSessionLocked(ctx, session)
+}
+
+func (m *Manager) visibleSessionLocked(ctx context.Context, session storage.CodexSession) (storage.CodexSession, error) {
+	current, err := m.reconcileLocked(ctx, session)
 	var unavailable *Error
 	if errors.As(err, &unavailable) && unavailable.Kind == Unavailable {
 		current.Reason = unavailable.Message
 		return current, nil
 	}
 	return current, err
+}
+
+// Keep inspection, its transient diagnostic and the activity stamp inside the
+// same exact-run gate. A delayed list must not republish an older inspection
+// after a later End or healthy recovery has already been observed.
+func (m *Manager) observedSession(ctx context.Context, session storage.CodexSession) (Session, error) {
+	release, err := m.runGates.acquire(ctx, session.RunID)
+	if err != nil {
+		return Session{}, err
+	}
+	defer release()
+	session, err = m.visibleSessionLocked(ctx, session)
+	if err != nil {
+		return Session{}, err
+	}
+	return m.describeObserved(session), nil
 }
 
 // Get returns the latest recorded run of a conversation.
@@ -68,10 +100,10 @@ func (m *Manager) Get(ctx context.Context, id string) (Session, error) {
 	}
 	defer done()
 	session, err := m.store.CodexSession(ctx, id)
-	if err == nil {
-		session, err = m.visibleSession(ctx, session)
+	if err != nil {
+		return Session{}, err
 	}
-	return m.describe(session), err
+	return m.observedSession(ctx, session)
 }
 
 // Projects reads recent confirmed projects without inspecting runtime state.
