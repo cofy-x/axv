@@ -1,4 +1,9 @@
-import type { Locator } from '@playwright/test';
+import type {
+  APIRequestContext,
+  Locator,
+  Page,
+  TestInfo,
+} from '@playwright/test';
 import {
   choose,
   codexOutput,
@@ -12,31 +17,41 @@ import {
   test,
 } from './codex-helpers';
 
-test('Codex activity and review controls fit manager and terminal windows', async ({
-  page,
-  request,
-}, info) => {
-  const touch = Boolean(info.project.use.hasTouch);
+async function prepareScenes(
+  page: Page,
+  request: APIRequestContext,
+  touch: boolean,
+  scenes: readonly (readonly [string, string, string])[],
+) {
   // The shared server retains earlier conversations. Failure alerts can be
   // dismissed; successful turns never create an acknowledgment requirement.
   await dismissCodexAlerts(request);
+  const fixtureTitles = new Set([
+    'Review project updates',
+    'Build the preview service',
+    'Inspect a failed turn',
+  ]);
   for (const previous of await sessions(request)) {
-    if (previous.archivedAt) continue;
+    // Archived history also participates in title disambiguation. Release the
+    // fixed visual fixture names so independent scenes and repeats stay unique.
+    const reusedTitle = fixtureTitles.has(previous.title);
+    if (previous.archivedAt && !reusedTitle) continue;
     const archived = await request.patch(
       `/api/host/codex/sessions/${previous.id}`,
       {
         headers: { Origin: process.env.E2E_BASE_URL! },
-        data: { revision: previous.metadataRevision, archived: true },
+        data: {
+          revision: previous.metadataRevision,
+          archived: true,
+          ...(reusedTitle ? { title: `Previous visual ${previous.id}` } : {}),
+        },
       },
     );
     expect(archived.ok(), await archived.text()).toBeTruthy();
   }
 
   const examples = [];
-  for (const [title, activity, state] of [
-    ['Review project updates', 'complete', 'completed'],
-    ['Build the preview service', 'approval', 'waiting_approval'],
-  ]) {
+  for (const [title, activity, state] of scenes) {
     const current = await startCodex(page, touch);
     const metadata = await session(request, current.id, current.runId);
     const renamed = await request.patch(
@@ -65,7 +80,10 @@ test('Codex activity and review controls fit manager and terminal windows', asyn
       projectPath: metadata.projectPath,
     });
   }
+  return examples;
+}
 
+function visualChecks(page: Page, info: TestInfo) {
   const capture = async (name: string) => {
     const path = info.outputPath(`${name}.png`);
     await page.screenshot({ path, fullPage: true });
@@ -87,7 +105,19 @@ test('Codex activity and review controls fit manager and terminal windows', asyn
       await page.evaluate(() => document.documentElement.scrollWidth),
     ).toBeLessThanOrEqual(page.viewportSize()!.width);
   };
+  return { capture, fitsWindow };
+}
 
+test('Codex completed and approval states fit manager and terminal windows', async ({
+  page,
+  request,
+}, info) => {
+  const touch = Boolean(info.project.use.hasTouch);
+  const examples = await prepareScenes(page, request, touch, [
+    ['Review project updates', 'complete', 'completed'],
+    ['Build the preview service', 'approval', 'waiting_approval'],
+  ]);
+  const { capture, fitsWindow } = visualChecks(page, info);
   for (const viewport of [
     { width: 1440, height: 900 },
     { width: 1024, height: 768 },
@@ -195,9 +225,17 @@ test('Codex activity and review controls fit manager and terminal windows', asyn
       );
     }
   }
+});
 
-  // Failure controls have their own scenes so the primary comparison keeps
-  // the original two named sessions and successful-completion scenario.
+test('Codex failure review controls fit manager and terminal windows', async ({
+  page,
+  request,
+}, info) => {
+  const touch = Boolean(info.project.use.hasTouch);
+  await prepareScenes(page, request, touch, [
+    ['Build the preview service', 'approval', 'waiting_approval'],
+  ]);
+  const { capture, fitsWindow } = visualChecks(page, info);
   const failed = await startCodex(page, touch);
   const metadata = await session(request, failed.id, failed.runId);
   const renamed = await request.patch(`/api/host/codex/sessions/${failed.id}`, {
