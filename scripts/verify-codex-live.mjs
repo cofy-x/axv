@@ -207,6 +207,10 @@ async function openSession(page) {
     .getByRole('menuitem', { name: 'Applications', exact: true })
     .click();
   await page.getByRole('menuitem', { name: 'Codex', exact: true }).click();
+  const sessions = page
+    .locator('.ns-window.is-active[data-app-id="codex"]')
+    .getByRole('button', { name: 'Sessions', exact: true });
+  if (await sessions.count()) await sessions.click();
   await page
     .getByTestId('codex-manager')
     .locator(`[data-session-id="${session.id}"]`)
@@ -241,6 +245,32 @@ async function requestModel(window, prompt, expected) {
       timeout: 120_000,
     })
     .toBe(true);
+  await expect
+    .poll(
+      async () => {
+        ({ session } = await json(
+          `/host/codex/sessions/${session.id}/runs/${session.runId}`,
+        ));
+        return session.activity?.state;
+      },
+      {
+        timeout: 20_000,
+        message: 'The real model turn did not report completed activity.',
+      },
+    )
+    .toBe('completed');
+  assert.equal(session.activity.needsAttention, false);
+  await expect(window.getByTestId('codex-activity')).toHaveAttribute(
+    'data-activity-state',
+    'completed',
+  );
+  await expect(window.getByTestId('codex-activity')).toHaveAttribute(
+    'data-needs-attention',
+    'false',
+  );
+  await expect(
+    window.getByRole('button', { name: 'Dismiss alert', exact: true }),
+  ).toHaveCount(0);
 }
 
 async function identifiedRun() {
@@ -294,6 +324,7 @@ try {
     `Do not use tools, run commands, or access files. Remember verification token ${token}. Reply only with AXV_LIVE_A_ followed immediately by that token.`,
     `AXV_LIVE_A_${token}`,
   );
+  const completedActivity = { ...session.activity };
   console.log(
     'Verified: a real model response arrived through the AXV terminal.',
   );
@@ -325,6 +356,11 @@ try {
   ({ session } = await json(`/host/codex/sessions/${session.id}`));
   assert.equal(session.status, 'running');
   assert.equal(session.title, 'Live Codex acceptance');
+  assert.equal(session.activity.state, 'completed');
+  assert.equal(session.activity.eventId, completedActivity.eventId);
+  assert.equal(session.activity.turnId, completedActivity.turnId);
+  assert.equal(session.activity.sequence, completedActivity.sequence);
+  assert.equal(session.activity.needsAttention, false);
   assert.equal(
     await tmux([
       'display-message',
@@ -366,6 +402,8 @@ try {
   assert.notEqual(restoredRuntime, runtime);
   window = await openSession(page);
   await identifiedRun();
+  assert.notEqual(session.activity?.eventId, completedActivity.eventId);
+  assert.notEqual(session.activity?.turnId, completedActivity.turnId);
   await requestModel(
     window,
     'Do not use tools or access files. Using the verification token from my first message, reply only with AXV_LIVE_B_ followed immediately by that token.',
@@ -402,7 +440,10 @@ try {
       'rename and archive preserve runtime',
       'close detaches',
       'service restart preserves runtime',
+      'completed model turns require no acknowledgment',
+      'service restart preserves the exact completed activity event',
       'explicit history recovery creates a new runtime',
+      'a continued run does not inherit the previous run activity',
       'saved conversation context survives process exit',
       'ending an older runtime cannot stop the new runtime',
       'End Session removes the owned runtime',

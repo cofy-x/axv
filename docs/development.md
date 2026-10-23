@@ -204,9 +204,13 @@ After `make build`, run `node scripts/smoke-daemon.mjs` in a macOS GUI login or 
 
 `make verify-codex-live` is an explicit real-model check, separate from automated fixtures. First build AXV and install Chromium with `pnpm exec playwright install chromium`. Run it with the intended desktop account and its existing provider sign-in. It requires a Codex CLI executable by that account, tmux and an already trusted project; complete sign-in and trust in a host terminal beforehand.
 
-The default project is this repository; `pnpm verify:codex-live /absolute/project` selects another. The check sends two short requests using existing model and approval settings to verify live continuity and saved-context continuation.
+The default project is this repository; `pnpm verify:codex-live /absolute/project` selects another. The check sends two short, tool-free requests using existing model and approval settings to verify live continuity and saved-context continuation. It also verifies completed activity requires no acknowledgment, desktop restart preserves the exact completed event, and a continued run does not inherit the previous run's activity.
 
 The check isolates AXV data, profile and tmux routing, inherits proxy configuration, and writes a credential-free result to `.cache/codex-live/last-run.json` without a transcript. It uses your model access; run it only when that acceptance is intended. The [script](../scripts/verify-codex-live.mjs) owns the detailed assertions.
+
+Broader activity acceptance uses the official TUI and an invocation-owned desktop profile and tmux socket. When the account normally disables approvals, use an invocation-scoped `on-request` approval policy and `read-only` sandbox for bounded test commands; retain the existing model and sign-in without changing user configuration. Approve only the reviewed test command once. Verify two concurrent requests remain actionable until both resolve, and verify an actual user-input question survives desktop restart.
+
+Stop only the acceptance-owned desktop service while a turn is working, interrupt through its original TUI, then check that the independent runner's exact event is restored. Dismiss failed/interrupted events through the UI, restart, and verify a later event cannot be dismissed using the previous event's identifier. For a controlled connection failure, scope `openai_base_url` to an invocation-owned loopback TCP endpoint that closes before TLS completes, without receiving credentials or bypassing TLS validation. If the installed CLI retries connection errors indefinitely, disable `features.unbounded_connection_retries` only for that invocation. Report this controlled fault separately from a real upstream service failure; never synthesize provider events or edit activity files to establish native acceptance. Physical device gestures remain a separate check.
 
 ## VM project workspace acceptance
 
