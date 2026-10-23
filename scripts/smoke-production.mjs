@@ -270,6 +270,32 @@ async function codexState(connection, tag) {
   return { pid: Number(match[1]), value: match[2] };
 }
 
+async function codexActivity(base, session, state) {
+  let activity;
+  await until(
+    async () => {
+      const current = await json(
+        base,
+        `/host/codex/sessions/${session.id}/runs/${session.runId}`,
+      );
+      activity = current.session.activity;
+      return activity?.state === state;
+    },
+    `Codex exact-run activity is ${state}`,
+    () => JSON.stringify(activity),
+  );
+  return activity;
+}
+
+function activityContent(activity) {
+  const { observation, ...content } = activity;
+  assert.equal(typeof observation.instanceId, 'string');
+  assert.ok(observation.instanceId.length > 0);
+  assert.ok(Number.isSafeInteger(observation.revision));
+  assert.ok(observation.revision > 0);
+  return content;
+}
+
 async function codexTerminal(base, session) {
   let connection;
   try {
@@ -411,17 +437,55 @@ async function codexSmoke(base) {
   const otherState = await codexState(other, 'independent');
   assert.notEqual(otherState.pid, original.pid);
   assert.equal(otherState.value, 'initial');
-  await json(
+  shellInput(other, 'message desktop-independent activity\r');
+  await codexActivity(base, independent.session, 'working');
+  shellInput(other, 'activity approval\r');
+  const offlineActivity = await codexActivity(
     base,
-    `/host/codex/sessions/${independent.session.id}/runs/${independent.session.runId}/end`,
-    'POST',
+    independent.session,
+    'waiting_approval',
   );
-  await until(() => other.closed, 'explicit Codex termination closes clients');
+  other.socket.close();
+  await until(() => other.closed, 'independent Codex client detaches');
   assert.deepEqual(await codexState(reattached, 'unaffected'), original);
   const recent = await json(base, '/host/codex/projects');
   assert.deepEqual(
     recent.projects.map((project) => project.path),
     [codex.projectPath, codex.defaultProjectPath],
+  );
+  shellInput(reattached, 'message production activity persistence\r');
+  const working = await codexActivity(base, session, 'working');
+  assert.equal(working.needsAttention, false);
+  shellInput(reattached, 'activity approval\r');
+  const waiting = await codexActivity(base, session, 'waiting_approval');
+  assert.equal(waiting.needsAttention, true);
+  assert.equal(waiting.turnId, working.turnId);
+  assert.ok(waiting.sequence > working.sequence);
+  shellInput(reattached, 'activity resolve\r');
+  const resolved = await codexActivity(base, session, 'working');
+  assert.equal(resolved.turnId, waiting.turnId);
+  assert.ok(resolved.sequence > waiting.sequence);
+  shellInput(reattached, 'activity fail\r');
+  const failed = await codexActivity(base, session, 'failed');
+  assert.equal(failed.needsAttention, true);
+  assert.equal(failed.turnId, working.turnId);
+  assert.ok(failed.sequence > resolved.sequence);
+  const { session: reviewed } = await json(
+    base,
+    `/host/codex/sessions/${session.id}/runs/${session.runId}/activity/review`,
+    'POST',
+    { eventId: failed.eventId },
+  );
+  assert.deepEqual(activityContent(reviewed.activity), {
+    ...activityContent(failed),
+    needsAttention: false,
+  });
+  reattached.socket.close();
+  await until(() => reattached.closed, 'reviewed Codex client detaches');
+  assert.deepEqual(
+    activityContent(await codexActivity(base, session, 'failed')),
+    activityContent(reviewed.activity),
+    'Activity and its exact-event review survive terminal detachment.',
   );
   return {
     id: session.id,
@@ -432,6 +496,8 @@ async function codexSmoke(base) {
     archivedAt: archived.archivedAt,
     metadataRevision: archived.metadataRevision,
     projects: recent.projects,
+    activity: reviewed.activity,
+    offline: { ...independent.session, activity: offlineActivity },
     ...original,
   };
 }
@@ -450,6 +516,39 @@ async function resumedCodexSmoke(base, previous, networkDigest) {
   assert.equal(persisted.title, previous.title);
   assert.equal(persisted.archivedAt, previous.archivedAt);
   assert.equal(persisted.metadataRevision, previous.metadataRevision);
+  assert.equal(persisted.runId, previous.runId);
+  assert.equal(persisted.conversationId, previous.conversationId);
+  assert.deepEqual(
+    activityContent(persisted.activity),
+    activityContent(previous.activity),
+    'Desktop restart preserves the exact activity event and its saved review.',
+  );
+  assert.notEqual(
+    persisted.activity.observation.instanceId,
+    previous.activity.observation.instanceId,
+    'A restarted desktop publishes a distinct activity observation instance.',
+  );
+  const offline = await codexActivity(base, previous.offline, 'completed');
+  assert.equal(offline.turnId, previous.offline.activity.turnId);
+  assert.ok(offline.sequence > previous.offline.activity.sequence);
+  assert.equal(
+    offline.needsAttention,
+    false,
+    'A successful turn completed while the desktop was stopped requires no action.',
+  );
+  const offlineRun = (
+    await json(
+      base,
+      `/host/codex/sessions/${previous.offline.id}/runs/${previous.offline.runId}`,
+    )
+  ).session;
+  assert.equal(offlineRun.status, 'running');
+  assert.equal(offlineRun.runId, previous.offline.runId);
+  await json(
+    base,
+    `/host/codex/sessions/${previous.offline.id}/runs/${previous.offline.runId}/end`,
+    'POST',
+  );
   assert.deepEqual(
     (await json(base, '/host/codex/projects')).projects,
     previous.projects,
@@ -890,6 +989,39 @@ try {
   );
   if (terminal)
     await until(() => terminal.closed, 'server shutdown closes active PTY');
+  if (persistentCodex) {
+    const offline = persistentCodex.offline;
+    // Only the isolated fixture's recorded pane is addressed. No desktop
+    // service is running to observe or forward these provider transitions.
+    await captureCommand(
+      'tmux',
+      [
+        '-S',
+        offline.tmuxSocket,
+        'send-keys',
+        '-t',
+        offline.tmuxSession,
+        '-l',
+        'activity resolve\ractivity complete\r',
+      ],
+      { cwd: dir, timeout: 5000 },
+    );
+    await until(async () => {
+      const pane = await captureCommand(
+        'tmux',
+        [
+          '-S',
+          offline.tmuxSocket,
+          'capture-pane',
+          '-p',
+          '-t',
+          offline.tmuxSession,
+        ],
+        { cwd: dir, timeout: 5000 },
+      );
+      return pane.stdout.includes('ACTIVITY complete');
+    }, 'independent runner observes completion while the desktop is stopped');
+  }
   const updatedProxy = 'http://next-fixture:next-password@127.0.0.1:17891';
   const updatedProxyEnvironment = Object.fromEntries(
     (codex?.proxyKeys || []).map((key) => [key, updatedProxy]),
@@ -972,7 +1104,7 @@ try {
     );
   await codex?.verifyIsolation();
   console.log(
-    'Production smoke passed: CLI help/version/errors, disabled remote status and CLI identity without node state, local-only remote controls and strict mutation input, isolated global configuration, flag precedence, dynamic ports, listener failure, graceful shutdown with active PTYs, host shell input/output/resize/interrupt/session limits/restart, Host Codex workspace/project/tmux identity/redacted proxy diagnostics/environment refresh/idempotent creation and continuation/multiple clients/detach/reattach/session isolation/metadata/recent projects/termination/process persistence across service restart/history context in a new process/old-run isolation, embedded UI, independent cwd, database identity, files, trash, preferences, workspaces, Dock, Clip, panels, and client layouts survive restart.',
+    'Production smoke passed: CLI help/version/errors, disabled remote status and CLI identity without node state, local-only remote controls and strict mutation input, isolated global configuration, flag precedence, dynamic ports, listener failure, graceful shutdown with active PTYs, host shell input/output/resize/interrupt/session limits/restart, Host Codex workspace/project/tmux identity/redacted proxy diagnostics/environment refresh/idempotent creation and continuation/multiple clients/detach/reattach/session isolation/metadata/recent projects/termination/process and exact-event activity review persistence across service restart/approval resolution/history context in a new process/old-run isolation, embedded UI, independent cwd, database identity, files, trash, preferences, workspaces, Dock, Clip, panels, and client layouts survive restart.',
   );
 } catch (error) {
   console.error('Production smoke failed:', error);

@@ -3,6 +3,7 @@ import { APIError } from '../../shared/api/http';
 import { CodexConnection } from './session';
 import type { CodexSocket } from './session';
 import type { CodexSessionRecord } from './api';
+import { publishSessionActivity, subscribeSessionActivity } from './activity';
 
 class FakeSocket implements CodexSocket {
   readyState: CodexSocket['readyState'] = 0;
@@ -89,6 +90,108 @@ afterEach(() => {
 });
 
 describe('persistent Codex connections', () => {
+  it('replays a review accepted before the initial attachment lookup finishes', async () => {
+    let resolve!: (session: CodexSessionRecord) => void;
+    const unread: CodexSessionRecord = {
+      ...record,
+      activity: {
+        state: 'failed',
+        eventId: 'completion',
+        sequence: 2,
+        observation: { instanceId: 'service', revision: 1 },
+        needsAttention: true,
+      },
+    };
+    const { connection, sockets } = harness({
+      getSession: () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    });
+    const unsubscribe = subscribeSessionActivity(vi.fn());
+    try {
+      const starting = connection.start();
+      publishSessionActivity({
+        ...unread,
+        activity: {
+          ...unread.activity!,
+          observation: { instanceId: 'service', revision: 2 },
+          needsAttention: false,
+        },
+      });
+      resolve(unread);
+      await starting;
+      expect(connection.getSnapshot().session?.activity).toMatchObject({
+        eventId: 'completion',
+        needsAttention: false,
+      });
+      expect(sockets).toHaveLength(1);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('preserves an accepted activity review when an older end response arrives', async () => {
+    const unread: CodexSessionRecord = {
+      ...record,
+      activity: {
+        observation: { instanceId: 'service', revision: 1 },
+        state: 'failed',
+        eventId: 'completion',
+        sequence: 2,
+        needsAttention: true,
+      },
+    };
+    const { connection } = harness({ getSession: async () => unread });
+    await connection.start();
+    connection.updateActivity({
+      ...unread,
+      activity: {
+        ...unread.activity!,
+        observation: { instanceId: 'service', revision: 2 },
+        needsAttention: false,
+      },
+    });
+    connection.ended({ ...unread, status: 'ended' });
+    expect(connection.getSnapshot()).toMatchObject({
+      phase: 'ended',
+      session: { activity: { needsAttention: false } },
+    });
+  });
+
+  it('requires a newer accepted observation before certifying a shared activity refresh', async () => {
+    const current: CodexSessionRecord = {
+      ...record,
+      activity: {
+        observation: { instanceId: 'service', revision: 2 },
+        state: 'working',
+        sequence: 1,
+        needsAttention: false,
+      },
+    };
+    const { connection } = harness({ getSession: async () => current });
+    await connection.start();
+    expect(connection.updateActivity(current)).toBe(false);
+    expect(
+      connection.updateActivity({
+        ...current,
+        activity: {
+          ...current.activity!,
+          observation: { instanceId: 'service', revision: 1 },
+        },
+      }),
+    ).toBe(false);
+    expect(
+      connection.updateActivity({
+        ...current,
+        activity: {
+          ...current.activity!,
+          observation: { instanceId: 'service', revision: 3 },
+        },
+      }),
+    ).toBe(true);
+  });
+
   it('rejects another run returned during connection and never follows its terminal', async () => {
     const { connection, sockets } = harness({
       getSession: async () => ({ ...record, runId: 'different-run' }),

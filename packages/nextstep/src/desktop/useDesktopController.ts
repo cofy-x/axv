@@ -11,6 +11,7 @@ import {
   arrangeDesktopIconPositions,
   desktopApplicationIcons,
   iconWorkArea,
+  inWorkspace,
   isApplicationOnDesktop as applicationOnDesktop,
   minimizedWindows,
   reconcileWorkspaceWindows,
@@ -52,6 +53,24 @@ function sameParams(first: WindowParams, second: WindowParams): boolean {
 interface OverlayOpener {
   element: HTMLElement;
   activeWindowId: string | null;
+}
+
+function menuOwnerAvailable(menu: MenuRequest, layout: DesktopLayout) {
+  const id = menu.options?.ownerWindowId;
+  if (!id) return true;
+  const owner = layout.windows.find((win) => win.id === id);
+  return (
+    !!owner &&
+    layout.activeWindowId === id &&
+    !owner.minimized &&
+    !owner.shaded &&
+    inWorkspace(owner, layout.currentWorkspaceId) &&
+    (!menu.opener ||
+      (menu.opener.isConnected &&
+        !!menu.opener.getClientRects().length &&
+        getComputedStyle(menu.opener).visibility !== 'hidden' &&
+        !menu.opener.matches(':disabled')))
+  );
 }
 
 function initialState(props: DesktopProps): DesktopLayout {
@@ -101,6 +120,9 @@ export function useDesktopController(props: DesktopProps) {
   const [menu, setMenu] = useState<MenuRequest | null>(null);
   const menuRef = useRef(menu);
   menuRef.current = menu;
+  useLayoutEffect(() => {
+    if (menu && !menuOwnerAvailable(menu, layout)) setMenu(null);
+  }, [menu, layout, props.apps]);
   const menuCounter = useRef(0);
   const menuActionOpener = useRef<OverlayOpener | null>(null);
   const pendingFocusReturn = useRef<OverlayOpener | null>(null);
@@ -275,7 +297,10 @@ export function useDesktopController(props: DesktopProps) {
         }),
       );
       setMenu((current) =>
-        current?.options?.pin?.ownerWindowId === id ? null : current,
+        current?.options?.ownerWindowId === id ||
+        current?.options?.pin?.ownerWindowId === id
+          ? null
+          : current,
       );
       return true;
     } finally {
@@ -549,6 +574,10 @@ export function useDesktopController(props: DesktopProps) {
   }, [api]);
   const dialogRequest = dialogs[0];
   const dismissMenu = (action?: () => void) => {
+    if (menu && !menuOwnerAvailable(menu, layout)) {
+      setMenu(null);
+      return;
+    }
     const opener = menu?.opener
       ? { element: menu.opener, activeWindowId: layout.activeWindowId }
       : null;

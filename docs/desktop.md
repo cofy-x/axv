@@ -58,7 +58,7 @@ All windows retain stable identity in the same React tree. Folded, minimized and
 
 ## Menus and workspaces
 
-`MenuGroup` and `MenuItem` describe nested items, checked/disabled state, shortcuts and actions. Fixed menus persist descriptors containing their kind, menu group and optional owner window ID, never callback closures. Actions resolve against the live owner at execution time. Changing the active window cannot retarget a fixed menu; closing its owner invalidates it.
+`MenuGroup` and `MenuItem` describe nested items, checked/disabled state, shortcuts and actions. Optional item descriptions appear below their names in both popup and fixed menus. Context menus can request a wide layout and align their end edge to the supplied point; placement and scrolling remain bounded by the visual viewport, including a reduced viewport height. A transient content menu may bind an owner window; losing that window’s active, visible content cancels the menu and rejects its actions. Fixed menus retain their independent owner-bound lifetime. Keyboard navigation scrolls the active item into view. Fixed menus persist descriptors containing their kind, menu group and optional owner window ID, never callback closures. Actions resolve against the live owner at execution time. Changing the active window cannot retarget a fixed menu; closing its owner invalidates it.
 
 Stable workspace IDs have editable names. Each workspace owns Clip shortcuts, stacking order and an active window. A window belongs to one home workspace and may be sticky across workspaces. Dock state represents applications and stores pinning and order; live windows supply running state and the window chooser. Minimized windows have separate restore icons.
 

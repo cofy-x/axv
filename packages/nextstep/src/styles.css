@@ -824,14 +824,22 @@ select:disabled {
   position: fixed;
   min-width: 198px;
   max-width: min(320px, calc(100vw - 8px));
-  max-height: calc(100dvh - 32px);
+  max-height: calc(var(--ns-viewport-height, 100dvh) - 32px);
   overflow: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
   padding: 0;
   border: 1px solid #111;
   background: #aaa;
   box-shadow: 1px 1px #333;
   color: #111;
   outline: none;
+}
+.ns-menu.is-wide {
+  box-sizing: border-box;
+  width: min(420px, calc(100vw - 16px));
+  min-width: 0;
+  max-width: calc(100vw - 16px);
 }
 .ns-menu-item {
   position: relative;
@@ -867,6 +875,25 @@ select:disabled {
 }
 .ns-menu-label {
   flex: 1;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.ns-menu-name {
+  display: block;
+  white-space: pre-wrap;
+  font-weight: 700;
+}
+.ns-menu-description {
+  display: block;
+  white-space: pre-wrap;
+  margin-top: 2px;
+  color: #333;
+  font-weight: 400;
+}
+.ns-menu-item[aria-disabled='true'] .ns-menu-description,
+.ns-menu-item:disabled .ns-menu-description {
+  color: inherit;
 }
 .ns-menu-shortcut {
   font-size: 10px;

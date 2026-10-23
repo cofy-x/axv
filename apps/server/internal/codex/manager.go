@@ -3,6 +3,7 @@ package codex
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -27,6 +28,9 @@ type Manager struct {
 	attachments   int
 	leases        map[*Attachment]bool
 	connections   map[string]map[*Attachment]bool
+	activityMu    sync.Mutex
+	activityEpoch string
+	activityRead  uint64
 	runnerCommand func(string) ([]string, error)
 	verifyHistory func(context.Context, string, string, string, []string, string) error
 	probe         func(context.Context) Info
@@ -60,6 +64,7 @@ func New(store *storage.Store, settings Options) (*Manager, error) {
 		cancel:        cancel,
 		connections:   make(map[string]map[*Attachment]bool),
 		leases:        make(map[*Attachment]bool),
+		activityEpoch: rand.Text(),
 		probe:         probe,
 		run:           command,
 		verifyHistory: verifyCodexHistory,

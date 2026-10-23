@@ -2,6 +2,11 @@ import { APIError } from '../../shared/api/http';
 import { sessionIsLive } from './api';
 import type { CodexSessionRecord } from './api';
 import { mergeSessionMetadata } from './metadata';
+import {
+  mergeSessionActivity,
+  mergeSessionSnapshot,
+  publishSessionActivity,
+} from './activity';
 
 export type CodexSocket = Pick<
   WebSocket,
@@ -92,6 +97,20 @@ export class CodexConnection {
       this.publish({ ...this.state, session: updated });
   }
 
+  updateActivity(session: CodexSessionRecord) {
+    if (
+      this.disposed ||
+      !this.state.session ||
+      session.id !== this.options.sessionId ||
+      session.runId !== this.options.runId
+    )
+      return false;
+    const updated = mergeSessionActivity(this.state.session, session);
+    if (updated === this.state.session) return false;
+    this.publish({ ...this.state, session: updated });
+    return true;
+  }
+
   updateRunInfo(session: CodexSessionRecord) {
     if (
       this.disposed ||
@@ -104,7 +123,7 @@ export class CodexConnection {
       : session;
     const previous = this.state.session;
     if (previous) {
-      updated = mergeSessionMetadata(updated, previous);
+      updated = mergeSessionSnapshot(previous, updated);
       if (
         !sessionIsLive(previous) &&
         (sessionIsLive(updated) ||
@@ -194,11 +213,15 @@ export class CodexConnection {
       return;
     }
     this.closeConnection();
+    const observed = publishSessionActivity(session);
+    const snapshot = this.state.session
+      ? mergeSessionSnapshot(this.state.session, observed)
+      : observed;
     this.publish({
       phase: session.status === 'stopping' ? 'stopping' : 'ended',
       session: this.metadata
-        ? mergeSessionMetadata(session, this.metadata)
-        : session,
+        ? mergeSessionMetadata(snapshot, this.metadata)
+        : snapshot,
       message:
         session.reason ||
         (session.status === 'stopping'
@@ -277,9 +300,12 @@ export class CodexConnection {
         );
         return;
       }
-      const session = this.metadata
-        ? mergeSessionMetadata(received, this.metadata)
-        : received;
+      const observed = publishSessionActivity(received);
+      let session = this.metadata
+        ? mergeSessionMetadata(observed, this.metadata)
+        : observed;
+      if (this.state.session)
+        session = mergeSessionSnapshot(this.state.session, session);
       this.metadata = session;
       if (!sessionIsLive(session)) {
         this.ended(session);

@@ -40,6 +40,9 @@ type protocolBridge struct {
 	contextRequests map[string]contextRequest
 	vmWork          *vmwork.Context
 	vmWorkLoaded    bool
+	activity        *activityObserver
+	activityPending []activityObservation
+	activityLost    bool
 }
 
 func newBridge(manifest Manifest, statePath string, stdin io.Writer, client *websocket.Conn) *protocolBridge {
@@ -83,7 +86,47 @@ func (bridge *protocolBridge) publishReady(ctx context.Context, threadID string)
 	}
 	bridge.state = state
 	bridge.ready = true
+	bridge.activity = newActivityObserver(bridge.path, state.RunID, threadID)
+	// Lost metadata may include standalone requests that outlive turns.
+	bridge.activity.threadOverflow = bridge.activityLost
+	for _, event := range bridge.activityPending {
+		bridge.activity.observe(event)
+	}
+	bridge.activityPending = nil
 	return nil
+}
+
+func (bridge *protocolBridge) observeActivity(event activityObservation) {
+	if bridge.activity != nil {
+		bridge.activity.observe(event)
+		return
+	}
+	threadID := bridge.manifest.ThreadID
+	if bridge.candidateID != "" {
+		threadID = bridge.candidateID
+	}
+	if threadID != "" && event.threadID != "" && event.threadID != threadID {
+		return
+	}
+	if event.method == "clientResponse" {
+		// Before readiness, retain only responses to observed activity
+		// requests. Other provider requests are outside this observer.
+		matched := false
+		for _, pending := range bridge.activityPending {
+			if pending.requestID == event.requestID {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return
+		}
+	}
+	if len(bridge.activityPending) >= maxActivityRequests {
+		bridge.activityLost = true
+		return
+	}
+	bridge.activityPending = append(bridge.activityPending, event)
 }
 
 func (bridge *protocolBridge) send(ctx context.Context, raw []byte) error {
@@ -147,13 +190,22 @@ func (bridge *protocolBridge) fromClient(ctx context.Context, raw []byte) error 
 	if method == "turn/start" || method == "turn/steer" {
 		return bridge.forwardTurn(ctx, raw, message)
 	}
-	return writeRawMessage(bridge.stdin, raw)
+	if err := writeRawMessage(bridge.stdin, raw); err != nil {
+		return err
+	}
+	if id := clientActivityResponse(message); id != "" {
+		bridge.observeActivity(activityObservation{method: "clientResponse", requestID: id})
+	}
+	return nil
 }
 
 func (bridge *protocolBridge) fromServer(ctx context.Context, raw []byte) error {
 	var message wireMessage
 	if json.Unmarshal(raw, &message) != nil {
 		return bridge.fail("codex_protocol_error")
+	}
+	if event, valid := serverActivity(message); valid {
+		bridge.observeActivity(event)
 	}
 	var id string
 	if json.Unmarshal(message.ID, &id) == nil && id == bridge.persistID {
@@ -227,6 +279,11 @@ func (bridge *protocolBridge) fromServer(ctx context.Context, raw []byte) error 
 				(method == "thread/resume" && threadID != bridge.state.ThreadID) {
 				return bridge.fail("codex_protocol_error")
 			}
+			if !bridge.ready {
+				if event, valid := threadResponseActivity(message.Result); valid {
+					bridge.observeActivity(event)
+				}
+			}
 			if method == "thread/start" {
 				// A new empty thread is not durable yet. Naming it through the
 				// official API persists it without inventing a user/model turn.
@@ -240,8 +297,10 @@ func (bridge *protocolBridge) fromServer(ctx context.Context, raw []byte) error 
 					"params": map[string]string{"threadId": threadID, "name": "AXV " + bridge.manifest.SessionID},
 				})
 			}
-			if !bridge.ready && bridge.publishReady(ctx, threadID) != nil {
-				return ErrUnavailable
+			if !bridge.ready {
+				if bridge.publishReady(ctx, threadID) != nil {
+					return ErrUnavailable
+				}
 			}
 		}
 	}

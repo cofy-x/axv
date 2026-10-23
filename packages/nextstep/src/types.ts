@@ -86,11 +86,16 @@ export type DesktopLayout = NextstepLayout;
 export interface MenuOptions {
   title?: string;
   pin?: Omit<PinnedMenu, 'id' | 'x' | 'y'>;
+  /** A content menu is valid only while this window remains interactive. */
+  ownerWindowId?: string;
+  align?: 'start' | 'end';
+  width?: 'wide';
 }
 
 export interface MenuItem {
   id?: string;
   label?: string;
+  description?: string;
   separator?: boolean;
   disabled?: boolean;
   checked?: boolean;

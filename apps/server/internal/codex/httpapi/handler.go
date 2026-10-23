@@ -62,11 +62,26 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/host/codex/sessions/{id}", h.handle(h.patch))
 	mux.HandleFunc("POST /api/host/codex/sessions/{id}/resume", h.handle(h.resume))
 	mux.HandleFunc("GET /api/host/codex/sessions/{id}/runs/{run}", h.handle(h.getRun))
+	mux.HandleFunc("POST /api/host/codex/sessions/{id}/runs/{run}/activity/review", h.handle(h.reviewActivity))
 	mux.HandleFunc("GET /api/host/codex/sessions/{id}/runs/{run}/context", h.handle(h.contextBatches))
 	mux.HandleFunc("POST /api/host/codex/sessions/{id}/runs/{run}/context", h.handle(h.queueContext))
 	mux.HandleFunc("DELETE /api/host/codex/sessions/{id}/runs/{run}/context/{batch}", h.handle(h.cancelContext))
 	mux.HandleFunc("POST /api/host/codex/sessions/{id}/runs/{run}/end", h.handle(h.end))
 	mux.HandleFunc("GET /api/host/codex/sessions/{id}/runs/{run}/terminal", h.handle(h.connect))
+}
+
+func (h *Handler) reviewActivity(w http.ResponseWriter, r *http.Request) {
+	if !allowed(w, r, true) {
+		return
+	}
+	var input struct {
+		EventID string `json:"eventId"`
+	}
+	if !decode(w, r, &input) {
+		return
+	}
+	session, err := h.manager.ReviewActivity(r.Context(), r.PathValue("id"), r.PathValue("run"), input.EventID)
+	respond(w, map[string]any{"session": session}, err)
 }
 
 func (h *Handler) contextBatches(w http.ResponseWriter, r *http.Request) {

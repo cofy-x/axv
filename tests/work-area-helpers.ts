@@ -1,5 +1,3 @@
-import { mkdir } from 'node:fs/promises';
-import { resolve } from 'node:path';
 import type { Locator, Page, TestInfo } from '@playwright/test';
 import { bounds, expect } from './helpers';
 
@@ -24,10 +22,7 @@ export async function captureWorkArea(
   state: string,
 ) {
   const viewport = page.viewportSize()!;
-  const directory = resolve('screenshots', `final-${info.project.name}`);
-  await mkdir(directory, { recursive: true });
-  const path = resolve(
-    directory,
+  const path = info.outputPath(
     `${viewport.width}x${viewport.height}-work-area-${state}.png`,
   );
   await page.screenshot({ path, fullPage: true });

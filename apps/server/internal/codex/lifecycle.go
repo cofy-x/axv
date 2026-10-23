@@ -279,20 +279,23 @@ func (m *Manager) GetRun(ctx context.Context, id, runID string) (Session, error)
 	}
 	defer done()
 	session, err := m.store.CodexRun(ctx, id, runID)
-	if err == nil {
-		session, err = m.visibleSession(ctx, session)
+	if err != nil {
+		return Session{}, err
 	}
-	if err == nil {
-		latest, latestErr := m.store.CodexSession(ctx, session.ID)
-		if latestErr == nil && latest.RunID != session.RunID {
-			_, latestErr = m.visibleSession(ctx, latest)
-			if latestErr == nil {
-				session, latestErr = m.store.CodexRun(ctx, session.ID, session.RunID)
-			}
-		}
-		err = latestErr
+	observed, err := m.observedSession(ctx, session)
+	if err != nil {
+		return Session{}, err
 	}
-	return m.describe(session), err
+	latest, err := m.store.CodexSession(ctx, session.ID)
+	if err != nil || latest.RunID == session.RunID {
+		return observed, err
+	}
+	if _, err := m.visibleSession(ctx, latest); err != nil {
+		return observed, err
+	}
+	// The latest run can affect continuation, but this response and its
+	// activity observation still belong to the originally requested run.
+	return m.observedSession(ctx, observed.CodexSession)
 }
 
 // End idempotently terminates only the explicitly addressed conversation/run.

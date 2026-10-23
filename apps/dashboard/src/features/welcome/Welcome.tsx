@@ -33,7 +33,7 @@ export function Welcome({ desktop, window }: AppWindowProps) {
                     app: 'codex',
                     icon: 'companion' as const,
                     name: 'Codex',
-                    text: 'Start or resume coding.',
+                    text: 'Resume coding and find sessions that need attention.',
                   },
                 ]
               : []),
@@ -138,10 +138,11 @@ export function About() {
       <p className="fine-print">
         Documents and desktop layout stay on the AXV host. VM project files stay
         on retained volumes. Host Codex can use the AXV Skill to edit a selected
-        VM project and run its tasks. Project Files can clone repositories, open
-        development previews and restore independent volume copies. Private
-        remote access uses Tailscale. Application Manager adds restricted
-        extensions with their own saved data.
+        VM project and run its tasks. Codex activity identifies working
+        sessions, pending requests and turn outcomes. Project Files can clone
+        repositories, open development previews and restore independent volume
+        copies. Private remote access uses Tailscale. Application Manager adds
+        restricted extensions with their own saved data.
       </p>
     </div>
   );

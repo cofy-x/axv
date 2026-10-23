@@ -49,12 +49,32 @@ export interface CodexSessionRecord {
   endedAt?: string;
   reason?: string;
   connections: number;
+  activity?: CodexActivity;
   conversationId?: string;
   continuation: {
     state: 'available' | 'active' | 'unavailable';
     reason?: string;
     activeRunId?: string;
   };
+}
+
+export interface CodexActivity {
+  observation: { instanceId: string; revision: number };
+  state:
+    | 'unknown'
+    | 'idle'
+    | 'working'
+    | 'waiting_approval'
+    | 'waiting_input'
+    | 'completed'
+    | 'failed'
+    | 'interrupted';
+  sequence?: number;
+  eventId?: string;
+  turnId?: string;
+  updatedAt?: string;
+  needsAttention: boolean;
+  reason?: string;
 }
 
 export interface CodexProject {
@@ -70,18 +90,27 @@ export interface CodexMetadataPatch {
 
 const root = '/host/codex';
 
+function readSignal(signal?: AbortSignal) {
+  const timeout = AbortSignal.timeout(15_000);
+  return signal ? AbortSignal.any([signal, timeout]) : timeout;
+}
+
 export const codexAPI = {
   info: (signal?: AbortSignal) =>
     request<CodexInfo>(`${root}/info`, { signal }),
   directories: (path?: string, signal?: AbortSignal) =>
     request<HostDirectories>(
       `/host/directories${path ? `?path=${encodeURIComponent(path)}` : ''}`,
-      { signal },
+      { signal: readSignal(signal) },
     ),
   list: (signal?: AbortSignal) =>
-    request<{ sessions: CodexSessionRecord[] }>(`${root}/sessions`, { signal }),
+    request<{ sessions: CodexSessionRecord[] }>(`${root}/sessions`, {
+      signal: readSignal(signal),
+    }),
   projects: (signal?: AbortSignal) =>
-    request<{ projects: CodexProject[] }>(`${root}/projects`, { signal }),
+    request<{ projects: CodexProject[] }>(`${root}/projects`, {
+      signal: readSignal(signal),
+    }),
   get: async (id: string, signal?: AbortSignal) =>
     (
       await request<{ session: CodexSessionRecord }>(
@@ -93,7 +122,7 @@ export const codexAPI = {
     (
       await request<{ session: CodexSessionRecord }>(
         `${root}/sessions/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}`,
-        { signal },
+        { signal: readSignal(signal) },
       )
     ).session,
   create: async (
@@ -114,6 +143,17 @@ export const codexAPI = {
       await request<{ session: CodexSessionRecord }>(
         `${root}/sessions/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/end`,
         { method: 'POST' },
+      )
+    ).session,
+  reviewActivity: async (id: string, runId: string, eventId: string) =>
+    (
+      await request<{ session: CodexSessionRecord }>(
+        `${root}/sessions/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/activity/review`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ eventId }),
+          signal: readSignal(),
+        },
       )
     ).session,
   resume: async (

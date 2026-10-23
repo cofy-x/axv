@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { MenuLabel } from '../MenuLabel';
 import type { Dispatch, SetStateAction } from 'react';
 import type {
   DesktopAPI,
@@ -236,7 +237,7 @@ function PinnedMenuPanel({
               <span className="ns-menu-mark" aria-hidden="true">
                 {item.checked ? '✓' : ''}
               </span>
-              <span className="ns-menu-label">{item.label}</span>
+              <MenuLabel label={item.label} description={item.description} />
               <span className="ns-menu-shortcut" aria-hidden="true">
                 {item.shortcut}
               </span>

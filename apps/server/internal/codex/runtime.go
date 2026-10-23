@@ -213,10 +213,22 @@ type Session struct {
 	storage.CodexSession
 	AttachCommand string       `json:"attachCommand"`
 	Continuation  Continuation `json:"continuation"`
+	Activity      Activity     `json:"activity"`
 }
 
 func (m *Manager) describe(session storage.CodexSession) Session {
-	return Session{CodexSession: session, AttachCommand: runtimeTarget(session).AttachCommand(), Continuation: m.continuation(session)}
+	return m.describeSnapshot(session, false)
+}
+
+// describeObserved retains the current inspection result while the caller
+// holds this exact run's gate through activity observation.
+func (m *Manager) describeObserved(session storage.CodexSession) Session {
+	return m.describeSnapshot(session, true)
+}
+
+func (m *Manager) describeSnapshot(session storage.CodexSession, observed bool) Session {
+	session, activity := m.activitySnapshot(session, observed)
+	return Session{CodexSession: session, AttachCommand: runtimeTarget(session).AttachCommand(), Continuation: m.continuation(session), Activity: activity}
 }
 
 func final(status string) bool { return status == "ended" || status == "lost" || status == "failed" }
@@ -237,9 +249,14 @@ func (m *Manager) reconcile(ctx context.Context, session storage.CodexSession) (
 		return session, err
 	}
 	defer release()
+	return m.reconcileLocked(ctx, session)
+}
+
+// reconcileLocked requires the caller to hold this exact run's gate.
+func (m *Manager) reconcileLocked(ctx context.Context, session storage.CodexSession) (storage.CodexSession, error) {
 	// A caller may have waited behind End or another reconciliation. Never
 	// apply the stale status read before acquiring this run's gate.
-	session, err = m.store.CodexRun(ctx, session.ID, session.RunID)
+	session, err := m.store.CodexRun(ctx, session.ID, session.RunID)
 	if err != nil {
 		return session, err
 	}

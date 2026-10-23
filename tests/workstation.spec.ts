@@ -1,5 +1,3 @@
-import { mkdir } from 'node:fs/promises';
-import { resolve } from 'node:path';
 import type { Locator } from '@playwright/test';
 import {
   actionMenu,
@@ -51,11 +49,8 @@ for (const viewport of [
     ).toBeInViewport();
     const compute = await request.get('/api/compute/info');
     expect((await compute.json()).configured).toBe(false);
-    const screenshotDir = resolve('screenshots', `final-${info.project.name}`);
-    await mkdir(screenshotDir, { recursive: true });
     const capture = async (name: string) => {
-      const path = resolve(
-        screenshotDir,
+      const path = info.outputPath(
         `${viewport.width}x${viewport.height}-${name}.png`,
       );
       await page.screenshot({ path, fullPage: true });
@@ -154,9 +149,7 @@ test('Recycler menus preserve their selection and confirm permanent deletion', a
   await more.press('Enter');
   await expect(menuItem(page, 'Delete')).toBeEnabled();
   await expect(menuItem(page, 'Empty Recycler')).toBeInViewport();
-  const screenshotDir = resolve('screenshots', `final-${info.project.name}`);
-  await mkdir(screenshotDir, { recursive: true });
-  const path = resolve(screenshotDir, 'recycler-more-menu.png');
+  const path = info.outputPath('recycler-more-menu.png');
   await page.screenshot({ path, fullPage: true });
   await info.attach('recycler-more-menu', { path, contentType: 'image/png' });
   await page.keyboard.press('Escape');
