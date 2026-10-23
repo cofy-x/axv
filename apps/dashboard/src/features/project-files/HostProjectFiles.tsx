@@ -136,23 +136,33 @@ export function HostProjectFiles({
         ...payload,
         requestId,
       });
-      setFeedback(`Copied ${entry.name} to Documents.`);
-      if (!transfer.current.complete(requestId))
-        setError(
-          'The copy was saved, but its retry identity could not be cleared in this browser.',
-        );
+      const cleared = transfer.current.complete(requestId);
+      if (mounted.current) {
+        setFeedback(`Copied ${entry.name} to Documents.`);
+        if (!cleared)
+          setError(
+            'The copy was saved, but its retry identity could not be cleared in this browser.',
+          );
+      }
       try {
         await filesystem.refresh();
-        desktop.openApp('notes', { entryId: entry.id }, { title: entry.name });
+        if (mounted.current)
+          desktop.openApp(
+            'notes',
+            { entryId: entry.id },
+            { title: entry.name },
+          );
       } catch {
-        setError(
-          'The copy was saved, but the document list could not be refreshed. Refresh Documents before opening it.',
-        );
+        if (mounted.current)
+          setError(
+            'The copy was saved, but the document list could not be refreshed. Refresh Documents before opening it.',
+          );
       }
     } catch (error) {
-      setError(error instanceof Error ? error.message : String(error));
+      if (mounted.current)
+        setError(error instanceof Error ? error.message : String(error));
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
 

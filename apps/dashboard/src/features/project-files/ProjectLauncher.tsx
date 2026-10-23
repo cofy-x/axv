@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Button,
   Field,
@@ -26,7 +26,15 @@ export function ProjectLauncher(props: AppWindowProps) {
   const result = useResource(`projects:${refresh}`, load);
   const launcher = useRef<HTMLDivElement>(null);
   const hostPanel = useRef<HTMLElement>(null);
+  const mounted = useRef(false);
   const hostInteractive = interactive && location === 'host';
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   function closeFolderChooser() {
     setChoosingFolder(false);
@@ -44,6 +52,7 @@ export function ProjectLauncher(props: AppWindowProps) {
     setError('');
     try {
       const { project } = await projectsAPI.register(root.trim());
+      if (!mounted.current) return;
       const projects = [
         ...(result.data?.projects || []).filter(
           (item) => item.id !== project.id,
@@ -57,9 +66,10 @@ export function ProjectLauncher(props: AppWindowProps) {
         { title: projectLabel(project, projects) },
       );
     } catch (error) {
-      setError(error instanceof Error ? error.message : String(error));
+      if (mounted.current)
+        setError(error instanceof Error ? error.message : String(error));
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
 

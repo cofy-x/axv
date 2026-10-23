@@ -1,7 +1,18 @@
-import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { readFile, writeFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import type { Locator, Page } from '@playwright/test';
-import { expect, menuItem, test } from './helpers';
+import {
+  activate,
+  createEntry,
+  editorWindow,
+  expect,
+  filesWindow,
+  menuItem,
+  openDocument,
+  readContent,
+  test,
+} from './helpers';
+import type { Entry } from './helpers';
 
 const hostId = 'launcher-host';
 const volumeId = '11111111-1111-4111-8111-111111111111';
@@ -271,3 +282,212 @@ test('project location switching preserves both forms and an in-flight registrat
   });
   await expectOnlyLauncherCode(page);
 });
+
+test('closing the host launcher keeps a completed registration without reopening its project', async ({
+  page,
+  request,
+  hasTouch,
+}) => {
+  const projectPath = process.env.E2E_CODEX_PROJECT || '';
+  test.skip(
+    !projectPath,
+    'Host projects require the isolated POSIX workspace.',
+  );
+  const entry = await createEntry(request, 'E2E Registration owner draft.txt');
+  await page.reload();
+  const editor = await openDocument(page, entry);
+  const text = editor.getByRole('textbox', { name: 'Document text' });
+  const draft = 'Keep the other document draft and focus.';
+  await text.fill(draft);
+  const launcher = await openLauncher(page);
+  await launcher
+    .getByLabel('Host project directory', { exact: true })
+    .fill(projectPath);
+  let release = () => {};
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let committedProject: { id: string; rootPath: string } | undefined;
+  const endpoint = (url: URL) => url.pathname === '/api/projects';
+  await page.route(endpoint, async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    const response = await route.fetch();
+    expect(response.ok(), await response.text()).toBeTruthy();
+    committedProject = (await response.json()).project;
+    await pending;
+    await route.fulfill({ response });
+  });
+  try {
+    const finished = page.waitForResponse(
+      (response) =>
+        endpoint(new URL(response.url())) &&
+        response.request().method() === 'POST',
+    );
+    const open = launcher.getByRole('button', { name: 'Open', exact: true });
+    if (hasTouch) await open.tap();
+    else await open.click();
+    await expect.poll(() => committedProject?.id).toBeTruthy();
+    const close = launcher.getByRole('button', { name: /^Close / });
+    if (hasTouch) await close.tap();
+    else await close.click();
+    await expect(launcher).toHaveCount(0);
+    await activate(page, editor);
+    await text.focus();
+    release();
+    await (await finished).finished();
+    // Settle the completed fetch and any mistakenly launched view before
+    // asserting absence; the backend commit alone precedes the held response.
+    await page.waitForLoadState('networkidle');
+    const projects = await request.get('/api/projects');
+    expect(projects.ok()).toBeTruthy();
+    expect((await projects.json()).projects).toContainEqual(
+      expect.objectContaining(committedProject!),
+    );
+    await expect(page.locator('[data-app-id="project-files"]')).toHaveCount(0);
+    await expect(text).toBeFocused();
+    await expect(text).toHaveValue(draft);
+    expect(await readContent(request, entry.id)).toBe('Initial text');
+  } finally {
+    release();
+    await page.unroute(endpoint);
+  }
+});
+
+for (const held of ['import', 'refresh'] as const) {
+  test(`closing a host copy owner during ${held} preserves the copy without opening Notes`, async ({
+    page,
+    request,
+    hasTouch,
+  }) => {
+    const projectPath = process.env.E2E_CODEX_PROJECT || '';
+    test.skip(
+      !projectPath,
+      'Host projects require the isolated POSIX workspace.',
+    );
+    const entry = await createEntry(
+      request,
+      `E2E Copy ${held} owner draft.txt`,
+    );
+    await page.reload();
+    const editor = await openDocument(page, entry);
+    const text = editor.getByRole('textbox', { name: 'Document text' });
+    const draft = `Keep the other draft while ${held} completes.`;
+    await text.fill(draft);
+    const sourceName = `E2E copied-${held}-${entry.id}.txt`;
+    const source = `The acknowledged ${held} copy must remain available.`;
+    await writeFile(join(projectPath, sourceName), source);
+    const launcher = await openLauncher(page);
+    await launcher
+      .getByLabel('Host project directory', { exact: true })
+      .fill(projectPath);
+    const opened = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === '/api/projects' &&
+        response.request().method() === 'POST',
+    );
+    const open = launcher.getByRole('button', { name: 'Open', exact: true });
+    if (hasTouch) await open.tap();
+    else await open.click();
+    const openedResponse = await opened;
+    expect(openedResponse.ok()).toBeTruthy();
+    const { project } = (await openedResponse.json()) as {
+      project: { id: string };
+    };
+    const browser = page.locator(
+      `[data-window-id="project-files:${project.id}"]`,
+    );
+    await expect(browser).toBeVisible();
+    const selected = browser.getByRole('button', {
+      name: sourceName,
+      exact: true,
+    });
+    if (hasTouch) await selected.tap();
+    else await selected.click();
+    const copy = browser.getByRole('button', {
+      name: 'Copy to Documents',
+      exact: true,
+    });
+    await expect(copy).toBeEnabled();
+    let release = () => {};
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let copied: Entry | undefined;
+    let requestId = '';
+    let refreshes = 0;
+    const importEndpoint = (url: URL) =>
+      url.pathname === `/api/projects/${project.id}/import`;
+    const refreshEndpoint = (url: URL) => url.pathname === '/api/entries';
+    await page.route(importEndpoint, async (route) => {
+      requestId = route.request().postDataJSON().requestId;
+      const response = await route.fetch();
+      expect(response.ok(), await response.text()).toBeTruthy();
+      copied = (await response.json()).entry;
+      if (held === 'import') await pending;
+      await route.fulfill({ response });
+    });
+    await page.route(refreshEndpoint, async (route) => {
+      const response = await route.fetch();
+      expect(response.ok(), await response.text()).toBeTruthy();
+      refreshes++;
+      if (held === 'refresh') await pending;
+      await route.fulfill({ response });
+    });
+    try {
+      if (hasTouch) await copy.tap();
+      else await copy.click();
+      await expect
+        .poll(() => (held === 'import' ? copied?.id : refreshes))
+        .toBeTruthy();
+      const close = browser.getByRole('button', { name: /^Close / });
+      if (hasTouch) await close.tap();
+      else await close.click();
+      await expect(browser).toHaveCount(0);
+      await activate(page, editor);
+      await text.focus();
+      release();
+      const copiedEntry = copied!;
+      // The shared list update is the completion barrier after both awaited
+      // operations, and proves refresh still runs when the owner has closed.
+      await expect(
+        filesWindow(page).getByRole('option', {
+          name: copiedEntry.name,
+          exact: true,
+          includeHidden: true,
+        }),
+      ).toHaveCount(1);
+      expect(refreshes).toBe(1);
+      expect(await readContent(request, copiedEntry.id)).toBe(source);
+      await expect
+        .poll(() =>
+          page.evaluate(
+            ({ projectId, completedId }) => {
+              const key = Object.keys(sessionStorage).find(
+                (key) =>
+                  key.startsWith('axv-requests:') &&
+                  key.endsWith(`:project-import:${projectId}`),
+              );
+              if (!key)
+                throw new Error(
+                  'The transfer identity record was not created.',
+                );
+              return Object.values(
+                JSON.parse(sessionStorage.getItem(key)!),
+              ).includes(completedId);
+            },
+            { projectId: project.id, completedId: requestId },
+          ),
+        )
+        .toBe(false);
+      await expect(editorWindow(page, copiedEntry.id)).toHaveCount(0);
+      await expect(browser).toHaveCount(0);
+      await expect(text).toBeFocused();
+      await expect(text).toHaveValue(draft);
+      expect(await readContent(request, entry.id)).toBe('Initial text');
+    } finally {
+      release();
+      await page.unroute(importEndpoint);
+      await page.unroute(refreshEndpoint);
+    }
+  });
+}
