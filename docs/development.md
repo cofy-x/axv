@@ -52,6 +52,28 @@ VERSION=1.2.3 make build
 VERSION=1.2.3 make smoke-production
 ```
 
+### Dashboard loading and performance
+
+Every production dashboard build reports and checks the complete static JavaScript entry graph through [`dashboard-bundle.mjs`](../scripts/dashboard-bundle.mjs) and the checked-in [byte budgets](../scripts/dashboard-bundle-budget.json). Shared imports count once; moving eager code into several chunks does not reduce the total. Raw bytes and the sum of independent Node gzip estimates have separate budgets. These estimates differ from the embedded Go server's actual gzip responses and exclude dynamic code until it is requested. Keep Vite's existing chunk warning enabled.
+
+The budget leaves limited growth above the measured feature-loading baseline. Review module attribution and real startup requests before changing it; do not raise it merely to silence a failed build. Module rendered lengths are contribution hints before compression, not additive final compressed savings. The build reads final emitted files and records their digests, avoiding differences between bundler hooks and shipped artifacts.
+
+The documented build writes a private module/chunk report to `dashboard-bundle.json` under the selected test root. `AXV_BUNDLE_REPORT` can select another file within that root. Evidence writers reject symbolic links below the selected root, including the report file, and the build excludes the actual served output directory. Reports are excluded from embedded/served assets. Browser loading regressions use that report to locate actual feature chunks rather than fixed hash filenames. Preserve the production binary, report and source identity together when comparing versions.
+
+The Vite configuration retains initial HTML and dependency preloads while excluding each dynamic JavaScript entry itself from its preload list. This preserves same-page retries after a transient entry failure in WebKit; preloading that failed entry can poison its module cache. The bundle plugin includes the resolved preload options and self-contained resolver in chunk hashes because Vite rewrites preload lists after assigning filenames. Keep resolver dependencies reflected in that hash input. Native static-dependency failures may still require a manual reload after saving other work. Do not add URL cache-busting that duplicates module identity or automatically replace a desktop containing drafts.
+
+Measure the current embedded production executable with the isolated launcher:
+
+```bash
+pnpm run build:production
+node scripts/measure-dashboard.mjs --samples 3
+node scripts/measure-dashboard.mjs --conditions mobile --samples 3
+```
+
+Each invocation prints a report directory under `.data/test` (or `AXV_TEST_TMPDIR`). `--binary` selects a retained before/after executable; the harness runs a private copy and records its hash so rebuilding the original path cannot misidentify a measurement. `--output` selects a child directory under the same test root and refuses to overwrite an existing report. The harness measures default and empty desktops, restored live fixture Codex/host-project windows, cold and cached requests, and first-open Codex, Terminal and Project Files. It records the executable hash, entry-script hash and a source manifest of its local fixture/launcher helpers, request sizes/encoding/cache, readiness, CDP CPU durations and long tasks. It has no timing pass/fail thresholds or automatic retries.
+
+Local conditions cover desktop, 390 px and 320 px; mobile conditions use 390 px touch emulation, CPU slowdown and an explicitly recorded network profile. Readiness timings include Playwright assertion polling; investigate anomalous results with browser DOM/frame timestamps before attributing a regression. These controlled local HTTP fixtures do not establish actual private-HTTPS, physical-phone or real-VM/model performance. Use the same harness, samples and conditions before and after, retain first failures separately, and explain first-open/network-waterfall tradeoffs alongside startup savings. Real device/remote measurements remain separate acceptance when those environments are available.
+
 ## Verification
 
 | Change | Required verification |

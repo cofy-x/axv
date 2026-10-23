@@ -1,8 +1,31 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { dashboardBundlePlugin } from '../../scripts/dashboard-bundle.mjs';
+import { fileURLToPath } from 'node:url';
+
+const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    dashboardBundlePlugin({
+      root: repositoryRoot.replace(/\/$/, ''),
+      budgetPath: fileURLToPath(
+        new URL('../../scripts/dashboard-bundle-budget.json', import.meta.url),
+      ),
+      reportPath: process.env.AXV_BUNDLE_REPORT,
+    }),
+  ],
+  build: {
+    modulePreload: {
+      // WebKit retains failed entry preloads and can block an explicit retry.
+      // Keep dependency preloads; let import() fetch the dynamic entry itself.
+      resolveDependencies: (filename, dependencies, { hostType }) =>
+        hostType === 'js'
+          ? dependencies.filter((dependency) => dependency !== filename)
+          : dependencies,
+    },
+  },
   resolve: { dedupe: ['react', 'react-dom'] },
   server: {
     host: '127.0.0.1',

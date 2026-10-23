@@ -28,6 +28,16 @@ Tailscale is a launchable singleton utility panel. Its [feature definition](../a
 
 VM Project Files can open a project-scoped Codex manager. Its window key contains only opaque host/project IDs; run windows retain the exact session/run key. The Codex and Project Files features own context, request recovery and VM navigation, while Nextstep remains unaware of project bindings or provider operations. [Codex VM work context](codex.md#vm-project-work-context) owns the integration.
 
+## Application content loading
+
+Feature definitions, launch functions, window keys and menus remain synchronous. Heavy views use the dashboard-owned [`deferWindow`](../apps/dashboard/src/shared/desktop/defer-window.tsx) boundary, declared once at module scope. Registry factories may rebuild metadata as filesystem or availability state changes; they must not create new component identities and remount live windows. Codex and Project Files retain lightweight dispatchers: opening the Codex manager does not require the terminal renderer, and choosing a project does not require host previews, VM file editing or task views. The Project Files launcher keeps its Host and VM panels mounted; VM file views retain their existing section and draft lifetimes.
+
+Each view shares one in-flight module request and a successful component cache. Each window receives its current props while retaining its own state and execution identity. Pending loading shows a window-local status; a rejected request shows Retry and expandable diagnostics. Owner commands remain disabled until their handlers register. Closing a pending window removes its subscriber: a later module result may populate the module cache but cannot reopen the window or start its session.
+
+Retry only loads content that has not mounted successfully. It does not recreate healthy windows, clear drafts, queue input or recapture project/VM/run targets. Some browser module-graph failures remain cached for the document lifetime; persistent failure guidance therefore tells users to save other work before manually reloading AXV. The boundary never reloads the desktop automatically.
+
+Restoration keeps the existing mounted-window lifetime, including hidden windows. Once mounted, views remain mounted across workspace, shade and minimize transitions and continue receiving the existing visibility/input restrictions. Deferring unopened features does not mean hidden restored sessions are suspended or delayed until first visibility. Build preloading and measured startup/first-open costs belong to [development](development.md#dashboard-loading-and-performance).
+
 ## Installed extensions
 
 **Application Manager** is an unpinned built-in application (`applications`) with a desktop launcher by default. It combines metadata derived from the existing built-in definitions with the installed extension catalog. Built-ins remain feature-owned React components. Dashboard [composition](../apps/dashboard/src/features/extensions/registry.ts) rejects duplicate IDs; installed package IDs are namespaced separately as `extension.<package-id>` desktop definitions. No directory precedence can override a built-in definition.

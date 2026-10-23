@@ -52,6 +52,10 @@ export function Desktop(props: DesktopProps) {
     (item) => item.id === layout.currentWorkspaceId,
   )!;
   const focusedElements = useRef(new Map<string, HTMLElement>());
+  const focusedContext = useRef({
+    windowId: layout.activeWindowId,
+    workspaceId: layout.currentWorkspaceId,
+  });
   useEffect(() => {
     const capture = (event: FocusEvent) => {
       const target = event.target;
@@ -64,7 +68,28 @@ export function Desktop(props: DesktopProps) {
     return () => document.removeEventListener('focusin', capture);
   }, []);
   useEffect(() => {
+    const contextChanged =
+      focusedContext.current.windowId !== layout.activeWindowId ||
+      focusedContext.current.workspaceId !== layout.currentWorkspaceId;
+    focusedContext.current = {
+      windowId: layout.activeWindowId,
+      workspaceId: layout.currentWorkspaceId,
+    };
     if (dialogRequest) return;
+    const active = document.activeElement;
+    // Dialog dismissal may already have restored its opener outside the window.
+    // Explicit window/workspace activation still restores that window's focus.
+    if (
+      !contextChanged &&
+      active instanceof HTMLElement &&
+      active !== document.body &&
+      active.isConnected &&
+      !active.matches(':disabled') &&
+      !active.closest('[inert], [hidden], .ns-dialog-layer') &&
+      active.getClientRects().length > 0 &&
+      getComputedStyle(active).visibility === 'visible'
+    )
+      return;
     const id = layout.activeWindowId;
     if (!id) return;
     const frame = Array.from(

@@ -61,6 +61,8 @@ Applications use the shared title bar, optional toolbar, scrolling content and o
 
 Empty, loading, failed and unsaved states are part of the design. Preserve visible work during recovery and report success only after the action succeeds.
 
+Load application content inside its existing window, with a concise accessible status and a local Retry action on failure. Keep diagnostics expandable and long errors wrapping on narrow screens. Loading and retries must preserve other windows, drafts and sessions; they must not queue input, steal focus or automatically reload the desktop. Keep unavailable owner commands disabled until the original view registers them.
+
 Use shared Tabs for sections within a panel and ButtonGroup for related mode or filter buttons. Tabs join the selected section to its content surface; button groups use a shared pressed treatment. Keep each control's existing state and focus behavior, and retain panel contents when switching would otherwise discard work.
 
 Keep browser/server connectivity and application remote-access readiness distinct. The Tailscale utility controls AXV’s embedded remote entrypoint and does not display system VPN state. Status lamps need text labels, and a failed status query must not retain a current-looking success lamp. Connection diagnostics use an on-demand non-modal utility panel, reached through existing application launchers or Preferences. Optional Dock and Clip shortcuts follow their existing application roles.

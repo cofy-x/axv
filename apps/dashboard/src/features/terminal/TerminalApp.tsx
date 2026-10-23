@@ -12,6 +12,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { request } from '../../shared/api/http';
 import { useWindowCommands } from '../../shared/desktop/WindowCommandsContext';
 import { useTerminalPaste } from '../../shared/terminal/use-terminal-paste';
+import { canTransferWindowFocus } from '../../shared/desktop/focus-transfer';
 import { TerminalSession } from './terminal-session';
 import type { TerminalInfo, TerminalState } from './terminal-session';
 import { isDesktopTerminalKey } from './terminal-keys';
@@ -208,7 +209,7 @@ export function TerminalApp({
           activeRef.current &&
           interactiveRef.current &&
           mayFocus() &&
-          !host!.contains(document.activeElement)
+          canTransferWindowFocus(host!)
         )
           term.focus();
       });

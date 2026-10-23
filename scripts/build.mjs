@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { binary, command, exitAfterCleanup, go, root } from './lib.mjs';
 import { initializeTestTemp } from './test-temp.mjs';
 
-initializeTestTemp();
+const temporary = initializeTestTemp();
 
 let stopping = false;
 
@@ -29,7 +29,16 @@ try {
   await command(
     process.execPath,
     [join(root, 'node_modules/vite/bin/vite.js'), 'build'],
-    { cwd: join(root, 'apps/dashboard'), ownProcessGroup: true },
+    {
+      cwd: join(root, 'apps/dashboard'),
+      ownProcessGroup: true,
+      env: {
+        ...process.env,
+        AXV_BUNDLE_REPORT:
+          process.env.AXV_BUNDLE_REPORT ||
+          join(temporary.root, 'dashboard-bundle.json'),
+      },
+    },
   );
   const destination = join(root, 'apps/server/internal/webui/dist');
   await rm(destination, { recursive: true, force: true });

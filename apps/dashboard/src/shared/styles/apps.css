@@ -26,6 +26,13 @@
   border-bottom: 1px solid #fff;
   margin: 14px 0;
 }
+.deferred-window-error {
+  overflow-wrap: anywhere;
+}
+.deferred-window-details > summary {
+  min-height: var(--ns-control-height);
+  line-height: var(--ns-control-height);
+}
 .app-toolbar {
   display: flex;
   align-items: center;

@@ -27,6 +27,7 @@ export default defineConfig({
     {
       name: 'chromium-dpr2',
       testMatch: [
+        '**/feature-loading.spec.ts',
         '**/visual.spec.ts',
         '**/extensions.spec.ts',
         '**/extensions-security.spec.ts',
@@ -55,6 +56,7 @@ export default defineConfig({
     {
       name: 'chromium-touch',
       testMatch: [
+        '**/feature-loading.spec.ts',
         '**/touch.spec.ts',
         '**/extensions.spec.ts',
         '**/extensions-security.spec.ts',
@@ -90,6 +92,7 @@ export default defineConfig({
     {
       name: 'webkit-touch',
       testMatch: [
+        '**/feature-loading.spec.ts',
         '**/touch.spec.ts',
         '**/extensions.spec.ts',
         '**/extensions-security.spec.ts',
