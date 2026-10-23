@@ -11,6 +11,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { useWindowCommands } from '../../shared/desktop/WindowCommandsContext';
 import { useTerminalPaste } from '../../shared/terminal/use-terminal-paste';
+import { canTransferWindowFocus } from '../../shared/desktop/focus-transfer';
 import { GuestTerminalSession } from './guest-terminal-session';
 import { machinesApi } from './api';
 import type { TerminalState } from '../terminal/terminal-session';
@@ -214,7 +215,7 @@ export function GuestTerminalApp({
           activeRef.current &&
           interactiveRef.current &&
           mayFocus() &&
-          !host!.contains(document.activeElement)
+          canTransferWindowFocus(host!)
         )
           term.focus();
       });

@@ -1,8 +1,16 @@
 import type { AppDefinition } from '@cofy-x/axv-nextstep';
-import { DocumentWorkflow } from './DocumentWorkflow';
-import { ConversationContext } from './ConversationContext';
-import { SnapshotPreview } from './SnapshotPreview';
+import { deferWindow } from '../../shared/desktop/defer-window';
 import './document-workflow.css';
+
+const DocumentWorkflow = deferWindow(() =>
+  import('./DocumentWorkflow').then((module) => module.DocumentWorkflow),
+);
+const ConversationContext = deferWindow(() =>
+  import('./ConversationContext').then((module) => module.ConversationContext),
+);
+const SnapshotPreview = deferWindow(() =>
+  import('./SnapshotPreview').then((module) => module.SnapshotPreview),
+);
 
 export const snapshotPreviewApp: AppDefinition = {
   id: 'document-snapshot',

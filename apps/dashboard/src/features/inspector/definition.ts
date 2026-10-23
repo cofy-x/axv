@@ -1,5 +1,9 @@
 import type { AppDefinition } from '@cofy-x/axv-nextstep';
-import { Inspector } from './Inspector';
+import { deferWindow } from '../../shared/desktop/defer-window';
+
+const Inspector = deferWindow(() =>
+  import('./Inspector').then((module) => module.Inspector),
+);
 
 export const inspectorApp: AppDefinition = {
   id: 'inspector',

@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import type { Locator, Page } from '@playwright/test';
 import { expect, menuItem, test } from './helpers';
 
@@ -125,12 +127,56 @@ async function openLauncher(page: Page) {
   return page.locator('[data-window-id="project-files:projects"]');
 }
 
+async function expectOnlyLauncherCode(page: Page) {
+  const reportPath = process.env.AXV_BUNDLE_REPORT
+    ? resolve(process.env.AXV_BUNDLE_REPORT)
+    : resolve(
+        process.env.AXV_TEST_TMPDIR || '.data/test',
+        'dashboard-bundle.json',
+      );
+  const report = JSON.parse(await readFile(reportPath, 'utf8')) as {
+    chunks: {
+      fileName: string;
+      modules: { id: string; renderedLength: number }[];
+    }[];
+  };
+  const workspaceSources = [
+    'VMProjectFiles.tsx',
+    'VMProjectTasks.tsx',
+    'HostProjectFiles.tsx',
+  ].map((name) => `apps/dashboard/src/features/project-files/${name}`);
+  const workspaceAssets = report.chunks.filter((chunk) =>
+    chunk.modules.some(
+      (module) =>
+        module.renderedLength > 0 &&
+        (workspaceSources.includes(module.id) ||
+          module.id.includes('react-markdown')),
+    ),
+  );
+  expect(workspaceAssets.length).toBeGreaterThan(0);
+  const requested = await page.evaluate(() =>
+    performance
+      .getEntriesByType('resource')
+      .map((entry) => new URL(entry.name).pathname),
+  );
+  expect(
+    workspaceAssets
+      .map((chunk) => `/${chunk.fileName}`)
+      .filter((path) => requested.includes(path)),
+    'Choosing a project must not download unopened file, task or Markdown views.',
+  ).toEqual([]);
+}
+
 test('project location switching preserves both forms and an in-flight registration', async ({
   page,
   isMobile,
 }, testInfo) => {
   const fixture = await launcherFixture(page);
   const launcher = await openLauncher(page);
+  await expect(
+    launcher.getByRole('tablist', { name: 'Project location' }),
+  ).toBeVisible();
+  await expectOnlyLauncherCode(page);
   const choose = (control: Locator) =>
     isMobile ? control.tap() : control.click();
   const locations = launcher.getByRole('tablist', { name: 'Project location' });
@@ -223,4 +269,5 @@ test('project location switching preserves both forms and an in-flight registrat
     name: 'Draft project',
     requestId: expect.any(String),
   });
+  await expectOnlyLauncherCode(page);
 });

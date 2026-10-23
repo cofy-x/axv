@@ -3,7 +3,11 @@ import type { FilesystemData } from '../../filesystem/context';
 import { newEntry } from '../../filesystem/commands';
 import { runCommand } from '../../shared/desktop/dialogs';
 import type { WindowCommands } from '../../shared/desktop/window-commands';
-import { Notes } from './Notes';
+import { deferWindow } from '../../shared/desktop/defer-window';
+
+const Notes = deferWindow(() =>
+  import('./Notes').then((module) => module.Notes),
+);
 
 export function createNotesApp(
   data: FilesystemData,
@@ -37,6 +41,7 @@ export function createNotesApp(
           {
             label: 'Save',
             shortcut: '⌘S',
+            disabled: !commands.canExecute(window.id, 'save'),
             action: () => {
               void commands.execute(window.id, 'save');
             },

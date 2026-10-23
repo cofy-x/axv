@@ -3,7 +3,11 @@ import type {
   WindowCommand,
   WindowCommands,
 } from '../../shared/desktop/window-commands';
-import { TerminalApp } from './TerminalApp';
+import { deferWindow } from '../../shared/desktop/defer-window';
+
+const TerminalApp = deferWindow(() =>
+  import('./TerminalApp').then((module) => module.TerminalApp),
+);
 
 export function openTerminalWindow(desktop: DesktopAPI, projectPath?: string) {
   const titles = new Set(desktop.windows.map((window) => window.title));

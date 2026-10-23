@@ -13,6 +13,7 @@ import { CodeEditor } from '../../shared/code-editor';
 import type { CodeEditorHandle } from '../../shared/code-editor';
 import { useDraftNamespace } from '../../shared/drafts/context';
 import { nameDialog } from '../../shared/desktop/dialogs';
+import { canTransferWindowFocus } from '../../shared/desktop/focus-transfer';
 import { vmProjectsAPI } from './vm-api';
 import type { VMProjectBinding } from './vm-api';
 import { openVMProjectCodex } from '../codex/definition';
@@ -477,14 +478,21 @@ export function VMProjectFiles({
       editorInput.current?.blur();
       return;
     }
-    if (isReading && directory.current?.getClientRects().length === 0)
+    if (
+      isReading &&
+      directory.current?.getClientRects().length === 0 &&
+      canTransferWindowFocus(preview.current, directory.current)
+    )
       preview.current?.focus({ preventScroll: true });
     else if (!isReading && returnToDirectory.current) {
-      returnToDirectory.current = false;
       const selected = directory.current?.querySelector<HTMLButtonElement>(
         '[aria-current="true"]',
       );
-      (selected || directory.current)?.focus({ preventScroll: true });
+      const destination = selected || directory.current;
+      if (canTransferWindowFocus(destination, preview.current)) {
+        returnToDirectory.current = false;
+        destination?.focus({ preventScroll: true });
+      }
     }
   }, [interactive, file, isReading]);
 
@@ -494,7 +502,12 @@ export function VMProjectFiles({
     let compact = directory.current?.getClientRects().length === 0;
     const observer = new ResizeObserver(() => {
       const next = directory.current?.getClientRects().length === 0;
-      if (next && !compact && isReading)
+      if (
+        next &&
+        !compact &&
+        isReading &&
+        canTransferWindowFocus(preview.current, directory.current)
+      )
         preview.current?.focus({ preventScroll: true });
       compact = next;
     });
@@ -1184,12 +1197,13 @@ export function VMProjectFiles({
                         }
                         className={entry.path === file ? 'is-selected' : ''}
                         aria-current={entry.path === file ? 'true' : undefined}
-                        onClick={() =>
+                        onClick={(event) => {
+                          event.currentTarget.focus({ preventScroll: true });
                           void navigate(
                             entry.kind === 'folder' ? entry.path : folder,
                             entry.kind === 'file' ? entry.path : '',
-                          )
-                        }
+                          );
+                        }}
                       >
                         <PixelIcon
                           size={16}
@@ -1265,8 +1279,9 @@ export function VMProjectFiles({
                         label="Back"
                         title="Back to files"
                         disabled={!interactive || composing}
-                        onClick={() => {
+                        onClick={(event) => {
                           if (!filesActive.current || inputPending()) return;
+                          event.currentTarget.focus({ preventScroll: true });
                           navigationGeneration.current++;
                           returnToDirectory.current = true;
                           desktop.updateWindowState(window.id, {

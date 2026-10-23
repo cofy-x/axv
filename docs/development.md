@@ -52,6 +52,16 @@ VERSION=1.2.3 make build
 VERSION=1.2.3 make smoke-production
 ```
 
+### Dashboard loading and performance
+
+Every production dashboard build reports and checks the complete static JavaScript entry graph through [`dashboard-bundle.mjs`](../scripts/dashboard-bundle.mjs) and the checked-in [byte budgets](../scripts/dashboard-bundle-budget.json). Shared imports count once; moving eager code into several chunks does not reduce the total. Raw bytes and the sum of independent Node gzip estimates have separate budgets. These estimates differ from the embedded Go server's actual gzip responses and exclude dynamic code until it is requested. Keep Vite's existing chunk warning enabled.
+
+The budget leaves limited growth above the measured feature-loading baseline. Review module attribution and real startup requests before changing it; do not raise it merely to silence a failed build. Module rendered lengths are contribution hints before compression, not additive final compressed savings. The build reads final emitted files and records their digests, avoiding differences between bundler hooks and shipped artifacts.
+
+The documented build writes a private module/chunk report to `dashboard-bundle.json` under the selected test root. `AXV_BUNDLE_REPORT` can select another file within that root. Evidence writers reject symbolic links below the selected root, including the report file, and the build excludes the actual served output directory. Reports are excluded from embedded/served assets. Browser loading regressions use that report to locate actual feature chunks rather than fixed hash filenames. Preserve the production binary, report and source identity together when comparing versions.
+
+The Vite configuration retains initial HTML and dependency preloads while excluding each dynamic JavaScript entry itself from its preload list. This preserves same-page retries after a transient entry failure in WebKit; preloading that failed entry can poison its module cache. The bundle plugin includes the resolved preload options and self-contained resolver in chunk hashes because Vite rewrites preload lists after assigning filenames. Keep resolver dependencies reflected in that hash input. Native static-dependency failures may still require a manual reload after saving other work. Do not add URL cache-busting that duplicates module identity or automatically replace a desktop containing drafts.
+
 ## Verification
 
 | Change | Required verification |

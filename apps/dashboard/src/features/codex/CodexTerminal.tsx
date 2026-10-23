@@ -11,6 +11,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { useWindowCommands } from '../../shared/desktop/WindowCommandsContext';
 import { useTerminalPaste } from '../../shared/terminal/use-terminal-paste';
+import { canTransferWindowFocus } from '../../shared/desktop/focus-transfer';
 import { isDesktopTerminalKey } from '../terminal/terminal-keys';
 import {
   codexAPI,
@@ -354,7 +355,7 @@ export function CodexTerminal({
           activeRef.current &&
           interactiveRef.current &&
           mayFocus() &&
-          !host!.contains(document.activeElement)
+          canTransferWindowFocus(host!)
         )
           term.focus();
       });

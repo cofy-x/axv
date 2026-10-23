@@ -4,9 +4,13 @@ import type {
   WindowCommands,
 } from '../../shared/desktop/window-commands';
 import { CodexApp } from './CodexApp';
-import { CodexEnvironment } from './CodexEnvironment';
+import { deferWindow } from '../../shared/desktop/defer-window';
 import { sessionWindowTitle } from './api';
 import type { CodexSessionRecord } from './api';
+
+const CodexEnvironment = deferWindow(() =>
+  import('./CodexEnvironment').then((module) => module.CodexEnvironment),
+);
 
 export function codexEditMenu(
   commands: WindowCommands,

@@ -3,10 +3,20 @@ import type {
   WindowCommand,
   WindowCommands,
 } from '../../shared/desktop/window-commands';
-import { Machines } from './Machines';
-import { CreateMachine } from './CreateMachine';
-import { MachineInspector } from './MachineInspector';
-import { GuestTerminalApp } from './GuestTerminalApp';
+import { deferWindow } from '../../shared/desktop/defer-window';
+
+const Machines = deferWindow(() =>
+  import('./Machines').then((module) => module.Machines),
+);
+const CreateMachine = deferWindow(() =>
+  import('./CreateMachine').then((module) => module.CreateMachine),
+);
+const MachineInspector = deferWindow(() =>
+  import('./MachineInspector').then((module) => module.MachineInspector),
+);
+const GuestTerminalApp = deferWindow(() =>
+  import('./GuestTerminalApp').then((module) => module.GuestTerminalApp),
+);
 
 export const machinesApp: AppDefinition = {
   id: 'machines',
