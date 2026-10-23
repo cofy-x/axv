@@ -3,7 +3,7 @@ import {
   editVMFile,
   expectEditorText,
 } from './code-editor-helpers';
-import type { Page } from '@playwright/test';
+import type { APIRequestContext, Locator, Page } from '@playwright/test';
 import { activate, expect, menuItem, persistedLayout, test } from './helpers';
 import type { CodexSessionRecord } from '../apps/dashboard/src/features/codex/api';
 import type {
@@ -431,6 +431,25 @@ async function openManager(page: Page, touch = false) {
   ).toBeEnabled();
 }
 
+async function reloadWithPersistedWindows(
+  page: Page,
+  request: APIRequestContext,
+  ...windows: Locator[]
+) {
+  const ids = await Promise.all(
+    windows.map((window) => window.getAttribute('data-window-id')),
+  );
+  await expect
+    .poll(async () => {
+      const layout = await persistedLayout(page, request);
+      return ids.every((id) =>
+        layout?.windows.some((window: { id: string }) => window.id === id),
+      );
+    })
+    .toBe(true);
+  await page.reload();
+}
+
 test('VM project Codex keeps drafts and routes files and tasks to the captured project across reload', async ({
   page,
   request,
@@ -744,6 +763,7 @@ test('a rejected VM start keeps its binding until reconnect and a fresh failed s
 
 test('resolving an unknown VM start opens its exact run after that run already ended', async ({
   page,
+  request,
 }) => {
   const state = await fixture(page);
   state.loseNextCreate();
@@ -756,7 +776,7 @@ test('resolving an unknown VM start opens its exact run after that run already e
     manager(page).getByRole('button', { name: 'Resolve Start', exact: true }),
   ).toBeEnabled();
   state.endRun();
-  await page.reload();
+  await reloadWithPersistedWindows(page, request, manager(page));
   await manager(page)
     .getByRole('button', { name: 'Resolve Start', exact: true })
     .click();
@@ -773,6 +793,7 @@ test('resolving an unknown VM start opens its exact run after that run already e
 
 test('resolving an unknown VM continuation opens its exact run after that run already ended', async ({
   page,
+  request,
 }) => {
   const state = await fixture(page);
   await openProject(page);
@@ -785,7 +806,12 @@ test('resolving an unknown VM continuation opens its exact run after that run al
     'connected',
   );
   state.endRun();
-  await page.reload();
+  await reloadWithPersistedWindows(
+    page,
+    request,
+    manager(page),
+    runWindow(page),
+  );
   await expect(runWindow(page)).toHaveAttribute(
     'aria-label',
     /Ended \(vm-run-1\)$/,
@@ -847,6 +873,7 @@ test('resolving an unknown VM continuation opens its exact run after that run al
 
 test('the manager resolves an unknown continuation after reload when fresh continuations are unavailable', async ({
   page,
+  request,
 }) => {
   const state = await fixture(page);
   await openProject(page);
@@ -859,7 +886,12 @@ test('the manager resolves an unknown continuation after reload when fresh conti
     'connected',
   );
   state.endRun();
-  await page.reload();
+  await reloadWithPersistedWindows(
+    page,
+    request,
+    manager(page),
+    runWindow(page),
+  );
   await activate(page, manager(page));
   const row = manager(page).locator('[data-session-id="vm-session"]');
   state.loseNextResume();
@@ -897,6 +929,7 @@ test('the manager resolves an unknown continuation after reload when fresh conti
 
 test('the manager preserves damaged continuation recovery and blocks a fresh request', async ({
   page,
+  request,
 }) => {
   const state = await fixture(page);
   await openProject(page);
@@ -909,7 +942,12 @@ test('the manager preserves damaged continuation recovery and blocks a fresh req
     'connected',
   );
   state.endRun();
-  await page.reload();
+  await reloadWithPersistedWindows(
+    page,
+    request,
+    manager(page),
+    runWindow(page),
+  );
   await activate(page, manager(page));
   const row = manager(page).locator('[data-session-id="vm-session"]');
   state.loseNextResume();
@@ -950,6 +988,7 @@ test('the manager preserves damaged continuation recovery and blocks a fresh req
 
 test('VM continuation confirms the replacement explicitly and resolves an unknown request after reload', async ({
   page,
+  request,
 }) => {
   const state = await fixture(page);
   await openProject(page);
@@ -963,7 +1002,12 @@ test('VM continuation confirms the replacement explicitly and resolves an unknow
   );
   state.endRun();
   state.replaceVM();
-  await page.reload();
+  await reloadWithPersistedWindows(
+    page,
+    request,
+    manager(page),
+    runWindow(page),
+  );
   await expect(runWindow(page).getByTestId('codex-status')).toHaveAttribute(
     'data-state',
     'ended',
