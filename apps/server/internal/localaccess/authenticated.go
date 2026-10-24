@@ -18,6 +18,7 @@ type authenticatedRemote struct {
 	host   string
 	origin string
 	tls    *tls.ConnectionState
+	tunnel bool
 }
 
 // WithAuthenticatedRemote records an already authorized remote transport. Only
@@ -25,6 +26,18 @@ type authenticatedRemote struct {
 // peer. HTTP headers cannot create this private context value. The authorization
 // remains bound to this peer, TLS connection, Host and exact HTTPS origin.
 func WithAuthenticatedRemote(r *http.Request, origin string) (*http.Request, error) {
+	return withAuthenticatedTransport(r, origin, false)
+}
+
+// WithAuthenticatedTunnel records authority established by the Cloudflare
+// Access verifier on its dedicated loopback HTTP listener. The public HTTPS
+// origin stays intact; neither forwarded headers nor a rewritten local Host
+// can create this authority. This does not authorize machine-local operations.
+func WithAuthenticatedTunnel(r *http.Request, origin string) (*http.Request, error) {
+	return withAuthenticatedTransport(r, origin, true)
+}
+
+func withAuthenticatedTransport(r *http.Request, origin string, tunnel bool) (*http.Request, error) {
 	u, err := url.Parse(origin)
 	if err != nil || u == nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil ||
 		u.Opaque != "" || u.Path != "" || u.RawPath != "" || u.RawQuery != "" || u.ForceQuery ||
@@ -37,10 +50,21 @@ func WithAuthenticatedRemote(r *http.Request, origin string) (*http.Request, err
 			return nil, fmt.Errorf("authenticated remote access requires a valid HTTPS port")
 		}
 	}
-	if _, err := netip.ParseAddrPort(r.RemoteAddr); err != nil || r.TLS == nil || r.Host != u.Host {
-		return nil, fmt.Errorf("authenticated remote access does not match this TLS request")
+	peer, err := netip.ParseAddrPort(r.RemoteAddr)
+	if err != nil || r.Host != u.Host {
+		return nil, fmt.Errorf("authenticated remote access does not match this request")
 	}
-	grant := authenticatedRemote{peer: r.RemoteAddr, host: r.Host, origin: origin, tls: r.TLS}
+	if tunnel {
+		// The connector runs on the deployment machine. Public Host validation
+		// also ensures Request continues to reject this as local authority.
+		if !peer.Addr().IsLoopback() || r.TLS != nil || localHost(r.Host) ||
+			strings.HasSuffix(u.Hostname(), ".localhost") {
+			return nil, fmt.Errorf("authenticated tunnel access requires its loopback HTTP connection and public Host")
+		}
+	} else if r.TLS == nil {
+		return nil, fmt.Errorf("authenticated remote access requires TLS")
+	}
+	grant := authenticatedRemote{peer: r.RemoteAddr, host: r.Host, origin: origin, tls: r.TLS, tunnel: tunnel}
 	return r.WithContext(context.WithValue(r.Context(), authenticatedRemoteKey{}, grant)), nil
 }
 
@@ -52,7 +76,7 @@ func AllowRequest(r *http.Request, requireOrigin bool) bool {
 	if !ok {
 		return Request(r, requireOrigin)
 	}
-	if r.Context().Err() != nil || r.TLS == nil || r.TLS != grant.tls || r.RemoteAddr != grant.peer || r.Host != grant.host {
+	if r.Context().Err() != nil || (!grant.tunnel && r.TLS == nil) || r.TLS != grant.tls || r.RemoteAddr != grant.peer || r.Host != grant.host {
 		return false
 	}
 	origins := r.Header.Values("Origin")

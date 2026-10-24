@@ -140,7 +140,9 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 			cancel()
 			m.wg.Done()
 		}()
-		requireOrigin := r.Method != http.MethodGet && r.Method != http.MethodHead || strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
+		// Upgrade can contain multiple comma-separated tokens or header lines.
+		// Require Origin for every upgrade rather than trusting the first value.
+		requireOrigin := r.Method != http.MethodGet && r.Method != http.MethodHead || len(r.Header.Values("Upgrade")) > 0
 		if !m.requestOrigin(r, requireOrigin) {
 			writeError(w, http.StatusForbidden, "remote_forbidden", "This request is not authorized for remote access.")
 			return

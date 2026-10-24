@@ -21,6 +21,7 @@ func TestInvalidCommands(t *testing.T) {
 		{"unknown"}, {"--unknown"}, {"--addr", "127.0.0.1:4000"},
 		{"version", "extra"},
 		{"remote", "unknown"}, {"remote", "status", "extra"}, {"remote", "status", "--unknown"},
+		{"cloudflare", "unknown"}, {"cloudflare", "status", "extra"}, {"cloudflare", "status", "--unknown"},
 		{"serve", "--unknown"}, {"serve", "--version"}, {"serve", "--help", "--unknown"},
 		{"serve", "--addr"}, {"serve", "--data-dir"},
 		{"serve", "--addr="}, {"serve", "--data-dir="}, {"serve", "--data-dir", "  "},
@@ -79,6 +80,8 @@ func TestInformationalCommandsHaveNoStorageSideEffects(t *testing.T) {
 		{[]string{"daemon", "start", "--help"}, "axv daemon"},
 		{[]string{"remote", "--help"}, "axv remote"},
 		{[]string{"remote", "status", "--help"}, "axv remote status"},
+		{[]string{"cloudflare", "--help"}, "axv cloudflare"},
+		{[]string{"cloudflare", "status", "--help"}, "axv cloudflare status"},
 		{[]string{"version"}, appName + " test-version\n"},
 		{[]string{"--version"}, appName + " test-version\n"},
 	} {
@@ -176,6 +179,7 @@ func TestSharedProfileAndSnapshotRetainAgentSettings(t *testing.T) {
 		"workspace_dir":   filepath.Join(home, "host-projects"),
 		"proxy_url":       "http://127.0.0.1:7891",
 		"remote":          map[string]any{"enabled": true, "hostname": "axv-snapshot", "owner_user_id": "123456"},
+		"cloudflare":      map[string]any{"enabled": true, "origin": "https://axv.example.com", "issuer": "https://team.cloudflareaccess.com", "audience": "test-aud", "owner_subject": "test-owner"},
 		"future":          map[string]bool{"preserve": true},
 	}
 	original, _ := json.Marshal(profile)
@@ -205,7 +209,7 @@ func TestSharedProfileAndSnapshotRetainAgentSettings(t *testing.T) {
 	if restored.Environment["CODEX_HOME"] != filepath.Join(home, "codex-config") || restored.Environment["HTTPS_PROXY"] != os.Getenv("HTTPS_PROXY") || restored.Fingerprint() != settings.Fingerprint() {
 		t.Fatal("runtime snapshot lost its environment or identity")
 	}
-	if bytes.Contains(snapshot, []byte(`"Remote"`)) {
+	if bytes.Contains(snapshot, []byte(`"Remote"`)) || bytes.Contains(snapshot, []byte(`"Cloudflare"`)) || bytes.Contains(snapshot, []byte("test-owner")) {
 		t.Fatal("mutable remote access settings entered the captured launch inputs")
 	}
 	after, err := os.ReadFile(path)

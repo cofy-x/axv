@@ -11,9 +11,11 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync/atomic"
 	"syscall"
 	"time"
 
+	"github.com/cofy-x/axv/apps/server/internal/cloudflarepublish"
 	"github.com/cofy-x/axv/apps/server/internal/codex"
 	codexhttp "github.com/cofy-x/axv/apps/server/internal/codex/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/compute"
@@ -130,10 +132,51 @@ func RunContext(ctx context.Context, settings config.Config, options Options) (r
 	}()
 	application.Handle("GET /api/remote/status", remoteStatusHandler(options.InstanceID, remote.Status))
 	application.Handle("PUT /api/remote", remoteSettingsHandler(remote))
-	application.Handle("GET /api/connection", connectionHandler(remote.Status))
+	var cloudflareTransport atomic.Pointer[cloudflareController]
+	publications, publishErr := cloudflarepublish.New(ctx, cloudflarepublish.Options{Home: settings.Home, Gateway: computeGateway, Settings: func() (cloudflarepublish.Settings, error) {
+		return cloudflarePublicationSettings(settings.Home, cloudflareTransport.Load())
+	}})
+	busy := func() bool { return true }
+	validateDesktopOrigin := func(string) error {
+		return errors.New("Publication isolation records are unavailable. Inspect the local profile before enabling Cloudflare desktop access.")
+	}
+	if publishErr != nil {
+		diagnostics.FromContext(ctx).Error("cloudflare.publishing_unavailable", publishErr)
+		application.HandleFunc("/api/cloudflare-publications", func(w http.ResponseWriter, r *http.Request) {
+			cloudflareProblem(w, 503, "cloudflare_publishing_unavailable", "Cloudflare publication records could not be opened. Inspect the local profile; existing records were preserved.")
+		})
+		application.HandleFunc("/api/cloudflare-publications/", func(w http.ResponseWriter, r *http.Request) {
+			cloudflareProblem(w, 503, "cloudflare_publishing_unavailable", "Cloudflare publication records could not be opened. Inspect the local profile; existing records were preserved.")
+		})
+	} else {
+		defer func() {
+			if err := publications.Close(); err != nil {
+				diagnostics.FromContext(ctx).Error("cloudflare.publishing_close_failed", err)
+				result = errors.Join(result, fmt.Errorf("close Cloudflare publishing: %w", err))
+			}
+		}()
+		publications.Register(application)
+		busy = publications.Busy
+		validateDesktopOrigin = publications.ValidateDesktopOrigin
+	}
+	cloudflare := newCloudflareController(ctx, settings.Home, handler, validateDesktopOrigin)
+	cloudflareTransport.Store(cloudflare)
+	defer func() {
+		if err := cloudflare.Close(); err != nil {
+			diagnostics.FromContext(ctx).Error("cloudflare.close_failed", err)
+			result = errors.Join(result, fmt.Errorf("close Cloudflare access: %w", err))
+		}
+	}()
+	application.Handle("GET /api/cloudflare/status", cloudflareStatusHandler(options.InstanceID, cloudflare.Status))
+	application.Handle("PUT /api/cloudflare", cloudflareSettingsHandler(cloudflare))
+	cloudflareManagement := newCloudflareManagement(settings.Home, options.InstanceID, cloudflare, busy)
+	cloudflareManagement.validateDesktopOrigin = validateDesktopOrigin
+	defer cloudflareManagement.Close()
+	cloudflareManagement.Register(application)
+	application.Handle("GET /api/connection", connectionHandler(remote.Status, cloudflare.Status))
 	server := &http.Server{
 		Addr:              settings.Addr,
-		Handler:           handler,
+		Handler:           localDesktopHandler(handler),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      60 * time.Second,

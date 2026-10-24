@@ -28,14 +28,16 @@ type Remote struct {
 }
 
 type Profile struct {
-	Home           string  `json:"-"`
-	WorkspaceDir   string  `json:"workspace_dir,omitempty"`
-	ProxyURL       string  `json:"proxy_url,omitempty"`
-	RuntimeVersion int     `json:"runtime_version,omitempty"`
-	Desktop        Desktop `json:"desktop,omitempty"`
-	Remote         Remote  `json:"remote,omitempty"`
-	Compute        Compute `json:"compute,omitempty"`
-	ComputeError   string  `json:"-"`
+	Home            string     `json:"-"`
+	WorkspaceDir    string     `json:"workspace_dir,omitempty"`
+	ProxyURL        string     `json:"proxy_url,omitempty"`
+	RuntimeVersion  int        `json:"runtime_version,omitempty"`
+	Desktop         Desktop    `json:"desktop,omitempty"`
+	Remote          Remote     `json:"remote,omitempty"`
+	Cloudflare      Cloudflare `json:"cloudflare,omitempty"`
+	CloudflareError string     `json:"-"`
+	Compute         Compute    `json:"compute,omitempty"`
+	ComputeError    string     `json:"-"`
 }
 
 func ValidateRemote(r Remote) error {

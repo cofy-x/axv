@@ -16,6 +16,19 @@ export const STRIP_HEIGHT = 76;
 export const DOCK_WIDTH = 76;
 export const ICON_SIZE = { width: 88, height: 84 };
 
+/** The visual viewport, including an on-screen keyboard, determines shell presentation. */
+export function desktopLayoutMode(viewport: Size) {
+  const mobile = viewport.width < 600;
+  const short = viewport.height <= 480;
+  return {
+    mobile,
+    short,
+    sideDock:
+      !mobile ||
+      (short && viewport.width >= 480 && viewport.width > viewport.height),
+  };
+}
+
 /** Applications replace matching menus and insert additional menus after their preceding contribution. */
 export function mergeMenuGroups(
   defaults: MenuGroup[],
@@ -52,11 +65,11 @@ export function windowWorkArea(
   viewport: Size,
   hasMiniwindows: boolean,
 ): Bounds {
-  const mobile = viewport.width < 600;
+  const { mobile, short, sideDock } = desktopLayoutMode(viewport);
   const x = 4;
-  const y = mobile ? 90 : MENU_HEIGHT + 2;
-  const right = mobile ? 4 : DOCK_WIDTH;
-  const bottom = (mobile ? 72 : 8) + (hasMiniwindows ? STRIP_HEIGHT : 0);
+  const y = short ? 64 : mobile ? 90 : MENU_HEIGHT + 2;
+  const right = sideDock ? DOCK_WIDTH : 4;
+  const bottom = (sideDock ? 8 : 72) + (hasMiniwindows ? STRIP_HEIGHT : 0);
   return {
     x,
     y,

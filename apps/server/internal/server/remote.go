@@ -109,7 +109,17 @@ func remoteLocalOnlyRoute(r *http.Request) bool {
 	if pathWithin(r.URL.Path, "/api/extensions") {
 		return extensionsLocalOnlyRoute(r)
 	}
+	if pathWithin(r.URL.Path, "/api/cloudflare") {
+		return !cloudflareSafeRead(r)
+	}
 	return pathWithin(r.URL.Path, "/api/remote") || pathWithin(r.URL.Path, "/api/compute/preparation")
+}
+
+func cloudflareSafeRead(r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	return r.URL.Path == "/api/cloudflare/health" || r.URL.Path == "/api/cloudflare/traffic" || r.URL.Path == "/api/cloudflare/capabilities"
 }
 
 func extensionsLocalOnlyRoute(r *http.Request) bool {
@@ -152,6 +162,9 @@ func remoteRoute(r *http.Request) bool {
 		return false
 	}
 	if pathWithin(r.URL.Path, "/api") {
+		if cloudflareSafeRead(r) {
+			return true
+		}
 		if pathWithin(r.URL.Path, "/api/extensions") {
 			return remoteExtensionRoute(r)
 		}
@@ -161,6 +174,7 @@ func remoteRoute(r *http.Request) bool {
 			"/api/projects", "/api/documents", "/api/document-links", "/api/document-snapshots",
 			"/api/host/directories", "/api/host/codex", "/api/compute",
 			"/api/project-previews",
+			"/api/cloudflare-publications",
 		} {
 			if pathWithin(r.URL.Path, prefix) {
 				return true

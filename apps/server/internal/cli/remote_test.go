@@ -17,13 +17,17 @@ import (
 )
 
 func remoteStatusFixture(t *testing.T, runtimeID string, handler http.HandlerFunc) string {
+	return localStatusFixture(t, runtimeID, "/api/remote/status", handler)
+}
+
+func localStatusFixture(t *testing.T, runtimeID, path string, handler http.HandlerFunc) string {
 	t.Helper()
 	home := t.TempDir()
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/runtime", func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"instanceId": runtimeID, "launchId": "remote-fixture"})
 	})
-	mux.HandleFunc("GET /api/remote/status", handler)
+	mux.HandleFunc("GET "+path, handler)
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	if err := os.MkdirAll(filepath.Join(home, "run"), 0700); err != nil {

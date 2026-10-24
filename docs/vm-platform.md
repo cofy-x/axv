@@ -127,6 +127,8 @@ The desktop can explicitly register the HTTP port of an already running VM devel
 
 **Stop** revokes that registration and its live streams; independently started development processes retain their normal task or terminal lifetime. Desktop restart requires explicit registration again. A new hostname prevents old origins from reaching another preview while operating-system ports can be released and reused. [Preview API](api/project-previews.md) owns registration receipts, authorization, capabilities and limits.
 
+Independent [Cloudflare publications](api/cloudflare.md#published-project-services) expose explicitly selected project HTTP services on fresh, permanently reserved browser cookie sites. They reuse private guest forwarding with the captured project environment, while retaining separate durable receipts, visibility and DNS/tunnel resource ownership. Publishing or unpublishing does not change a local preview registration or the service's execution lifetime.
+
 ## Persistent project tasks
 
 A Task owns an immutable command, project-relative working directory and resource policy. Each Attempt owns one captured project/volume/VM/boot/guest-instance binding and its own status, timestamps, logs and cancellation intent. Explicit retry creates a new Attempt after the preceding one is final; it requires a newly reviewed binding and retains every preceding attempt. Unknown work cannot be retried until its outcome or interruption is established. Project identity survives VM replacement; attempt execution never moves to that replacement.

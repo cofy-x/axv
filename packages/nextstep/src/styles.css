@@ -1353,6 +1353,106 @@ select:disabled {
   left: 5px;
   right: 5px;
 }
+.is-short .ns-clip {
+  top: 30px;
+  left: 4px;
+  width: 96px;
+  z-index: 780;
+}
+.is-short .ns-clip-tile {
+  width: 96px;
+  height: 32px;
+  border: 0;
+  outline: 1px solid #111;
+  outline-offset: -1px;
+}
+.is-short .ns-clip-center {
+  inset: 0;
+  flex-direction: row;
+  gap: 4px;
+  padding: 2px 4px;
+}
+.is-short .ns-clip-center strong {
+  font-size: 22px;
+}
+.is-short .ns-clip-center span {
+  width: 62px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.is-short .ns-clip-prev,
+.is-short .ns-clip-next,
+.is-short .ns-clip-shortcuts {
+  display: none;
+}
+.is-short .ns-application-menu {
+  top: 30px;
+  left: 106px;
+  right: 4px;
+  width: auto;
+  height: 32px;
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  touch-action: pan-x;
+  border: 0;
+  outline: 1px solid #111;
+  outline-offset: -1px;
+  z-index: 770;
+}
+.is-short .ns-application-menu > .ns-menu-title {
+  flex: 0 0 auto;
+  max-width: 120px;
+  height: 32px;
+}
+.is-short .ns-application-menu-item {
+  flex: 0 0 auto;
+  width: auto;
+  min-height: 32px;
+  padding: 3px 7px;
+}
+.is-short .ns-application-menu-item > span,
+.is-short .ns-application-menu > .ns-menu-owner {
+  display: none;
+}
+.is-short.has-side-dock .ns-application-menu {
+  right: 82px;
+}
+.is-short.has-side-dock .ns-dock {
+  top: 30px;
+  bottom: 4px;
+  left: auto;
+  right: 8px;
+  width: 64px;
+  height: auto;
+  max-height: calc(100% - 34px);
+  flex-direction: column;
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: transparent;
+  border: 0;
+}
+.is-short.has-side-dock .ns-dock-tile {
+  touch-action: pan-y;
+}
+.is-short.has-side-dock .ns-dock > * {
+  flex-shrink: 0;
+}
+.is-short.has-side-dock .ns-dock-add {
+  width: 64px;
+  height: 32px;
+  min-height: 32px;
+}
+.is-short.has-side-dock .ns-miniwindow-shelf {
+  bottom: 6px;
+  left: 4px;
+  right: 82px;
+}
+.is-short .ns-recovery {
+  top: 64px;
+}
 @media (pointer: coarse) {
   :root {
     --ns-control-height: 32px;

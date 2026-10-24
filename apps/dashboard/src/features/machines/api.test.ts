@@ -131,9 +131,9 @@ describe('compute mutation deadlines', () => {
         name === 'VM action' ||
         name === 'VM configuration'
       )
-        expect(fetch.mock.calls[0][1]?.headers).toMatchObject({
-          'X-AXV-Host-ID': 'host-original',
-        });
+        expect(
+          new Headers(fetch.mock.calls[0][1]?.headers).get('X-AXV-Host-ID'),
+        ).toBe('host-original');
       const body = fetch.mock.calls[0][1]?.body;
       if (body)
         expect(JSON.parse(body as string)).toMatchObject({
@@ -212,11 +212,11 @@ describe('preparation request boundaries', () => {
     );
     await machinesApi.deleteImage(image, 'delete-image-request', binding);
     expect(fetch).toHaveBeenCalledTimes(7);
-    for (const call of fetch.mock.calls)
-      expect(call[1]?.headers).toMatchObject({
-        'X-AXV-Host-ID': 'original-host',
-        'X-AXV-Compute-Generation': '3',
-      });
+    for (const call of fetch.mock.calls) {
+      const headers = new Headers(call[1]?.headers);
+      expect(headers.get('X-AXV-Host-ID')).toBe('original-host');
+      expect(headers.get('X-AXV-Compute-Generation')).toBe('3');
+    }
   });
   it('binds inventory reads to one runtime generation', async () => {
     const fetch = vi.fn(
@@ -235,11 +235,11 @@ describe('preparation request boundaries', () => {
       await read(undefined, binding);
     }
     expect(fetch).toHaveBeenCalledTimes(5);
-    for (const call of fetch.mock.calls)
-      expect(call[1]?.headers).toMatchObject({
-        'X-AXV-Host-ID': 'host-exact',
-        'X-AXV-Compute-Generation': '7',
-      });
+    for (const call of fetch.mock.calls) {
+      const headers = new Headers(call[1]?.headers);
+      expect(headers.get('X-AXV-Host-ID')).toBe('host-exact');
+      expect(headers.get('X-AXV-Compute-Generation')).toBe('7');
+    }
   });
   it('binds confirmed mutations to the observed server and reviewed plan', async () => {
     const fetch = vi.fn(
@@ -256,9 +256,9 @@ describe('preparation request boundaries', () => {
       'observed-server',
     );
     expect(fetch.mock.calls[0][0]).toBe('/api/compute/preparation/jobs');
-    expect(fetch.mock.calls[0][1]?.headers).toMatchObject({
-      'X-AXV-Instance-ID': 'observed-server',
-    });
+    expect(
+      new Headers(fetch.mock.calls[0][1]?.headers).get('X-AXV-Instance-ID'),
+    ).toBe('observed-server');
     expect(JSON.parse(String(fetch.mock.calls[0][1]?.body))).toEqual({
       planId: 'reviewed-plan',
       requestId: 'stable-request',
@@ -274,6 +274,9 @@ describe('preparation request boundaries', () => {
     expect(fetch.mock.calls[1][0]).toBe(
       '/api/compute/preparation/jobs/job%2Fexact/retry',
     );
+    expect(
+      new Headers(fetch.mock.calls[1][1]?.headers).get('X-AXV-Instance-ID'),
+    ).toBe('observed-server');
     expect(JSON.parse(String(fetch.mock.calls[1][1]?.body))).toEqual({
       expectedRevision: 7,
       requestId: 'stable-retry',

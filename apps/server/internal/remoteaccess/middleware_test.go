@@ -137,6 +137,8 @@ func TestMiddlewareRejectsInvalidTransportOrOriginBeforeIdentityLookup(t *testin
 		{"empty origin", func(r *http.Request) { r.Header.Set("Origin", "") }},
 		{"mutation without origin", func(r *http.Request) { r.Method = http.MethodPost }},
 		{"WebSocket without origin", func(r *http.Request) { r.Header.Set("Upgrade", "websocket") }},
+		{"WebSocket upgrade token list without origin", func(r *http.Request) { r.Header.Set("Upgrade", "other, websocket") }},
+		{"multiple upgrade headers without origin", func(r *http.Request) { r.Header.Add("Upgrade", "other"); r.Header.Add("Upgrade", "websocket") }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			input := options()

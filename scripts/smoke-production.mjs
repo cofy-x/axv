@@ -201,6 +201,92 @@ async function remoteDisabledSmoke(base) {
   await assert.rejects(access(join(home, 'tailscale')), { code: 'ENOENT' });
 }
 
+async function cloudflareDisabledSmoke(base) {
+  const runtime = await json(base, '/runtime');
+  const status = await json(base, '/cloudflare/status');
+  assert.deepEqual(status, {
+    instanceId: runtime.instanceId,
+    enabled: false,
+    configured: false,
+    state: 'disabled',
+    listen: '127.0.0.1:3002',
+  });
+  const home = codex?.env.AXV_HOME || join(dir, 'axv-home');
+  const inspected = await invoke(['cloudflare', 'status', '--json'], {
+    AXV_HOME: home,
+  });
+  assert.equal(inspected.code, 0, inspected.stderr);
+  assert.deepEqual(JSON.parse(inspected.stdout), status);
+  const summary = await json(base, '/connection');
+  assert.equal(summary.cloudflare.enabled, false);
+  assert.equal(summary.cloudflare.configured, false);
+  assert.equal(summary.cloudflare.state, 'disabled');
+  for (const field of [
+    'listen',
+    'error',
+    'issuer',
+    'audience',
+    'owner_subject',
+  ])
+    assert.equal(field in summary.cloudflare, false);
+  const config = await json(base, '/cloudflare/config');
+  assert.equal(config.instanceId, runtime.instanceId);
+  assert.equal(config.account.hasToken, false);
+  assert.equal(config.account.configured, false);
+  assert.equal('token' in config.account, false);
+  assert.equal('apiToken' in config.account, false);
+  assert.deepEqual(await json(base, '/cloudflare/capabilities'), {
+    configure: true,
+    publish: true,
+    health: true,
+    traffic: true,
+  });
+  assert.equal((await json(base, '/cloudflare/health')).state, 'unconfigured');
+  assert.equal(
+    (await json(base, '/cloudflare/traffic?hours=24')).supported,
+    false,
+  );
+  const publications = await json(base, '/cloudflare-publications');
+  assert.equal(publications.supported, false);
+  assert.match(publications.reason, /Cloudflare|publishing|account/i);
+  assert.deepEqual(publications.publications, []);
+  for (const command of ['config', 'check', 'publications']) {
+    const result = await invoke(['cloudflare', command], { AXV_HOME: home });
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(typeof JSON.parse(result.stdout), 'object');
+  }
+  await assert.rejects(access(join(home, 'cloudflare')), { code: 'ENOENT' });
+  for (const path of ['/cloudflare', '/cloudflare/status']) {
+    const rejected = await fetchBounded(`${base}/api${path}`, {
+      method: path === '/cloudflare' ? 'PUT' : 'GET',
+      headers: {
+        Origin: 'https://outside.invalid',
+        'Content-Type': 'application/json',
+      },
+      body: path === '/cloudflare' ? '{"enabled":false}' : undefined,
+    });
+    assert.equal(rejected.status, 403);
+    assert.equal((await rejected.json()).code, 'cloudflare_local_only');
+  }
+  for (const body of [
+    '{}',
+    'null',
+    '{"enabled":"false"}',
+    '{"enabled":false,"issuer":"https://outside.invalid"}',
+    '{"enabled":false} {}',
+  ]) {
+    const rejected = await fetchBounded(`${base}/api/cloudflare`, {
+      method: 'PUT',
+      headers: { Origin: base, 'Content-Type': 'application/json' },
+      body,
+    });
+    assert.equal(rejected.status, 400, body);
+  }
+  const disabled = await json(base, '/cloudflare', 'PUT', { enabled: false });
+  assert.equal(disabled.state, 'disabled');
+  assert.deepEqual(await json(base, '/cloudflare/status'), status);
+}
+
 async function until(check, description, details = () => '') {
   const deadline = Date.now() + 10_000;
   while (!(await check())) {
@@ -827,6 +913,7 @@ try {
   codex = await createCodexFixture(dir);
   const first = await start();
   await remoteDisabledSmoke(first.base);
+  await cloudflareDisabledSmoke(first.base);
   const logPath = (await json(first.base, '/compute/environment')).logPath;
   assert.equal(
     typeof logPath,
@@ -1038,6 +1125,7 @@ try {
     },
   });
   await remoteDisabledSmoke(second.base);
+  await cloudflareDisabledSmoke(second.base);
   await resumedCodexSmoke(second.base, persistentCodex, updatedNetworkDigest);
   assert.ok(
     !(await readdir(dir)).includes('ignored-data'),
@@ -1104,7 +1192,7 @@ try {
     );
   await codex?.verifyIsolation();
   console.log(
-    'Production smoke passed: CLI help/version/errors, disabled remote status and CLI identity without node state, local-only remote controls and strict mutation input, isolated global configuration, flag precedence, dynamic ports, listener failure, graceful shutdown with active PTYs, host shell input/output/resize/interrupt/session limits/restart, Host Codex workspace/project/tmux identity/redacted proxy diagnostics/environment refresh/idempotent creation and continuation/multiple clients/detach/reattach/session isolation/metadata/recent projects/termination/process and exact-event activity review persistence across service restart/approval resolution/history context in a new process/old-run isolation, embedded UI, independent cwd, database identity, files, trash, preferences, workspaces, Dock, Clip, panels, and client layouts survive restart.',
+    'Production smoke passed: CLI help/version/errors, disabled Tailscale and Cloudflare status and CLI identity without node or connector state, local-only remote controls and strict mutation input, isolated global configuration, flag precedence, dynamic ports, listener failure, graceful shutdown with active PTYs, host shell input/output/resize/interrupt/session limits/restart, Host Codex workspace/project/tmux identity/redacted proxy diagnostics/environment refresh/idempotent creation and continuation/multiple clients/detach/reattach/session isolation/metadata/recent projects/termination/process and exact-event activity review persistence across service restart/approval resolution/history context in a new process/old-run isolation, embedded UI, independent cwd, database identity, files, trash, preferences, workspaces, Dock, Clip, panels, and client layouts survive restart.',
   );
 } catch (error) {
   console.error('Production smoke failed:', error);

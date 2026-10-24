@@ -24,6 +24,7 @@ Before application changes, read [ownership and dependencies](architecture.md#ow
 | Persistent VM project tasks, logs, cancellation or recovery | [Task ownership](vm-platform.md#persistent-project-tasks) | [Compute task API](api/compute.md#vm-project-tasks), [guest execution](api/guest.md#project-task-protocol), [task CLI](startup.md#vm-project-tasks), [native acceptance](development.md#vm-project-workspace-acceptance) |
 | Installation, uninstallation, configuration, startup or supervision | [Startup](startup.md) | [Runtime identity API](api/desktop.md) for identity contracts |
 | Private remote access, Tailscale enrollment or authorization | [Remote setup](startup.md#remote-access) | [Tailscale remote access API](api/tailscale.md); [shared access boundaries](api/README.md#access-and-identity-boundaries) |
+| Cloudflare desktop access, account setup or service publishing | [Cloudflare setup](startup.md#cloudflare-access) | [Cloudflare API](api/cloudflare.md); [project previews](api/project-previews.md) for the separate local workflow; [shared access boundaries](api/README.md#access-and-identity-boundaries) |
 | Build tooling, tests or acceptance | [Development](development.md) | The affected feature reference |
 | Contributions, bug reports or usage questions | [Contributing](../CONTRIBUTING.md) and [Support](../SUPPORT.md) | [Development](development.md) for verification |
 | Community conduct or sensitive incidents | [Code of Conduct](../CODE_OF_CONDUCT.md) | [Support](../SUPPORT.md) for public channels |

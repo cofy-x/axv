@@ -11,7 +11,9 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe('Tailscale connection API', () => {
   it('fetches only the sanitized summary with no browser cache', async () => {
-    const fetch = vi.fn(async () => Response.json(info));
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(info),
+    );
     vi.stubGlobal('fetch', fetch);
     const controller = new AbortController();
     await expect(connectionAPI.status(controller.signal)).resolves.toEqual(
@@ -20,8 +22,11 @@ describe('Tailscale connection API', () => {
     expect(fetch).toHaveBeenCalledExactlyOnceWith('/api/connection', {
       signal: controller.signal,
       cache: 'no-store',
-      headers: {},
+      headers: expect.any(Headers),
     });
+    const headers = new Headers(fetch.mock.calls[0]?.[1]?.headers);
+    expect(headers.get('X-Requested-With')).toBe('XMLHttpRequest');
+    expect(headers.has('Content-Type')).toBe(false);
   });
 
   it('never requests a local enrollment route from a remote viewer or another AXV state', async () => {
@@ -39,7 +44,9 @@ describe('Tailscale connection API', () => {
   });
 
   it('saves only an explicit enabled boolean locally and preserves server errors', async () => {
-    const fetch = vi.fn(async () => Response.json(info.remote));
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(info.remote),
+    );
     vi.stubGlobal('fetch', fetch);
     const controller = new AbortController();
     await expect(
@@ -49,8 +56,11 @@ describe('Tailscale connection API', () => {
       method: 'PUT',
       body: '{"enabled":true}',
       signal: controller.signal,
-      headers: { 'Content-Type': 'application/json' },
+      headers: expect.any(Headers),
     });
+    const headers = new Headers(fetch.mock.calls[0]?.[1]?.headers);
+    expect(headers.get('Content-Type')).toBe('application/json');
+    expect(headers.get('X-Requested-With')).toBe('XMLHttpRequest');
     fetch.mockResolvedValueOnce(
       Response.json(
         { code: 'remote_config_failed', error: 'Could not save the setting.' },

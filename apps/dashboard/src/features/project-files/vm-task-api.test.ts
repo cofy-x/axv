@@ -472,9 +472,11 @@ describe('VM project task transport', () => {
       '/api/compute/projects/project/tasks/task/attempts/old-attempt/cancel',
       expect.objectContaining({
         method: 'POST',
-        headers: expect.objectContaining({ 'X-AXV-Host-ID': 'old-host' }),
         body: JSON.stringify({ binding }),
       }),
     );
+    expect(
+      new Headers(fetch.mock.calls[0]?.[1]?.headers).get('X-AXV-Host-ID'),
+    ).toBe('old-host');
   });
 });

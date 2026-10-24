@@ -11,8 +11,7 @@ import (
 
 // Request requires a loopback peer and host, and an exact origin when supplied.
 func Request(r *http.Request, requireOrigin bool) bool {
-	peer, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil || !loopbackIP(peer) || !localHost(r.Host) {
+	if !PeerHost(r) {
 		return false
 	}
 	origins := r.Header.Values("Origin")
@@ -30,6 +29,13 @@ func Request(r *http.Request, requireOrigin bool) bool {
 	return err == nil && u.String() == origins[0] && u.Scheme == scheme &&
 		u.Host == r.Host && u.User == nil && u.Opaque == "" && u.Path == "" &&
 		u.RawQuery == "" && !u.ForceQuery && u.Fragment == "" && u.RawFragment == ""
+}
+
+// PeerHost checks the local listener's network boundary before routing UI and
+// API reads. Feature handlers retain their own Origin requirements.
+func PeerHost(r *http.Request) bool {
+	peer, _, err := net.SplitHostPort(r.RemoteAddr)
+	return err == nil && loopbackIP(peer) && localHost(r.Host)
 }
 
 func loopbackIP(host string) bool {

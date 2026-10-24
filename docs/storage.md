@@ -14,6 +14,8 @@ Codex conversation/run persistence is described in [Host Codex](codex.md). Compu
 
 Installed applications use an independent [extension store](#installed-application-storage). Their JSON data is outside the virtual-file, document snapshot, document export and project-exchange APIs.
 
+Cloudflare account credentials belong to the private profile configuration. Optional service publications use the feature-owned `AXV_HOME/cloudflare/publications.json` journal, separate from document storage, layouts and local preview registrations. Its unreleased version-2 baseline retains original target captures, name/generation, permanently reserved cookie sites, request receipts and cloud-resource ownership for explicit resume and cleanup; it is not a user document or export. A missing journal does not create state until publishing is accepted. Older, unknown or malformed journals are preserved and rejected. A missing journal with an existing ownership lock is an error, not a new empty baseline; do not discard history or reuse its application sites after an explicit profile reset. The [Cloudflare contract](api/cloudflare.md#published-project-services) owns its lifecycle and recovery boundaries.
+
 For save and recovery changes, start with [`note-document.test.ts`](../apps/dashboard/src/features/notes/note-document.test.ts) and [`session.test.ts`](../apps/dashboard/src/shared/drafts/session.test.ts). For schema or stored-state changes, start with [`migrations_test.go`](../apps/server/internal/storage/migrations_test.go) and [`recovery_test.go`](../apps/server/internal/storage/recovery_test.go). These exercise failure and identity boundaries; verification commands belong to [development](development.md#verification).
 
 ## Document saves

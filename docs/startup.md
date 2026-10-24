@@ -54,7 +54,7 @@ Running `axv` without arguments first verifies the profile's existing desktop an
 
 Use `axv help` and each command's `--help` for options; help and version commands do not initialize storage. Put command-specific options after the command. `daemon start` and `restart` accept `--open`, `--addr` and `--data-dir`. `axv init` creates a private starter `config.json` only when missing, with desktop defaults and compute disabled. It preserves an existing profile and does not create databases, a project workspace or services.
 
-The default URL is `http://127.0.0.1:3001`. An occupied port is an error; port zero allocates a free port and prints the actual URL. Explicit repeated `daemon start` verifies both instance identity and requested desktop settings before reuse. One desktop may use a profile/database at a time. The daily opener verifies only a local HTTP address and never follows redirects or proxies its identity request.
+The default URL is `http://127.0.0.1:3001`. The ordinary desktop listener requires a loopback peer and loopback Host; binding another interface does not authorize public desktop access. An occupied port is an error; port zero allocates a free port and prints the actual URL. Explicit repeated `daemon start` verifies both instance identity and requested desktop settings before reuse. One desktop may use a profile/database at a time. The daily opener verifies only a local HTTP address and never follows redirects or proxies its identity request.
 
 The desktop becomes available before VM environment checks finish. Missing VM dependencies, invalid compute settings and an unavailable VM service are reported in **Virtual Machines** without preventing document and host-session use. Desktop configuration, database and listener errors still fail startup. Already configured managed services are started or verified for reuse in the background; this does not start stopped VMs.
 
@@ -298,6 +298,101 @@ Node credentials, certificates and the owner binding stay under `AXV_HOME/tailsc
 AXV renews certificates in the background while continuing to serve a valid cached certificate. Renewal errors appear in local status. If the certificate actually expires, or the enrolled identity/HTTPS domain changes, AXV withdraws the remote entrypoint; resolve the reported cause and choose **Retry** in the local Tailscale panel. The local desktop remains available.
 
 To disable remote access, choose **Disable** in the local panel. Remote browsers disconnect and their ordinary Host Terminal shells end; Codex views detach while existing Codex runs and VMs continue. Local terminals and work stay open. Node credentials and owner authorization are preserved for the next enable. A configuration-save failure leaves the live setting unchanged. If a node cannot close cleanly, AXV rejects another start until the desktop service is restarted; the error remains visible. VM preparation and remote configuration remain operations on the AXV deployment machine. The [Tailscale remote access API](api/tailscale.md) owns authorization and route restrictions; [usage](usage.md#remote-desktop) covers browser state across devices.
+
+## Cloudflare Access
+
+Cloudflare is an optional alternative for accessing the desktop from a browser without a Tailscale client. It is disabled by default and can coexist with the private Tailscale entrypoint. AXV supplies an authenticated desktop loopback origin; you operate Cloudflare Access and an external `cloudflared` connector on the same machine. Optional account integration also publishes explicitly selected project services through a separate origin; it does not convert existing local previews into public URLs.
+
+1. Create a self-hosted Access application protecting the **entire** desktop hostname, with an explicit owner policy and MFA through your identity provider. Set the application and every matching Allow policy to a session duration of at most **15 minutes**; AXV rejects a JWT whose signed lifetime exceeds that limit. Do this before routing public traffic. Record its team domain and application audience (AUD). Follow [Cloudflare's setup](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/); avoid Bypass/public policies for the desktop.
+2. Obtain your stable Access user ID, the application token's `sub`, from your own Cloudflare identity. The [application-token reference](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/application-token/) describes claims and the authenticated `get-identity` endpoint. Inspect credentials locally; do not paste a JWT into an online decoder, AXV configuration or diagnostics. AXV requires an explicit owner subject and never enrolls the first visitor.
+3. Open **Cloudflare → Setup → Desktop access** locally. Fill in the desktop URL, team domain, application audience, stable owner subject and loopback address. Validate, review and save the settings, then enable access in **Overview** when the external connector and policy are ready. The form preserves other profile settings and rejects stale edits. [Cloudflare usage](usage.md#cloudflare-desktop-access) covers launcher visibility and actions. For manual provisioning, the equivalent desktop-only `cloudflare` object in `AXV_HOME/config.json` is:
+
+```json
+{
+  "cloudflare": {
+    "enabled": false,
+    "listen": "127.0.0.1:3002",
+    "origin": "https://axv.example.com",
+    "issuer": "https://your-team.cloudflareaccess.com",
+    "audience": "your-access-application-aud",
+    "owner_subject": "your-stable-access-user-id"
+  }
+}
+```
+
+`listen` defaults to `127.0.0.1:3002` and must use a numeric IPv4/IPv6 loopback address and a port from 1 to 65535. Select a different port for another profile. `origin` is a canonical lowercase public HTTPS DNS origin without a port, path, trailing slash, query or fragment. `issuer` is exactly `https://<team>.cloudflareaccess.com`, also without a trailing slash. Audience and owner subject are single nonempty identifiers of at most 256 UTF-8 bytes without whitespace or control characters. Disabled profiles may retain incomplete settings; invalid settings remain visible as an error for this entrypoint without blocking the local desktop, Tailscale or independent VM administration.
+
+4. Configure your externally managed tunnel's hostname to connect to `http://127.0.0.1:3002`, preserving the public `Host: axv.example.com`. A locally managed tunnel's ingress can be:
+
+```yaml
+ingress:
+  - hostname: axv.example.com
+    service: http://127.0.0.1:3002
+  - service: http_status:404
+```
+
+Use your existing tunnel's identity/credential configuration and supervisor. Cloudflare's **Protect with Access** connector setting can add token verification before AXV; AXV independently verifies tokens regardless. Do not route the tunnel to the ordinary local desktop port, rewrite Host/Origin to localhost, or disable origin checks. AXV's loopback origin uses HTTP only on this local hop; the public browser URL must use HTTPS.
+
+5. When the panel says **Listening locally**, test the HTTPS hostname from another browser: the configured owner should reach the desktop; an unauthenticated user or different owner must fail. Check a document save, Host Terminal, Codex attachment and rejection of local-only controls. This state does not claim that the public tunnel is connected. Inspect the connector and Cloudflare dashboard separately if routing or login fails.
+
+```bash
+axv cloudflare status
+axv cloudflare status --json
+```
+
+Enable/disable persists across launches without restarting the workstation. Editing issuer, audience, owner, hostname or listener settings does not mutate a running entrypoint: disable it, make the change, then enable it locally. Closing the panel does not stop access. Disable immediately closes only Cloudflare-originated connections; local and Tailscale clients remain available. The [Cloudflare contract](api/cloudflare.md#connection-lifetime) explains token expiry and revocation: an expired token disconnects its Host Terminal shell and detaches Codex, while independent runs and VMs continue. The lease is fixed by the original token's signed `iat` and `exp`, with a maximum 15-minute lifetime; reconnecting cannot renew it. Logout or policy revocation is not an immediate origin-side disconnect guarantee.
+
+The embedded Tailscale node and this tunnel origin protect their own AXV entrypoints, not the host's SSH service or unrelated ports. Host VPN/SSH, cloud firewall and IPv4/IPv6 exposure remain administrator-owned. Verify a fresh connection from another device and a cloud-console rescue path before closing public ingress. Cloudflare [tunnel firewall guidance](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/tunnel-with-firewall/) describes required outbound connectivity. Do not blindly enable system Tailscale on a host with the DNS/range conflict described above.
+
+Cloudflare terminates browser TLS at its edge and processes HTTP traffic; review its [HTTP privacy model](https://developers.cloudflare.com/data-localization/regional-services/http-requests/). A tunnel provides transport, Access provides identity policy, and WAF adds its configured protections; none changes AXV's host-shell or agent permissions. The [Cloudflare API contract](api/cloudflare.md) owns verification and route restrictions.
+
+### Cloudflare account and service publishing
+
+Prepare a Cloudflare zone, an existing remotely managed Tunnel and a running connector on the AXV computer. AXV does not create the tunnel, install its service, or replace connector credentials. Create a scoped user API token with DNS Edit on the selected zone and Cloudflare Tunnel Edit on the selected account; resource selection also needs access to read the zone and tunnel. Zone Analytics Read is optional for traffic. Follow the current [API token permissions reference](https://developers.cloudflare.com/fundamentals/api/reference/permissions/) when choosing scope.
+
+In **Cloudflare → Setup → App publishing**, choose **Connect account**. The wizard validates the token, offers account, zone and existing tunnel selections, validates the base domain, then reviews the configuration. Save the reviewed settings locally. The account's API token is stored only in the private `config.json` management section and never returned in an API response; do not put Access JWTs or connector tokens there. The optional persisted fields are:
+
+```json
+{
+  "cloudflare": {
+    "management": {
+      "api_token": "your-scoped-api-token",
+      "account_id": "your-account-id",
+      "zone_id": "your-zone-id",
+      "tunnel_id": "your-existing-tunnel-id",
+      "domain": "example.net",
+      "listen": "127.0.0.1:3003",
+      "audience": "your-publishing-access-application-aud"
+    }
+  }
+}
+```
+
+Choose an **allocation domain**, not an arbitrary shared subdomain. A normal registrable domain such as `example.net` must be dedicated to one publication, separate from the desktop's `example.com` and all previous application sites. Its site remains reserved after Unpublish; it cannot be reassigned to a replacement VM, application or port. This costs a separate domain per publication lifetime. To allocate several isolated applications under one suffix, that suffix must already be recognized by browser Public Suffix Lists and lie inside your managed zone. Ordinary `apps.example.com` is not such a suffix and is rejected. AXV does not submit PSL applications or provide a shared hosted domain. The [isolation contract](api/cloudflare.md#browser-isolation-and-hostname-lifetime) owns these boundaries.
+
+AXV generates a fresh first-level hostname such as `editor-<32-hex-generation>.example.net` at acceptance. Configure edge certificates for the actual depth of this hostname: Cloudflare [Universal SSL on a full zone](https://developers.cloudflare.com/ssl/edge-certificates/universal-ssl/limitations/) covers the apex and its first-level subdomains; a deeper allocation suffix requires an appropriate additional certificate arrangement. Do not infer certificate coverage or public readiness from successful DNS/ingress checks.
+
+The publication listener defaults to `127.0.0.1:3003` and must differ from the desktop listener. Keep the public Host and Origin intact when forwarding tunnel requests. Application publishing manages individual DNS and ingress records; it preserves other applications' tunnel rules. Do not independently edit the same rules while AXV is publishing or cleaning up.
+
+For owner-only publications, configure an Access application covering the generated app hostnames, set the application and matching Allow policies to at most 15 minutes, use its AUD for the publishing audience, and retain the desktop configuration's issuer and stable owner subject. This can be a separate application from desktop Access. AXV verifies each application's JWT at its own origin; it does not create edge policies. Explicit **Public** visibility permits Internet visitors without AXV owner authentication and does not require that application AUD.
+
+Choose a capable VM project and an already running HTTP service in **Publishing**, or use **Publish** beside a project's preview port. Review the original project/VM, port, name, allocation domain and visibility before accepting. AXV assigns the unique hostname and preserves it in the accepted receipt. Publication continues after the browser disconnects. **Unpublish** immediately withdraws AXV's application access and then removes only recorded cloud resources. Cleanup failures remain visible and retryable while local access stays closed. A persistence failure requires storage repair and restart, followed by inspection of the original receipt before retrying Unpublish; it never stops the VM service. After desktop restart, each retained publication stays closed until an explicit **Resume** review of the same hostname and original binding. Already recorded removal cleanup can continue without reopening access. Remove publications and complete cleanup before changing account or routing settings. **Rotate token** can replace an expired or revoked credential without disabling desktop access or losing resource ownership.
+
+The CLI uses the verified running local desktop and the same durable receipts:
+
+```bash
+axv cloudflare config
+axv cloudflare check --force
+axv cloudflare traffic --hours 24
+axv cloudflare publications
+axv cloudflare publish PROJECT_ID --port 3000 --name editor --domain example.net
+axv cloudflare unpublish PUBLICATION_ID
+axv cloudflare retry PUBLICATION_ID
+```
+
+Browser publications perform a cookie-suffix compatibility check before serving guest content. Allow host-only cookies and use a supported current browser; failed checks show an error without clearing application data. Service-worker/offline PWAs are unsupported, while regular scripts, dedicated workers, cookies, origin storage, HTTP/SSE and WebSockets remain available. Supported native clients are identified separately from browsers and still require the existing Host/Origin and owner-JWT checks; [the API contract](api/cloudflare.md#browser-isolation-and-hostname-lifetime) defines this boundary.
+
+Publishing defaults to owner authentication; `--visibility public` explicitly permits public visitors. `--binding-file` accepts an explicitly captured `axv vm project binding` result. Recovery with `--request-id` also requires the original binding file, allocation `--domain` and journal `--instance-id` printed before submission; the CLI refuses to redirect that request to a replacement journal; after an uncertain response inspect publications instead of generating a new request. `axv cloudflare configure --file SETTINGS.json` accepts the complete reviewed HTTP configuration snapshot; use `--file -` for standard input and keep tokens out of shell arguments. [The API contract](api/cloudflare.md#configuration-and-account-checks) owns snapshot fields, revision checks, capacities and resource recovery.
 
 ## First-time macOS setup
 
