@@ -17,11 +17,13 @@ export function Clip({
   api,
   layout,
   setLayout,
+  compact = false,
 }: {
   props: DesktopProps;
   api: DesktopAPI;
   layout: DesktopLayout;
   setLayout: Dispatch<SetStateAction<DesktopLayout>>;
+  compact?: boolean;
 }) {
   const beginGesture = usePointerGesture();
   const [preview, setPreview] = useState<Point | null>(null);
@@ -123,7 +125,9 @@ export function Clip({
     <aside
       className="ns-clip"
       aria-label="Workspace Clip"
-      style={mobile ? undefined : { left: position.x, top: position.y }}
+      style={
+        mobile || compact ? undefined : { left: position.x, top: position.y }
+      }
     >
       <div className="ns-clip-tile">
         <button
@@ -148,7 +152,7 @@ export function Clip({
           title={`Workspace ${index + 1}: ${workspace.name}`}
           aria-haspopup="menu"
           onPointerDown={(event) => {
-            if (event.button !== 0 || mobile) return;
+            if (event.button !== 0 || mobile || compact) return;
             const button = event.currentTarget;
             const origin = { x: event.clientX, y: event.clientY };
             let next = position;

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button, Field } from '@cofy-x/axv-nextstep';
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
 import { useDraftNamespace } from '../../shared/drafts/context';
+import { openCloudflarePublishing } from '../cloudflare/definition';
 import type { VMProjectBinding } from './vm-api';
 import {
   validPendingPreview,
@@ -293,6 +294,25 @@ export function VMProjectPreviews({
         >
           {busy ? 'Working…' : 'Add'}
         </Button>
+        <Button
+          disabled={
+            !binding ||
+            !interactive ||
+            busy ||
+            !Number.isInteger(Number(port)) ||
+            Number(port) < 1024 ||
+            Number(port) > 65535
+          }
+          onClick={() => {
+            if (binding)
+              openCloudflarePublishing(desktop, {
+                binding,
+                port: Number(port),
+              });
+          }}
+        >
+          Publish
+        </Button>
       </form>
       {binding && <p className="vm-preview-target">VM {binding.machineId}</p>}
       {[...new Set([error, refreshError, recoveryError].filter(Boolean))].map(
@@ -346,6 +366,17 @@ export function VMProjectPreviews({
                 </small>
                 {preview.error && <p role="alert">{preview.error}</p>}
                 <div className="vm-preview-actions">
+                  <Button
+                    disabled={busy || !interactive}
+                    onClick={() =>
+                      openCloudflarePublishing(desktop, {
+                        binding: preview.binding,
+                        port: preview.port,
+                      })
+                    }
+                  >
+                    Publish
+                  </Button>
                   {preview.state === 'ready' && preview.url && interactive && (
                     <a
                       href={preview.url}

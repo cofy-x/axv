@@ -52,3 +52,25 @@
     gap: 7px;
   }
 }
+.preferences-access-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.preferences-access-row + .preferences-access-row {
+  margin-top: 6px;
+}
+.preferences-access-row > span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  min-width: 0;
+}
+.preferences-access-row > .ns-button {
+  flex-shrink: 0;
+}
+.settings-app fieldset.preferences-access-group {
+  padding-block: 8px;
+}

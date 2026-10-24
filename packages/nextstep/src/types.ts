@@ -13,6 +13,7 @@ export type IconName =
   | 'checklist'
   | 'image'
   | 'network'
+  | 'cloud-tunnel'
   | 'mesh-network'
   | 'virtual-machines'
   | 'virtual-machine'

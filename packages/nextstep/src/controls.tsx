@@ -244,6 +244,30 @@ export function PixelIcon({
           <path stroke="#fff" d="M10 2h11M2 22h8M22 22h7" />
           <path stroke="#888" d="M12 10h5M3 29h4M23 29h3" />
         </g>
+      ) : name === 'cloud-tunnel' ? (
+        <g {...common}>
+          <path fill="#777" stroke="none" d="M5 22h24v2H5z" />
+          <path
+            fill="#dce5e3"
+            d="M5.5 21.5h-3v-9h2v-3h5v-4h3v-2h7v2h3v4h5v3h2v7h-2v2z"
+          />
+          <path
+            fill="none"
+            stroke="#fff"
+            d="M4 19v-5h2v-3h5V7h3V5h5M24 11h2v3h2"
+          />
+          <path fill="none" stroke="#a0b4b0" d="M7 20h3m12 0h4v-3" />
+          <path fill="#c8a46e" d="M11.5 21.5v-7h2v-2h5v2h2v7z" />
+          <path fill="none" stroke="#f5dfb3" d="M13 20v-5h2v-1h3" />
+          <path fill="#38584d" d="M14.5 21.5v-5h3v5" />
+          <path fill="none" stroke="#262626" strokeWidth="3" d="M16 22v5" />
+          <path fill="none" stroke="#a7c4b8" d="M16 22v5" />
+          <path fill="#bcbcbc" d="M8.5 25.5h15v5h-15z" />
+          <path fill="none" stroke="#fff" d="M9 26h13M9 27v2" />
+          <path fill="none" stroke="#777" d="M10 30h13v-3" />
+          <path fill="#52775f" stroke="none" d="M19 27h2v2h-2z" />
+          <path fill="none" stroke="#777" d="M11 28.5h5" />
+        </g>
       ) : name === 'mesh-network' ? (
         <g {...common} shapeRendering="geometricPrecision">
           {[6, 16, 26].flatMap((y) =>

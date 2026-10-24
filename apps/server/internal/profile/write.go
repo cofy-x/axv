@@ -111,6 +111,65 @@ func SaveRemoteEnabled(home string, enabled bool) (Remote, error) {
 	return remote, nil
 }
 
+// SaveCloudflareEnabled updates only the ingress switch while preserving unknown
+// profile and Cloudflare fields. The caller holds the shared profile Lock.
+func SaveCloudflareEnabled(home string, enabled bool) (Cloudflare, error) {
+	path := filepath.Join(home, "config.json")
+	values := map[string]json.RawMessage{}
+	file, err := os.Open(path)
+	if err == nil {
+		data, readErr := io.ReadAll(io.LimitReader(file, 1<<20+1))
+		closeErr := file.Close()
+		if readErr != nil {
+			return Cloudflare{}, readErr
+		}
+		if closeErr != nil {
+			return Cloudflare{}, closeErr
+		}
+		if err := decode(data, &values); err != nil {
+			return Cloudflare{}, err
+		}
+	} else if !os.IsNotExist(err) {
+		return Cloudflare{}, err
+	}
+	var version int
+	if raw, exists := values["runtime_version"]; exists {
+		if err := json.Unmarshal(raw, &version); err != nil {
+			return Cloudflare{}, fmt.Errorf("AXV runtime_version must be a supported integer")
+		}
+		if version != 0 && version != 1 {
+			return Cloudflare{}, fmt.Errorf("unsupported AXV runtime_version %d", version)
+		}
+	}
+	settings := Cloudflare{}
+	fields := map[string]json.RawMessage{}
+	if raw, exists := values["cloudflare"]; exists {
+		if err := decode(raw, &fields); err != nil {
+			return Cloudflare{}, err
+		}
+		if err := decode(raw, &settings); err != nil {
+			return Cloudflare{}, err
+		}
+	}
+	previous := settings.Enabled
+	settings.Enabled = enabled
+	if err := ValidateCloudflare(settings); err != nil {
+		return Cloudflare{}, err
+	}
+	if settings.Listen == "" {
+		settings.Listen = DefaultCloudflareListen
+	}
+	if previous == enabled {
+		return settings, nil
+	}
+	fields["enabled"], _ = json.Marshal(enabled)
+	values["cloudflare"], _ = json.Marshal(fields)
+	if err := jsonfile.Write(path, values, 0600); err != nil {
+		return Cloudflare{}, err
+	}
+	return settings, nil
+}
+
 func createDefault(path string, defaults any) error {
 	if _, err := os.Lstat(path); err == nil {
 		return nil

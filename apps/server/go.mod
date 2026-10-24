@@ -5,12 +5,15 @@ go 1.27.3
 require (
 	github.com/UserExistsError/conpty v0.1.4
 	github.com/coder/websocket v1.8.15
+	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/creack/pty v1.1.25-0.20260601142114-9246436fffe8
+	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/mattn/go-isatty v0.0.24
 	github.com/mdlayher/vsock v1.3.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	golang.org/x/crypto v0.58.0
+	golang.org/x/net v0.60.0
 	golang.org/x/sync v0.24.0
 	golang.org/x/sys v0.49.0
 	modernc.org/sqlite v1.60.1
@@ -54,7 +57,6 @@ require (
 	go4.org/mem v0.0.0-20240501181205-ae6ca9944745 // indirect
 	go4.org/netipx v0.0.0-20260823151212-3075585bcbeb // indirect
 	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
-	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/term v0.47.0 // indirect
 	golang.org/x/text v0.43.0 // indirect

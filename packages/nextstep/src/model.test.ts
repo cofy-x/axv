@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   activateLayoutWindow,
   defaultWorkspaces,
+  desktopLayoutMode,
   inWorkspace,
   reconcileWorkspaceWindows,
   switchWorkspaceLayout,
@@ -231,6 +232,59 @@ describe('dynamic window work areas', () => {
     });
   });
 
+  it('reclaims short landscape space with a side Dock while keeping narrower keyboards full width', () => {
+    for (const { viewport, sideDock, area } of [
+      {
+        viewport: { width: 568, height: 320 },
+        sideDock: true,
+        area: { x: 4, y: 64, width: 488, height: 248 },
+      },
+      {
+        viewport: { width: 844, height: 390 },
+        sideDock: true,
+        area: { x: 4, y: 64, width: 764, height: 318 },
+      },
+      {
+        viewport: { width: 390, height: 320 },
+        sideDock: false,
+        area: { x: 4, y: 64, width: 382, height: 184 },
+      },
+      {
+        viewport: { width: 320, height: 260 },
+        sideDock: false,
+        area: { x: 4, y: 64, width: 312, height: 124 },
+      },
+    ]) {
+      expect(desktopLayoutMode(viewport)).toMatchObject({
+        short: true,
+        sideDock,
+      });
+      expect(windowWorkArea(viewport, false)).toEqual(area);
+      expect(windowWorkArea(viewport, true)).toEqual({
+        ...area,
+        height: area.height - 76,
+      });
+      for (const shelf of [false, true]) {
+        const windowArea = windowWorkArea(viewport, shelf);
+        const icons = iconWorkArea(viewport, shelf);
+        expect(icons.x).toBeGreaterThan(windowArea.x);
+        expect(icons.y).toBeGreaterThan(windowArea.y);
+        expect(icons.x + icons.width).toBeLessThan(
+          windowArea.x + windowArea.width,
+        );
+        expect(icons.y + icons.height).toBeLessThan(
+          windowArea.y + windowArea.height,
+        );
+      }
+    }
+    expect(desktopLayoutMode({ width: 568, height: 481 })).toEqual({
+      mobile: true,
+      short: false,
+      sideDock: false,
+    });
+    expect(desktopLayoutMode({ width: 480, height: 480 }).sideDock).toBe(false);
+  });
+
   it('counts only minimized windows belonging to the visible workspace, including sticky windows', () => {
     const normal = testWindow('normal');
     const local = { ...testWindow('local'), minimized: true };
@@ -307,6 +361,8 @@ describe('dynamic window work areas', () => {
       workArea,
       windowWorkArea(viewport, true),
       windowWorkArea({ width: 390, height: 844 }, false),
+      windowWorkArea({ width: 568, height: 320 }, true),
+      windowWorkArea({ width: 390, height: 320 }, false),
     ]) {
       visibleBounds(zoomed.restoreBounds!, area);
       expect(zoomed).toEqual(snapshot);

@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react';
 import { PixelIcon } from './controls';
 import {
   ICON_SIZE,
+  desktopLayoutMode,
   iconWorkArea,
   minimizedWindows,
   windowWorkArea,
@@ -23,7 +24,7 @@ import { resolveApplication } from './desktop/applications';
 export function Desktop(props: DesktopProps) {
   const pointerPosition = useRef<Point | null>(null);
   const viewport = useViewport();
-  const mobile = viewport.width < 600;
+  const { mobile, short, sideDock } = desktopLayoutMode(viewport);
   const controller = useDesktopController(props);
   const { layout, overview, setOverview, api, menu, dialogRequest } =
     controller;
@@ -119,7 +120,7 @@ export function Desktop(props: DesktopProps) {
   };
   return (
     <div
-      className={`ns-desktop ns-wallpaper-${props.wallpaper ?? 'slate'} ${mobile ? 'is-mobile' : ''} ${overview ? 'is-overview' : ''}`}
+      className={`ns-desktop ns-wallpaper-${props.wallpaper ?? 'slate'} ${mobile ? 'is-mobile' : ''} ${short ? 'is-short' : ''} ${sideDock ? 'has-side-dock' : ''} ${overview ? 'is-overview' : ''}`}
       onPointerDownCapture={recordPointer}
       onPointerMove={recordPointer}
       style={
@@ -172,6 +173,7 @@ export function Desktop(props: DesktopProps) {
           api={api}
           layout={layout}
           setLayout={controller.setLayout}
+          compact={short}
         />
         <ApplicationMenu groups={groups} api={api} props={desktopProps} />
         {controller.persistenceBlocked && (

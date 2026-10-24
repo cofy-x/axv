@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/cofy-x/axv/apps/server/internal/localaccess"
+	"github.com/cofy-x/axv/apps/server/internal/profile"
 	"github.com/cofy-x/axv/apps/server/internal/tailnet"
 )
 
@@ -50,7 +51,41 @@ func remoteConnection(status remoteSnapshot) remoteConnectionStatus {
 	return result
 }
 
-func connectionHandler(remoteStatus func() remoteSnapshot) http.Handler {
+type cloudflareConnectionStatus struct {
+	Enabled    bool   `json:"enabled"`
+	Configured bool   `json:"configured"`
+	State      string `json:"state"`
+	URL        string `json:"url,omitempty"`
+	Message    string `json:"message,omitempty"`
+}
+
+func cloudflareConnection(status cloudflareSnapshot) cloudflareConnectionStatus {
+	result := cloudflareConnectionStatus{Enabled: status.Enabled, Configured: status.Configured, State: status.State}
+	switch status.State {
+	case "disabled":
+		result.Message = "Cloudflare access is disabled in this profile."
+	case "starting":
+		result.Message = "The authenticated Cloudflare ingress is starting."
+	case "listening":
+		if profile.CloudflareOrigin(status.URL) {
+			result.URL = status.URL
+			result.Message = "The authenticated local ingress is listening. Configure and verify the external Cloudflare Tunnel and Access policy."
+		} else {
+			result.State = "error"
+			result.Message = "The Cloudflare address could not be verified. Check its status locally."
+		}
+	case "stopped":
+		result.Message = "Cloudflare access is stopped."
+	case "error":
+		result.Message = "Cloudflare access needs attention. Check its status locally."
+	default:
+		result.State = "error"
+		result.Message = "Cloudflare access status is unavailable."
+	}
+	return result
+}
+
+func connectionHandler(remoteStatus func() remoteSnapshot, cloudflareStatus func() cloudflareSnapshot) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
@@ -61,8 +96,9 @@ func connectionHandler(remoteStatus func() remoteSnapshot) http.Handler {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(struct {
-			Local  bool                   `json:"local"`
-			Remote remoteConnectionStatus `json:"remote"`
-		}{Local: localaccess.Request(r, false), Remote: remoteConnection(remoteStatus())})
+			Local      bool                       `json:"local"`
+			Remote     remoteConnectionStatus     `json:"remote"`
+			Cloudflare cloudflareConnectionStatus `json:"cloudflare"`
+		}{Local: localaccess.Request(r, false), Remote: remoteConnection(remoteStatus()), Cloudflare: cloudflareConnection(cloudflareStatus())})
 	})
 }

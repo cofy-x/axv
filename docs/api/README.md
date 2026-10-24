@@ -14,6 +14,7 @@ These pages own routes, request/response shapes, limits, errors and caller retry
 - [Compute](compute.md): Environment preparation, service readiness, machines, volumes, images, durable operations and VM project bindings/files.
 - [VM project previews](project-previews.md): Explicit guest HTTP/WebSocket services on independent local origins, with exact registration recovery and remote owner inspection/revocation.
 - [Guest execution](guest.md): Guest health, commands, detachable guest terminals, network observation and local SSH access.
+- [Cloudflare](cloudflare.md): Authenticated desktop origin, local account/configuration wizard, safe tunnel health/traffic, and independently published project services with durable resource ownership.
 - [Tailscale remote access](tailscale.md): Optional private HTTPS, enrollment identity, owner authorization, route restrictions and local status.
 
 For component ownership and implementation, see [architecture](../architecture.md), [Codex architecture](../codex.md) and [VM architecture](../vm-platform.md). [Startup](../startup.md) owns configuration and service operation instructions.
@@ -45,13 +46,15 @@ Request shapes, revision rules, idempotency scope and limits belong to their fun
 
 ## Access and identity boundaries
 
-On the local listener, desktop-state and virtual-file mutations validate a supplied Origin against the request Host or a loopback development host; they permit an omitted Origin.
+The ordinary local desktop listener requires an actual loopback peer and a loopback Host before serving UI or API reads. Forwarded headers do not change this boundary. On that listener, desktop-state and virtual-file mutations validate a supplied Origin against the request Host or a loopback development host; they permit an omitted Origin.
 
 The shared desktop boundary rejects all `/api` requests with `Origin: null` or `Sec-Fetch-Site: cross-site` or `same-site`, including simple GETs without Origin. This prevents sandboxed application frames and different-origin project preview pages from directly using existing API families. Their trusted browser host uses the [installed-application broker](extensions.md#browser-broker) and backend session scope instead.
 
 Host Terminal, host-directory, Codex and compute gateway routes use the shared [access validator](../../apps/server/internal/localaccess/request.go): locally, a loopback peer, a Host of `localhost` or a loopback address, and an exact scheme/Host match when Origin is supplied. Their WebSocket upgrades and mutations require Origin. Forwarded headers do not bypass these checks. The private compute socket is authorized through OS permissions.
 
-The optional remote HTTPS listener authenticates every request, including UI assets and document reads, through the embedded node's `WhoIs`. Only the bound owner's untagged nodes are authorized. Its middleware supplies a private request context to the shared feature guards without changing `RemoteAddr` or trusting identity headers. Remote mutations and WebSocket upgrades require the exact HTTPS Origin; supplied Origin must match on reads too. Preparation and `/api/remote` status/control remain local-only; `/api/connection` supplies an authenticated, safe desktop summary. See the [Tailscale remote access contract](tailscale.md) for identity binding, route restrictions and failures.
+The optional remote HTTPS listener authenticates every request, including UI assets and document reads, through the embedded node's `WhoIs`. Only the bound owner's untagged nodes are authorized. Its middleware supplies a private request context to the shared feature guards without changing `RemoteAddr` or trusting identity headers. Remote mutations and WebSocket upgrades require the exact HTTPS Origin; supplied Origin must match on reads too. Preparation, `/api/remote` and Cloudflare configuration/status controls remain local-only. Exact Cloudflare health, traffic and capability reads and the separate publication API explicitly allow the authenticated owner; `/api/connection` supplies a safe desktop summary. See the [Tailscale remote access contract](tailscale.md) for identity binding, route restrictions and failures.
+
+The optional [Cloudflare entrypoint](cloudflare.md) independently verifies Access application JWTs and the configured owner on every request. It accepts a dedicated loopback HTTP hop with the exact public Host and HTTPS Origin, without trusting identity headers or converting remote clients into local users. Both remote transports use the same route policy and feature guards. Owner JWTs have at most a 15-minute signed lifetime and their original expiry closes HTTP/SSE/WebSocket connections without renewal on reconnect; offline JWT verification does not guarantee immediate provider-side Access revocation.
 
 Project-file and document-exchange routes use that same local-access validator, requiring Origin for mutations. Their registered root identity and project-relative paths remain separate from virtual-document IDs and VM project-volume identities.
 

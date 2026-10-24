@@ -157,4 +157,4 @@ All extension responses are uncached. JSON writes require `Content-Type: applica
 | 429 | `extension_session_limit` | The live-session limit was reached |
 | 500 | `extension_unavailable` | An internal operation failed; no internal path or database detail is returned |
 
-The remote transport can reject a request before feature dispatch with its own authorization, origin, local-only or route errors; see [Tailscale access](tailscale.md).
+The remote transport can reject a request before feature dispatch with its own authorization, origin, local-only or route errors; see [remote access boundaries](README.md#access-and-identity-boundaries).

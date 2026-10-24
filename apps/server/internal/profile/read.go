@@ -17,6 +17,7 @@ const (
 	readDesktop
 	readCompute
 	readRemote
+	readCloudflare
 )
 
 func Load() (Profile, error) {
@@ -62,6 +63,16 @@ func ReadRemote(home string) (Remote, error) {
 	return p.Remote, err
 }
 
+// ReadCloudflare reads only the profile version and the Cloudflare ingress
+// settings. It never initializes a listener, credentials or profile state.
+func ReadCloudflare(home string) (Cloudflare, error) {
+	p, err := readProfile(home, readCloudflare)
+	if p.Cloudflare.Listen == "" {
+		p.Cloudflare.Listen = DefaultCloudflareListen
+	}
+	return p.Cloudflare, err
+}
+
 func readProfile(home string, mode readMode) (Profile, error) {
 	p := Profile{Home: home}
 	file, err := os.Open(filepath.Join(home, "config.json"))
@@ -83,7 +94,9 @@ func readProfile(home string, mode readMode) (Profile, error) {
 	}
 	computeJSON := values["compute"]
 	delete(values, "compute")
-	if mode == readCompute || mode == readRemote {
+	cloudflareJSON := values["cloudflare"]
+	delete(values, "cloudflare")
+	if mode == readCompute || mode == readRemote || mode == readCloudflare {
 		version := values["runtime_version"]
 		remote := values["remote"]
 		values = map[string]json.RawMessage{}
@@ -107,6 +120,21 @@ func readProfile(home string, mode readMode) (Profile, error) {
 	}
 	if mode == readRemote {
 		return p, ValidateRemote(p.Remote)
+	}
+	if mode == readCloudflare {
+		if len(cloudflareJSON) > 0 {
+			if err := decode(cloudflareJSON, &p.Cloudflare); err != nil {
+				return p, fmt.Errorf("AXV Cloudflare configuration: %w", err)
+			}
+		}
+		return p, ValidateCloudflare(p.Cloudflare)
+	}
+	if mode != readCompute && len(cloudflareJSON) > 0 {
+		if err := decode(cloudflareJSON, &p.Cloudflare); err != nil {
+			p.CloudflareError = "invalid Cloudflare configuration"
+		} else if err := ValidateCloudflare(p.Cloudflare); err != nil {
+			p.CloudflareError = err.Error()
+		}
 	}
 	if len(computeJSON) > 0 {
 		if err := json.Unmarshal(computeJSON, &p.Compute); err != nil {

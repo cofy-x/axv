@@ -607,8 +607,8 @@ test('Preferences and optional Dock launchers share the Tailscale panel without 
   const preferences = await openPreferences(page, touch);
   expect(connectionReads).toBe(0);
   const open = preferences
-    .getByRole('group', { name: 'Tailscale', exact: true })
-    .getByRole('button', { name: 'Open', exact: true });
+    .getByRole('group', { name: 'Remote access', exact: true })
+    .getByRole('button', { name: 'Open Tailscale', exact: true });
   await choose(open, touch);
   await expect(panel(page)).toBeVisible();
   const id = await panel(page).getAttribute('data-window-id');

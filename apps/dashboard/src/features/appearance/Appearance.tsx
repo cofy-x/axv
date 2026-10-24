@@ -74,11 +74,29 @@ export function Appearance({ desktop }: AppWindowProps) {
             </Button>
           </div>
         </fieldset>
-        <fieldset>
-          <legend>Tailscale</legend>
-          <p>Set up private access from your other devices.</p>
-          <div className="app-actions">
-            <Button onClick={() => desktop.openApp('remote-access')}>
+        <fieldset className="preferences-access-group">
+          <legend>Remote access</legend>
+          <div className="preferences-access-row">
+            <span>
+              <strong>Tailscale</strong>
+              <span className="fine-print">Private network</span>
+            </span>
+            <Button
+              aria-label="Open Tailscale"
+              onClick={() => desktop.openApp('remote-access')}
+            >
+              Open
+            </Button>
+          </div>
+          <div className="preferences-access-row">
+            <span>
+              <strong>Cloudflare</strong>
+              <span className="fine-print">Browser access</span>
+            </span>
+            <Button
+              aria-label="Open Cloudflare"
+              onClick={() => desktop.openApp('cloudflare')}
+            >
               Open
             </Button>
           </div>

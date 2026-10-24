@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cofy-x/axv/apps/server/internal/cloudflare"
 	"github.com/cofy-x/axv/apps/server/internal/remoteaccess"
 	"github.com/cofy-x/axv/apps/server/internal/tailnet"
 )
@@ -51,6 +52,8 @@ func TestConnectionStatusRequiresTrustedTransportAndUsesRawLocalIdentity(t *test
 	handler := connectionHandler(func() remoteSnapshot {
 		calls++
 		return remoteSnapshot{Enabled: true, Supported: true, Status: tailnet.Status{State: tailnet.StateNeedsLogin, AuthURL: "https://login.tailscale.com/a/private", OwnerUserID: "private-owner", Error: "/private/state"}}
+	}, func() cloudflareSnapshot {
+		return cloudflareSnapshot{Status: cloudflare.Status{State: "disabled", Listen: "127.0.0.1:3002", Error: "private diagnostics"}}
 	})
 	for _, tc := range []struct{ name, host, peer, origin string }{
 		{"untrusted-peer", "localhost:3001", "192.0.2.1:1234", ""},
@@ -77,7 +80,8 @@ func TestConnectionStatusRequiresTrustedTransportAndUsesRawLocalIdentity(t *test
 			t.Fatalf("invalid connection response: HTTP %d: %s", response.Code, response.Body.String())
 		}
 		remote := map[string]any{"enabled": true, "supported": true, "state": "needs-login", "message": "Complete Tailscale enrollment on the computer running AXV."}
-		if len(value) != 2 || !reflect.DeepEqual(value["remote"], remote) {
+		cf := map[string]any{"enabled": false, "configured": false, "state": "disabled", "message": "Cloudflare access is disabled in this profile."}
+		if len(value) != 3 || !reflect.DeepEqual(value["remote"], remote) || !reflect.DeepEqual(value["cloudflare"], cf) {
 			t.Fatalf("connection projection changed: %s", response.Body.String())
 		}
 	}
@@ -108,5 +112,36 @@ func TestConnectionStatusRequiresTrustedTransportAndUsesRawLocalIdentity(t *test
 	remote.ServeHTTP(w, r)
 	if w.Code != http.StatusForbidden || calls != 2 || strings.Contains(w.Body.String(), "private") {
 		t.Fatalf("another owner read connection status: HTTP %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCloudflareConnectionProjectionHidesLocalDetailsAndRejectsUnsafeURLs(t *testing.T) {
+	for _, state := range []string{"disabled", "starting", "listening", "stopped", "error"} {
+		status := cloudflareConnection(cloudflareSnapshot{Enabled: true, Configured: true, Status: cloudflare.Status{State: state, URL: "https://axv.example.com", Listen: "127.0.0.1:3002", Error: "private diagnostic"}})
+		if status.State != state || state == "listening" && status.URL == "" || state != "listening" && status.URL != "" || status.Message == "" {
+			t.Fatalf("lost Cloudflare state: %+v", status)
+		}
+		data, _ := json.Marshal(status)
+		if strings.Contains(string(data), "private") || strings.Contains(string(data), "127.0.0.1") || strings.Contains(string(data), "ready") {
+			t.Fatalf("unsafe or unverified connection details escaped: %s", data)
+		}
+		var fields map[string]any
+		if json.Unmarshal(data, &fields) != nil {
+			t.Fatal("invalid connection JSON")
+		}
+		for field := range fields {
+			if field != "enabled" && field != "configured" && field != "state" && field != "url" && field != "message" {
+				t.Fatalf("unexpected field %q: %s", field, data)
+			}
+		}
+	}
+	for _, address := range []string{"https://localhost", "http://axv.example.com", "https://axv.example.com:443", "https://private@axv.example.com", "https://axv.example.com/", "https://axv.example.com?private", "https://axv.example.com#private"} {
+		status := cloudflareConnection(cloudflareSnapshot{Status: cloudflare.Status{State: "listening", URL: address}})
+		if status.State != "error" || status.URL != "" {
+			t.Fatalf("unsafe Cloudflare URL exposed: %+v", status)
+		}
+	}
+	if status := cloudflareConnection(cloudflareSnapshot{Status: cloudflare.Status{State: "private"}}); status.State != "error" {
+		t.Fatal("unknown Cloudflare state was exposed")
 	}
 }

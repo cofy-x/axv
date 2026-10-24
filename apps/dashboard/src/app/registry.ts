@@ -17,6 +17,7 @@ import { inspectorApp } from '../features/inspector/definition';
 import { galleryApp } from '../features/gallery/definition';
 import { createTerminalApp } from '../features/terminal/definition';
 import { tailscaleApp } from '../features/tailscale';
+import { cloudflareApp } from '../features/cloudflare';
 import { applicationsApp } from '../features/extensions/definition';
 import {
   createCodexApp,
@@ -52,6 +53,7 @@ export function createAppRegistry(
     createCodexApp(commands, codexInstalled),
     codexEnvironmentApp,
     tailscaleApp,
+    cloudflareApp,
     applicationsApp,
     imageViewerApp,
     inspectorApp,

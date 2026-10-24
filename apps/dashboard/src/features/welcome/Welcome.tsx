@@ -16,8 +16,8 @@ export function Welcome({ desktop, window }: AppWindowProps) {
       </div>
       <div className="welcome-copy">
         <p className="fine-print">
-          Open Tailscale on the desktop to check private access from your other
-          devices. Setup takes place on the AXV host.
+          Open Tailscale for private access, or Cloudflare for browser access.
+          Configure access on the AXV host and in your Cloudflare account.
         </p>
         <div className="welcome-links">
           {[
@@ -141,7 +141,8 @@ export function About() {
         VM project and run its tasks. Codex activity identifies working
         sessions, pending requests and turn outcomes. Project Files can clone
         repositories, open development previews and restore independent volume
-        copies. Private remote access uses Tailscale. Application Manager adds
+        copies. Private remote access uses Tailscale; optional Cloudflare Access
+        supports an externally managed tunnel. Application Manager adds
         restricted extensions with their own saved data.
       </p>
     </div>
