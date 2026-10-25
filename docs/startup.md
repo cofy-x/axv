@@ -12,12 +12,12 @@ AXV runs as the operating-system user that launches it, including root, without 
 
 ### Install a release archive
 
-Published Linux amd64 prereleases are not available yet. Once a prerelease is published, use its release notes to select the exact version and read its validation scope, prerequisites and data-compatibility limits before updating. Download `axv_<version>_linux_amd64.tar.gz` and `SHA256SUMS` from that same release into a new, empty installation directory. Keep the original downloads and the extracted directory; do not overwrite an earlier installation.
+The first Linux amd64 prerelease is [v0.1.0-rc.5](https://github.com/cofy-x/axv/releases/tag/v0.1.0-rc.5). Read its release notes for the validation scope, prerequisites and data-compatibility limits before updating. Download its [release archive](https://github.com/cofy-x/axv/releases/download/v0.1.0-rc.5/axv_0.1.0-rc.5_linux_amd64.tar.gz) and [SHA256SUMS](https://github.com/cofy-x/axv/releases/download/v0.1.0-rc.5/SHA256SUMS) into a new, empty installation directory. Keep the original downloads and the extracted directory; do not overwrite an earlier installation.
 
-Replace the version placeholder below with the version from those release notes, then run these commands from the download directory. Extraction and execution only proceed after checksum verification succeeds:
+Run these commands from the download directory. Extraction and execution only proceed after checksum verification succeeds:
 
 ```bash
-axv_release_version='<version-from-release-notes>'
+axv_release_version='0.1.0-rc.5'
 axv_release_bundle="axv_${axv_release_version}_linux_amd64"
 sha256sum --check --strict SHA256SUMS &&
   tar -xzf "${axv_release_bundle}.tar.gz" &&

@@ -8,7 +8,7 @@ AXV is a personal cloud workstation for virtual machines and coding-agent sessio
 
 ## Project status
 
-AXV is unreleased and experimental. Interfaces and AXV-owned development data may change; review the [storage baseline policy](docs/storage.md#desktop-database-baseline) before updating an existing profile. [Product direction](docs/product.md) describes the goals and open decisions; propose and discuss feature work in [Issues](https://github.com/cofy-x/axv/issues).
+AXV is experimental, with a [Linux amd64 prerelease](https://github.com/cofy-x/axv/releases/tag/v0.1.0-rc.5) and no stable release. Interfaces and AXV-owned development data may change; review the [storage baseline policy](docs/storage.md#desktop-database-baseline) before updating an existing profile. [Product direction](docs/product.md) describes the goals and open decisions; propose and discuss feature work in [Issues](https://github.com/cofy-x/axv/issues).
 
 - **Desktop:** Working windows, four desktop workspaces, Dock, menus, Inspector, and responsive layouts; PWA installation is not implemented
 - **Applications (experimental):** Application Manager, explicitly installed self-contained HTML extensions, sandboxed windows, private revision-checked data and browser draft recovery; the included Checklist example covers installation, saves, replacement and removal. Extensions have no document, host-command, agent or VM access
@@ -23,6 +23,8 @@ AXV is unreleased and experimental. Interfaces and AXV-owned development data ma
 - **Cross-platform:** Browser and host-terminal adapters exist; VM adapters are implemented for Linux/macOS; Windows VM hosting unavailable
 
 ## Install and use
+
+For the Linux amd64 prerelease, follow [release archive installation](docs/startup.md#install-a-release-archive) to download, verify and install the published files. Read its release notes for the exact validation scope, runtime prerequisites and experimental data policy.
 
 Build from source with **Go 1.27.3**, **Node 24.16.0**, and **pnpm 12.11.2**. Background startup needs a macOS GUI login or a Linux systemd user manager (254 or newer); see [startup requirements](docs/startup.md#daily-commands). Otherwise, use `axv serve` after installation:
 

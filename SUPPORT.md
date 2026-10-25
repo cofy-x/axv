@@ -2,7 +2,7 @@
 
 Use [GitHub Issues](https://github.com/cofy-x/axv/issues) for bug reports, feature requests and usage questions. Discussions are not enabled for AXV. This selects the issue-based support path in the [cofy-x support guide](https://github.com/cofy-x/.github/blob/main/SUPPORT.md).
 
-Start with [project status](README.md#project-status), [installation and startup](docs/startup.md) and [Using AXV](docs/usage.md). AXV is unreleased; the status page distinguishes implemented features, experimental workflows and native platform validation.
+Start with [project status](README.md#project-status), [installation and startup](docs/startup.md) and [Using AXV](docs/usage.md). AXV is experimental and has no stable release; the status page distinguishes implemented features, experimental workflows and native platform validation.
 
 ## Choose an issue
 

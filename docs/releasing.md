@@ -99,7 +99,18 @@ gh release create "$TAG" "$ARCHIVE" "$SUMS" \
 
 The [web interface](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository) is also suitable if the same checks are completed. Preserve filenames and all bundled license materials. An application-only draft needs exactly the archive and `SHA256SUMS`. GitHub's automatically generated source downloads are separate from these uploaded assets. Any additional assets must be explicitly reviewed before publication. [Each asset must be smaller than 2 GiB](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases#storage-and-bandwidth-quotas), meaning fewer than `2147483648` bytes; the limit is per file, not the combined release size.
 
-Inspect the draft through the authenticated Releases API and record its numeric release ID. Require the intended tag, `draft=true`, `prerelease=true` and an exact asset inventory. For each asset, record its numeric ID, filename, `state=uploaded`, byte count and `digest`; compare sizes and any supplied SHA-256 digest with the preserved originals. Use a maintainer identity that can access drafts; anonymous public download URLs do not establish draft readiness.
+Use an authenticated maintainer identity with push access to [list releases, including drafts](https://docs.github.com/en/rest/releases/releases#list-releases). Select the exact intended tag, record its numeric release ID, then inspect that ID:
+
+```sh
+gh api --paginate repos/cofy-x/axv/releases \
+  --jq '.[] | {id, tag_name, draft, prerelease}'
+RELEASE_ID='<numeric-id-for-the-exact-tag>'
+gh api "repos/cofy-x/axv/releases/$RELEASE_ID"
+```
+
+The [by-tag endpoint](https://docs.github.com/en/rest/releases/releases#get-a-release-by-tag-name) returns published releases; its `404` does not establish that no draft exists. Require the intended tag, `draft=true`, `prerelease=true` and an exact asset inventory. For each asset, record its numeric ID, filename, `state=uploaded`, byte count and `digest`; compare sizes and any supplied SHA-256 digest with the preserved originals. Anonymous public download URLs do not establish draft readiness.
+
+Prefer `gh release edit "$TAG" --repo cofy-x/axv --notes-file "$NOTES"` for draft-note updates. The CLI preserves the current tag association when sending its update. If using a REST `PATCH` to the numeric release ID, explicitly include `tag_name` with the intended tag: omitting it can remove the release's current tag association. Re-read the tag and draft state after any update. The [CLI implementation](https://github.com/cli/cli/blob/v2.102.0/pkg/cmd/release/edit/edit.go) documents this API behavior.
 
 Download each asset by its ID into a fresh inspection directory using the [asset API](https://docs.github.com/en/rest/releases/assets#get-a-release-asset), for example:
 
@@ -115,9 +126,11 @@ Require a successful download and compare **both** files with the originals usin
 After the final asset, notes and remote-tag checks pass, [publish the draft](https://cli.github.com/manual/gh_release_edit) as a separate deliberate maintainer action:
 
 ```sh
-gh release edit "$TAG" --repo cofy-x/axv --verify-tag \
+gh release edit "$TAG" --repo cofy-x/axv --tag "$TAG" --verify-tag \
   --draft=false --prerelease --latest=false
 ```
+
+Keep the explicit `--tag "$TAG"`: in gh 2.102.0, `--verify-tag` only checks the remote tag when `--tag` is supplied. The positional tag selects the release to edit; it does not supply that option. This existence check still requires the separate exact-commit comparison above.
 
 Confirm `draft=false` and `immutable=true` through the release API. GitHub [locks the tag and assets on publication](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases); a draft remains editable until then. Verify the published release and each original file with [`gh release verify`](https://cli.github.com/manual/gh_release_verify) and [`gh release verify-asset`](https://cli.github.com/manual/gh_release_verify-asset):
 
