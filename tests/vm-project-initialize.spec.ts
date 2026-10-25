@@ -272,7 +272,11 @@ test('clone recovers its original task after reload and opens the initialized pr
     binding.machineId,
   );
   await panel.getByRole('button', { name: 'Recover', exact: true }).click();
-  await expect(panel.getByRole('status')).toContainText('running');
+  await expect(
+    panel
+      .getByRole('region', { name: 'Initialize VM project', exact: true })
+      .getByRole('status'),
+  ).toHaveText('Initialization: running · initiali');
   await expect(
     panel.getByRole('button', { name: /^Volume workspace · Work/ }),
   ).toBeVisible();
@@ -299,9 +303,31 @@ test('empty project creation exposes the volume workspace and supports narrow sc
   await panel.getByLabel('Project action').selectOption('create');
   await panel.getByLabel('Project volume').selectOption(parent.volumeId);
   await panel.getByLabel('New directory').fill('empty-project');
-  await panel.getByRole('button', { name: 'Create', exact: true }).click();
-  await expect(panel.getByRole('status')).toContainText('running');
-  expect(state.submissions[0].repository).toBe('');
+  let releaseProjectsReload!: () => void;
+  const projectsReload = new Promise<void>((resolve) => {
+    releaseProjectsReload = resolve;
+  });
+  await page.route('**/api/compute/projects', async (route) => {
+    if (route.request().method() === 'GET') await projectsReload;
+    await route.fallback();
+  });
+  try {
+    await panel.getByRole('button', { name: 'Create', exact: true }).click();
+    await expect(
+      panel.getByRole('status').filter({ hasText: 'Loading VM projects…' }),
+    ).toHaveText('Loading VM projects…');
+    await expect(
+      panel
+        .getByRole('region', { name: 'Initialize VM project', exact: true })
+        .getByRole('status'),
+    ).toHaveText('Initialization: running · initiali');
+    expect(state.submissions[0].repository).toBe('');
+  } finally {
+    releaseProjectsReload();
+  }
+  await expect(
+    panel.getByRole('button', { name: /^Volume workspace · Work/ }),
+  ).toBeVisible();
   state.succeed();
   await panel
     .getByRole('button', { name: 'Open Project', exact: true })
