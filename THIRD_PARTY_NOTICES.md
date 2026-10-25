@@ -16,10 +16,15 @@ Release candidate archives include `licenses/manifest.json` and the original lic
 
 - Go's standard library and bundled libraries;
 - the exact Go module versions recorded in the executable, including inherited notices such as modernc's SQLite and libc notices;
+- separately licensed data and diagnostic assets embedded by those Go modules, with their pinned source locations;
 - the installed production JavaScript dependency graph reported by pnpm, including transitive dependencies and conservatively retained type packages.
 - Vite and Rolldown, whose generated preload and interoperability helpers become part of the embedded UI.
 
 The collector preserves upstream text and refuses a dependency without a license file. The JavaScript list describes the production dependency graph, rather than claiming every package survives frontend tree shaking. Review both the inventory and original texts when changing dependencies or preparing a distribution. Dependencies can carry additional terms inside source files; the collector supports that review and does not replace it.
+
+Production builds use Tailscale's upstream [`ts_omit_webclient` option](https://github.com/tailscale/tailscale/blob/v1.104.1/ipn/ipnlocal/web_client_stub.go) to exclude its separate node-management Web UI and bundled frontend assets. AXV supplies its own desktop and Tailscale controls over the embedded node. The collector rejects a binary that still links `github.com/tailscale/web-client-prebuilt`; distributing that separate frontend would require review and original notices for its JavaScript, fonts and other assets in addition to the Go module's license.
+
+The [supplemental notice inventory](third_party/notices/manifest.json) records original licenses and source locations for HTMX diagnostic assets bundled by Tailscale and the Public Suffix List data used by `golang.org/x/net/publicsuffix`. HTMX's original 0BSD terms are retained. The Public Suffix List source is available under MPL-2.0 at the pinned source URL in the inventory, alongside links to the upstream generated tables. The collector requires the reviewed Go module versions and unchanged license texts before retaining these materials in `licenses/manifest.json`; review the inventory and source availability when updating either module.
 
 The [release procedure](https://github.com/cofy-x/axv/blob/main/docs/releasing.md) owns generation and review. Keep this file and `licenses/` with a redistributed application archive. A source checkout does not include downloaded dependency trees; obtain their original terms from the exact locked packages and module sources.
 

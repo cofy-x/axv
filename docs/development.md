@@ -41,6 +41,8 @@ make build
 
 The [build script](../scripts/build.mjs) embeds the UI into `dist/axv`. The executable works from any directory without Node at runtime. `make build-go` produces `dist/server-dev` without embedded production assets; direct Go builds and tests do not require frontend output.
 
+Production builds and Go vulnerability scans share the `production,ts_omit_webclient` tags declared in [the script helpers](../scripts/lib.mjs). The Tailscale option excludes its separate node-management Web UI; [distribution notices](../THIRD_PARTY_NOTICES.md#application-distributions) own that component boundary and the required license review.
+
 Production JavaScript and CSS support negotiated gzip when compression reduces their size. Content-fingerprinted assets use private immutable caching; HTML and unversioned resources require revalidation so new builds select their current assets. The HTML displays the existing startup screen while the application bundle loads, including on a slow remote connection.
 
 `make install` runs dependency setup, this production build and atomic installation into Go's binary directory sequentially. It does not initialize user data or launch services. [Installation and updates](startup.md#installation-and-updates) owns destination, PATH and live-service update semantics. For installation checks, always select a temporary `GOBIN` and a separate short `AXV_HOME`; never overwrite a real installation as part of automated verification.
@@ -175,7 +177,7 @@ make security
 
 `make audit-js` uses the pinned pnpm to scan production, development and optional dependencies, failing on low severity or higher.
 
-`make audit-go` first runs the production build to prepare embedded assets, then installs the fixed scanner version from [its launcher](../scripts/audit-go.mjs) into private temporary storage. It runs text-mode `govulncheck -test -tags production ./...` from the server module with the selected Go toolchain and `CGO_ENABLED=0`, matching the production build. Reachable known vulnerabilities, including tests and the standard library, fail the check; module-only advisories remain informational. The scan covers the selected build platform. Both audits preserve registry/database and scanner errors as failures and apply no automatic fixes.
+`make audit-go` first runs the production build to prepare embedded assets, then installs the fixed scanner version from [its launcher](../scripts/audit-go.mjs) into private temporary storage. It runs text-mode `govulncheck -test -tags production,ts_omit_webclient ./...` from the server module with the selected Go toolchain and `CGO_ENABLED=0`, matching the production build. Reachable known vulnerabilities, including tests and the standard library, fail the check; module-only advisories remain informational. The scan covers the selected build platform. Both audits preserve registry/database and scanner errors as failures and apply no automatic fixes.
 
 The [Dependabot configuration](../.github/dependabot.yml) checks Actions, the root pnpm workspace and `apps/server` Go modules every Monday, groups minor/patch updates, and limits each ecosystem to five open version-update pull requests. Major updates remain separate. Repository security alerts and security-update PRs complement these scans and are independent of that weekly schedule. Dependabot does not merge automatically.
 

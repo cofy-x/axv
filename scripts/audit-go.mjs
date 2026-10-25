@@ -1,6 +1,13 @@
 import { mkdir } from 'node:fs/promises';
 import { delimiter, isAbsolute, join } from 'node:path';
-import { captureCommand, command, exitAfterCleanup, go, root } from './lib.mjs';
+import {
+  captureCommand,
+  command,
+  exitAfterCleanup,
+  go,
+  productionTags,
+  root,
+} from './lib.mjs';
 import { initializeTestTemp } from './test-temp.mjs';
 
 const version = 'v1.9.0';
@@ -46,7 +53,7 @@ try {
   // Text output preserves nonzero vulnerability exits; JSON/SARIF do not.
   await command(
     join(bin, `govulncheck${process.platform === 'win32' ? '.exe' : ''}`),
-    ['-test', '-tags', 'production', './...'],
+    ['-test', '-tags', productionTags, './...'],
     { cwd: join(root, 'apps/server'), env, ownProcessGroup: true },
   );
   await shutdown(0);

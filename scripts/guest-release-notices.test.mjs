@@ -140,6 +140,15 @@ async function collect(f, output = join(f.directory, 'notices')) {
   );
 }
 
+async function collectApplication(f, output) {
+  const script = `import { readFile } from 'node:fs/promises'; import { writeReleaseNotices } from ${JSON.stringify(new URL('./release-notices.mjs', import.meta.url).href)}; const state = JSON.parse(await readFile(process.env.AXV_GUEST_TEST_STATE, 'utf8')); await writeReleaseNotices(${JSON.stringify(output)}, state.build);`;
+  return captureCommand(
+    process.execPath,
+    ['--input-type=module', '-e', script],
+    { env: f.env, allowFailure: true },
+  );
+}
+
 describe.skipIf(process.platform === 'win32')(
   'guest distribution metadata',
   () => {
@@ -288,16 +297,47 @@ describe.skipIf(process.platform === 'win32')(
       },
     );
 
+    test.each(['application', 'guest'])(
+      '%s notices reject the embedded Tailscale web client even with its top-level BSD license',
+      async (consumer) => {
+        const f = await fixture();
+        f.state.build.Deps[0].Path = 'github.com/tailscale/web-client-prebuilt';
+        await writeFile(f.statePath, JSON.stringify(f.state));
+        await writeFile(
+          join(f.state.module, 'LICENSE'),
+          'BSD 3-Clause License\nCopyright Tailscale Inc & contributors.\n',
+        );
+        let result;
+        if (consumer === 'guest') {
+          result = await collect(f);
+          await expect(
+            stat(join(f.directory, 'notices')),
+          ).rejects.toMatchObject({
+            code: 'ENOENT',
+          });
+        } else {
+          const output = join(f.directory, 'application');
+          await mkdir(output);
+          result = await collectApplication(f, output);
+          expect(await readdir(output)).toEqual([]);
+        }
+        expect(result.code).toBe(1);
+        expect(result.stderr).toContain(
+          'The binary links the Tailscale node web client',
+        );
+        expect(result.stderr).toContain('Rebuild with ts_omit_webclient');
+        await expect(stat(f.executed)).rejects.toMatchObject({
+          code: 'ENOENT',
+        });
+      },
+    );
+
     test('the application consumer still includes its JavaScript graph and build-helper notices', async () => {
       const f = await fixture();
       const output = join(f.directory, 'application');
       await mkdir(output);
-      const script = `import { readFile } from 'node:fs/promises'; import { writeReleaseNotices } from ${JSON.stringify(new URL('./release-notices.mjs', import.meta.url).href)}; const state = JSON.parse(await readFile(process.env.AXV_GUEST_TEST_STATE, 'utf8')); await writeReleaseNotices(${JSON.stringify(output)}, state.build);`;
-      await captureCommand(
-        process.execPath,
-        ['--input-type=module', '-e', script],
-        { env: f.env },
-      );
+      const result = await collectApplication(f, output);
+      expect(result.code, result.stderr).toBe(0);
       const manifest = JSON.parse(
         await readFile(join(output, 'manifest.json'), 'utf8'),
       );

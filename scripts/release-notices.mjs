@@ -1,10 +1,12 @@
 import {
   copyFile,
+  lstat,
   mkdir,
   readFile,
   readdir,
   writeFile,
 } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { dirname, join, relative } from 'node:path';
 import { createRequire } from 'node:module';
 import { captureCommand, go, root } from './lib.mjs';
@@ -53,8 +55,102 @@ function noticeCollector(output, inventory) {
   };
 }
 
+async function catalogFile(directory, path) {
+  if (
+    typeof path !== 'string' ||
+    path.includes('\\') ||
+    path.split('/').some((part) => !part || part === '.' || part === '..')
+  )
+    throw new Error(
+      'Supplemental notice paths must stay inside their catalog.',
+    );
+  let current = directory;
+  const parts = path.split('/');
+  for (const [index, part] of parts.entries()) {
+    current = join(current, part);
+    const state = await lstat(current);
+    if (
+      state.isSymbolicLink() ||
+      (index === parts.length - 1 ? !state.isFile() : !state.isDirectory())
+    )
+      throw new Error(
+        'Supplemental notice paths must be regular, not symlinks.',
+      );
+  }
+  return current;
+}
+
+export async function collectSupplementalNotices(
+  output,
+  buildInfo,
+  directory = join(root, 'third_party/notices'),
+) {
+  const state = await lstat(directory);
+  if (!state.isDirectory() || state.isSymbolicLink())
+    throw new Error(
+      'The supplemental notice catalog must be a real directory.',
+    );
+  const entries = JSON.parse(
+    await readFile(await catalogFile(directory, 'manifest.json'), 'utf8'),
+  );
+  const approved = [];
+  for (const entry of entries) {
+    const dependency = buildInfo.Deps?.find(
+      ({ Path }) => Path === entry.via.module,
+    );
+    if (!dependency) continue;
+    if (dependency.Version !== entry.via.version)
+      throw new Error(
+        `Re-review embedded assets for ${dependency.Path}@${dependency.Version}; supplemental notices cover ${entry.via.version}.`,
+      );
+    if (
+      entry.kind !== 'embedded-asset' ||
+      typeof entry.name !== 'string' ||
+      !entry.name ||
+      typeof entry.version !== 'string' ||
+      !/^[0-9A-Za-z._+-]+$/.test(entry.version)
+    )
+      throw new Error('Invalid supplemental notice identity.');
+    const files = [];
+    for (const file of entry.files) {
+      const path = await catalogFile(directory, file.path);
+      const bytes = await readFile(path);
+      if (
+        !bytes.length ||
+        createHash('sha256').update(bytes).digest('hex') !== file.sha256
+      )
+        throw new Error(`Supplemental notice checksum mismatch: ${file.path}.`);
+      files.push(path);
+    }
+    approved.push({ entry, files });
+  }
+  const inventory = [];
+  const collect = noticeCollector(output, inventory);
+  for (const { entry, files } of approved) {
+    const { kind, name, version, files: licenseSources, ...metadata } = entry;
+    await collect(
+      kind,
+      name,
+      version,
+      directory,
+      { ...metadata, licenseSources },
+      files,
+    );
+  }
+  return inventory;
+}
+
 /** Collect only the toolchain and modules actually linked into this binary. */
 export async function collectGoNotices(output, buildInfo) {
+  const dependencies = buildInfo.Deps ?? [];
+  if (
+    dependencies.some(
+      ({ Path }) => Path === 'github.com/tailscale/web-client-prebuilt',
+    )
+  )
+    throw new Error(
+      'The binary links the Tailscale node web client, whose embedded frontend and font notices are not collected. Rebuild with ts_omit_webclient before packaging.',
+    );
   const inventory = [];
   const collect = noticeCollector(output, inventory);
   const toolchain = await captureJSON(go, [
@@ -85,7 +181,6 @@ export async function collectGoNotices(output, buildInfo) {
     },
     goFiles,
   );
-  const dependencies = buildInfo.Deps ?? [];
   for (const dependency of dependencies) {
     if (dependency.Replace)
       throw new Error(
@@ -136,6 +231,7 @@ export async function collectGoNotices(output, buildInfo) {
       checksum: dependency.Sum,
     });
   }
+  inventory.push(...(await collectSupplementalNotices(output, buildInfo)));
   return inventory;
 }
 
