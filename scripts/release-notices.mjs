@@ -55,6 +55,15 @@ function noticeCollector(output, inventory) {
 
 /** Collect only the toolchain and modules actually linked into this binary. */
 export async function collectGoNotices(output, buildInfo) {
+  const dependencies = buildInfo.Deps ?? [];
+  if (
+    dependencies.some(
+      ({ Path }) => Path === 'github.com/tailscale/web-client-prebuilt',
+    )
+  )
+    throw new Error(
+      'The binary links the Tailscale node web client, whose embedded frontend and font notices are not collected. Rebuild with ts_omit_webclient before packaging.',
+    );
   const inventory = [];
   const collect = noticeCollector(output, inventory);
   const toolchain = await captureJSON(go, [
@@ -85,7 +94,6 @@ export async function collectGoNotices(output, buildInfo) {
     },
     goFiles,
   );
-  const dependencies = buildInfo.Deps ?? [];
   for (const dependency of dependencies) {
     if (dependency.Replace)
       throw new Error(

@@ -3,7 +3,14 @@ import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { binary, captureCommand, exitAfterCleanup, go, root } from './lib.mjs';
+import {
+  binary,
+  captureCommand,
+  exitAfterCleanup,
+  go,
+  productionTags,
+  root,
+} from './lib.mjs';
 import { writeReleaseNotices } from './release-notices.mjs';
 import { initializeTestTemp } from './test-temp.mjs';
 
@@ -84,6 +91,25 @@ export function validateReleaseSource(buildInfo, source) {
     );
 }
 
+export function validateReleaseBuildInfo(buildInfo, expectedGo) {
+  const required = new Map([
+    ['GOOS', 'linux'],
+    ['GOARCH', 'amd64'],
+    ['-tags', productionTags],
+    ['CGO_ENABLED', '0'],
+  ]);
+  if (
+    buildInfo?.GoVersion !== expectedGo ||
+    [...required].some(([key, value]) => {
+      const matches = buildInfo?.Settings?.filter((entry) => entry.Key === key);
+      return matches?.length !== 1 || matches[0].Value !== value;
+    })
+  )
+    throw new Error(
+      `Build with the pinned Go toolchain and VERSION=<version> make build on native Linux amd64 (required tags: ${productionTags}).`,
+    );
+}
+
 async function packageRelease(version) {
   if (process.platform !== 'linux' || process.arch !== 'x64')
     throw new Error(
@@ -94,20 +120,8 @@ async function packageRelease(version) {
     (await captureCommand(go, ['version', '-m', '-json', binary])).stdout,
   );
   validateReleaseSource(buildInfo, await readReleaseSource());
-  const settings = Object.fromEntries(
-    buildInfo.Settings.map(({ Key, Value }) => [Key, Value]),
-  );
   const expectedGo = `go${(await readFile(join(root, '.go-version'), 'utf8')).trim()}`;
-  if (
-    buildInfo.GoVersion !== expectedGo ||
-    settings.GOOS !== 'linux' ||
-    settings.GOARCH !== 'amd64' ||
-    settings['-tags'] !== 'production' ||
-    settings.CGO_ENABLED !== '0'
-  )
-    throw new Error(
-      'Build with the pinned Go toolchain and VERSION=<version> make build on native Linux amd64.',
-    );
+  validateReleaseBuildInfo(buildInfo, expectedGo);
   const reported = (
     await captureCommand(binary, ['version'], { cwd: temporary.directory })
   ).stdout;

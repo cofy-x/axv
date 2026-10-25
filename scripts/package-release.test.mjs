@@ -5,6 +5,7 @@ import { expect, test } from 'vitest';
 import { captureCommand } from './lib.mjs';
 import {
   readReleaseSource,
+  validateReleaseBuildInfo,
   validateReleaseSource,
   validateReleaseVersion,
 } from './package-release.mjs';
@@ -36,6 +37,61 @@ test('release versions reject unsafe names, invalid semantic versions and a diff
     '999999.0.0',
   ])
     await expect(validateReleaseVersion(value)).rejects.toThrow();
+});
+
+const pinnedGo = `go${(await readFile(new URL('../.go-version', import.meta.url), 'utf8')).trim()}`;
+const releaseBuildInfo = {
+  GoVersion: pinnedGo,
+  Settings: [
+    { Key: 'GOOS', Value: 'linux' },
+    { Key: 'GOARCH', Value: 'amd64' },
+    { Key: '-tags', Value: 'production,ts_omit_webclient' },
+    { Key: 'CGO_ENABLED', Value: '0' },
+  ],
+};
+
+test('release builds require the pinned native target and complete production tags', () => {
+  expect(() =>
+    validateReleaseBuildInfo(releaseBuildInfo, pinnedGo),
+  ).not.toThrow();
+  for (const [key, value] of [
+    ['GOOS', 'darwin'],
+    ['GOARCH', 'arm64'],
+    ['-tags', 'production'],
+    ['-tags', 'ts_omit_webclient'],
+    ['-tags', 'production,ts_omit_webclient,unreviewed'],
+    ['CGO_ENABLED', '1'],
+  ])
+    expect(() =>
+      validateReleaseBuildInfo(
+        {
+          ...releaseBuildInfo,
+          Settings: releaseBuildInfo.Settings.map((entry) =>
+            entry.Key === key ? { ...entry, Value: value } : entry,
+          ),
+        },
+        pinnedGo,
+      ),
+    ).toThrow(/required tags: production,ts_omit_webclient/);
+});
+
+test('release builds reject missing or ambiguous settings and a different Go toolchain', () => {
+  for (const invalid of [
+    {},
+    { ...releaseBuildInfo, GoVersion: 'go0.0.0' },
+    ...releaseBuildInfo.Settings.map(({ Key }) => ({
+      ...releaseBuildInfo,
+      Settings: releaseBuildInfo.Settings.filter((entry) => entry.Key !== Key),
+    })),
+    {
+      ...releaseBuildInfo,
+      Settings: [
+        { Key: '-tags', Value: 'production' },
+        ...releaseBuildInfo.Settings,
+      ],
+    },
+  ])
+    expect(() => validateReleaseBuildInfo(invalid, pinnedGo)).toThrow();
 });
 
 const revision = 'a'.repeat(40);

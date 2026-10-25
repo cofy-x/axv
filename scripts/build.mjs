@@ -1,6 +1,13 @@
 import { cp, mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { binary, command, exitAfterCleanup, go, root } from './lib.mjs';
+import {
+  binary,
+  command,
+  exitAfterCleanup,
+  go,
+  productionTags,
+  root,
+} from './lib.mjs';
 import { initializeTestTemp } from './test-temp.mjs';
 
 const temporary = initializeTestTemp();
@@ -51,7 +58,7 @@ try {
       'build',
       '-trimpath',
       '-tags',
-      'production',
+      productionTags,
       '-ldflags',
       `-X main.version=${version}`,
       '-o',

@@ -19,6 +19,7 @@ export const binary = join(
   `${project}${process.platform === 'win32' ? '.exe' : ''}`,
 );
 export const go = process.env.GO || 'go';
+export const productionTags = 'production,ts_omit_webclient';
 const children = new Set();
 const ownedGroups = new WeakMap();
 let closing = false;

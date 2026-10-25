@@ -120,7 +120,12 @@ describe.skipIf(process.platform === 'win32')(
       const result = JSON.parse(await readFile(observation, 'utf8'));
       expect(result.go).toBe('selected-go');
       expect(result.cwd).toBe(join(root, 'apps/server'));
-      expect(result.args).toEqual(['-test', '-tags', 'production', './...']);
+      expect(result.args).toEqual([
+        '-test',
+        '-tags',
+        'production,ts_omit_webclient',
+        './...',
+      ]);
       expect(result.cgo).toBe('0');
       expect(result.toolchain).toBe('local');
       expect(result.goversion).toBeNull();
