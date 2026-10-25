@@ -4,7 +4,7 @@ This policy supplies AXV's support scope and private reporting address in additi
 
 ## Supported versions
 
-AXV is unreleased. Security fixes target the current default branch; there are no supported stable release lines yet. Development snapshots and older commits are not maintained as separate security branches.
+AXV has no supported stable release lines yet. Security fixes target the current default branch; development snapshots and experimental prereleases are not maintained as separate security branches. [Project status](README.md#project-status) records published availability.
 
 ## Report a vulnerability
 
@@ -18,4 +18,4 @@ Maintainers will assess the report, discuss any additional evidence privately an
 
 AXV operates as the host account that launches it. Host terminals and agent sessions can access that account's resources; provider tools retain their own approval and sandbox policies. See [execution identity](docs/startup.md#execution-identity) and the [API access boundaries](docs/api/README.md#access-and-identity-boundaries).
 
-Remote access, remote-user authentication and authorization are not implemented. Keep deployment within the documented local access model; a reverse proxy or tunnel does not add an AXV authorization layer. [Project status](README.md#project-status) owns current capability and validation claims.
+Use the documented local access model or explicitly configured remote entrypoints. Optional Tailscale and Cloudflare desktop entrypoints authenticate and authorize the configured owner; a reverse proxy or tunnel alone does not add an AXV authorization layer. Follow the [remote setup](docs/startup.md#remote-access), [Cloudflare setup](docs/startup.md#cloudflare-access) and [API access boundaries](docs/api/README.md#access-and-identity-boundaries). [Project status](README.md#project-status) owns current capability and validation claims.
