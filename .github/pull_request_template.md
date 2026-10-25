@@ -16,4 +16,4 @@ Keep screenshots, profiles, logs, databases and browser reports out of commits; 
 
 ## Documentation and state impact
 
-<!-- Link the owning documentation updated for changed behavior. Describe any effects on AXV-owned data, process lifetimes or access boundaries; write "None" when applicable. Follow the unreleased baseline policy in docs/storage.md. -->
+<!-- Link the owning documentation updated for changed behavior. Describe any effects on AXV-owned data, process lifetimes or access boundaries; write "None" when applicable. Follow the experimental baseline policy in docs/storage.md. -->

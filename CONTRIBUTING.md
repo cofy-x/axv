@@ -18,6 +18,6 @@ Run the checks for the change's category and summarize the commands and results 
 
 Explain the problem, resulting behavior and relevant limitations. Link related issues and include validation evidence; UI changes should include the applicable visual and interaction review. Use sanitized examples and [redact sensitive information](SUPPORT.md#sharing-diagnostics).
 
-Keep generated executables, dependencies, databases, profiles, uploads, screenshots and browser reports out of commits. The [storage baseline policy](docs/storage.md#desktop-database-baseline) governs unreleased data changes; document effects on existing AXV-owned data without changing host projects or provider-owned history.
+Keep generated executables, dependencies, databases, profiles, uploads, screenshots and browser reports out of commits. The [storage baseline policy](docs/storage.md#desktop-database-baseline) governs experimental data changes; document effects on existing AXV-owned data without changing host projects or provider-owned history.
 
 Contributions are licensed under AXV's [MIT License](LICENSE). Keep required upstream notices for any third-party material; [release preparation](docs/releasing.md) covers distribution notices.
