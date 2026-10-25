@@ -1,0 +1,63 @@
+[
+  {
+    "kind": "embedded-asset",
+    "name": "htmx.org",
+    "version": "2.0.4",
+    "license": "0BSD",
+    "source": "https://github.com/bigskysoftware/htmx/tree/b82cf843e47e575dd8c2ad8fee547d8e2c3bb87f",
+    "via": {
+      "module": "tailscale.com",
+      "version": "v1.104.1"
+    },
+    "files": [
+      {
+        "path": "htmx.org/LICENSE.txt",
+        "sha256": "d3d2456f76414f2456104660ebd65aff1c04cd7966b942bdabd63f3cdb316a38",
+        "source": "https://raw.githubusercontent.com/bigskysoftware/htmx/b82cf843e47e575dd8c2ad8fee547d8e2c3bb87f/LICENSE"
+      }
+    ]
+  },
+  {
+    "kind": "embedded-asset",
+    "name": "htmx-ext-ws",
+    "version": "2.0.2",
+    "license": "0BSD",
+    "source": "https://github.com/bigskysoftware/htmx-extensions/tree/f3bb31edd5e287e2678f312103525e3ea5abdb01/src/ws",
+    "via": {
+      "module": "tailscale.com",
+      "version": "v1.104.1"
+    },
+    "files": [
+      {
+        "path": "htmx-ext-ws/LICENSE.txt",
+        "sha256": "a17d224ce9afdc21ec9491b76a2f5d036d19aa641ac4f85ca29c21f9f7e54fdf",
+        "source": "https://raw.githubusercontent.com/bigskysoftware/htmx-extensions/f3bb31edd5e287e2678f312103525e3ea5abdb01/src/ws/LICENSE"
+      }
+    ]
+  },
+  {
+    "kind": "embedded-asset",
+    "name": "publicsuffix/list",
+    "version": "d6c92f1bbb7433e5db7b8405c25d4035fb8ff376",
+    "license": "MPL-2.0",
+    "source": "https://raw.githubusercontent.com/publicsuffix/list/d6c92f1bbb7433e5db7b8405c25d4035fb8ff376/public_suffix_list.dat",
+    "via": {
+      "module": "golang.org/x/net",
+      "version": "v0.60.0"
+    },
+    "files": [
+      {
+        "path": "publicsuffix-list/LICENSE.txt",
+        "sha256": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172",
+        "source": "https://raw.githubusercontent.com/publicsuffix/list/d6c92f1bbb7433e5db7b8405c25d4035fb8ff376/LICENSE"
+      }
+    ],
+    "generatedSources": [
+      "https://raw.githubusercontent.com/golang/net/v0.60.0/publicsuffix/gen.go",
+      "https://raw.githubusercontent.com/golang/net/v0.60.0/publicsuffix/table.go",
+      "https://raw.githubusercontent.com/golang/net/v0.60.0/publicsuffix/data/children",
+      "https://raw.githubusercontent.com/golang/net/v0.60.0/publicsuffix/data/nodes",
+      "https://raw.githubusercontent.com/golang/net/v0.60.0/publicsuffix/data/text"
+    ]
+  }
+]

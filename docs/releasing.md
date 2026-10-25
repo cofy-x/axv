@@ -51,7 +51,7 @@ On macOS, use `shasum -a 256 -c SHA256SUMS` to inspect the checksum; this Linux 
 
 Review the generated `licenses/manifest.json`, the original notices and relevant source-file terms before publication. Pay attention to inherited third-party notices, new or unknown licenses, and changes to compiled versus external dependencies. Missing license text or module-checksum mismatches stop packaging. Do not label the whole archive, upstream tools or guest OS as MIT.
 
-The [production tags](development.md#production-build) exclude Tailscale's separate node-management Web UI. Packaging also rejects a binary that still links its prebuilt frontend module; the Go module's top-level license alone does not establish the terms of its embedded assets. Follow the [distribution boundary](../THIRD_PARTY_NOTICES.md#application-distributions) before including any such bundle.
+The [production tags](development.md#production-build) exclude Tailscale's separate node-management Web UI. Packaging also rejects a binary that still links its prebuilt frontend module; the Go module's top-level license alone does not establish the terms of its embedded assets. Follow the [distribution boundary](../THIRD_PARTY_NOTICES.md#application-distributions) before including any such bundle. Review the supplemental embedded-asset notices and confirm that their recorded source URLs still provide the reviewed revisions before publication.
 
 ## Review and publish
 
