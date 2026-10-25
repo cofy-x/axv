@@ -6,7 +6,7 @@ This page owns release preparation, version selection, candidate artifacts and p
 
 Use `major.minor.patch`, with an optional prerelease suffix such as `0.1.0-rc.1`. The three private JavaScript manifests share the base version; update them together when selecting a new release series. Their `private` fields stay enabled: these packages compose the application and are not published to npm. `VERSION` supplies the full version to the production build and must be repeated for smoke, browser tests and packaging. An ordinary source build still reports `dev`.
 
-Prepare releases from a reviewed commit on `main`, with passing required CI checks and no uncommitted changes. Confirm the current README's availability claims and document any user-visible changes, known limitations and incompatible AXV-store baseline changes in the release notes. Never describe a hosted desktop smoke as native VM or real-model acceptance.
+Prepare releases from a reviewed commit on `main`, with passing required CI checks and no uncommitted changes. Merge release-preparation changes before selecting that commit. Confirm the current README's availability claims and document any user-visible changes, known limitations and [AXV-store compatibility policy](storage.md#desktop-database-baseline) in the release notes. Never describe a hosted desktop smoke as native VM or real-model acceptance.
 
 ## Build a candidate
 
@@ -53,14 +53,81 @@ Review the generated `licenses/manifest.json`, the original notices and relevant
 
 ## Review and publish
 
-Publication is an explicit maintainer action after candidate review. The first publication should be a GitHub prerelease while experimental capabilities remain under evaluation.
+Publication is an explicit maintainer action after candidate review. Use the existing manual process for the first Linux amd64 prerelease; no additional release service is required. Guest images, build provenance attestations, CodeQL and Socket are separate work, not prerequisites for publishing this application archive. Required CI and the acceptance for capabilities claimed in the release still apply.
 
-1. Confirm the archive's `axv version`, `build-info.json` revision and clean-source setting match the reviewed commit, workflow run and passing CI checks. Inspect `SHA256SUMS` and dependency notices. Retain native acceptance evidence for the actual claims and platform.
-2. Write release notes with the version, source commit, changes, platform/architecture, installation and checksum instructions, runtime prerequisites, experimental or unavailable capabilities, and any incompatible store baseline changes. Link the owning startup and security references. Report which native daemon, VM and real-model checks were performed; do not infer them from fixture tests.
-3. Create an annotated or signed `v<version>` tag at that exact commit after review. Push the tag and create a **draft** GitHub Release for it. Upload the reviewed archive and `SHA256SUMS`; preserve its original filenames and license files. Mark prereleases appropriately. Review the draft, then publish deliberately. The candidate workflow does not perform these actions.
-4. Do not replace a published tag or archive with different bytes. Publish a new version for corrections. Keep release notes and published availability links accurate without inventing downloads for platforms that have no reviewed artifact.
+### Preserve and approve the candidate
 
-For a draft through GitHub's web interface, follow [managing releases](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository). [Workflow artifacts](https://docs.github.com/en/actions/concepts/workflows-and-actions/workflow-artifacts) have finite retention; promote approved files to the draft rather than treating the Actions download URL as a permanent distribution endpoint.
+1. Check GitHub tags, releases (including drafts visible to a maintainer) and candidate runs before selecting an unused version. Check that the local remote addresses the intended repository. Record the candidate run's actual `head_sha`; a later `main` HEAD is not a substitute. Confirm that SHA is reviewed and has passing required CI checks.
+2. Download the successful candidate before its artifact expires. Preserve the original archive and `SHA256SUMS` together, outside directories that later build or cleanup commands overwrite. Inspect and extract copies. Do not rebuild, recompress, regenerate the manifest or edit the approved files during promotion. The Actions wrapper ZIP has its own size and digest; neither describes the inner archive.
+3. Record the following in the release PR or release notes, keeping validation history out of this reference:
+
+   | Evidence | Required record |
+   | --- | --- |
+   | Source and build | Version, full source SHA, candidate run URL and attempt, artifact ID, and required CI run/check links for that SHA |
+   | Files | Exact filename, byte count and SHA-256 for **each** original file, including `SHA256SUMS` itself |
+   | Review | Matching `axv version`, `build-info.json` revision and `vcs.modified=false`; dependency inventory and original-license review |
+   | Acceptance | Commands, environment, result and file digest for the downloaded Linux amd64 archive; separately identified native daemon, real-agent and VM evidence used in the notes |
+
+4. Verify `SHA256SUMS`, then follow [release archive installation](startup.md#install-a-release-archive) with a new version directory and isolated `AXV_HOME`. Test the installed original's version and foreground startup. Test the original in a native systemd user session before claiming background-startup acceptance for this release. Fixture smoke, native platform checks and real Agent/VM acceptance establish different evidence. Label historical Agent/VM evidence with its source commit and environment, including any locally built image; do not present it as acceptance of this downloaded archive.
+5. Write notes covering the fixed source link, changes, Linux amd64 target, [installation and runtime prerequisites](startup.md#install-a-release-archive), checksum instructions, experimental or unavailable capabilities, data compatibility and [security policy](../SECURITY.md). State which checks used this archive and which remain pending. Do not claim an official Guest image or live provider deployment without its own evidence.
+
+[Workflow artifacts](https://docs.github.com/en/actions/concepts/workflows-and-actions/workflow-artifacts) expire. Retain the approved originals through publication and verification; their Actions URLs are not permanent download endpoints. The recorded association establishes review traceability, not cryptographic proof that a workflow built those bytes.
+
+### Prepare the tag and draft
+
+Enable repository [release immutability](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/establish-provenance-and-integrity/prevent-release-changes) **before creating the new draft** and confirm the effective setting. It applies to future releases. Do not assume an older release acquired protection when the setting changed.
+
+Create an annotated `v<version>` tag at the exact approved SHA; use a signed tag when maintainer signing is configured. Push only that tag. For example, with `TAG` and `SOURCE_SHA` set to the selected tag and full commit SHA:
+
+```sh
+git tag -a "$TAG" "$SOURCE_SHA" -m "AXV $TAG"
+git push origin "refs/tags/$TAG"
+git ls-remote origin "refs/tags/$TAG" "refs/tags/$TAG^{}"
+```
+
+The remote annotated tag must peel (`^{}`) to `SOURCE_SHA`; stop on a missing or different result. Repeat this remote check immediately before publication. [`gh release create --verify-tag`](https://cli.github.com/manual/gh_release_create) checks that the remote tag exists, not that it points to the reviewed commit. Without that flag, the CLI can create a missing tag from the default branch.
+
+Set `ARCHIVE` and `SUMS` to the preserved original files and `NOTES` to the reviewed notes file. Explicitly retain the draft and prerelease flags:
+
+```sh
+gh release create "$TAG" "$ARCHIVE" "$SUMS" \
+  --repo cofy-x/axv --verify-tag --draft --prerelease --latest=false \
+  --notes-file "$NOTES"
+```
+
+The [web interface](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository) is also suitable if the same checks are completed. Preserve filenames and all bundled license materials. An application-only draft needs exactly the archive and `SHA256SUMS`. GitHub's automatically generated source downloads are separate from these uploaded assets. Any additional assets must be explicitly reviewed before publication. [Each asset must be smaller than 2 GiB](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases#storage-and-bandwidth-quotas), meaning fewer than `2147483648` bytes; the limit is per file, not the combined release size.
+
+Inspect the draft through the authenticated Releases API and record its numeric release ID. Require the intended tag, `draft=true`, `prerelease=true` and an exact asset inventory. For each asset, record its numeric ID, filename, `state=uploaded`, byte count and `digest`; compare sizes and any supplied SHA-256 digest with the preserved originals. Use a maintainer identity that can access drafts; anonymous public download URLs do not establish draft readiness.
+
+Download each asset by its ID into a fresh inspection directory using the [asset API](https://docs.github.com/en/rest/releases/assets#get-a-release-asset), for example:
+
+```sh
+gh api -H 'Accept: application/octet-stream' \
+  "repos/cofy-x/axv/releases/assets/$ASSET_ID" > "$DOWNLOADED_FILE"
+```
+
+Require a successful download and compare **both** files with the originals using `cmp`; independently check their byte counts and SHA-256 values. Then run `sha256sum --check SHA256SUMS` in the download directory and repeat the installation/version smoke from those files. A matching archive against a modified manifest is insufficient. Re-read the draft inventory after inspection and stop if another writer changed it.
+
+### Publish and verify
+
+After the final asset, notes and remote-tag checks pass, [publish the draft](https://cli.github.com/manual/gh_release_edit) as a separate deliberate maintainer action:
+
+```sh
+gh release edit "$TAG" --repo cofy-x/axv --verify-tag \
+  --draft=false --prerelease --latest=false
+```
+
+Confirm `draft=false` and `immutable=true` through the release API. GitHub [locks the tag and assets on publication](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases); a draft remains editable until then. Verify the published release and each original file with [`gh release verify`](https://cli.github.com/manual/gh_release_verify) and [`gh release verify-asset`](https://cli.github.com/manual/gh_release_verify-asset):
+
+```sh
+gh release verify "$TAG" --repo cofy-x/axv
+gh release verify-asset "$TAG" "$ARCHIVE" --repo cofy-x/axv
+gh release verify-asset "$TAG" "$SUMS" --repo cofy-x/axv
+```
+
+Download both public assets into a new directory, compare them with the preserved originals, verify the checksum, and repeat installation/version smoke. Update README availability and versioned download links only after these checks pass. GitHub's release attestation binds the published tag, commit and assets; it does not attest which build workflow produced the candidate.
+
+If creation, upload or publication times out or fails, query the remote tag, release and asset state before retrying. Keep a failed review as a draft; repair partial or incorrect uploads there and repeat the complete asset checks. If a command actually published the release, use the published-release rules. Never move a published tag or replace its files: issue a new version for corrections, and describe the problem in the notes. Deleting an immutable release does not permit reuse of its tag name. Report failed post-publication verification and keep availability links pending; do not silently treat publication as success.
 
 ## VM image publication
 
@@ -78,6 +145,6 @@ This requires a clean checkout and matching clean guest-binary VCS metadata. The
 
 For implementation testing with uncommitted changes, add `--local`. This writes an explicitly `localOnly` candidate beneath this checkout's `.data/test/guest-candidate-*`; it is retained for inspection and cannot establish release readiness or an official catalog entry. Review and remove only that generated directory when finished. Dirty source metadata remains visible.
 
-Upload the reviewed disk and complete bundle alongside their checksum manifest to the same immutable prerelease. Preserve provider/architecture filenames, exported notices and the exact bundle used for native acceptance. Only after those downloads exist should a reviewed `artifacts.Official` entry bind the actual disk URL, digest and guest contract. Selecting a new default enhanced image remains an explicit product decision.
+Publish Guest artifacts through a separately reviewed draft prerelease with its own unused version and tag. Upload the reviewed disk, complete bundle, `candidate.json` and original `SHA256SUMS` before final review. Application and Guest candidates each use that checksum filename; keep their approved files in their respective releases. Do not append Guest assets to a published immutable application release. Preserve provider/architecture filenames, exported notices and the exact bundle used for native acceptance, and apply the same asset-size and download checks before publication. Only after those downloads exist should a reviewed `artifacts.Official` entry bind the actual disk URL, digest and guest contract. Selecting a new default enhanced image remains an explicit product decision.
 
 Publish only those provider/architecture artifacts that have passed their own checks. A reviewed versioned catalog entry must reference the actual immutable artifacts and digests. Update availability in the README and affected references only when the artifacts exist.

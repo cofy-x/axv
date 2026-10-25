@@ -10,6 +10,28 @@ AXV runs as the operating-system user that launches it, including root, without 
 
 ## Installation and updates
 
+### Install a release archive
+
+Published Linux amd64 prereleases are not available yet. Once a prerelease is published, use its release notes to select the exact version and read its validation scope, prerequisites and data-compatibility limits before updating. Download `axv_<version>_linux_amd64.tar.gz` and `SHA256SUMS` from that same release into a new, empty installation directory. Keep the original downloads and the extracted directory; do not overwrite an earlier installation.
+
+Replace the version placeholder below with the version from those release notes, then run these commands from the download directory. Extraction and execution only proceed after checksum verification succeeds:
+
+```bash
+axv_release_version='<version-from-release-notes>'
+axv_release_bundle="axv_${axv_release_version}_linux_amd64"
+sha256sum --check --strict SHA256SUMS &&
+  tar -xzf "${axv_release_bundle}.tar.gz" &&
+  "./${axv_release_bundle}/axv" version
+```
+
+Confirm that the reported version matches the selected release. Run that executable by its absolute path, or add its extracted directory to your `PATH` and check `command -v axv` before use. The production executable embeds its Web UI and requires neither Go nor Node at runtime. Coding-agent clients, tmux, VM providers, kernels and Guest images are separate prerequisites; the binary archive does not install them. See [daily commands](#daily-commands) for supervision requirements and foreground operation.
+
+For an isolated startup check, choose a new, independent `AXV_HOME` and run the extracted executable with `serve`; stop it with Ctrl+C before reviewing or removing that test profile. Maintainers should use a temporary installation and profile under this checkout's `.data/test` (or `AXV_TEST_TMPDIR`), following [test isolation](development.md#test-isolation-and-diagnostics). An archive install does not require `make install`, which builds a different executable from the checkout.
+
+If download, verification, extraction or startup fails, keep the earlier executable and profile, preserve the failed files for diagnosis, and leave running services on their existing version. Review the [storage baseline policy](storage.md#desktop-database-baseline) before using the new executable with an existing profile; selecting an earlier executable does not undo data changes.
+
+### Build from source
+
 From a checkout with the [pinned toolchain](../README.md#install-and-use):
 
 ```bash
@@ -21,7 +43,9 @@ axv
 
 Follow the printed PATH guidance if the directory is missing or another `axv` takes precedence. Installation does not edit shell startup files, initialize profiles, start services or prepare VMs. The installed command works outside the checkout and needs no Node at runtime. `make build` only creates `dist/axv`; `make deps` only installs build dependencies.
 
-Reinstalling replaces the global entry without interrupting live services. Both foreground and background desktops capture immutable executable copies under `AXV_HOME/bin` for their host and Codex children. Reopening with `axv` retains the current service version and settings. Use `axv daemon restart` to apply the installed desktop version; explicit stop/start updates both managed desktop and host services. Existing Codex runs keep their original executable and session identity.
+### Apply an installed update
+
+Replacing the installed command or selecting a new archive directory on `PATH` does not interrupt live services. Both foreground and background desktops capture immutable executable copies under `AXV_HOME/bin` for their host and Codex children. Reopening with `axv` retains the current service version and settings. Use `axv daemon restart` to apply the installed desktop version; explicit stop/start updates both managed desktop and host services. Existing Codex runs keep their original executable and session identity.
 
 ## Uninstallation
 
@@ -29,7 +53,7 @@ Use the same operating-system account and `AXV_HOME` as the workstation you inte
 
 1. Before stopping services, choose **End Session** for each [Codex run](usage.md#codex) you want to terminate, and stop the selected VMs in **Virtual Machines** or with `axv vm stop <name|id>`. If you also want to remove VM storage, use the normal machine and volume deletion controls while the host is available; review [project-volume retention](usage.md#virtual-machines) first.
 2. For managed background jobs, run `axv daemon stop` for this profile. Stop a foreground `axv serve` in its launching terminal with Ctrl+C. Daemon shutdown retains independent Codex runs, VMs and project volumes; an administrator-managed Linux host service requires its own supervisor action. Confirm the intended services have stopped before removing their executable or data.
-3. Remove only the installed `axv` executable (`axv.exe` on Windows) at the destination printed by `make install`. In a POSIX shell, `command -v axv` helps check which entry is on `PATH`; review that path before removing it. Keep the containing Go binary directory and its other programs.
+3. Remove only the installed `axv` executable (`axv.exe` on Windows). For a source installation, use the destination printed by `make install`; for an archive installation, use the extracted version directory you selected and remove its `PATH` entry if added. In a POSIX shell, `command -v axv` helps check which entry is on `PATH`; review that path before removing it. Keep the containing binary directory and its other programs.
 
 Removing the installed command leaves profile configuration, documents, default workspace, VM storage, logs and fixed executable copies in place. Reinstallation can reuse retained state under the [baseline policy](storage.md#desktop-database-baseline). For optional data cleanup, back up wanted content, stop all affected writers and review the [resolved profile and storage paths](#configuration-and-storage) before selectively removing resources. Existing host projects, provider-owned credentials/history and unrelated tmux sessions remain outside this cleanup; keep run ownership records until their processes have stopped.
 
