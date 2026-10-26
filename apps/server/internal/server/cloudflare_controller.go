@@ -6,31 +6,19 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/cofy-x/axv/apps/server/internal/cloudflare"
+	"github.com/cofy-x/axv/apps/server/internal/cloudflare/desktop"
+	"github.com/cofy-x/axv/apps/server/internal/cloudflare/management"
+	"github.com/cofy-x/axv/apps/server/internal/cloudflare/policy"
 	"github.com/cofy-x/axv/apps/server/internal/diagnostics"
 	"github.com/cofy-x/axv/apps/server/internal/profile"
 )
 
 type cloudflareService interface {
-	Status() cloudflare.Status
+	Status() desktop.Status
 	Close() error
 }
 
-type cloudflareStarter func(context.Context, profile.Cloudflare) (cloudflareService, error)
-
-type cloudflareSnapshot struct {
-	Enabled    bool `json:"enabled"`
-	Configured bool `json:"configured"`
-	cloudflare.Status
-}
-
-type cloudflareControlError struct {
-	status  int
-	code    string
-	message string
-}
-
-func (e *cloudflareControlError) Error() string { return e.message }
+type cloudflareStarter func(context.Context, policy.Configuration) (cloudflareService, error)
 
 // cloudflareController owns one authenticated ingress, not the external tunnel
 // process. Transitions preserve shared services and close the old entrypoint
@@ -47,14 +35,14 @@ type cloudflareController struct {
 	configured     bool
 	closed         bool
 	service        cloudflareService
-	fallback       cloudflare.Status
+	fallback       desktop.Status
 	closing        bool
 	closeErr       error
 }
 
 func newCloudflareController(ctx context.Context, home string, handler http.Handler, validateOrigin func(string) error) *cloudflareController {
-	return newCloudflareControllerGuarded(ctx, home, func(ctx context.Context, settings profile.Cloudflare) (cloudflareService, error) {
-		return cloudflare.Start(ctx, cloudflare.Options{
+	return newCloudflareControllerGuarded(ctx, home, func(ctx context.Context, settings policy.Configuration) (cloudflareService, error) {
+		return desktop.Start(ctx, desktop.Options{
 			Listen: settings.Listen, Origin: settings.Origin, Issuer: settings.Issuer,
 			Audience: settings.Audience, OwnerSubject: settings.OwnerSubject, Handler: handler,
 			AllowRoute: remoteRoute, LocalOnlyRoute: remoteLocalOnlyRoute,
@@ -67,11 +55,11 @@ func newCloudflareControllerWithStarter(ctx context.Context, home string, start 
 }
 
 func newCloudflareControllerGuarded(ctx context.Context, home string, start cloudflareStarter, validateOrigin func(string) error) *cloudflareController {
-	c := &cloudflareController{ctx: ctx, home: home, start: start, validateOrigin: validateOrigin, fallback: cloudflare.Status{State: "disabled"}}
+	c := &cloudflareController{ctx: ctx, home: home, start: start, validateOrigin: validateOrigin, fallback: desktop.Status{State: "disabled"}}
 	settings, err := profile.ReadCloudflare(home)
 	c.enabled = settings.Enabled
 	if err != nil {
-		c.fallback = cloudflare.Status{State: "error", Error: "Cloudflare configuration: " + err.Error()}
+		c.fallback = desktop.Status{State: "error", Error: "Cloudflare configuration: " + err.Error()}
 		diagnostics.FromContext(ctx).Error("cloudflare.config_failed", err)
 		return c
 	}
@@ -83,12 +71,12 @@ func newCloudflareControllerGuarded(ctx context.Context, home string, start clou
 	return c
 }
 
-func configuredCloudflare(settings profile.Cloudflare) bool {
+func configuredCloudflare(settings policy.Configuration) bool {
 	settings.Enabled = true
-	return profile.ValidateCloudflare(settings) == nil
+	return policy.Validate(settings) == nil
 }
 
-func (c *cloudflareController) Status() cloudflareSnapshot {
+func (c *cloudflareController) Status() desktop.Snapshot {
 	c.mu.Lock()
 	status := c.fallback
 	enabled, configured := c.enabled, c.configured
@@ -105,20 +93,20 @@ func (c *cloudflareController) Status() cloudflareSnapshot {
 		settings, err := profile.ReadCloudflare(c.home)
 		configured = err == nil && configuredCloudflare(settings)
 		if err != nil {
-			status = cloudflare.Status{State: "error", Error: "Cloudflare configuration: " + err.Error()}
+			status = desktop.Status{State: "error", Error: "Cloudflare configuration: " + err.Error()}
 		} else if projectDisabled {
-			status = cloudflare.Status{State: "disabled", Listen: settings.Listen}
+			status = desktop.Status{State: "disabled", Listen: settings.Listen}
 		} else {
 			status.Listen = settings.Listen
 		}
 	}
-	return cloudflareSnapshot{Enabled: enabled, Configured: configured, Status: status}
+	return desktop.Snapshot{Enabled: enabled, Configured: configured, Status: status}
 }
 
-func (c *cloudflareController) startIngress(settings profile.Cloudflare) {
+func (c *cloudflareController) startIngress(settings policy.Configuration) {
 	c.mu.Lock()
 	c.boundOrigin = settings.Origin
-	c.fallback = cloudflare.Status{State: "starting", Listen: settings.Listen}
+	c.fallback = desktop.Status{State: "starting", Listen: settings.Listen}
 	c.mu.Unlock()
 	var service cloudflareService
 	var err error
@@ -131,7 +119,7 @@ func (c *cloudflareController) startIngress(settings profile.Cloudflare) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err != nil {
-		c.fallback = cloudflare.Status{State: "error", Listen: settings.Listen, Error: "Cloudflare ingress: " + err.Error()}
+		c.fallback = desktop.Status{State: "error", Listen: settings.Listen, Error: "Cloudflare ingress: " + err.Error()}
 		diagnostics.FromContext(c.ctx).Error("cloudflare.start_failed", err)
 		return
 	}
@@ -146,6 +134,23 @@ func (c *cloudflareController) BoundOrigin() string {
 	return c.boundOrigin
 }
 
+// ChangeConfiguration holds the same operation boundary as enable, disable and
+// shutdown through the complete profile read/check/save transaction.
+func (c *cloudflareController) ChangeConfiguration(ctx context.Context, change func(management.DesktopState) error) error {
+	c.op.Lock()
+	defer c.op.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	state := management.DesktopState{
+		Active:   c.enabled || c.service != nil || c.closing || c.closeErr != nil,
+		Stopping: c.closed || c.ctx.Err() != nil,
+	}
+	c.mu.Unlock()
+	return change(state)
+}
+
 func (c *cloudflareController) SetEnabled(ctx context.Context, enabled bool) error {
 	c.op.Lock()
 	defer c.op.Unlock()
@@ -156,20 +161,20 @@ func (c *cloudflareController) SetEnabled(ctx context.Context, enabled bool) err
 	closed, closeErr := c.closed || c.ctx.Err() != nil, c.closeErr
 	c.mu.Unlock()
 	if closed {
-		return &cloudflareControlError{http.StatusServiceUnavailable, "cloudflare_stopping", "AXV is stopping. Reopen AXV before changing Cloudflare access."}
+		return &management.Problem{Code: "cloudflare_stopping", Message: "AXV is stopping. Reopen AXV before changing Cloudflare access."}
 	}
 	if closeErr != nil {
-		return &cloudflareControlError{http.StatusConflict, "cloudflare_close_failed", "The previous Cloudflare ingress could not close cleanly. Restart AXV before changing access."}
+		return &management.Problem{Code: "cloudflare_close_failed", Message: "The previous Cloudflare ingress could not close cleanly. Restart AXV before changing access."}
 	}
 	lock, err := profile.Lock(c.home)
 	if err != nil {
-		return &cloudflareControlError{http.StatusConflict, "cloudflare_config_busy", "The AXV profile could not be locked. Retry after other configuration changes finish."}
+		return &management.Problem{Code: "cloudflare_config_busy", Message: "The AXV profile could not be locked. Retry after other configuration changes finish."}
 	}
 	settings, err := profile.SaveCloudflareEnabled(c.home, enabled)
 	lockErr := lock.Close()
 	if err != nil {
 		diagnostics.FromContext(c.ctx).Error("cloudflare.config_failed", err)
-		return &cloudflareControlError{http.StatusInternalServerError, "cloudflare_config_failed", "Could not save Cloudflare access settings. Check the local configuration; the connection was not changed."}
+		return &management.Problem{Code: "cloudflare_config_failed", Message: "Could not save Cloudflare access settings. Check the local configuration; the connection was not changed."}
 	}
 	if lockErr != nil {
 		diagnostics.FromContext(c.ctx).Error("cloudflare.config_unlock_failed", lockErr)
@@ -187,22 +192,22 @@ func (c *cloudflareController) SetEnabled(ctx context.Context, enabled bool) err
 		}
 	}
 	c.closing = service != nil
-	c.fallback = cloudflare.Status{State: "stopped", Listen: settings.Listen}
+	c.fallback = desktop.Status{State: "stopped", Listen: settings.Listen}
 	c.mu.Unlock()
 	if service != nil {
 		if err := service.Close(); err != nil {
 			c.mu.Lock()
 			c.closeErr = err
-			c.fallback = cloudflare.Status{State: "error", Listen: settings.Listen, Error: "The previous Cloudflare ingress could not close cleanly. Restart AXV before enabling it again."}
+			c.fallback = desktop.Status{State: "error", Listen: settings.Listen, Error: "The previous Cloudflare ingress could not close cleanly. Restart AXV before enabling it again."}
 			c.mu.Unlock()
 			diagnostics.FromContext(c.ctx).Error("cloudflare.close_failed", err)
-			return &cloudflareControlError{http.StatusConflict, "cloudflare_close_failed", "The previous Cloudflare ingress could not close cleanly. Restart AXV before changing access."}
+			return &management.Problem{Code: "cloudflare_close_failed", Message: "The previous Cloudflare ingress could not close cleanly. Restart AXV before changing access."}
 		}
 	}
 	c.mu.Lock()
 	c.service, c.closing = nil, false
 	c.boundOrigin = ""
-	c.fallback = cloudflare.Status{State: "disabled", Listen: settings.Listen}
+	c.fallback = desktop.Status{State: "disabled", Listen: settings.Listen}
 	c.mu.Unlock()
 	if enabled {
 		c.startIngress(settings)

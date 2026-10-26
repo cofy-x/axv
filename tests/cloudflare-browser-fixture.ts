@@ -122,7 +122,7 @@ async function launchFixture(): Promise<{
         'build',
         '-o',
         executable,
-        './apps/server/internal/cloudflarepublish/testdata/browserfixture',
+        './apps/server/internal/cloudflare/publish/testdata/browserfixture',
       ],
       { cwd: root, env: environment, timeout: 120_000, maxBuffer: 1024 * 1024 },
     );

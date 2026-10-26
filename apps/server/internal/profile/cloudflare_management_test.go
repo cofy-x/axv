@@ -5,8 +5,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"github.com/cofy-x/axv/apps/server/internal/cloudflare/policy"
 )
 
 func TestCloudflareConfigurationPreservesOwnersAndRejectsStaleSaves(t *testing.T) {
@@ -20,7 +21,7 @@ func TestCloudflareConfigurationPreservesOwnersAndRejectsStaleSaves(t *testing.T
 		t.Fatal(err)
 	}
 	settings.Origin = "https://axv.example.com"
-	settings.Management = CloudflareManagement{APIToken: "secret-token", AccountID: "account", ZoneID: "zone", TunnelID: "tunnel", Domain: "example.net", Listen: DefaultCloudflareManagementListen}
+	settings.Management = policy.Account{APIToken: "secret-token", AccountID: "account", ZoneID: "zone", TunnelID: "tunnel", Domain: "example.net", Listen: policy.DefaultPublishListen}
 	lock, err := Lock(home)
 	if err != nil {
 		t.Fatal(err)
@@ -67,11 +68,6 @@ func TestCloudflareSettingsCannotReplaceEnabledIdentity(t *testing.T) {
 }
 
 func TestCloudflareManagementValidation(t *testing.T) {
-	for _, c := range []CloudflareManagement{{Domain: "localhost"}, {Domain: "apps.example.com/path"}, {APIToken: "secret\nvalue"}, {Listen: "0.0.0.0:3003"}, {Audience: "two words"}} {
-		if ValidateCloudflareManagement(c) == nil {
-			t.Fatal("accepted invalid management configuration")
-		}
-	}
 	home := t.TempDir()
 	for _, raw := range []string{`null`, `{"runtime_version":999}`, `{"cloudflare":null}`, `{"cloudflare":{"management":null}}`, `{"cloudflare":[]} {}`} {
 		if err := os.WriteFile(filepath.Join(home, "config.json"), []byte(raw), 0600); err != nil {
@@ -80,18 +76,5 @@ func TestCloudflareManagementValidation(t *testing.T) {
 		if _, _, err := ReadCloudflareConfiguration(home); err == nil {
 			t.Fatalf("accepted invalid settings: %s", raw)
 		}
-	}
-}
-
-func TestCloudflareResourceIdentifiersMatchProviderClient(t *testing.T) {
-	for _, identifier := range []string{"account/other", "cloud☁", "../account", "account?id=x", strings.Repeat("a", 129)} {
-		for _, settings := range []CloudflareManagement{{AccountID: identifier}, {ZoneID: identifier}, {TunnelID: identifier}} {
-			if ValidateCloudflareManagement(settings) == nil {
-				t.Fatalf("accepted unusable provider resource ID %q", identifier)
-			}
-		}
-	}
-	if err := ValidateCloudflareManagement(CloudflareManagement{AccountID: "account-1_scoped", ZoneID: strings.Repeat("f", 32), TunnelID: "f70ff985-a4ef-4643-bbbc-4a0ed4fc8415"}); err != nil {
-		t.Fatalf("rejected usable provider resource IDs: %v", err)
 	}
 }

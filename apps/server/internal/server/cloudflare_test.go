@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	cfhttpapi "github.com/cofy-x/axv/apps/server/internal/cloudflare/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/codex"
 	codexhttp "github.com/cofy-x/axv/apps/server/internal/codex/httpapi"
 	computegateway "github.com/cofy-x/axv/apps/server/internal/compute/gateway"
@@ -45,7 +46,7 @@ func TestCloudflareControlsRequireRawLocalAccessAndExactOrigin(t *testing.T) {
 			}
 		}
 		w := httptest.NewRecorder()
-		cloudflareSettingsHandler(c).ServeHTTP(w, r)
+		cfhttpapi.DesktopSettings(c).ServeHTTP(w, r)
 		if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "cloudflare_local_only") || len(*services) != 0 {
 			t.Fatalf("remote control bypassed local identity: %d %s", w.Code, w.Body.String())
 		}
@@ -55,7 +56,7 @@ func TestCloudflareControlsRequireRawLocalAccessAndExactOrigin(t *testing.T) {
 		r.RemoteAddr = "127.0.0.1:1234"
 		r.Header.Set("Origin", "http://localhost:3001")
 		w := httptest.NewRecorder()
-		cloudflareSettingsHandler(c).ServeHTTP(w, r)
+		cfhttpapi.DesktopSettings(c).ServeHTTP(w, r)
 		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_cloudflare_request") || len(*services) != 0 {
 			t.Fatalf("ambiguous body mutated ingress: %q: %d %s", body, w.Code, w.Body.String())
 		}
@@ -79,9 +80,9 @@ func TestCloudflareLocalStatusAndSwitchNeverExposeAccessIdentity(t *testing.T) {
 		}
 		w := httptest.NewRecorder()
 		if method == http.MethodGet {
-			cloudflareStatusHandler("instance-cf", c.Status).ServeHTTP(w, r)
+			cfhttpapi.DesktopStatus("instance-cf", c.Status).ServeHTTP(w, r)
 		} else {
-			cloudflareSettingsHandler(c).ServeHTTP(w, r)
+			cfhttpapi.DesktopSettings(c).ServeHTTP(w, r)
 		}
 		return w
 	}
@@ -144,8 +145,8 @@ func TestAuthenticatedCloudflareContextSharesFeaturesAndRetainsLocalBoundaries(t
 	application.Handle("/api/compute/", gateway)
 	application.Handle("/api/compute/preparation/", preparehttp.Unavailable("desktop-test", errors.New("fixture unavailable")))
 	c, _, _ := cloudflareControllerFixture(t)
-	application.Handle("GET /api/cloudflare/status", cloudflareStatusHandler("desktop-test", c.Status))
-	application.Handle("PUT /api/cloudflare", cloudflareSettingsHandler(c))
+	application.Handle("GET /api/cloudflare/status", cfhttpapi.DesktopStatus("desktop-test", c.Status))
+	application.Handle("PUT /api/cloudflare", cfhttpapi.DesktopSettings(c))
 	application.Handle("GET /api/remote/status", remoteStatusHandler("desktop-test", func() remoteSnapshot {
 		t.Fatal("tunnel request reached local remote status")
 		return remoteSnapshot{}
