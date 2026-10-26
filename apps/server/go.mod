@@ -7,17 +7,17 @@ require (
 	github.com/coder/websocket v1.8.15
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/creack/pty v1.1.25-0.20260601142114-9246436fffe8
-	github.com/go-jose/go-jose/v4 v4.1.4
+	github.com/go-jose/go-jose/v4 v4.1.6
 	github.com/mattn/go-isatty v0.0.24
 	github.com/mdlayher/vsock v1.3.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	golang.org/x/crypto v0.58.0
-	golang.org/x/net v0.60.0
+	golang.org/x/net v0.61.0
 	golang.org/x/sync v0.24.0
 	golang.org/x/sys v0.49.0
-	modernc.org/sqlite v1.60.1
-	tailscale.com v1.104.1
+	modernc.org/sqlite v1.61.0
+	tailscale.com v1.104.2
 )
 
 require (
@@ -26,7 +26,7 @@ require (
 	github.com/alexbrainman/sspi v0.0.0-20250919150558-7d374ff0d59e // indirect
 	github.com/creachadair/msync v0.10.1 // indirect
 	github.com/dblohm7/wingoes v0.0.0-20260526185140-fb298caac7ca // indirect
-	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.3 // indirect
 	github.com/gaissmai/bart v0.29.0 // indirect
 	github.com/go-json-experiment/json v0.0.0-20260820222146-c27c302e5fc3 // indirect
@@ -43,7 +43,7 @@ require (
 	github.com/mdlayher/netlink v1.11.2 // indirect
 	github.com/mdlayher/socket v0.7.0 // indirect
 	github.com/mitchellh/go-ps v1.0.0 // indirect
-	github.com/ncruces/go-strftime v1.0.0 // indirect
+	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/pires/go-proxyproto v0.15.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/safchain/ethtool v0.7.0 // indirect
@@ -64,7 +64,7 @@ require (
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 	golang.zx2c4.com/wireguard/windows v1.0.1 // indirect
 	gvisor.dev/gvisor v0.0.0-20260915211658-a6f909f08a72 // indirect
-	modernc.org/libc v1.77.1 // indirect
+	modernc.org/libc v1.79.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
