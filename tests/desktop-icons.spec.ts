@@ -138,6 +138,26 @@ async function dragBy(page: Page, icon: Locator, dx: number, dy: number) {
   await page.mouse.up();
 }
 
+async function expectIconContentsFit(icon: Locator) {
+  const frame = await bounds(icon);
+  const artwork = await bounds(icon.locator(':scope > .ns-pixel-icon'));
+  expect(artwork.height).toBe(artwork.width);
+  let previousBottom = artwork.y + artwork.height;
+  for (const content of await icon
+    .locator('.ns-desktop-icon-label, .ns-desktop-icon-status')
+    .all()) {
+    const box = await bounds(content);
+    expect(box.y).toBeGreaterThanOrEqual(previousBottom);
+    expect(box.y + box.height).toBeLessThanOrEqual(frame.y + frame.height);
+    expect(
+      await content.evaluate(
+        (element) => element.scrollHeight <= element.clientHeight,
+      ),
+    ).toBe(true);
+    previousBottom = box.y + box.height;
+  }
+}
+
 async function expectIconsInArea(page: Page) {
   await expect
     .poll(async () => {
@@ -147,7 +167,7 @@ async function expectIconsInArea(page: Page) {
       return box.x + box.width;
     })
     .toBe(
-      page.viewportSize()!.width - (page.viewportSize()!.width < 600 ? 8 : 80),
+      page.viewportSize()!.width - (page.viewportSize()!.width < 600 ? 8 : 72),
     );
   const area = await bounds(page.getByRole('group', { name: 'Desktop icons' }));
   const icons = await page.locator('[data-icon-id]').evaluateAll((elements) =>
@@ -192,6 +212,8 @@ test('VM desktop icons retain identity, expose status and stay outside document 
   });
   await expect(launcher).toBeVisible();
   await expect(icon).toBeVisible();
+  await expectIconContentsFit(launcher);
+  await expectIconContentsFit(icon);
   expect(state.preparationReads).toBe(0);
   await icon.click({ button: 'right' });
   await expect(menuItem(page, 'Open')).toBeVisible();
@@ -237,18 +259,14 @@ test('VM desktop icons retain identity, expose status and stay outside document 
   });
   await expect(renamed).toBeVisible();
   await expect(renamed).toHaveAttribute('data-icon-id', id);
+  await expectIconContentsFit(renamed);
   expect((await bounds(renamed)).x).toBe(position.x);
   expect(state.infoReads).toBe(1);
   await captureWorkArea(page, info, 'vm-desktop-wide');
   await page.setViewportSize({ width: 390, height: 844 });
   await renamed.scrollIntoViewIfNeeded();
   await expect(renamed).toBeInViewport();
-  const status = renamed.locator('.ns-desktop-icon-status');
-  expect(
-    (await bounds(status)).y + (await bounds(status)).height,
-  ).toBeLessThanOrEqual(
-    (await bounds(renamed)).y + (await bounds(renamed)).height,
-  );
+  await expectIconContentsFit(renamed);
   await captureWorkArea(page, info, 'vm-desktop-narrow');
   state.offline = true;
   await expect(

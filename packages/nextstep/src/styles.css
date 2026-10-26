@@ -186,19 +186,19 @@ select:disabled {
   height: var(--ns-icon-height);
   pointer-events: auto;
   border: 0;
-  padding: 4px;
+  padding: 3px 4px;
   display: flex;
   align-items: center;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
   background: transparent;
   color: #fff;
   touch-action: none;
   text-align: center;
 }
 .ns-desktop-icon > .ns-pixel-icon {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   filter: drop-shadow(1px 1px #333);
 }
 .ns-desktop-icon-label {
@@ -220,6 +220,7 @@ select:disabled {
   text-shadow: none;
 }
 .ns-desktop-icon.has-status {
+  padding-block: 2px;
   gap: 2px;
 }
 .ns-desktop-icon.has-status > .ns-pixel-icon {
@@ -438,7 +439,7 @@ select:disabled {
   z-index: 760;
   top: 40px;
   right: 8px;
-  width: 64px;
+  width: var(--ns-dock-size);
   max-height: calc(100% - 48px);
   overflow-y: auto;
   overflow-x: hidden;
@@ -450,13 +451,14 @@ select:disabled {
 .ns-dock-entry {
   position: relative;
   flex-shrink: 0;
-  width: 64px;
-  height: 64px;
+  width: var(--ns-dock-size);
+  height: var(--ns-dock-size);
 }
 .ns-dock-tile {
   position: relative;
-  width: 64px;
-  height: 64px;
+  flex-shrink: 0;
+  width: var(--ns-dock-size);
+  height: var(--ns-dock-size);
   border: 1px solid #111;
   background: #aaa;
   box-shadow:
@@ -474,7 +476,7 @@ select:disabled {
 }
 .ns-dock-tile > .ns-pixel-icon {
   position: absolute;
-  top: 4px;
+  top: 2px;
   left: 50%;
   transform: translateX(-50%);
 }
@@ -526,6 +528,7 @@ select:disabled {
   opacity: 0.55;
 }
 .ns-dock-add {
+  flex-shrink: 0;
   height: 23px;
   background: #aaa;
   border: 1px solid #111;
@@ -547,8 +550,8 @@ select:disabled {
 }
 .ns-clock strong {
   font-family: var(--ns-mono);
-  font-size: 27px;
-  line-height: 31px;
+  font-size: 23px;
+  line-height: 25px;
 }
 .ns-clock time {
   font-size: 10px;
@@ -559,7 +562,7 @@ select:disabled {
   z-index: 750;
   bottom: 6px;
   left: 8px;
-  right: 82px;
+  right: calc(var(--ns-dock-size) + 18px);
   display: flex;
   gap: 6px;
   height: 64px;
@@ -1311,10 +1314,10 @@ select:disabled {
   left: 0;
   right: 0;
   width: 100%;
-  height: 68px;
+  height: calc(var(--ns-dock-size) + 4px);
   max-height: none;
   flex-direction: row;
-  padding: 2px;
+  padding: 1px 2px 2px;
   overflow-x: auto;
   overflow-y: hidden;
   background: #3d4247;
@@ -1327,11 +1330,11 @@ select:disabled {
   touch-action: pan-x;
 }
 .is-mobile .ns-dock-add {
-  height: 64px;
+  height: var(--ns-dock-size);
   min-width: 24px;
 }
 .is-mobile .ns-miniwindow-shelf {
-  bottom: 74px;
+  bottom: calc(var(--ns-dock-size) + 10px);
   left: 4px;
   right: 4px;
 }
@@ -1417,14 +1420,14 @@ select:disabled {
   display: none;
 }
 .is-short.has-side-dock .ns-application-menu {
-  right: 82px;
+  right: calc(var(--ns-dock-size) + 18px);
 }
 .is-short.has-side-dock .ns-dock {
   top: 30px;
   bottom: 4px;
   left: auto;
   right: 8px;
-  width: 64px;
+  width: var(--ns-dock-size);
   height: auto;
   max-height: calc(100% - 34px);
   flex-direction: column;
@@ -1441,14 +1444,14 @@ select:disabled {
   flex-shrink: 0;
 }
 .is-short.has-side-dock .ns-dock-add {
-  width: 64px;
+  width: var(--ns-dock-size);
   height: 32px;
   min-height: 32px;
 }
 .is-short.has-side-dock .ns-miniwindow-shelf {
   bottom: 6px;
   left: 4px;
-  right: 82px;
+  right: calc(var(--ns-dock-size) + 18px);
 }
 .is-short .ns-recovery {
   top: 64px;
@@ -1465,8 +1468,9 @@ select:disabled {
     height: 20px;
   }
   .ns-dock-tile > .ns-pixel-icon {
-    width: 36px;
-    height: 36px;
+    top: 1px;
+    width: 32px;
+    height: 32px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

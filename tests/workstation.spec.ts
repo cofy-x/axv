@@ -58,7 +58,7 @@ test('short desktops preserve application space, shell commands and saved geomet
     .toEqual({
       x: 4,
       y: 64,
-      width: 488,
+      width: 496,
       height: 248,
     });
   const dock = page.getByRole('complementary', { name: 'Application Dock' });
@@ -169,7 +169,7 @@ test('short desktops preserve application space, shell commands and saved geomet
   await activate(page, filesWindow(page));
   await expect
     .poll(() => bounds(filesWindow(page)))
-    .toEqual({ x: 4, y: 64, width: 488, height: 172 });
+    .toEqual({ x: 4, y: 64, width: 496, height: 172 });
   const miniature = page.getByRole('button', {
     name: `Restore ${title}`,
     exact: true,
@@ -178,7 +178,7 @@ test('short desktops preserve application space, shell commands and saved geomet
   await choose(miniature);
   await expect
     .poll(() => bounds(note))
-    .toEqual({ x: 4, y: 64, width: 488, height: 248 });
+    .toEqual({ x: 4, y: 64, width: 496, height: 248 });
   for (const viewport of [
     { width: 390, height: 320 },
     { width: 320, height: 260 },
@@ -191,7 +191,7 @@ test('short desktops preserve application space, shell commands and saved geomet
         x: 4,
         y: 64,
         width: viewport.width - 8,
-        height: viewport.height - 136,
+        height: viewport.height - 128,
       });
     await expect(
       note.getByRole('button', { name: /^Close / }),

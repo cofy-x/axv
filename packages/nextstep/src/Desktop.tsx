@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { CSSProperties } from 'react';
 import { PixelIcon } from './controls';
 import {
+  DOCK_SIZE,
   ICON_SIZE,
   desktopLayoutMode,
   iconWorkArea,
@@ -126,6 +127,7 @@ export function Desktop(props: DesktopProps) {
       style={
         {
           '--ns-viewport-height': `${viewport.height}px`,
+          '--ns-dock-size': `${DOCK_SIZE}px`,
           '--ns-icon-width': `${ICON_SIZE.width}px`,
           '--ns-icon-height': `${ICON_SIZE.height}px`,
         } as CSSProperties
@@ -150,7 +152,8 @@ export function Desktop(props: DesktopProps) {
             aria-label="Show all windows"
             title="Switch windows: Ctrl+F6"
           >
-            {layout.windows.length} windows
+            {layout.windows.length}{' '}
+            {layout.windows.length === 1 ? 'window' : 'windows'}
           </button>
           <span
             className={`ns-connection ${props.connectionStatus ?? 'connected'}`}

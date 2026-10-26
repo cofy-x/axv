@@ -205,13 +205,13 @@ describe('dynamic window work areas', () => {
     expect(windowWorkArea(viewport, false)).toEqual({
       x: 4,
       y: 28,
-      width: 944,
+      width: 952,
       height: 732,
     });
     expect(windowWorkArea(viewport, true)).toEqual({
       x: 4,
       y: 28,
-      width: 944,
+      width: 952,
       height: 656,
     });
   });
@@ -222,13 +222,13 @@ describe('dynamic window work areas', () => {
       x: 4,
       y: 90,
       width: 382,
-      height: 682,
+      height: 690,
     });
     expect(windowWorkArea(mobile, true)).toEqual({
       x: 4,
       y: 90,
       width: 382,
-      height: 606,
+      height: 614,
     });
   });
 
@@ -237,22 +237,22 @@ describe('dynamic window work areas', () => {
       {
         viewport: { width: 568, height: 320 },
         sideDock: true,
-        area: { x: 4, y: 64, width: 488, height: 248 },
+        area: { x: 4, y: 64, width: 496, height: 248 },
       },
       {
         viewport: { width: 844, height: 390 },
         sideDock: true,
-        area: { x: 4, y: 64, width: 764, height: 318 },
+        area: { x: 4, y: 64, width: 772, height: 318 },
       },
       {
         viewport: { width: 390, height: 320 },
         sideDock: false,
-        area: { x: 4, y: 64, width: 382, height: 184 },
+        area: { x: 4, y: 64, width: 382, height: 192 },
       },
       {
         viewport: { width: 320, height: 260 },
         sideDock: false,
-        area: { x: 4, y: 64, width: 312, height: 124 },
+        area: { x: 4, y: 64, width: 312, height: 132 },
       },
     ]) {
       expect(desktopLayoutMode(viewport)).toMatchObject({
@@ -423,7 +423,7 @@ describe('desktop selection', () => {
         expect(points[0].y).toBe(area.y);
         expect(area.y).toBeGreaterThanOrEqual(viewport.width < 600 ? 90 : 26);
         expect(area.x + area.width).toBe(
-          viewport.width - (viewport.width < 600 ? 8 : 80),
+          viewport.width - (viewport.width < 600 ? 8 : 72),
         );
         for (const point of points) {
           expect(point.x).toBeGreaterThanOrEqual(area.x);
@@ -447,6 +447,29 @@ describe('desktop selection', () => {
       new Set(Object.values(fitted.positions).map((p) => `${p.x},${p.y}`)).size,
     ).toBe(ids.length);
     expect(fitDesktopIcons(ids, saved, wide).positions).toEqual(before);
+    expect(saved).toEqual(before);
+  });
+  it('keeps saved wider-spaced positions when adding launchers to the compact grid', () => {
+    const saved = {
+      first: { x: 1112, y: 40 },
+      second: { x: 1112, y: 124 },
+    };
+    const before = structuredClone(saved);
+    const area = iconWorkArea({ width: 1280, height: 720 }, false);
+    const { positions } = fitDesktopIcons(
+      ['first', 'second', 'new'],
+      saved,
+      area,
+    );
+    expect(positions.first).toEqual(before.first);
+    expect(positions.second).toEqual(before.second);
+    for (const point of Object.values(saved))
+      expect(
+        intersects(
+          { ...point, ...ICON_SIZE },
+          { ...positions.new, ...ICON_SIZE },
+        ),
+      ).toBe(false);
     expect(saved).toEqual(before);
   });
   it('keeps unmodified default positions while moving one icon and makes overflow scrollable', () => {
