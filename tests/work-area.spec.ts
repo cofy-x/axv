@@ -11,7 +11,7 @@ import {
 } from './helpers';
 import { captureWorkArea, expectRect, rect } from './work-area-helpers';
 
-const fullArea = { x: 4, y: 28, width: 1360, height: 864 };
+const fullArea = { x: 4, y: 28, width: 1368, height: 864 };
 const reservedArea = { ...fullArea, height: 788 };
 
 async function dragBy(page: Page, window: Locator, dx: number, dy: number) {
@@ -41,7 +41,7 @@ test('work area keeps drag, resize and maximize edges consistent without changin
   );
   await expectRect(files, {
     ...initial,
-    x: 1364 - initial.width,
+    x: 1372 - initial.width,
     y: 892 - initial.height,
   });
   const atEdge = await bounds(files);
@@ -56,7 +56,7 @@ test('work area keeps drag, resize and maximize edges consistent without changin
   await page.mouse.move(1438, 898, { steps: 8 });
   await page.mouse.up();
   // Resizing a lower edge must preserve the opposite top and left edges.
-  const normal = { x: 60, y: 120, width: 1304, height: 772 };
+  const normal = { x: 60, y: 120, width: 1312, height: 772 };
   await expectRect(files, normal);
   const savedFiles = async () =>
     (await persistedLayout(page, request))?.windows.find(
@@ -111,7 +111,7 @@ test('work area keeps drag, resize and maximize edges consistent without changin
   await activate(page, files);
   await expectRect(files, normal);
   await page.setViewportSize({ width: 390, height: 844 });
-  await expectRect(files, { x: 4, y: 90, width: 382, height: 682 });
+  await expectRect(files, { x: 4, y: 90, width: 382, height: 690 });
   await expect(files.getByRole('button', { name: /^Close / })).toBeInViewport();
   await page.setViewportSize({ width: 1440, height: 900 });
   await expectRect(files, normal);
