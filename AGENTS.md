@@ -4,14 +4,12 @@ AXV is a personal cloud workstation for VM management and coding-agent sessions.
 
 ## Choose context before editing
 
-Read [project status](README.md#project-status), then use the [task map](docs/README.md#read-by-task) to select the affected reference and any additional context. Do not read every feature reference by default.
-
-Before application changes, read the [ownership overview](docs/architecture.md#ownership-and-dependencies). Documentation-only changes follow the affected owner's links and verify changed claims against implementation. The map owns reading paths and [documentation maintenance](docs/README.md#maintain-the-map).
+Follow the [context workflow](docs/README.md#choose-context) for project orientation, feature work or documentation-only changes. It selects the required overview, affected owner, implementation entry points and checks. Limit reading to the relevant sections.
 
 ## Repository rules
 
 - Use **AXV** for the product and `axv` for executable and project identifiers. [Product identity](docs/product.md#identity) owns branding and stable package descriptions. Preserve `packages/nextstep`, `@cofy-x/axv-nextstep` and existing internal identifiers; do not rename them solely for branding.
-- Update facts in their [owning document](docs/README.md#content-ownership); link to details instead of copying them.
+- Update facts in their [owning document](docs/README.md#content-ownership); link to details instead of copying them. Keep reading paths and documentation maintenance in the map.
 - Use pinned toolchains; keep `.go-version`, `.node-version`, `.nvmrc`, `package.json`, `go.work`, Go module files, README and lockfiles consistent when upgrading.
 - Use English in code, comments and the default interface. Draw original generic assets; record third-party sources and licenses before reuse.
 - Review current provider documentation when implementing authentication or agent protocols.

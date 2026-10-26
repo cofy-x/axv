@@ -14,6 +14,7 @@ AXV runs VMs on the machine where it is deployed, for one trusted local user. Th
 | Durable intent, reservations and replay | [`compute/control/store.go`](../apps/server/internal/compute/control/store.go), [`queue.go`](../apps/server/internal/compute/control/queue.go), [`controller.go`](../apps/server/internal/compute/control/controller.go) |
 | Configuration, volumes and images | [`compute/control/configuration.go`](../apps/server/internal/compute/control/configuration.go), [`volumes.go`](../apps/server/internal/compute/control/volumes.go), [`images.go`](../apps/server/internal/compute/control/images.go); shared image checks in [`compute/image_validation.go`](../apps/server/internal/compute/image_validation.go) |
 | VM projects and file binding | [`compute/projects.go`](../apps/server/internal/compute/projects.go), [`compute/control/projects.go`](../apps/server/internal/compute/control/projects.go), [`cli/vm_project.go`](../apps/server/internal/cli/vm_project.go) and [`guest/project_files.go`](../apps/server/internal/guest/project_files.go) |
+| VM project browsing, editing and external changes | Frontend [`VMProjectFiles.tsx`](../apps/dashboard/src/features/project-files/VMProjectFiles.tsx) and [`vm-file-observer.ts`](../apps/dashboard/src/features/project-files/vm-file-observer.ts) |
 | Persistent project tasks | [`compute/tasks.go`](../apps/server/internal/compute/tasks.go), [`compute/control/tasks.go`](../apps/server/internal/compute/control/tasks.go), [`task_store.go`](../apps/server/internal/compute/control/task_store.go), [`guest/project_tasks.go`](../apps/server/internal/guest/project_tasks.go) and [`guest/project_tasks_linux.go`](../apps/server/internal/guest/project_tasks_linux.go) |
 | Host composition and resource ownership | [`compute/host`](../apps/server/internal/compute/host), [`compute/provider/lima`](../apps/server/internal/compute/provider/lima), [`compute/provider/firecracker`](../apps/server/internal/compute/provider/firecracker), private [`providerutil`](../apps/server/internal/compute/internal/providerutil) and shared directory ownership in [`owneddir`](../apps/server/internal/owneddir) |
 | Guest service and terminal | [`guest`](../apps/server/internal/guest), shared wire types in [`guest/protocol`](../apps/server/internal/guest/protocol), frontend [`guest-terminal-session.ts`](../apps/dashboard/src/features/machines/guest-terminal-session.ts) |
@@ -21,6 +22,8 @@ AXV runs VMs on the machine where it is deployed, for one trusted local user. Th
 | Guest image construction | [`images/guest`](../images/guest), shared manifest contract in [`guest/image`](../apps/server/internal/guest/image) |
 
 Start regression work with [`recovery_test.go`](../apps/server/internal/compute/control/recovery_test.go), the tests beside configuration/volume/image code, and [`machines.spec.ts`](../tests/machines.spec.ts). Provider unit tests and fake-host browser tests cover different boundaries; they do not establish native-platform support. [Development](development.md#verification) owns verification commands, and [Project status](../README.md#project-status) owns validation claims.
+
+For browser file changes, start with [`vm-file-observer.test.ts`](../apps/dashboard/src/features/project-files/vm-file-observer.test.ts) and [`vm-project-files.spec.ts`](../tests/vm-project-files.spec.ts).
 
 ## Ownership
 
@@ -103,7 +106,7 @@ Opening the project resolves one current environment binding: host, project/revi
 
 The guest owns directory listing, bounded text reads, version-checked writes and directory creation under an `os.Root`. Writes stage and sync bytes on the project volume, recheck root/parent/file identity and reviewed hash immediately before publication, atomically replace the directory entry, sync the parent and verify the result. Replacement avoids changing another hard-link alias. AXV serializes its own writers; unrelated guest processes do not participate in that lock, so the final check and replacement are not an OS-level compare-and-swap against those processes. Callers must inspect conflicts or uncertain outcomes without automatically refreshing and overwriting. [Compute projects](api/compute.md#vm-projects) owns public fields/retry rules; [guest file enforcement](api/guest.md#project-file-protocol) owns the private contract.
 
-The browser Project Files feature and `axv vm project` consume the same provider-independent contract. File API path confinement is separate from the guest account's permissions for ordinary commands. Use [persistent project tasks](#persistent-project-tasks) for dependency installation, builds and tests.
+The browser Project Files feature and `axv vm project` consume the same provider-independent contract; their entry points are in the [implementation map](#implementation-map). File API path confinement is separate from the guest account's permissions for ordinary commands. Use [persistent project tasks](#persistent-project-tasks) for dependency installation, builds and tests.
 
 ### Project initialization
 

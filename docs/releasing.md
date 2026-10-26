@@ -55,7 +55,7 @@ The [production tags](development.md#production-build) exclude Tailscale's separ
 
 ## Review and publish
 
-Publication is an explicit maintainer action after candidate review. Use the existing manual process for the first Linux amd64 prerelease; no additional release service is required. Guest images, build provenance attestations, CodeQL and Socket are separate work, not prerequisites for publishing this application archive. Required CI and the acceptance for capabilities claimed in the release still apply.
+Publication is an explicit maintainer action after candidate review. Use this manual process for Linux amd64 prereleases; no additional release service is required. Guest images, build provenance attestations, CodeQL and Socket are separate work, not prerequisites for publishing this application archive. Required CI and the acceptance for capabilities claimed in the release still apply.
 
 ### Preserve and approve the candidate
 
