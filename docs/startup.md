@@ -456,9 +456,9 @@ Alternatively, `setup --host-config /etc/axv/host.json` reads a host configurati
 
 ### Linux Guest bundle installation
 
-[AXV Guest 0.1.0-guest.2](https://github.com/cofy-x/axv/releases/tag/v0.1.0-guest.2) is an experimental **Linux amd64 / Firecracker** prerelease for this manual administrator-configured path. It was accepted with the separately published [AXV v0.1.0-rc.5 application](https://github.com/cofy-x/axv/releases/tag/v0.1.0-rc.5); the Guest uses its own `v0.1.0-guest.2` tag. Download its complete bundle archive, raw disk, `candidate.json` and `SHA256SUMS`. The bundle includes the disk, manifest and original distribution materials; the release also provides a [matching source companion](https://github.com/cofy-x/axv/releases/download/v0.1.0-guest.2/axv_guest_0.1.0-guest.2_sources.tar.gz) and its [source checksums](https://github.com/cofy-x/axv/releases/download/v0.1.0-guest.2/SOURCE-SHA256SUMS). Kernel and Firecracker/jailer executables are separately administered prerequisites; [native acceptance inputs](development.md#linux-firecracker) describe the pinned combination and checks. Publication does not add automatic Linux provisioning or change the macOS image default.
+[AXV Guest 0.1.0-guest.2](https://github.com/cofy-x/axv/releases/tag/v0.1.0-guest.2) is an experimental **Linux amd64 / Firecracker** prerelease for this manual administrator-configured path. It was accepted with the separately published [AXV v0.1.0-rc.5 application](https://github.com/cofy-x/axv/releases/tag/v0.1.0-rc.5); the Guest uses its own `v0.1.0-guest.2` tag. Installation downloads the complete bundle archive, `candidate.json` and `SHA256SUMS`. The bundle already includes the raw disk, manifest and original distribution materials. The separately published raw disk is optional for this installation path; the release also provides a [matching source companion](https://github.com/cofy-x/axv/releases/download/v0.1.0-guest.2/axv_guest_0.1.0-guest.2_sources.tar.gz) and its [source checksums](https://github.com/cofy-x/axv/releases/download/v0.1.0-guest.2/SOURCE-SHA256SUMS). Kernel and Firecracker/jailer executables are separately administered prerequisites; [native acceptance inputs](development.md#linux-firecracker) describe the pinned combination and checks. Publication does not add automatic Linux provisioning or change the macOS image default.
 
-Use Bash, curl, GNU tar/coreutils and jq on the deployment machine. Choose a new, empty download directory with space for both release copies and the extracted bundle. These commands select the published Guest prerelease:
+Use Bash, curl, GNU tar/coreutils and jq on the deployment machine. Choose a new, empty download directory with space for the archive and its extracted raw disk. These commands select the published Guest prerelease:
 
 ```bash
 set -euo pipefail
@@ -468,14 +468,20 @@ axv_guest_download='/absolute/new-guest-download'
 axv_guest_name="axv_guest_${axv_guest_version}_firecracker_amd64"
 mkdir -m 0700 "$axv_guest_download"
 cd "$axv_guest_download"
-for axv_guest_asset in "${axv_guest_name}.tar.gz" "${axv_guest_name}.ext4" candidate.json SHA256SUMS; do
+for axv_guest_asset in "${axv_guest_name}.tar.gz" candidate.json SHA256SUMS; do
   curl -q --fail --location --proto '=https' --proto-redir '=https' \
     --output "$axv_guest_asset" \
     "https://github.com/cofy-x/axv/releases/download/${axv_guest_tag}/${axv_guest_asset}"
 done
-sha256sum --check --strict SHA256SUMS
+for axv_guest_payload in "${axv_guest_name}.tar.gz" candidate.json; do
+  axv_guest_checksum=$(sha256sum "$axv_guest_payload")
+  jq -Rrse --arg checksum "$axv_guest_checksum" --arg file "$axv_guest_payload" \
+    'if split("\n") | index($checksum) != null then "Verified: " + $file else error("Missing or mismatched release checksum: " + $file) end' \
+    SHA256SUMS
+done
 jq -e --arg version "$axv_guest_version" \
-  '.version == $version and .localOnly == false and .image.provider == "firecracker" and .image.arch == "amd64"' \
+  --arg archive "${axv_guest_name}.tar.gz" --arg disk "${axv_guest_name}.ext4" \
+  '.version == $version and .localOnly == false and .archive == $archive and .disk == $disk and .image.provider == "firecracker" and .image.arch == "amd64"' \
   candidate.json
 mkdir -m 0700 bundle
 tar -xzf "${axv_guest_name}.tar.gz" --directory bundle
@@ -485,7 +491,11 @@ tar -xzf "${axv_guest_name}.tar.gz" --directory bundle
 )
 cmp <(jq -S .image candidate.json) <(jq -S . bundle/manifest.json)
 axv_guest_rootfs=$(jq -er '.rootfs.file' bundle/manifest.json)
-cmp "${axv_guest_name}.ext4" "bundle/${axv_guest_rootfs}"
+axv_guest_rootfs_sha256=$(jq -er '.rootfs.sha256' bundle/manifest.json)
+printf '%s  %s\n' "$axv_guest_rootfs_sha256" "bundle/${axv_guest_rootfs}" | sha256sum --check --strict
+jq -Rse --arg checksum "$axv_guest_rootfs_sha256  ${axv_guest_name}.ext4" \
+  'if split("\n") | index($checksum) != null then true else error("Extracted disk does not match the release checksum") end' \
+  SHA256SUMS
 ```
 
 Preserve the original downloads and the entire extracted bundle, including `distribution/`. The disk must stay raw ext4 at the configured path: the host does not extract a compressed disk or reconstruct split files. Upload size and native acceptance are [release gates](releasing.md#vm-image-publication), rather than consequences of adding a download URL to a catalog. Automatic catalog image selection currently serves Lima; Linux `setup` connects an existing administrator-owned host service.
