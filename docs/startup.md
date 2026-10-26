@@ -424,7 +424,7 @@ Publishing defaults to owner authentication; `--visibility public` explicitly pe
 axv
 ```
 
-Open **Virtual Machines**. The environment workflow detects dependencies, lets you choose storage and allocation budgets, and shows the exact preparation actions before you start them. Until AXV enhanced images are published, the default is the pinned official Ubuntu 24.04 base: basic creation, start, stop, restart and deletion remain available without AXV guest enhancements. The reviewed plan names that base and its capability limit, verifies its immutable artifacts, publishes the host configuration and verifies the managed service in the same desktop process. This is the public transition policy; publication will require a separate explicit default-policy change. Selecting `--image-source official` currently reports `release_pending` with no invented URL. Advanced settings accept a local custom bundle. Preparation does not create or start a VM.
+Open **Virtual Machines**. The environment workflow detects dependencies, lets you choose storage and allocation budgets, and shows the exact preparation actions before you start them. The macOS default remains the pinned official Ubuntu 24.04 base: basic creation, start, stop, restart and deletion are available without AXV guest enhancements. The reviewed plan names that base and its capability limit, verifies its immutable artifacts, publishes the host configuration and verifies the managed service in the same desktop process. Linux Firecracker Guest publication does not change this default; a default-policy change requires a separate explicit decision. Official AXV Lima image publication remains pending, so selecting `--image-source official` currently reports `release_pending`. Advanced settings accept a local custom bundle. Preparation does not create or start a VM.
 
 Automatic preparation uses a separately installed and verified **Lima 2.2.1** under each profile, reusing that profile's matching installation when present. It copies the pinned official archive from the shared cache and extracts privately, without selecting, changing or sharing Homebrew/system installations. Explicit existing host configurations retain their administrator-selected runtime pins. The complete [official Lima release](https://github.com/lima-vm/lima/releases/tag/v2.2.1), including its Apache 2.0 license under `share/doc/lima/LICENSE`, is preserved in that private installation. The reviewed [artifact catalog](../apps/server/internal/compute/artifacts) owns release URLs and digests; the shared [preparation engine](../apps/server/internal/compute/prepare) owns plans and execution. VZ hosting needs supported macOS and the system SSH tools; a blocked prerequisite is reported before downloads begin.
 
@@ -456,26 +456,32 @@ Alternatively, `setup --host-config /etc/axv/host.json` reads a host configurati
 
 ### Linux Guest bundle installation
 
-Official Guest image publication remains pending; consult [project status](../README.md#project-status). The following procedure is the manual **Linux amd64 / Firecracker** installation contract for a reviewed Guest prerelease once published. Obtain its exact version and `v<version>` tag from its release notes; do not substitute the application tag `v0.1.0-rc.5`. The proposed Guest version `0.1.0-guest.1` is not a download promise. Guest releases contain a complete bundle archive, raw disk, `candidate.json` and `SHA256SUMS`. The bundle includes the disk, manifest and distribution materials. Kernel and Firecracker/jailer executables are separately administered prerequisites; [native acceptance inputs](development.md#linux-firecracker) describe the pinned combination and checks.
+[AXV Guest 0.1.0-guest.2](https://github.com/cofy-x/axv/releases/tag/v0.1.0-guest.2) is an experimental **Linux amd64 / Firecracker** prerelease for this manual administrator-configured path. It was accepted with the separately published [AXV v0.1.0-rc.5 application](https://github.com/cofy-x/axv/releases/tag/v0.1.0-rc.5); the Guest uses its own `v0.1.0-guest.2` tag. Installation downloads the complete bundle archive, `candidate.json` and `SHA256SUMS`. The bundle already includes the raw disk, manifest and original distribution materials. The separately published raw disk is optional for this installation path; the release also provides a [matching source companion](https://github.com/cofy-x/axv/releases/download/v0.1.0-guest.2/axv_guest_0.1.0-guest.2_sources.tar.gz) and its [source checksums](https://github.com/cofy-x/axv/releases/download/v0.1.0-guest.2/SOURCE-SHA256SUMS). Kernel and Firecracker/jailer executables are separately administered prerequisites; [native acceptance inputs](development.md#linux-firecracker) describe the pinned combination and checks. Publication does not add automatic Linux provisioning or change the macOS image default.
 
-Use Bash, curl, GNU tar/coreutils and jq on the deployment machine. Choose a new, empty download directory with space for both release copies and the extracted bundle. Replace the version placeholder with an existing, reviewed Guest release before running:
+Use Bash, curl, GNU tar/coreutils and jq on the deployment machine. Choose a new, empty download directory with space for the archive and its extracted raw disk. These commands select the published Guest prerelease:
 
 ```bash
 set -euo pipefail
-axv_guest_version='<published-guest-version>'
+axv_guest_version='0.1.0-guest.2'
 axv_guest_tag="v${axv_guest_version}"
 axv_guest_download='/absolute/new-guest-download'
 axv_guest_name="axv_guest_${axv_guest_version}_firecracker_amd64"
 mkdir -m 0700 "$axv_guest_download"
 cd "$axv_guest_download"
-for axv_guest_asset in "${axv_guest_name}.tar.gz" "${axv_guest_name}.ext4" candidate.json SHA256SUMS; do
+for axv_guest_asset in "${axv_guest_name}.tar.gz" candidate.json SHA256SUMS; do
   curl -q --fail --location --proto '=https' --proto-redir '=https' \
     --output "$axv_guest_asset" \
     "https://github.com/cofy-x/axv/releases/download/${axv_guest_tag}/${axv_guest_asset}"
 done
-sha256sum --check --strict SHA256SUMS
+for axv_guest_payload in "${axv_guest_name}.tar.gz" candidate.json; do
+  axv_guest_checksum=$(sha256sum "$axv_guest_payload")
+  jq -Rrse --arg checksum "$axv_guest_checksum" --arg file "$axv_guest_payload" \
+    'if split("\n") | index($checksum) != null then "Verified: " + $file else error("Missing or mismatched release checksum: " + $file) end' \
+    SHA256SUMS
+done
 jq -e --arg version "$axv_guest_version" \
-  '.version == $version and .localOnly == false and .image.provider == "firecracker" and .image.arch == "amd64"' \
+  --arg archive "${axv_guest_name}.tar.gz" --arg disk "${axv_guest_name}.ext4" \
+  '.version == $version and .localOnly == false and .archive == $archive and .disk == $disk and .image.provider == "firecracker" and .image.arch == "amd64"' \
   candidate.json
 mkdir -m 0700 bundle
 tar -xzf "${axv_guest_name}.tar.gz" --directory bundle
@@ -485,7 +491,11 @@ tar -xzf "${axv_guest_name}.tar.gz" --directory bundle
 )
 cmp <(jq -S .image candidate.json) <(jq -S . bundle/manifest.json)
 axv_guest_rootfs=$(jq -er '.rootfs.file' bundle/manifest.json)
-cmp "${axv_guest_name}.ext4" "bundle/${axv_guest_rootfs}"
+axv_guest_rootfs_sha256=$(jq -er '.rootfs.sha256' bundle/manifest.json)
+printf '%s  %s\n' "$axv_guest_rootfs_sha256" "bundle/${axv_guest_rootfs}" | sha256sum --check --strict
+jq -Rse --arg checksum "$axv_guest_rootfs_sha256  ${axv_guest_name}.ext4" \
+  'if split("\n") | index($checksum) != null then true else error("Extracted disk does not match the release checksum") end' \
+  SHA256SUMS
 ```
 
 Preserve the original downloads and the entire extracted bundle, including `distribution/`. The disk must stay raw ext4 at the configured path: the host does not extract a compressed disk or reconstruct split files. Upload size and native acceptance are [release gates](releasing.md#vm-image-publication), rather than consequences of adding a download URL to a catalog. Automatic catalog image selection currently serves Lima; Linux `setup` connects an existing administrator-owned host service.
