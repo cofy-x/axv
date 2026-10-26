@@ -48,7 +48,8 @@ cd -- "$repo_dir"
 CGO_ENABLED=0 GOOS=linux GOARCH="$guest_arch" go build -trimpath -o "$build_dir/context/axv-guest" ./apps/server/cmd/guest
 go run ./apps/server/cmd/image-manifest --provider firecracker --arch "$guest_arch" --guest "$build_dir/context/axv-guest" --output "$build_dir/context/image.json"
 node scripts/guest-release-notices.mjs --guest "$build_dir/context/axv-guest" --manifest "$build_dir/context/image.json" --output "$build_dir/context/guest-distribution"
-docker build --platform "linux/$guest_arch" --build-arg "BASE_IMAGE=$BASE_IMAGE" --build-arg "AXV_GUEST_PACKAGE_SOURCE=$package_source" --tag "$image_tag" "$build_dir/context"
+# Re-resolve signed APT indexes and base updates for every explicit image build.
+docker build --no-cache --platform "linux/$guest_arch" --build-arg "BASE_IMAGE=$BASE_IMAGE" --build-arg "AXV_GUEST_PACKAGE_SOURCE=$package_source" --tag "$image_tag" "$build_dir/context"
 image_created=true
 image_platform=$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$image_tag")
 if [[ $image_platform != "linux/$guest_arch" ]]; then

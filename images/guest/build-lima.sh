@@ -35,7 +35,7 @@ virt-customize -a "$build_dir/root.qcow2" \
   --upload "$image_dir/install-base.sh:/usr/local/lib/axv/install-base" \
   --upload "$image_dir/package-inventory.sh:/usr/local/lib/axv/package-inventory" \
   --upload "$image_dir/package-inventory.py:/usr/local/lib/axv/package-inventory.py" \
-  --run-command "AXV_GUEST_PACKAGE_SOURCE=$package_source sh /usr/local/lib/axv/install-base && rm /usr/local/lib/axv/install-base" \
+  --run-command "AXV_GUEST_PACKAGE_SOURCE=$package_source sh /usr/local/lib/axv/install-base lima && rm /usr/local/lib/axv/install-base" \
   --copy-in "$build_dir/axv-guest:/usr/local/bin" \
   --copy-in "$build_dir/image.json:/usr/share/axv" \
   --copy-in "$build_dir/distribution/axv-guest:/usr/share/doc" \
