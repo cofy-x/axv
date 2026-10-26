@@ -47,6 +47,15 @@ async function readMetadata(path, limit = 4 * 1024 ** 2) {
   return readFile(path, 'utf8');
 }
 
+export async function verifyGuestReleaseAsset(path) {
+  const state = await lstat(path);
+  if (!state.isFile() || state.size <= 0 || state.size >= 2 * 1024 ** 3)
+    throw new Error(
+      `Guest release asset must be a nonempty regular file smaller than 2 GiB (2147483648 bytes): ${path}`,
+    );
+  return state.size;
+}
+
 async function filesIn(directory, prefix = '') {
   const files = [];
   for (const entry of await readdir(join(directory, prefix), {
@@ -85,9 +94,6 @@ export async function verifyGuestBundle(directory) {
     throw new Error(
       'Every bundle file must be covered exactly once by SHA256SUMS.',
     );
-  for (const [path, expected] of sums)
-    if ((await digest(join(directory, path))) !== expected)
-      throw new Error(`Bundle checksum mismatch: ${path}`);
   const verifiedMetadata = async (path, limit) => {
     const value = await readMetadata(join(directory, path), limit);
     if (createHash('sha256').update(value).digest('hex') !== sums.get(path))
@@ -95,6 +101,20 @@ export async function verifyGuestBundle(directory) {
     return value;
   };
   const image = JSON.parse(await verifiedMetadata('manifest.json', 64 * 1024));
+  if (
+    !safePath(image.rootfs?.file) ||
+    basename(image.rootfs.file) !== image.rootfs.file ||
+    sums.get(image.rootfs.file) !== image.rootfs.sha256
+  )
+    throw new Error(
+      'Bundle must declare a complete enhanced AXV guest contract.',
+    );
+  // Check logical disk length before hashing, copying or compressing its bytes.
+  // Sparse allocation does not reduce the uploaded raw asset's file size.
+  await verifyGuestReleaseAsset(join(directory, image.rootfs.file));
+  for (const [path, expected] of sums)
+    if ((await digest(join(directory, path))) !== expected)
+      throw new Error(`Bundle checksum mismatch: ${path}`);
   // Import, builder and release validation share the Go image contract. This
   // also checks rootfs size/integrity and the current capability set.
   const validated = await captureCommand(
@@ -109,14 +129,6 @@ export async function verifyGuestBundle(directory) {
   );
   if (!isDeepStrictEqual(JSON.parse(validated.stdout), image))
     throw new Error('Bundle manifest changed during contract validation.');
-  if (
-    !safePath(image.rootfs?.file) ||
-    basename(image.rootfs.file) !== image.rootfs.file ||
-    sums.get(image.rootfs.file) !== image.rootfs.sha256
-  )
-    throw new Error(
-      'Bundle must declare a complete enhanced AXV guest contract.',
-    );
   for (const path of files)
     if (
       ![
@@ -135,6 +147,11 @@ export async function verifyGuestBundle(directory) {
     'os-packages.tsv',
     'os-release',
     'licenses/manifest.json',
+    'os-distribution/apt-sources.json',
+    'os-distribution/apt-indexes.json',
+    'os-distribution/notices.json',
+    'os-distribution/source-review.json',
+    'os-distribution/SHA256SUMS',
   ];
   for (const path of required)
     if (!sums.has(`distribution/axv-guest/${path}`))
@@ -176,6 +193,7 @@ export async function verifyGuestBundle(directory) {
 // Assemble from private, verified copies. Revalidating a mutable source after
 // tar finishes cannot prove which generation of bytes entered that archive.
 export async function snapshotGuestBundle(bundle, destination, verified) {
+  await verifyGuestReleaseAsset(join(bundle, verified.image.rootfs.file));
   await mkdir(destination, { mode: 0o700 });
   for (const path of verified.files) {
     const target = join(destination, path);
@@ -185,6 +203,8 @@ export async function snapshotGuestBundle(bundle, destination, verified) {
       target,
       constants.COPYFILE_EXCL | constants.COPYFILE_FICLONE,
     );
+    if (path === verified.image.rootfs.file)
+      await verifyGuestReleaseAsset(target);
     if ((await digest(target)) !== verified.sums.get(path))
       throw new Error(`Bundle changed during assembly: ${path}`);
   }
@@ -204,8 +224,9 @@ export async function packageGuestRelease({ bundle, version, local = false }) {
   await mkdir(parent, { recursive: true });
   const output = join(parent, `${image.provider}_${image.arch}`);
   await mkdir(output);
-  const staging = await mkdtemp(join(temporary.directory, 'guest-snapshot-'));
+  let staging;
   try {
+    staging = await mkdtemp(join(temporary.directory, 'guest-snapshot-'));
     const snapshot = join(staging, 'bundle');
     await snapshotGuestBundle(bundle, snapshot, verified);
     const archive = `${name}.tar.gz`;
@@ -214,6 +235,7 @@ export async function packageGuestRelease({ bundle, version, local = false }) {
       ['-czf', join(output, archive), '-C', snapshot, '--', ...verified.files],
       { timeout: 300_000 },
     );
+    await verifyGuestReleaseAsset(join(output, archive));
     if (!local)
       validateReleaseSource(verified.build, await readReleaseSource());
     const checksum = await digest(join(output, archive));
@@ -223,6 +245,7 @@ export async function packageGuestRelease({ bundle, version, local = false }) {
       join(output, disk),
       constants.COPYFILE_EXCL | constants.COPYFILE_FICLONE,
     );
+    await verifyGuestReleaseAsset(join(output, disk));
     if ((await digest(join(output, disk))) !== image.rootfs.sha256)
       throw new Error(
         'Copied release disk does not match the reviewed bundle.',
@@ -248,17 +271,20 @@ export async function packageGuestRelease({ bundle, version, local = false }) {
       )}\n`,
       { flag: 'wx' },
     );
+    await verifyGuestReleaseAsset(join(output, 'candidate.json'));
     await writeFile(
       join(output, 'SHA256SUMS'),
       `${checksum}  ${archive}\n${image.rootfs.sha256}  ${disk}\n${await digest(join(output, 'candidate.json'))}  candidate.json\n`,
       { flag: 'wx' },
     );
+    for (const file of [archive, disk, 'candidate.json', 'SHA256SUMS'])
+      await verifyGuestReleaseAsset(join(output, file));
     return output;
   } catch (error) {
-    await rm(output, { recursive: true, force: true });
+    await rm(local ? parent : output, { recursive: true, force: true });
     throw error;
   } finally {
-    await rm(staging, { recursive: true, force: true });
+    if (staging) await rm(staging, { recursive: true, force: true });
   }
 }
 

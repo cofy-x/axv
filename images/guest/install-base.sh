@@ -33,7 +33,6 @@ apt-get update
 apt-get install -y --no-install-recommends \
   systemd systemd-sysv udev sudo bash ca-certificates iproute2 \
   util-linux e2fsprogs python3 python3-venv git curl socat openssh-server
-rm -rf /var/lib/apt/lists/*
 if getent passwd 1000 >/dev/null && [ "$(getent passwd 1000 | cut -d: -f1)" != axv ]; then
   userdel "$(getent passwd 1000 | cut -d: -f1)"
 fi
@@ -50,6 +49,7 @@ install -d -o root -g root -m 0755 /var/lib/axv
 install -d -o axv -g axv -m 0700 /var/lib/axv/tasks
 install -d -m 0755 /usr/share/doc/axv-guest
 sh /usr/local/lib/axv/package-inventory /usr/share/doc/axv-guest
+rm -rf /var/lib/apt/lists/*
 truncate -s 0 /etc/machine-id
 rm -f /var/lib/dbus/machine-id
 ln -s /etc/machine-id /var/lib/dbus/machine-id

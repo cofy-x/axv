@@ -362,6 +362,25 @@ describe.runIf(process.platform === 'linux')(
       const output = join(f.directory, 'inventory');
       await mkdir(database);
       await mkdir(output);
+      for (const path of [
+        'etc/apt/sources.list.d',
+        'var/lib/apt/lists',
+        'usr/share/doc/fixture-lib',
+      ])
+        await mkdir(join(f.directory, path), { recursive: true });
+      await writeFile(join(f.directory, 'etc/os-release'), 'ID=ubuntu\n');
+      await writeFile(
+        join(f.directory, 'etc/apt/sources.list.d/ubuntu.sources'),
+        'Types: deb\nURIs: https://archive.ubuntu.com/ubuntu/\nSuites: noble\nComponents: main\n',
+      );
+      await writeFile(
+        join(f.directory, 'var/lib/apt/lists/archive_InRelease'),
+        'Fixture signed index\n',
+      );
+      await writeFile(
+        join(f.directory, 'usr/share/doc/fixture-lib/copyright'),
+        'Fixture package license\n',
+      );
       await writeFile(
         join(database, 'status'),
         `Package: fixture-lib
@@ -383,7 +402,13 @@ Description: Fixture residual package
       await captureCommand(
         'sh',
         [join(root, 'images/guest/package-inventory.sh'), output],
-        { env: { ...process.env, DPKG_ADMINDIR: database, DPKG_ROOT: '' } },
+        {
+          env: {
+            ...process.env,
+            DPKG_ADMINDIR: database,
+            DPKG_ROOT: f.directory,
+          },
+        },
       );
       const inventory = await readFile(join(output, 'os-packages.tsv'), 'utf8');
       expect(inventory).toContain(
@@ -393,9 +418,10 @@ Description: Fixture residual package
         'rc \tfixture-residual\t1.0-1\tall\tfixture-residual\t1.0-1\n',
       );
       expect(await readFile(join(output, 'os-release'))).toEqual(
-        await readFile('/etc/os-release'),
+        await readFile(join(f.directory, 'etc/os-release')),
       );
       expect((await readdir(output)).sort()).toEqual([
+        'os-distribution',
         'os-packages.tsv',
         'os-release',
       ]);

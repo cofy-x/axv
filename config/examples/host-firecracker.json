@@ -21,18 +21,29 @@
   },
   "images": [
     {
-      "id": "axv-firecracker-amd64-v1",
-      "name": "AXV firecracker amd64",
+      "id": "REPLACE_WITH_MANIFEST_ID",
+      "name": "AXV Firecracker amd64",
       "provider": "firecracker",
       "arch": "amd64",
-      "rootfs": "/opt/axv/images/ubuntu-2404-amd64-v1/root.ext4",
+      "rootfs": "/opt/axv/images/REPLACE_WITH_GUEST_VERSION/root.ext4",
       "rootfsSHA256": "REPLACE_WITH_ACTUAL_SHA256",
-      "kernel": "/opt/axv/images/ubuntu-2404-amd64-v1/vmlinux",
+      "kernel": "/opt/axv/kernels/vmlinux-6.1.155",
       "kernelSHA256": "REPLACE_WITH_ACTUAL_SHA256",
       "guest": {
         "imageVersion": 1,
         "protocolVersion": 3,
-        "capabilities": ["exec", "terminals", "ssh", "network"]
+        "capabilities": [
+          "exec",
+          "terminals",
+          "ssh",
+          "network",
+          "project-files",
+          "project-tasks",
+          "project-previews",
+          "project-restore",
+          "project-initialization"
+        ],
+        "binarySHA256": "REPLACE_WITH_MANIFEST_GUEST_BINARY_SHA256"
       }
     }
   ]

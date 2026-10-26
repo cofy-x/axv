@@ -1,21 +1,26 @@
 import { createHash } from 'node:crypto';
 import {
+  lstat,
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   rm,
   symlink,
+  truncate,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { expect, test } from 'vitest';
 import {
   verifyGuestBundle,
+  verifyGuestReleaseAsset,
   packageGuestRelease,
   snapshotGuestBundle,
 } from './package-guest-release.mjs';
 import { captureCommand, root } from './lib.mjs';
+import { initializeTestTemp } from './test-temp.mjs';
 
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const json = (value) => `${JSON.stringify(value)}\n`;
@@ -55,6 +60,11 @@ async function fixture() {
     ['distribution/axv-guest/THIRD_PARTY_NOTICES.md', 'fixture notices'],
     ['distribution/axv-guest/os-packages.tsv', 'fixture packages'],
     ['distribution/axv-guest/os-release', 'ID=ubuntu\n'],
+    ['distribution/axv-guest/os-distribution/apt-sources.json', '[]\n'],
+    ['distribution/axv-guest/os-distribution/apt-indexes.json', '[]\n'],
+    ['distribution/axv-guest/os-distribution/notices.json', '[]\n'],
+    ['distribution/axv-guest/os-distribution/source-review.json', '{}\n'],
+    ['distribution/axv-guest/os-distribution/SHA256SUMS', 'fixture sums\n'],
     ['distribution/axv-guest/licenses/manifest.json', '[]\n'],
     [
       'distribution/axv-guest/licenses/go/github.com%2Fexample%2Fmodule@v1.0.0/LICENSE',
@@ -99,6 +109,75 @@ async function replaceBundleFile(directory, path, contents) {
   );
 }
 
+async function candidateDirectories() {
+  return (await readdir(initializeTestTemp().root))
+    .filter((name) => name.startsWith('guest-candidate-'))
+    .sort();
+}
+
+test.each([
+  [2147483647, true],
+  [2147483648, false],
+  [2147483649, false],
+])('release asset checks sparse logical length %i', async (bytes, accepted) => {
+  const directory = await mkdtemp(join(tmpdir(), 'axv-guest-size-'));
+  try {
+    const path = join(directory, 'sparse.ext4');
+    await writeFile(path, '');
+    await truncate(path, bytes);
+    const state = await lstat(path);
+    expect(state.size).toBe(bytes);
+    if (typeof state.blocks === 'number')
+      expect(state.blocks * 512).toBeLessThan(bytes);
+    if (accepted)
+      await expect(verifyGuestReleaseAsset(path)).resolves.toBe(bytes);
+    else
+      await expect(verifyGuestReleaseAsset(path)).rejects.toThrow(
+        /smaller than 2 GiB/,
+      );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('release asset checks reject empty files, directories and symlinks', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'axv-guest-size-'));
+  try {
+    const path = join(directory, 'empty');
+    await writeFile(path, '');
+    await expect(verifyGuestReleaseAsset(path)).rejects.toThrow(/nonempty/);
+    await expect(verifyGuestReleaseAsset(directory)).rejects.toThrow(/regular/);
+    await writeFile(path, 'asset');
+    const alias = join(directory, 'alias');
+    await symlink(path, alias);
+    await expect(verifyGuestReleaseAsset(alias)).rejects.toThrow(/regular/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('an oversized raw disk fails before checksum work or candidate creation, including local packaging', async () => {
+  const { directory } = await fixture();
+  try {
+    const before = await candidateDirectories();
+    // Leave the old digest in place: the size failure must precede hashing.
+    await truncate(join(directory, 'root.ext4'), 2147483648);
+    await expect(verifyGuestBundle(directory)).rejects.toThrow(
+      /smaller than 2 GiB/,
+    );
+    await expect(
+      packageGuestRelease({
+        bundle: directory,
+        version: '0.1.0-rc.1',
+        local: true,
+      }),
+    ).rejects.toThrow(/smaller than 2 GiB/);
+    expect(await candidateDirectories()).toEqual(before);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('release validation uses the import contract and rejects ambiguous build settings', async () => {
   const { directory } = await fixture();
   try {
@@ -136,6 +215,32 @@ test('guest packaging verifies every distribution file and rootfs metadata', asy
     await writeFile(join(directory, 'root.ext4'), 'tampered');
     await expect(verifyGuestBundle(directory)).rejects.toThrow(
       /checksum mismatch/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test.each([
+  'apt-sources.json',
+  'apt-indexes.json',
+  'notices.json',
+  'source-review.json',
+  'SHA256SUMS',
+])('guest packaging requires OS distribution material %s', async (material) => {
+  const { directory, sums } = await fixture();
+  try {
+    const path = `distribution/axv-guest/os-distribution/${material}`;
+    await rm(join(directory, path));
+    await writeFile(
+      join(directory, 'SHA256SUMS'),
+      sums
+        .split('\n')
+        .filter((line) => line.slice(66) !== path)
+        .join('\n'),
+    );
+    await expect(verifyGuestBundle(directory)).rejects.toThrow(
+      `Missing guest distribution material: os-distribution/${material}`,
     );
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -233,3 +338,55 @@ test('assembly rejects a new coherent bundle generation instead of mixing its ar
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('snapshot refuses a raw disk that grew after verification before copying it', async () => {
+  const { directory } = await fixture();
+  try {
+    const verified = await verifyGuestBundle(directory);
+    await truncate(join(directory, 'root.ext4'), 2147483648);
+    const destination = join(directory, 'snapshot');
+    await expect(
+      snapshotGuestBundle(directory, destination, verified),
+    ).rejects.toThrow(/smaller than 2 GiB/);
+    await expect(lstat(destination)).rejects.toMatchObject({ code: 'ENOENT' });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test.skipIf(process.platform === 'win32')(
+  'an oversized assembled archive fails before hashing and removes its local candidate',
+  async () => {
+    const { directory } = await fixture();
+    const bin = await mkdtemp(join(tmpdir(), 'axv-guest-tar-'));
+    const originalPath = process.env.PATH;
+    try {
+      const before = await candidateDirectories();
+      // Exercise the real assembly failure path with a sparse tar output.
+      await writeFile(
+        join(bin, 'tar'),
+        `#!${process.execPath}
+import * as fs from 'node:fs';
+const output = fs.openSync(process.argv[3], 'wx');
+fs.ftruncateSync(output, 2147483648);
+fs.closeSync(output);
+`,
+        { mode: 0o700 },
+      );
+      process.env.PATH = `${bin}${delimiter}${originalPath ?? ''}`;
+      await expect(
+        packageGuestRelease({
+          bundle: directory,
+          version: '0.1.0-rc.1',
+          local: true,
+        }),
+      ).rejects.toThrow(/smaller than 2 GiB/);
+      expect(await candidateDirectories()).toEqual(before);
+    } finally {
+      if (originalPath === undefined) delete process.env.PATH;
+      else process.env.PATH = originalPath;
+      await rm(directory, { recursive: true, force: true });
+      await rm(bin, { recursive: true, force: true });
+    }
+  },
+);

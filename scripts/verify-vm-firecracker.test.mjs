@@ -218,6 +218,8 @@ async function fixture(change = {}) {
         'project-files',
         'project-tasks',
         'project-previews',
+        'project-restore',
+        'project-initialization',
       ],
     },
     rootfs: { file: 'root.ext4', sha256: await sha256(rootfs) },
@@ -263,6 +265,21 @@ describe('native Firecracker acceptance authorization and inputs', () => {
 });
 
 describe('native acceptance artifact integrity', () => {
+  it.each(['project-restore', 'project-initialization'])(
+    'rejects a guest missing %s before allocating native resources',
+    async (capability) => {
+      const input = await fixture();
+      input.manifest.guest.capabilities =
+        input.manifest.guest.capabilities.filter(
+          (value) => value !== capability,
+        );
+      await writeFile(input.path, JSON.stringify(input.manifest));
+      await expect(verifiedBundle(input.path, 'amd64')).rejects.toThrow(
+        `Enhanced acceptance requires ${capability}.`,
+      );
+    },
+  );
+
   it('verifies the rootfs without changing its contents or the manifest', async () => {
     const input = await fixture();
     const before = await readFile(input.path, 'utf8');
