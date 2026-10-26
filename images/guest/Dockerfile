@@ -6,6 +6,7 @@ ARG AXV_GUEST_PACKAGE_SOURCE=preserve
 COPY configure-package-sources /usr/local/lib/axv/configure-package-sources
 COPY install-base.sh /usr/local/lib/axv/install-base
 COPY package-inventory.sh /usr/local/lib/axv/package-inventory
+COPY package-inventory.py /usr/local/lib/axv/package-inventory.py
 RUN AXV_GUEST_PACKAGE_SOURCE="$AXV_GUEST_PACKAGE_SOURCE" sh /usr/local/lib/axv/install-base \
     && rm /usr/local/lib/axv/install-base \
     && printf 'axv ALL=(root) NOPASSWD: /sbin/reboot\n' > /etc/sudoers.d/axv-shutdown \

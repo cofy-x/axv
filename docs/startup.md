@@ -454,6 +454,66 @@ axv setup --socket /run/axv-host/control.sock
 
 Alternatively, `setup --host-config /etc/axv/host.json` reads a host configuration and saves its local Unix socket. The desktop needs existing socket access.
 
+### Linux Guest bundle installation
+
+Official Guest image publication remains pending; consult [project status](../README.md#project-status). The following procedure is the manual **Linux amd64 / Firecracker** installation contract for a reviewed Guest prerelease once published. Obtain its exact version and `v<version>` tag from its release notes; do not substitute the application tag `v0.1.0-rc.5`. The proposed Guest version `0.1.0-guest.1` is not a download promise. Guest releases contain a complete bundle archive, raw disk, `candidate.json` and `SHA256SUMS`. The bundle includes the disk, manifest and distribution materials. Kernel and Firecracker/jailer executables are separately administered prerequisites; [native acceptance inputs](development.md#linux-firecracker) describe the pinned combination and checks.
+
+Use Bash, curl, GNU tar/coreutils and jq on the deployment machine. Choose a new, empty download directory with space for both release copies and the extracted bundle. Replace the version placeholder with an existing, reviewed Guest release before running:
+
+```bash
+set -euo pipefail
+axv_guest_version='<published-guest-version>'
+axv_guest_tag="v${axv_guest_version}"
+axv_guest_download='/absolute/new-guest-download'
+axv_guest_name="axv_guest_${axv_guest_version}_firecracker_amd64"
+mkdir -m 0700 "$axv_guest_download"
+cd "$axv_guest_download"
+for axv_guest_asset in "${axv_guest_name}.tar.gz" "${axv_guest_name}.ext4" candidate.json SHA256SUMS; do
+  curl -q --fail --location --proto '=https' --proto-redir '=https' \
+    --output "$axv_guest_asset" \
+    "https://github.com/cofy-x/axv/releases/download/${axv_guest_tag}/${axv_guest_asset}"
+done
+sha256sum --check --strict SHA256SUMS
+jq -e --arg version "$axv_guest_version" \
+  '.version == $version and .localOnly == false and .image.provider == "firecracker" and .image.arch == "amd64"' \
+  candidate.json
+mkdir -m 0700 bundle
+tar -xzf "${axv_guest_name}.tar.gz" --directory bundle
+(
+  cd bundle
+  sha256sum --check --strict SHA256SUMS
+)
+cmp <(jq -S .image candidate.json) <(jq -S . bundle/manifest.json)
+axv_guest_rootfs=$(jq -er '.rootfs.file' bundle/manifest.json)
+cmp "${axv_guest_name}.ext4" "bundle/${axv_guest_rootfs}"
+```
+
+Preserve the original downloads and the entire extracted bundle, including `distribution/`. The disk must stay raw ext4 at the configured path: the host does not extract a compressed disk or reconstruct split files. Upload size and native acceptance are [release gates](releasing.md#vm-image-publication), rather than consequences of adding a download URL to a catalog. Automatic catalog image selection currently serves Lima; Linux `setup` connects an existing administrator-owned host service.
+
+For a new host, copy the complete verified `bundle/` into a new versioned administrator-owned image directory, for example `/opt/axv/images/<guest-version>/`; provide the reviewed kernel at its own path. Verify the copied bundle checksums and kernel digest again. Keep prior images and all existing VM storage. In a copy of the [host example](../config/examples/host-firecracker.json), select the runtime paths/version, service cgroup parent, socket group, capacity, unused subnet and jail UID/GID range for this computer. Replace its image entry with the exact bundle values:
+
+| Host image field | Source |
+| --- | --- |
+| `id`, `name`, `provider`, `arch` | The complete corresponding values in `manifest.json`; preserve the digest-derived image ID |
+| `rootfs`, `rootfsSHA256` | Absolute installed rootfs path and `manifest.json`'s `rootfs.sha256` |
+| `guest` | The complete manifest object, including all capabilities and `binarySHA256`; do not substitute the application's digest |
+| `kernel`, `kernelSHA256` | Absolute separately supplied kernel path and its independently reviewed digest |
+
+The example's placeholders are intentionally unusable. Its sample capabilities do not grant support: the host intersects the configured contract with the running guest's health. Confirm the configured root-disk allocation has room for the intended workload; the 2047 MiB base is expanded to the VM's requested allocation during creation.
+
+Install the reviewed application executable, host configuration and [systemd unit](../config/examples/axv-host.service) using the paths chosen above. The unit's `ExecStart` must select the verified application's absolute path; a desktop account's command search path is not used. For the unchanged example paths on a new host, an administrator can use:
+
+```sh
+sudo install -d -m 0755 /opt/axv/bin /etc/axv
+sudo install -m 0755 /absolute/verified/application/axv /opt/axv/bin/axv
+sudo install -m 0600 /absolute/reviewed/host.json /etc/axv/host.json
+sudo install -m 0644 /absolute/reviewed/axv-host.service /etc/systemd/system/axv-host.service
+sudo systemctl daemon-reload
+sudo systemctl start axv-host.service
+```
+
+This provisions a new administrator service; it is not an update procedure for a live host. Preserve the configured service name and delegated cgroup parent while its VMs exist. For fresh-profile acceptance, choose a new absolute `AXV_HOME` and keep it set for every desktop and CLI invocation. As the intended desktop account with existing socket permission, run `axv setup --socket /run/axv-host/control.sock`, then `axv vm images`. Explicitly select the configured manifest ID with `axv vm create dev --image <manifest-id>` and inspect the resulting VM's `guestState`, `ready` and confirmed capabilities. Follow [VM project files](#vm-project-files) and [persistent tasks](#vm-project-tasks) only when their capabilities are confirmed. Installation alone does not establish native acceptance; maintainers must complete the exact-candidate [Linux checks](development.md#linux-firecracker) before publication.
+
 ## Configuration and storage
 
 A profile can combine desktop, agent and compute settings:

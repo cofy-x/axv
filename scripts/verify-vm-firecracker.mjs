@@ -27,6 +27,18 @@ import { verifyProjectBackupWorkflow } from './lib-vm-project-backup.mjs';
 import { verifyVMProjectPreview } from './lib-vm-project-preview.mjs';
 import { verifyVMCodexWorkflow } from './lib-vm-codex-workflow.mjs';
 
+const requiredGuestCapabilities = [
+  'exec',
+  'terminals',
+  'ssh',
+  'network',
+  'project-files',
+  'project-tasks',
+  'project-previews',
+  'project-restore',
+  'project-initialization',
+];
+
 export function machineJSONArguments(args) {
   const separator = args.indexOf('--');
   return separator < 0
@@ -376,15 +388,7 @@ export async function verifiedBundle(path, arch) {
   );
   assert.equal(bundle.guest?.imageVersion, 1);
   assert.equal(bundle.guest?.protocolVersion, 3);
-  for (const capability of [
-    'exec',
-    'terminals',
-    'ssh',
-    'network',
-    'project-files',
-    'project-tasks',
-    'project-previews',
-  ])
+  for (const capability of requiredGuestCapabilities)
     assert.ok(
       bundle.guest?.capabilities?.includes(capability),
       `Enhanced acceptance requires ${capability}.`,
@@ -816,19 +820,19 @@ async function acceptance(options) {
         lastMachine = machine;
         if (machine.status !== 'running' || !machine.ready) return false;
         assert.equal(machine.guestState, 'ready', machine.guestReason);
-        for (const capability of [
-          'exec',
-          'terminals',
-          'ssh',
-          'network',
-          'project-files',
-          'project-tasks',
-          'project-previews',
-        ])
-          assert.ok(machine.guestCapabilities.includes(capability));
         const health = await request(`/machines/${id}/guest/health`);
         assert.equal(health.machineId, id);
         assert.ok(health.bootId && health.ready);
+        for (const capability of requiredGuestCapabilities) {
+          assert.ok(
+            machine.guestCapabilities.includes(capability),
+            `Machine readiness requires ${capability}.`,
+          );
+          assert.ok(
+            health.capabilities?.includes(capability),
+            `Guest health must confirm ${capability}.`,
+          );
+        }
         return health;
       }, `guest ${id} readiness`);
     } catch (error) {
@@ -1591,6 +1595,46 @@ async function acceptance(options) {
     );
     console.log(
       'Pinned native host, provider availability and image registration passed.',
+    );
+
+    // Exercise the operator's persisted socket connection, rather than relying
+    // only on this launcher's AXV_COMPUTE_SOCKET override for every CLI call.
+    for (const name of ['operator-profile-1', 'operator-profile-2']) {
+      const operatorHome = join(directory, name);
+      const operatorEnv = {
+        ...env,
+        AXV_HOME: operatorHome,
+        AXV_COMPUTE_SOCKET: '',
+        AXV_CACHE_HOME: join(operatorHome, 'cache'),
+        AXV_ARTIFACT_MIRRORS: '',
+      };
+      await captureCommand(executable, ['setup', '--socket', socket, '--yes'], {
+        cwd: directory,
+        env: operatorEnv,
+      });
+      const settings = JSON.parse(
+        await readFile(join(operatorHome, 'config.json'), 'utf8'),
+      );
+      assert.equal(settings.compute.mode, 'external');
+      assert.equal(settings.compute.socket, socket);
+      const images = JSON.parse(
+        (
+          await captureCommand(executable, ['vm', 'images', '--json'], {
+            cwd: directory,
+            env: operatorEnv,
+          })
+        ).stdout,
+      );
+      const selected = images.images.find((image) => image.id === bundle.id);
+      assert.ok(
+        selected,
+        'The configured Guest image must reach each profile.',
+      );
+      assert.equal(selected.sha256, bundle.rootfs.sha256);
+      assert.deepEqual(selected.guest, bundle.guest);
+    }
+    console.log(
+      'Two independent profiles connected through persisted manual Linux socket setup and observed the exact Guest image contract.',
     );
 
     const owned = await create('AXV native retained project', { retain: true });
