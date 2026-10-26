@@ -15,7 +15,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cofy-x/axv/apps/server/internal/cloudflareapi"
+	cfclient "github.com/cofy-x/axv/apps/server/internal/cloudflare/client"
+	cfhttpapi "github.com/cofy-x/axv/apps/server/internal/cloudflare/httpapi"
+	cfmanagement "github.com/cofy-x/axv/apps/server/internal/cloudflare/management"
+	"github.com/cofy-x/axv/apps/server/internal/cloudflare/policy"
 	"github.com/cofy-x/axv/apps/server/internal/localaccess"
 	"github.com/cofy-x/axv/apps/server/internal/profile"
 )
@@ -24,14 +27,13 @@ type cloudflareFixtureTransport func(*http.Request) (*http.Response, error)
 
 func (f cloudflareFixtureTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-func cloudflareManagementFixture(t *testing.T) (*cloudflareManagement, http.Handler, *atomic.Int64) {
+func cloudflareManagementFixture(t *testing.T) (*cloudflareManagementFixtureState, http.Handler, *atomic.Int64) {
 	t.Helper()
 	c, _, _ := cloudflareControllerFixture(t)
-	m := newCloudflareManagement(c.home, "desktop-management", c, func() bool { return false })
-	t.Cleanup(m.Close)
+	m := &cloudflareManagementFixtureState{home: c.home, instanceID: "desktop-management", desktop: c, busy: func() bool { return false }}
 	calls := &atomic.Int64{}
-	m.client = func(token string) (*cloudflareapi.Client, error) {
-		return cloudflareapi.New(cloudflareapi.Options{Token: token, HTTPClient: &http.Client{Transport: cloudflareFixtureTransport(func(r *http.Request) (*http.Response, error) {
+	m.client = func(token string) (*cfclient.Client, error) {
+		return cfclient.New(cfclient.Options{Token: token, HTTPClient: &http.Client{Transport: cloudflareFixtureTransport(func(r *http.Request) (*http.Response, error) {
 			calls.Add(1)
 			value := `{"success":true,"result":[]}`
 			switch r.URL.Path {
@@ -47,8 +49,15 @@ func cloudflareManagementFixture(t *testing.T) (*cloudflareManagement, http.Hand
 			return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(value)), Request: r}, nil
 		})}})
 	}
+	m.Service = cfmanagement.New(c.ctx, cfmanagement.Options{Home: m.home, InstanceID: m.instanceID, Desktop: c, Busy: func() bool { return m.busy() }, ValidateDesktopOrigin: func(origin string) error {
+		if m.validateDesktopOrigin != nil {
+			return m.validateDesktopOrigin(origin)
+		}
+		return nil
+	}, Client: func(token string) (*cfclient.Client, error) { return m.client(token) }})
+	t.Cleanup(m.Close)
 	mux := http.NewServeMux()
-	m.Register(mux)
+	cfhttpapi.New(m.Service).Register(mux)
 	return m, mux, calls
 }
 
@@ -77,7 +86,7 @@ func TestCloudflareManagementLocalConfigDoesNotExposeCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.Management = profile.CloudflareManagement{APIToken: "private-api-token", AccountID: "account", ZoneID: "zone", TunnelID: "tunnel", Domain: "example.net", Listen: profile.DefaultCloudflareManagementListen}
+	c.Management = policy.Account{APIToken: "private-api-token", AccountID: "account", ZoneID: "zone", TunnelID: "tunnel", Domain: "example.net", Listen: policy.DefaultPublishListen}
 	if _, _, err := profile.SaveCloudflareConfiguration(m.home, revision, c); err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +109,7 @@ func TestCloudflareManagementLocalConfigDoesNotExposeCredentials(t *testing.T) {
 func TestCloudflareManagementSaveChecksRevisionAndLiveOwners(t *testing.T) {
 	m, handler, _ := cloudflareManagementFixture(t)
 	w := managementRequest(handler, "GET", "/api/cloudflare/config", "", false)
-	var view cloudflareConfigView
+	var view cfmanagement.ConfigView
 	if json.Unmarshal(w.Body.Bytes(), &view) != nil {
 		t.Fatal(w.Body.String())
 	}
@@ -169,7 +178,7 @@ func TestCloudflareWizardRejectsSharedCookieSitesBeforeDNSChecks(t *testing.T) {
 func TestCloudflareConfigurationCannotMoveDesktopIntoRetiredPublicationSite(t *testing.T) {
 	m, handler, _ := cloudflareManagementFixture(t)
 	w := managementRequest(handler, "GET", "/api/cloudflare/config", "", false)
-	var view cloudflareConfigView
+	var view cfmanagement.ConfigView
 	if json.Unmarshal(w.Body.Bytes(), &view) != nil {
 		t.Fatal(w.Body.String())
 	}
@@ -236,7 +245,7 @@ func TestCloudflarePublishingKeepsTheActuallyBoundDesktopSiteAfterProfileDrift(t
 func TestCloudflareHealthCachesBySettingsAndSeparatesCloudFromLocalListening(t *testing.T) {
 	m, handler, calls := cloudflareManagementFixture(t)
 	c, revision, _ := profile.ReadCloudflareConfiguration(m.home)
-	c.Management = profile.CloudflareManagement{APIToken: "private-api-token", AccountID: "account", ZoneID: "zone", TunnelID: "tunnel", Domain: "example.net", Listen: profile.DefaultCloudflareManagementListen}
+	c.Management = policy.Account{APIToken: "private-api-token", AccountID: "account", ZoneID: "zone", TunnelID: "tunnel", Domain: "example.net", Listen: policy.DefaultPublishListen}
 	if _, _, err := profile.SaveCloudflareConfiguration(m.home, revision, c); err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +302,7 @@ func TestCloudflareRemoteRoutePolicyOnlyOpensSafeAccountReads(t *testing.T) {
 func TestCloudflareTrafficUsesTheRequestedNumberOfCompleteHourlyBuckets(t *testing.T) {
 	m, handler, _ := cloudflareManagementFixture(t)
 	c, revision, _ := profile.ReadCloudflareConfiguration(m.home)
-	c.Management = profile.CloudflareManagement{APIToken: "private-api-token", AccountID: "account", ZoneID: "zone", TunnelID: "tunnel", Domain: "example.net", Listen: profile.DefaultCloudflareManagementListen}
+	c.Management = policy.Account{APIToken: "private-api-token", AccountID: "account", ZoneID: "zone", TunnelID: "tunnel", Domain: "example.net", Listen: policy.DefaultPublishListen}
 	if _, _, err := profile.SaveCloudflareConfiguration(m.home, revision, c); err != nil {
 		t.Fatal(err)
 	}
@@ -307,13 +316,64 @@ func TestCloudflareTrafficUsesTheRequestedNumberOfCompleteHourlyBuckets(t *testi
 	}
 }
 
-func configureManagementAccount(t *testing.T, m *cloudflareManagement) string {
+func TestCloudflareTrafficPreservesExactProviderCounters(t *testing.T) {
+	m, handler, _ := cloudflareManagementFixture(t)
+	configureManagementAccount(t, m)
+	const requests, bytes, cached uint64 = 9007199254740993, 18446744073709551615, 9007199254740991
+	m.client = func(token string) (*cfclient.Client, error) {
+		return cfclient.New(cfclient.Options{Token: token, HTTPClient: &http.Client{Transport: cloudflareFixtureTransport(func(r *http.Request) (*http.Response, error) {
+			var query struct {
+				Variables map[string]string `json:"variables"`
+			}
+			if r.URL.Path != "/client/v4/graphql" || json.NewDecoder(r.Body).Decode(&query) != nil {
+				t.Fatal("unexpected traffic request")
+			}
+			body := fmt.Sprintf(`{"data":{"viewer":{"zones":[{"series":[{"dimensions":{"datetime":%q},"sum":{"requests":%d,"bytes":%d,"cachedRequests":%d}}]}]}}}`, query.Variables["since"], requests, bytes, cached)
+			return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+		})}})
+	}
+	w := managementRequest(handler, "GET", "/api/cloudflare/traffic?hours=24", "", true)
+	var result struct {
+		Supported                       bool `json:"supported"`
+		Requests, Bytes, CachedRequests uint64
+		Series                          []cfclient.TrafficPoint
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || w.Code != 200 || !result.Supported || result.Requests != requests || result.Bytes != bytes || result.CachedRequests != cached || len(result.Series) != 1 || result.Series[0].Requests != requests || result.Series[0].Bytes != bytes || result.Series[0].CachedRequests != cached {
+		t.Fatalf("provider counters lost precision: HTTP %d: %s, error: %v", w.Code, w.Body.String(), err)
+	}
+}
+
+func TestUnavailableCloudflareTrafficOmitsSuccessfulMetrics(t *testing.T) {
+	m, handler, _ := cloudflareManagementFixture(t)
+	for _, configured := range []bool{false, true} {
+		if configured {
+			configureManagementAccount(t, m)
+			m.client = func(token string) (*cfclient.Client, error) {
+				return cfclient.New(cfclient.Options{Token: token, HTTPClient: &http.Client{Transport: cloudflareFixtureTransport(func(r *http.Request) (*http.Response, error) {
+					return &http.Response{StatusCode: 403, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"errors":[{"message":"not supported"}]}`)), Request: r}, nil
+				})}})
+			}
+		}
+		w := managementRequest(handler, "GET", "/api/cloudflare/traffic", "", true)
+		var result map[string]json.RawMessage
+		if json.Unmarshal(w.Body.Bytes(), &result) != nil || w.Code != 200 || string(result["supported"]) != "false" || len(result["reason"]) == 0 || len(result["since"]) == 0 || len(result["until"]) == 0 {
+			t.Fatalf("unavailable analytics lost its reason or window: %d %s", w.Code, w.Body.String())
+		}
+		for _, field := range []string{"requests", "bytes", "cachedRequests", "series", "scope", "dataset"} {
+			if _, exists := result[field]; exists {
+				t.Fatalf("unavailable analytics fabricated %s: %s", field, w.Body.String())
+			}
+		}
+	}
+}
+
+func configureManagementAccount(t *testing.T, m *cloudflareManagementFixtureState) string {
 	t.Helper()
 	c, revision, err := profile.ReadCloudflareConfiguration(m.home)
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.Management = profile.CloudflareManagement{APIToken: "original-api-token", AccountID: "account", ZoneID: "zone", TunnelID: "tunnel", Domain: "example.net", Listen: profile.DefaultCloudflareManagementListen}
+	c.Management = policy.Account{APIToken: "original-api-token", AccountID: "account", ZoneID: "zone", TunnelID: "tunnel", Domain: "example.net", Listen: policy.DefaultPublishListen}
 	lock, err := profile.Lock(m.home)
 	if err != nil {
 		t.Fatal(err)
@@ -346,12 +406,12 @@ func awaitManagement(t *testing.T, done <-chan struct{}) {
 	}
 }
 
-func blockFirstManagementVerification(t *testing.T, m *cloudflareManagement, block func(*http.Request)) <-chan struct{} {
+func blockFirstManagementVerification(t *testing.T, m *cloudflareManagementFixtureState, block func(*http.Request)) <-chan struct{} {
 	t.Helper()
 	started := make(chan struct{})
 	var first atomic.Bool
-	m.client = func(token string) (*cloudflareapi.Client, error) {
-		return cloudflareapi.New(cloudflareapi.Options{Token: token, HTTPClient: &http.Client{Transport: cloudflareFixtureTransport(func(r *http.Request) (*http.Response, error) {
+	m.client = func(token string) (*cfclient.Client, error) {
+		return cfclient.New(cfclient.Options{Token: token, HTTPClient: &http.Client{Transport: cloudflareFixtureTransport(func(r *http.Request) (*http.Response, error) {
 			value := `{"success":true,"result":[]}`
 			switch r.URL.Path {
 			case "/client/v4/user/tokens/verify":
@@ -382,9 +442,6 @@ func TestCancelledHealthDoesNotPoisonCurrentCache(t *testing.T) {
 	awaitManagement(t, started)
 	cancel()
 	awaitManagement(t, done)
-	if !m.health.CheckedAt.IsZero() || m.healthRevision != "" {
-		t.Fatal("cancelled health request wrote a cached failure")
-	}
 	w := managementRequest(handler, "GET", "/api/cloudflare/health", "", false)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"state":"healthy"`) {
 		t.Fatalf("cancelled health poisoned next check: %d %s", w.Code, w.Body.String())
@@ -407,7 +464,7 @@ func TestHealthRejectsSettingsChangedDuringProviderRead(t *testing.T) {
 	_ = lock.Close()
 	close(release)
 	awaitManagement(t, done)
-	if err != nil || w.Code != 409 || !strings.Contains(w.Body.String(), "cloudflare_config_conflict") || !m.health.CheckedAt.IsZero() {
+	if err != nil || w.Code != 409 || !strings.Contains(w.Body.String(), "cloudflare_config_conflict") {
 		t.Fatalf("published obsolete health: %d %s err=%v", w.Code, w.Body.String(), err)
 	}
 }
@@ -461,4 +518,15 @@ func TestCloudflareSaveRejectsUnusableProviderIDsWithoutWriting(t *testing.T) {
 	if w.Code != 400 || string(before) != string(after) {
 		t.Fatalf("invalid provider ID was saved: %d %s", w.Code, w.Body.String())
 	}
+}
+
+// Keep provider and lifecycle controls in the integration fixture rather than
+// exposing the management service's private cache or synchronization state.
+type cloudflareManagementFixtureState struct {
+	*cfmanagement.Service
+	home, instanceID      string
+	desktop               *cloudflareController
+	busy                  func() bool
+	validateDesktopOrigin func(string) error
+	client                func(string) (*cfclient.Client, error)
 }

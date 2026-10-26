@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/cofy-x/axv/apps/server/internal/cloudflare/policy"
 )
 
 type readMode uint8
@@ -65,10 +67,10 @@ func ReadRemote(home string) (Remote, error) {
 
 // ReadCloudflare reads only the profile version and the Cloudflare ingress
 // settings. It never initializes a listener, credentials or profile state.
-func ReadCloudflare(home string) (Cloudflare, error) {
+func ReadCloudflare(home string) (policy.Configuration, error) {
 	p, err := readProfile(home, readCloudflare)
 	if p.Cloudflare.Listen == "" {
-		p.Cloudflare.Listen = DefaultCloudflareListen
+		p.Cloudflare.Listen = policy.DefaultDesktopListen
 	}
 	return p.Cloudflare, err
 }
@@ -127,12 +129,12 @@ func readProfile(home string, mode readMode) (Profile, error) {
 				return p, fmt.Errorf("AXV Cloudflare configuration: %w", err)
 			}
 		}
-		return p, ValidateCloudflare(p.Cloudflare)
+		return p, policy.Validate(p.Cloudflare)
 	}
 	if mode != readCompute && len(cloudflareJSON) > 0 {
 		if err := decode(cloudflareJSON, &p.Cloudflare); err != nil {
 			p.CloudflareError = "invalid Cloudflare configuration"
-		} else if err := ValidateCloudflare(p.Cloudflare); err != nil {
+		} else if err := policy.Validate(p.Cloudflare); err != nil {
 			p.CloudflareError = err.Error()
 		}
 	}
