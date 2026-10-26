@@ -59,7 +59,7 @@ make build
 
 ## Documentation
 
-Contributors and coding agents follow [AGENTS.md](AGENTS.md), then use the [documentation map](docs/README.md) to choose the affected topic, its source entry points and its owning reference. The map covers architecture, APIs, design and product decisions without requiring a full-documentation read for each change.
+Contributors and coding agents follow [AGENTS.md](AGENTS.md). The [context workflow](docs/README.md#choose-context) provides separate paths for understanding AXV and changing a specific feature; the [task map](docs/README.md#read-by-task) leads to the owning reference, implementation entry points and tests.
 
 ## Verify changes
 
