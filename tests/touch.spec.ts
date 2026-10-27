@@ -45,6 +45,12 @@ test('overflowing Dock keeps native touch scrolling separate from launch and ord
         entries.map((entry) => entry.getAttribute('data-dock-app')!),
       );
   const before = await order();
+  const firstEntry = dockEntry(page, before[0]!);
+  const artwork = await bounds(firstEntry.locator('.ns-pixel-icon'));
+  const options = await bounds(firstEntry.locator('.ns-dock-options'));
+  expect(options.width).toBeGreaterThanOrEqual(24);
+  expect(options.height).toBeGreaterThanOrEqual(20);
+  expect(artwork.y + artwork.height).toBeLessThanOrEqual(options.y);
   const windows = await page.locator('[data-window-id]').count();
   const scrollLeft = () => dock.evaluate((element) => element.scrollLeft);
   const scrollEnd = await dock.evaluate(
@@ -346,8 +352,8 @@ test('touch work area releases the miniwindow row while keeping the Dock and win
   test.skip(!isMobile, 'Runs in the explicit touch projects.');
   const files = filesWindow(page);
   const welcome = page.locator('[data-app-id="welcome"]');
-  const fullArea = { x: 4, y: 90, width: 382, height: 682 };
-  const reservedArea = { ...fullArea, height: 606 };
+  const fullArea = { x: 4, y: 90, width: 382, height: 690 };
+  const reservedArea = { ...fullArea, height: 614 };
   await expectRect(files, fullArea);
   const dockGap = async () => {
     const frame = await bounds(files);

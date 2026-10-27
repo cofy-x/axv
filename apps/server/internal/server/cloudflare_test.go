@@ -11,15 +11,16 @@ import (
 	"strings"
 	"testing"
 
+	cfhttpapi "github.com/cofy-x/axv/apps/server/internal/cloudflare/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/codex"
 	codexhttp "github.com/cofy-x/axv/apps/server/internal/codex/httpapi"
 	computegateway "github.com/cofy-x/axv/apps/server/internal/compute/gateway"
 	preparehttp "github.com/cofy-x/axv/apps/server/internal/compute/prepare/httpapi"
+	"github.com/cofy-x/axv/apps/server/internal/compute/preview"
 	"github.com/cofy-x/axv/apps/server/internal/extensions"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 	"github.com/cofy-x/axv/apps/server/internal/httpapi"
-	"github.com/cofy-x/axv/apps/server/internal/localaccess"
-	"github.com/cofy-x/axv/apps/server/internal/projectfiles"
-	"github.com/cofy-x/axv/apps/server/internal/projectpreview"
+	projectfileshttp "github.com/cofy-x/axv/apps/server/internal/projectfiles/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/storage"
 	"github.com/cofy-x/axv/apps/server/internal/terminal"
 )
@@ -39,13 +40,13 @@ func TestCloudflareControlsRequireRawLocalAccessAndExactOrigin(t *testing.T) {
 		r.Header.Set("X-Forwarded-Host", "localhost:3001")
 		if tc.host == "axv.example.com" {
 			var err error
-			r, err = localaccess.WithAuthenticatedTunnel(r, tc.origin)
+			r, err = httpaccess.WithAuthenticatedTunnel(r, tc.origin)
 			if err != nil {
 				t.Fatal(err)
 			}
 		}
 		w := httptest.NewRecorder()
-		cloudflareSettingsHandler(c).ServeHTTP(w, r)
+		cfhttpapi.DesktopSettings(c).ServeHTTP(w, r)
 		if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "cloudflare_local_only") || len(*services) != 0 {
 			t.Fatalf("remote control bypassed local identity: %d %s", w.Code, w.Body.String())
 		}
@@ -55,7 +56,7 @@ func TestCloudflareControlsRequireRawLocalAccessAndExactOrigin(t *testing.T) {
 		r.RemoteAddr = "127.0.0.1:1234"
 		r.Header.Set("Origin", "http://localhost:3001")
 		w := httptest.NewRecorder()
-		cloudflareSettingsHandler(c).ServeHTTP(w, r)
+		cfhttpapi.DesktopSettings(c).ServeHTTP(w, r)
 		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_cloudflare_request") || len(*services) != 0 {
 			t.Fatalf("ambiguous body mutated ingress: %q: %d %s", body, w.Code, w.Body.String())
 		}
@@ -72,16 +73,16 @@ func TestCloudflareLocalStatusAndSwitchNeverExposeAccessIdentity(t *testing.T) {
 			r.Host = "axv.example.com"
 			r.Header.Set("Origin", "https://axv.example.com")
 			var err error
-			r, err = localaccess.WithAuthenticatedTunnel(r, "https://axv.example.com")
+			r, err = httpaccess.WithAuthenticatedTunnel(r, "https://axv.example.com")
 			if err != nil {
 				t.Fatal(err)
 			}
 		}
 		w := httptest.NewRecorder()
 		if method == http.MethodGet {
-			cloudflareStatusHandler("instance-cf", c.Status).ServeHTTP(w, r)
+			cfhttpapi.DesktopStatus("instance-cf", c.Status).ServeHTTP(w, r)
 		} else {
-			cloudflareSettingsHandler(c).ServeHTTP(w, r)
+			cfhttpapi.DesktopSettings(c).ServeHTTP(w, r)
 		}
 		return w
 	}
@@ -130,7 +131,7 @@ func TestAuthenticatedCloudflareContextSharesFeaturesAndRetainsLocalBoundaries(t
 	defer agents.Close()
 	gateway := computegateway.NewGateway("", computegateway.GatewayOptions{})
 	defer gateway.Close()
-	previews := projectpreview.New(context.Background(), projectpreview.GatewayResolver(gateway))
+	previews := preview.New(context.Background(), preview.GatewayResolver(gateway))
 	defer previews.Close()
 	extensionStore, err := extensions.Open(filepath.Join(t.TempDir(), "extensions.sqlite"))
 	if err != nil {
@@ -138,14 +139,14 @@ func TestAuthenticatedCloudflareContextSharesFeaturesAndRetainsLocalBoundaries(t
 	}
 	defer extensionStore.Close()
 	application := http.NewServeMux()
-	projectfiles.Register(application, store)
+	projectfileshttp.Register(application, store)
 	previews.Register(application)
 	extensions.New(extensionStore).Register(application)
 	application.Handle("/api/compute/", gateway)
 	application.Handle("/api/compute/preparation/", preparehttp.Unavailable("desktop-test", errors.New("fixture unavailable")))
 	c, _, _ := cloudflareControllerFixture(t)
-	application.Handle("GET /api/cloudflare/status", cloudflareStatusHandler("desktop-test", c.Status))
-	application.Handle("PUT /api/cloudflare", cloudflareSettingsHandler(c))
+	application.Handle("GET /api/cloudflare/status", cfhttpapi.DesktopStatus("desktop-test", c.Status))
+	application.Handle("PUT /api/cloudflare", cfhttpapi.DesktopSettings(c))
 	application.Handle("GET /api/remote/status", remoteStatusHandler("desktop-test", func() remoteSnapshot {
 		t.Fatal("tunnel request reached local remote status")
 		return remoteSnapshot{}
@@ -161,11 +162,11 @@ func TestAuthenticatedCloudflareContextSharesFeaturesAndRetainsLocalBoundaries(t
 		r.Header.Set("X-AXV-Host-ID", "original-host")
 		r.Header.Set("Origin", "https://axv.example.com")
 		if authenticated {
-			r, err = localaccess.WithAuthenticatedTunnel(r, "https://axv.example.com")
+			r, err = httpaccess.WithAuthenticatedTunnel(r, "https://axv.example.com")
 			if err != nil {
 				t.Fatal(err)
 			}
-			if localaccess.Request(r, false) || !localaccess.AllowRequest(r, true) || r.TLS != nil || r.RemoteAddr != "127.0.0.1:12345" {
+			if httpaccess.LocalRequest(r, false) || !httpaccess.AllowRequest(r, true) || r.TLS != nil || r.RemoteAddr != "127.0.0.1:12345" {
 				t.Fatal("tunnel authority changed transport facts or became local")
 			}
 		}

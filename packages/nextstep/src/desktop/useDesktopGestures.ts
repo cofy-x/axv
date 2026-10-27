@@ -78,6 +78,9 @@ export function useDesktopGestures({
   const [trashHover, setTrashHover] = useState(false);
   const desktopRef = useRef<HTMLDivElement>(null);
   const lastTouch = useRef<{ id: string; time: number } | null>(null);
+  const pendingTouchActivation = useRef<{ id: string; time: number } | null>(
+    null,
+  );
   const lastTouchActivation = useRef<{ id: string; time: number } | null>(null);
   const iconKey = mobile ? 'compactIcons' : 'icons';
   const fittedIcons = fitDesktopIcons(
@@ -193,6 +196,7 @@ export function useDesktopGestures({
     win: DesktopWindow,
     edge?: string,
   ) => {
+    pendingTouchActivation.current = null;
     if (event.button !== 0 || mobile || overview || win.zoomed) return;
     event.preventDefault();
     event.stopPropagation();
@@ -246,6 +250,7 @@ export function useDesktopGestures({
     event: ReactPointerEvent<HTMLButtonElement>,
     icon: DesktopIcon,
   ) => {
+    pendingTouchActivation.current = null;
     if (event.button !== 0) return;
     event.stopPropagation();
     focusDesktop();
@@ -316,6 +321,7 @@ export function useDesktopGestures({
         setIconPreview({});
         setTrashHover(false);
         if (cancelled) {
+          pendingTouchActivation.current = null;
           setSelection(prior);
           return;
         }
@@ -335,8 +341,10 @@ export function useDesktopGestures({
               lastTouch.current?.id === icon.id &&
               Date.now() - lastTouch.current.time < 450
             ) {
-              lastTouchActivation.current = { id: icon.id, time: Date.now() };
-              openIcon(icon);
+              pendingTouchActivation.current = {
+                id: icon.id,
+                time: Date.now(),
+              };
               lastTouch.current = null;
             } else lastTouch.current = { id: icon.id, time: Date.now() };
           }
@@ -345,6 +353,7 @@ export function useDesktopGestures({
     );
   };
   const beginMarquee = (event: ReactPointerEvent<HTMLDivElement>) => {
+    pendingTouchActivation.current = null;
     if (event.target !== event.currentTarget || event.button !== 0) return;
     focusDesktop();
     event.currentTarget.focus();
@@ -393,6 +402,15 @@ export function useDesktopGestures({
       },
     );
   };
+  const clickIcon = (icon: DesktopIcon) => {
+    const pending = pendingTouchActivation.current;
+    pendingTouchActivation.current = null;
+    if (pending?.id !== icon.id || Date.now() - pending.time >= 700) return;
+    // Open after the touch-generated click has its target, so it cannot hit
+    // an action in the newly opened window at the same screen position.
+    lastTouchActivation.current = { id: icon.id, time: Date.now() };
+    openIcon(icon);
+  };
   const doubleClickIcon = (icon: DesktopIcon) => {
     if (
       lastTouchActivation.current?.id === icon.id &&
@@ -415,6 +433,7 @@ export function useDesktopGestures({
     beginWindowGesture,
     beginIconGesture,
     beginMarquee,
+    clickIcon,
     doubleClickIcon,
     focusDesktop,
     desktopItems,

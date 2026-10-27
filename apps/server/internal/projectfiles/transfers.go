@@ -4,41 +4,31 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net/http"
 	"os"
 	"path"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/cofy-x/axv/apps/server/internal/filelock"
 	"github.com/cofy-x/axv/apps/server/internal/storage"
 )
 
-type importRequest struct {
+// ImportRequest captures the reviewed source and explicit copy destination.
+type ImportRequest struct {
 	RequestID string `json:"requestId"`
 	Path      string `json:"path"`
 	ParentID  string `json:"parentId,omitempty"`
 	SHA256    string `json:"sha256"`
 }
-type exportRequest struct {
+
+// ExportRequest binds an immutable snapshot to a new project-relative path.
+type ExportRequest struct {
 	RequestID  string `json:"requestId"`
 	SnapshotID string `json:"snapshotId"`
 	Path       string `json:"path"`
 }
 
-func receipt(w http.ResponseWriter, result json.RawMessage) {
-	var failure struct {
-		Code  string `json:"code"`
-		Error string `json:"error"`
-	}
-	if json.Unmarshal(result, &failure) == nil && failure.Code != "" {
-		fail(w, problem(failure.Code, failure.Error))
-		return
-	}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(200)
-	_, _ = w.Write(result)
-}
 func payloadHash(kind, projectID string, payload any) string {
 	data, _ := json.Marshal(struct {
 		Kind      string
@@ -48,101 +38,90 @@ func payloadHash(kind, projectID string, payload any) string {
 	return digest(data)
 }
 
-func (a *API) importFile(w http.ResponseWriter, r *http.Request) {
-	var in importRequest
-	if !decode(w, r, &in) {
-		return
+func replayReceipt(result json.RawMessage) (json.RawMessage, error) {
+	var failure struct {
+		Code  string `json:"code"`
+		Error string `json:"error"`
 	}
+	if json.Unmarshal(result, &failure) == nil && failure.Code != "" {
+		return nil, problem(failure.Code, failure.Error)
+	}
+	return result, nil
+}
+
+// Import copies reviewed bytes into a document and commits its receipt with
+// the document, origin and link. Replay never rereads a mutable source.
+func (s *Service) Import(ctx context.Context, projectID string, in ImportRequest) (json.RawMessage, error) {
 	if in.ParentID == "" {
 		in.ParentID = "documents"
 	}
 	name, err := relative(in.Path, false)
 	if err != nil {
-		fail(w, err)
-		return
+		return nil, err
 	}
 	in.Path = name
 	if !validRequestID(in.RequestID) || len(in.SHA256) != 64 || strings.Trim(in.SHA256, "0123456789abcdef") != "" {
-		fail(w, problem("invalid_request", "Use a request ID and the reviewed file's SHA-256."))
-		return
+		return nil, problem("invalid_request", "Use a request ID and the reviewed file's SHA-256.")
 	}
-	t := storage.DocumentTransfer{RequestID: in.RequestID, Kind: "import", ProjectID: r.PathValue("id"), Path: name, SHA256: in.SHA256}
+	t := storage.DocumentTransfer{RequestID: in.RequestID, Kind: "import", ProjectID: projectID, Path: name, SHA256: in.SHA256}
 	t.PayloadHash = payloadHash(t.Kind, t.ProjectID, in)
-	old, found, err := a.store.DocumentTransfer(r.Context(), t.RequestID, t.PayloadHash)
+	old, found, err := s.store.DocumentTransfer(ctx, t.RequestID, t.PayloadHash)
 	if err != nil {
-		fail(w, err)
-		return
+		return nil, err
 	}
 	if found {
-		receipt(w, old.Result)
-		return
+		return replayReceipt(old.Result)
 	}
-	_, root, err := a.project(r.Context(), t.ProjectID)
+	_, root, err := s.project(ctx, t.ProjectID)
 	if err != nil {
-		fail(w, err)
-		return
+		return nil, err
 	}
 	defer root.Close()
 	data, err := read(root, name, storage.MaxFileSize)
 	if err != nil {
-		fail(w, err)
-		return
+		return nil, err
 	}
 	if digest(data) != in.SHA256 {
-		fail(w, problem("source_changed", "The project file changed since it was reviewed. Read it again before importing."))
-		return
+		return nil, problem("source_changed", "The project file changed since it was reviewed. Read it again before importing.")
 	}
-	result, err := a.store.ImportProjectFile(r.Context(), t, in.ParentID, path.Base(name), data)
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	receipt(w, result)
+	return s.store.ImportProjectFile(ctx, t, in.ParentID, path.Base(name), data)
 }
 
-func (a *API) exportSnapshot(w http.ResponseWriter, r *http.Request) {
-	var in exportRequest
-	if !decode(w, r, &in) {
-		return
-	}
+// Export reserves the original parent identity, publishes without replacement
+// and commits an immutable receipt before cleaning up the recovery anchor.
+// Replaying a terminal failure returns its original domain error.
+func (s *Service) Export(ctx context.Context, projectID string, in ExportRequest) (json.RawMessage, error) {
 	name, err := relative(in.Path, false)
 	if err != nil {
-		fail(w, err)
-		return
+		return nil, err
 	}
 	in.Path = name
 	if !validRequestID(in.RequestID) || in.SnapshotID == "" {
-		fail(w, problem("invalid_request", "Choose a snapshot and a request ID."))
-		return
+		return nil, problem("invalid_request", "Choose a snapshot and a request ID.")
 	}
-	t := storage.DocumentTransfer{RequestID: in.RequestID, Kind: "export", ProjectID: r.PathValue("id"), Path: name}
+	t := storage.DocumentTransfer{RequestID: in.RequestID, Kind: "export", ProjectID: projectID, Path: name}
 	t.PayloadHash = payloadHash(t.Kind, t.ProjectID, in)
-	release, err := a.lockExports(r.Context())
+	release, err := s.lockExports(ctx)
 	if err != nil {
-		fail(w, err)
-		return
+		return nil, err
 	}
 	defer release()
-	old, found, err := a.store.DocumentTransfer(r.Context(), t.RequestID, t.PayloadHash)
+	old, found, err := s.store.DocumentTransfer(ctx, t.RequestID, t.PayloadHash)
 	if err != nil {
-		fail(w, err)
-		return
+		return nil, err
 	}
 	if found && len(old.Result) > 0 {
-		a.cleanupExport(r.Context(), old)
-		receipt(w, old.Result)
-		return
+		s.cleanupExport(ctx, old)
+		return replayReceipt(old.Result)
 	}
-	d, err := a.store.Snapshot(r.Context(), in.SnapshotID)
+	d, err := s.store.Snapshot(ctx, in.SnapshotID)
 	if err != nil {
-		fail(w, err)
-		return
+		return nil, err
 	}
 	t.SHA256 = d.SHA256
-	_, root, err := a.project(r.Context(), t.ProjectID)
+	_, root, err := s.project(ctx, t.ProjectID)
 	if err != nil {
-		fail(w, err)
-		return
+		return nil, err
 	}
 	defer root.Close()
 	parent, identity, err := exportParent(root, name)
@@ -150,46 +129,40 @@ func (a *API) exportSnapshot(w http.ResponseWriter, r *http.Request) {
 		if found {
 			err = problem("transfer_unresolved", "The reserved export destination directory is unavailable. Restore it before retrying this request.")
 		}
-		fail(w, err)
-		return
+		return nil, err
 	}
 	_ = parent.Close()
 	t.ParentIdentity = identity
-	t, err = a.store.ReserveExport(r.Context(), t)
+	t, err = s.store.ReserveExport(ctx, t)
 	if err != nil {
-		fail(w, err)
-		return
+		return nil, err
 	}
 	if len(t.Result) > 0 {
-		a.cleanupExport(r.Context(), t)
-		receipt(w, t.Result)
-		return
+		s.cleanupExport(ctx, t)
+		return replayReceipt(t.Result)
 	}
 	if err = publish(root, t, []byte(d.Content)); err != nil {
 		var failure *storage.Error
 		if errors.As(err, &failure) && failure.Code == "name_conflict" {
 			result, _ := json.Marshal(map[string]string{"code": failure.Code, "error": failure.Message})
-			if commitErr := a.store.CompleteExport(r.Context(), t, result); commitErr != nil {
-				fail(w, commitErr)
-				return
+			if commitErr := s.store.CompleteExport(ctx, t, result); commitErr != nil {
+				return nil, commitErr
 			}
-			a.cleanupExport(r.Context(), t)
+			s.cleanupExport(ctx, t)
 		}
-		fail(w, err)
-		return
+		return nil, err
 	}
 	result, _ := json.Marshal(map[string]any{"path": name, "sha256": d.SHA256, "snapshotId": d.ID, "projectId": t.ProjectID})
-	if err = a.store.CompleteExport(r.Context(), t, result); err != nil {
-		fail(w, err)
-		return
+	if err = s.store.CompleteExport(ctx, t, result); err != nil {
+		return nil, err
 	}
 	// A completed receipt no longer needs its hard-linked recovery anchor.
-	a.cleanupExport(r.Context(), t)
-	receipt(w, result)
+	s.cleanupExport(ctx, t)
+	return result, nil
 }
 
-func (a *API) lockExports(ctx context.Context) (func(), error) {
-	path, err := a.store.DocumentTransferLockPath(ctx)
+func (s *Service) lockExports(ctx context.Context) (func(), error) {
+	path, err := s.store.DocumentTransferLockPath(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -222,11 +195,11 @@ func (a *API) lockExports(ctx context.Context) (func(), error) {
 
 // A committed receipt remains authoritative even if its project is currently
 // offline. When available, replay also finishes interrupted anchor cleanup.
-func (a *API) cleanupExport(ctx context.Context, transfer storage.DocumentTransfer) {
+func (s *Service) cleanupExport(ctx context.Context, transfer storage.DocumentTransfer) {
 	if transfer.StagePath == "" || !strings.HasPrefix(transfer.StagePath, ".axv-export-") || strings.ContainsAny(transfer.StagePath, "/\\") {
 		return
 	}
-	_, root, err := a.project(ctx, transfer.ProjectID)
+	_, root, err := s.project(ctx, transfer.ProjectID)
 	if err != nil {
 		return
 	}
@@ -347,4 +320,8 @@ func publish(root *os.Root, t storage.DocumentTransfer, data []byte) error {
 		}
 	}
 	return verifyExportParent(root, t)
+}
+
+func validRequestID(value string) bool {
+	return len(value) >= 8 && len(value) <= 128 && utf8.ValidString(value) && !strings.ContainsAny(value, "\x00\r\n") && strings.TrimSpace(value) == value
 }

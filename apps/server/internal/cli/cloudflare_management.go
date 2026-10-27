@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/cofy-x/axv/apps/server/internal/app/launch"
-	"github.com/cofy-x/axv/apps/server/internal/cloudflarepublish"
+	"github.com/cofy-x/axv/apps/server/internal/cloudflare/policy"
 	"github.com/cofy-x/axv/apps/server/internal/compute"
 	"github.com/cofy-x/axv/apps/server/internal/jsonunicode"
 	"github.com/cofy-x/axv/apps/server/internal/profile"
@@ -85,8 +85,13 @@ func desktopCloudflareCall(ctx context.Context, method, path string, payload any
 
 func printCloudflareJSON(cmd *cobra.Command, body json.RawMessage) error {
 	var value any
-	if err := json.Unmarshal(body, &value); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	if err := decoder.Decode(&value); err != nil {
 		return err
+	}
+	if decoder.Decode(new(any)) != io.EOF {
+		return fmt.Errorf("Cloudflare returned invalid JSON")
 	}
 	return jsonResult(cmd.OutOrStdout(), value)
 }
@@ -224,7 +229,7 @@ func newCloudflarePublish() *cobra.Command {
 	var name, domain, visibility, bindingFile, requestID, instanceID string
 	var port int
 	cmd := &cobra.Command{Use: "publish <project-id>", Short: "Publish one HTTP service from an explicitly selected VM project", Args: arguments(cobra.ExactArgs(1)), RunE: func(cmd *cobra.Command, args []string) error {
-		if port < 1024 || port > 65535 || !cloudflarepublish.ValidName(name) || profile.ValidateAllocationDomain(domain) != nil {
+		if port < 1024 || port > 65535 || !policy.ValidPublicationName(name) || policy.ValidateAllocationDomain(domain) != nil {
 			return usageError(fmt.Errorf("provide --port from 1024 to 65535, an isolated --domain and --name with 1–24 lowercase letters, digits or interior hyphens"))
 		}
 		if visibility != "owner" && visibility != "public" {
@@ -269,7 +274,7 @@ func newCloudflarePublish() *cobra.Command {
 			if !snapshot.Supported {
 				return fmt.Errorf("new publishing is unavailable: %s", snapshot.Reason)
 			}
-			if profile.ValidateAllocationDomain(snapshot.Domain) != nil || snapshot.Domain != domain {
+			if policy.ValidateAllocationDomain(snapshot.Domain) != nil || snapshot.Domain != domain {
 				return fmt.Errorf("the configured allocation domain changed; review Cloudflare configuration before publishing")
 			}
 		}

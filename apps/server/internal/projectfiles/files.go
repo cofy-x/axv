@@ -19,7 +19,8 @@ import (
 	"github.com/cofy-x/axv/apps/server/internal/storage"
 )
 
-type fileEntry struct {
+// Entry describes a regular file, directory or informational symlink entry.
+type Entry struct {
 	Name       string `json:"name"`
 	Path       string `json:"path"`
 	Kind       string `json:"kind"`
@@ -116,7 +117,7 @@ func text(data []byte) bool {
 	return utf8.Valid(data) && strings.IndexFunc(string(data), func(r rune) bool { return unicode.IsControl(r) && r != '\n' && r != '\r' && r != '\t' && r != '\f' }) < 0
 }
 
-func list(root *os.Root, dir, cursor string, limit int) ([]fileEntry, string, bool, error) {
+func list(root *os.Root, dir, cursor string, limit int) ([]Entry, string, bool, error) {
 	offset := 0
 	var err error
 	if cursor != "" {
@@ -142,7 +143,7 @@ func list(root *os.Root, dir, cursor string, limit int) ([]fileEntry, string, bo
 	if truncated {
 		entries = entries[:10000]
 	}
-	items := []fileEntry{}
+	items := []Entry{}
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), ".axv-export-") || !utf8.ValidString(e.Name()) {
 			continue
@@ -159,7 +160,7 @@ func list(root *os.Root, dir, cursor string, limit int) ([]fileEntry, string, bo
 		} else if !info.Mode().IsRegular() {
 			continue
 		}
-		items = append(items, fileEntry{Name: e.Name(), Path: path.Join(dir, e.Name()), Kind: kind, Size: info.Size(), ModifiedAt: info.ModTime().UTC().Format(time.RFC3339Nano)})
+		items = append(items, Entry{Name: e.Name(), Path: path.Join(dir, e.Name()), Kind: kind, Size: info.Size(), ModifiedAt: info.ModTime().UTC().Format(time.RFC3339Nano)})
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
 	if offset > len(items) {

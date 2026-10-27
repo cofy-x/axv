@@ -2,7 +2,7 @@
 
 [API index](README.md)
 
-The optional embedded Tailscale listener serves the workstation over private HTTPS. [Startup](../startup.md#remote-access) owns configuration and enrollment. The [transport](../../apps/server/internal/tailnet) and [authentication middleware](../../apps/server/internal/remoteaccess) own connection lifecycle and authorization; feature APIs retain their existing data and execution contracts.
+The optional embedded Tailscale listener serves the workstation over private HTTPS. [Startup](../startup.md#remote-access) owns configuration and enrollment. The [transport](../../apps/server/internal/tailnet) and [authentication middleware](../../apps/server/internal/tailnet/access) own connection lifecycle and authorization; feature APIs retain their existing data and execution contracts.
 
 ## Identity and authorization
 

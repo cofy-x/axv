@@ -13,9 +13,27 @@ import (
 	"testing"
 
 	"github.com/cofy-x/axv/apps/server/internal/app/launch"
-	"github.com/cofy-x/axv/apps/server/internal/cloudflarepublish"
+	"github.com/cofy-x/axv/apps/server/internal/cloudflare/publish"
 	"github.com/cofy-x/axv/apps/server/internal/jsonfile"
+	"github.com/spf13/cobra"
 )
+
+func TestCloudflareJSONOutputKeepsExactCounters(t *testing.T) {
+	cmd := &cobra.Command{}
+	var output bytes.Buffer
+	cmd.SetOut(&output)
+	input := json.RawMessage(`{"requests":9007199254740993,"bytes":18446744073709551615}`)
+	if err := printCloudflareJSON(cmd, input); err != nil {
+		t.Fatal(err)
+	}
+	var result struct{ Requests, Bytes uint64 }
+	if err := json.Unmarshal(output.Bytes(), &result); err != nil || result.Requests != 9007199254740993 || result.Bytes != 18446744073709551615 {
+		t.Fatalf("Cloudflare JSON output rounded counters: %s, error: %v", output.String(), err)
+	}
+	if err := printCloudflareJSON(cmd, append(input, []byte(` {}`)...)); err == nil {
+		t.Fatal("Cloudflare JSON output accepted trailing data")
+	}
+}
 
 func cloudflareCommandFixture(t *testing.T, handler http.HandlerFunc) string {
 	t.Helper()
@@ -127,7 +145,7 @@ func TestCloudflareCLIPublishKeepsOriginalReceiptAndRequestsAFreshHostname(t *te
 			_ = json.NewEncoder(w).Encode(map[string]any{"instanceId": "original-publications", "supported": false})
 			return
 		}
-		var request cloudflarepublish.Registration
+		var request publish.Registration
 		if r.URL.Path != "/api/cloudflare-publications" || r.Header.Get("X-AXV-Host-ID") != original.Binding.HostID || json.NewDecoder(r.Body).Decode(&request) != nil {
 			t.Errorf("publication did not use its original desktop and host")
 		}

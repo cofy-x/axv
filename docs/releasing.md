@@ -115,11 +115,13 @@ Prefer `gh release edit "$TAG" --repo cofy-x/axv --notes-file "$NOTES"` for draf
 Download each asset by its ID into a fresh inspection directory using the [asset API](https://docs.github.com/en/rest/releases/assets#get-a-release-asset), for example:
 
 ```sh
-gh api -H 'Accept: application/octet-stream' \
+gh api --allow-escape-sequences -H 'Accept: application/octet-stream' \
   "repos/cofy-x/axv/releases/assets/$ASSET_ID" > "$DOWNLOADED_FILE"
 ```
 
-Require a successful download and compare **both** files with the originals using `cmp`; independently check their byte counts and SHA-256 values. Then run `sha256sum --check SHA256SUMS` in the download directory and repeat the installation/version smoke from those files. A matching archive against a modified manifest is insufficient. Re-read the draft inventory after inspection and stop if another writer changed it.
+Use the binary-output flag only with a file redirect or a pipe that saves the bytes, never an interactive terminal. The [gh 2.102.0 output guard](https://github.com/cli/cli/blob/v2.102.0/pkg/cmd/api/api.go#L491-L503) can reject valid binary data containing escape sequences even when stdout is redirected or piped.
+
+Require a `gh` exit status of `0` and compare **both** files with the originals using `cmp`; independently check their byte counts and SHA-256 values. Then run `sha256sum --check SHA256SUMS` in the download directory and repeat the installation/version smoke from those files. A matching archive against a modified manifest is insufficient. Re-read the draft inventory after inspection and stop if another writer changed it.
 
 ### Publish and verify
 

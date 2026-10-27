@@ -122,10 +122,9 @@ For remote transport changes, include the owner binding, certificate/lifecycle, 
 
 ```sh
 node scripts/test-go.mjs -race \
-  ./apps/server/internal/tailnet ./apps/server/internal/remoteaccess \
-  ./apps/server/internal/cloudflare ./apps/server/internal/cloudflareapi \
-  ./apps/server/internal/cloudflarepublish \
-  ./apps/server/internal/localaccess ./apps/server/internal/server \
+  ./apps/server/internal/tailnet/... \
+  ./apps/server/internal/cloudflare/... \
+  ./apps/server/internal/httpaccess ./apps/server/internal/server \
   ./apps/server/internal/profile ./apps/server/internal/config ./apps/server/internal/cli
 ```
 
@@ -255,7 +254,7 @@ node scripts/test-go.mjs -race \
 
 Project store/service/HTTP tests cover retained-volume registration, durable receipts/replay, attachment/revision checks and stale environment rejection. Guest tests cover path confinement, text/hash checks, create-only publication and invalid/stale identities. CLI fake-host tests verify captured bindings and volume revisions, registration recovery after VM removal with the original host/payload, machine-readable output, unchanged writes, explicit creation expectations and no retry after conflicts or lost responses. Browser tests complement these service fixtures with edited snapshots, conflict/draft preservation and explicit reconnect. Required cross-layer verification remains the [matrix above](#verification); fixture success alone does not establish native VM support.
 
-Initialization fixtures also verify typed intent admission, credential-free repository URLs, durable created-directory identities, exact task/finish replay and existing-directory preservation. Preview fixtures cover independent origins, original-environment HTTP/WebSocket forwarding, owner/Origin checks, connection revocation, manager/request replay, released active capacity and fresh hostnames across profiles and restart. Backup fixtures cover stopped-source admission, unresolved tasks, immutable copies, exact operation recovery, independent restored identities and Git/worktree path validation. Include `node scripts/test-go.mjs -race ./apps/server/internal/projectpreview ./apps/server/internal/tailnet ./apps/server/internal/server` when changing preview transport or composition; browser tests exercise setup, previews and recovery through their existing feature controls.
+Initialization fixtures also verify typed intent admission, credential-free repository URLs, durable created-directory identities, exact task/finish replay and existing-directory preservation. Preview fixtures cover independent origins, original-environment HTTP/WebSocket forwarding, owner/Origin checks, connection revocation, manager/request replay, released active capacity and fresh hostnames across profiles and restart. Backup fixtures cover stopped-source admission, unresolved tasks, immutable copies, exact operation recovery, independent restored identities and Git/worktree path validation. Include `node scripts/test-go.mjs -race ./apps/server/internal/compute/preview ./apps/server/internal/tailnet ./apps/server/internal/server` when changing preview transport or composition; browser tests exercise setup, previews and recovery through their existing feature controls.
 
 For VM-project Codex work, also run `node scripts/test-go.mjs -race ./apps/server/internal/codex/... ./apps/server/internal/storage ./apps/server/internal/compute/gateway ./apps/server/internal/vmwork ./apps/server/internal/cli`. These cover run-specific context publication, exact replay before live validation, explicit same-project continuation, control-workspace ownership, desktop database fences, provider Skill inputs and captured-client CLI behavior. [`vm-project-codex.spec.ts`](../tests/vm-project-codex.spec.ts) covers scoped launch, drafts, unknown-request recovery, VM replacement, continuation, source-store rejection and narrow-screen/focus behavior across the browser matrix. Validate the bundled [Skill](../apps/server/internal/vmwork/skills/axv-vm-project/SKILL.md) and its real command examples when changing the tool contract.
 

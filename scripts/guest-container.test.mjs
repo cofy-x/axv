@@ -44,10 +44,16 @@ describe.skipIf(process.platform === 'win32')(
 set -eu
 case "$1" in
   build|create)
-    test "$2" = --platform
-    test "$3" = "linux/$guest_arch"
-    printf '%s\\n' "$1" >> "$AXV_DOCKER_CALLS"
-    if [ "$1" = create ]; then printf 'fixture-container\\n'; fi
+    operation=$1
+    shift
+    if [ "$operation" = build ]; then
+      test "$1" = --no-cache
+      shift
+    fi
+    test "$1" = --platform
+    test "$2" = "linux/$guest_arch"
+    printf '%s\\n' "$operation" >> "$AXV_DOCKER_CALLS"
+    if [ "$operation" = create ]; then printf 'fixture-container\\n'; fi
     ;;
   image)
     test "$2" = inspect

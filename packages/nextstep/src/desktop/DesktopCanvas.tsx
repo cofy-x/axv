@@ -28,6 +28,7 @@ export function DesktopCanvas({
     setTrashHover,
     iconPosition,
     beginIconGesture,
+    clickIcon,
     doubleClickIcon,
     marquee,
   } = gestures;
@@ -74,9 +75,10 @@ export function DesktopCanvas({
               top: iconPosition(icon).y - iconArea.y,
             }}
             onPointerDown={(event) => beginIconGesture(event, icon)}
-            onClick={(event) =>
-              event.currentTarget.focus({ preventScroll: true })
-            }
+            onClick={(event) => {
+              event.currentTarget.focus({ preventScroll: true });
+              clickIcon(icon);
+            }}
             onDoubleClick={() => doubleClickIcon(icon)}
             onContextMenu={(event) => {
               event.preventDefault();

@@ -10,22 +10,25 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cofy-x/axv/apps/server/internal/cloudflare"
+	"github.com/cofy-x/axv/apps/server/internal/cloudflare/desktop"
+	"github.com/cofy-x/axv/apps/server/internal/cloudflare/management"
+	"github.com/cofy-x/axv/apps/server/internal/cloudflare/policy"
 	"github.com/cofy-x/axv/apps/server/internal/profile"
 )
 
 type controlledCloudflare struct {
 	mu     sync.Mutex
-	status cloudflare.Status
+	status desktop.Status
 	closes int
 	close  func() error
 }
 
-func (s *controlledCloudflare) Status() cloudflare.Status {
+func (s *controlledCloudflare) Status() desktop.Status {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.status
 }
+
 func (s *controlledCloudflare) Close() error {
 	s.mu.Lock()
 	s.closes++
@@ -36,32 +39,34 @@ func (s *controlledCloudflare) Close() error {
 	}
 	return nil
 }
+
 func (s *controlledCloudflare) setState(state string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.status.State = state
 }
+
 func (s *controlledCloudflare) closeCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.closes
 }
 
-func cloudflareControllerFixture(t *testing.T) (*cloudflareController, *[]*controlledCloudflare, *[]profile.Cloudflare) {
+func cloudflareControllerFixture(t *testing.T) (*cloudflareController, *[]*controlledCloudflare, *[]policy.Configuration) {
 	t.Helper()
 	home := t.TempDir()
-	settings := profile.Cloudflare{Listen: profile.DefaultCloudflareListen, Origin: "https://axv.example.com", Issuer: "https://my-team.cloudflareaccess.com", Audience: "private-audience", OwnerSubject: "private-owner"}
+	settings := policy.Configuration{Listen: policy.DefaultDesktopListen, Origin: "https://axv.example.com", Issuer: "https://my-team.cloudflareaccess.com", Audience: "private-audience", OwnerSubject: "private-owner"}
 	data, _ := json.Marshal(map[string]any{"cloudflare": settings})
 	if err := os.WriteFile(filepath.Join(home, "config.json"), data, 0600); err != nil {
 		t.Fatal(err)
 	}
-	services, inputs := []*controlledCloudflare{}, []profile.Cloudflare{}
-	c := newCloudflareControllerWithStarter(context.Background(), home, func(ctx context.Context, settings profile.Cloudflare) (cloudflareService, error) {
+	services, inputs := []*controlledCloudflare{}, []policy.Configuration{}
+	c := newCloudflareControllerWithStarter(context.Background(), home, func(ctx context.Context, settings policy.Configuration) (cloudflareService, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		inputs = append(inputs, settings)
-		service := &controlledCloudflare{status: cloudflare.Status{State: "listening", URL: settings.Origin, Listen: settings.Listen}}
+		service := &controlledCloudflare{status: desktop.Status{State: "listening", URL: settings.Origin, Listen: settings.Listen}}
 		services = append(services, service)
 		return service, nil
 	})
@@ -83,9 +88,9 @@ func TestCloudflareDesktopRechecksHistoricalPublicationSitesAtStartupAndEnable(t
 		t.Fatal(err)
 	}
 	allowed, starts := false, 0
-	c := newCloudflareControllerGuarded(context.Background(), original.home, func(_ context.Context, settings profile.Cloudflare) (cloudflareService, error) {
+	c := newCloudflareControllerGuarded(context.Background(), original.home, func(_ context.Context, settings policy.Configuration) (cloudflareService, error) {
 		starts++
-		return &controlledCloudflare{status: cloudflare.Status{State: "listening", URL: settings.Origin}}, nil
+		return &controlledCloudflare{status: desktop.Status{State: "listening", URL: settings.Origin}}, nil
 	}, func(string) error {
 		if !allowed {
 			return errors.New("This site belongs to a retained publication.")
@@ -110,7 +115,7 @@ func TestCloudflareDesktopRechecksHistoricalPublicationSitesAtStartupAndEnable(t
 
 func TestCloudflareDisabledStartupAndPersistentSwitch(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "absent")
-	c := newCloudflareControllerWithStarter(context.Background(), home, func(context.Context, profile.Cloudflare) (cloudflareService, error) {
+	c := newCloudflareControllerWithStarter(context.Background(), home, func(context.Context, policy.Configuration) (cloudflareService, error) {
 		t.Fatal("disabled ingress created a listener")
 		return nil, nil
 	})
@@ -186,9 +191,9 @@ func TestCloudflareConfigurationFailureAndBusyLockPreserveLiveIngress(t *testing
 		} else if err := os.WriteFile(filepath.Join(c.home, "config.json"), []byte(`{"cloudflare":null}`), 0600); err != nil {
 			t.Fatal(err)
 		}
-		var failure *cloudflareControlError
+		var failure *management.Problem
 		err := c.SetEnabled(context.Background(), false)
-		if !errors.As(err, &failure) || failure.code != code || c.Status() != before || (*services)[0].closeCount() != 0 {
+		if !errors.As(err, &failure) || failure.Code != code || c.Status() != before || (*services)[0].closeCount() != 0 {
 			t.Fatalf("failed save changed the live ingress: %+v %v", c.Status(), err)
 		}
 	}
@@ -224,8 +229,8 @@ func TestCloudflareTransitionSerializesAndFailedCloseBlocksReplacement(t *testin
 	}
 	(*services)[1].close = func() error { return errors.New("private fixture close failure") }
 	for _, enabled := range []bool{false, true, false} {
-		var failure *cloudflareControlError
-		if !errors.As(c.SetEnabled(context.Background(), enabled), &failure) || failure.code != "cloudflare_close_failed" {
+		var failure *management.Problem
+		if !errors.As(c.SetEnabled(context.Background(), enabled), &failure) || failure.Code != "cloudflare_close_failed" {
 			t.Fatal("failed close was hidden")
 		}
 	}
@@ -237,7 +242,7 @@ func TestCloudflareTransitionSerializesAndFailedCloseBlocksReplacement(t *testin
 func TestCloudflareStartAndConfigurationFailuresAreVisibleAndRetryable(t *testing.T) {
 	c, services, _ := cloudflareControllerFixture(t)
 	start := c.start
-	c.start = func(context.Context, profile.Cloudflare) (cloudflareService, error) {
+	c.start = func(context.Context, policy.Configuration) (cloudflareService, error) {
 		return nil, errors.New("private fixture start failure")
 	}
 	cloudflareSwitch(t, c, true)
@@ -257,8 +262,8 @@ func TestCloudflareStartAndConfigurationFailuresAreVisibleAndRetryable(t *testin
 	if err := c.Close(); err != nil {
 		t.Fatal(err)
 	}
-	var failure *cloudflareControlError
-	if !errors.As(c.SetEnabled(context.Background(), true), &failure) || failure.code != "cloudflare_stopping" {
+	var failure *management.Problem
+	if !errors.As(c.SetEnabled(context.Background(), true), &failure) || failure.Code != "cloudflare_stopping" {
 		t.Fatal("closed controller restarted an ingress")
 	}
 	if err := os.WriteFile(filepath.Join(c.home, "config.json"), []byte(`{"cloudflare":{"enabled":true}}`), 0600); err != nil {
@@ -311,7 +316,7 @@ func TestCloudflareDisabledConfigurationRepairClearsStaleStartupError(t *testing
 	if err := os.WriteFile(path, []byte(`{"cloudflare":{"enabled":false,"listen":"0.0.0.0:3002"}}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	c := newCloudflareControllerWithStarter(context.Background(), home, func(context.Context, profile.Cloudflare) (cloudflareService, error) {
+	c := newCloudflareControllerWithStarter(context.Background(), home, func(context.Context, policy.Configuration) (cloudflareService, error) {
 		t.Fatal("repairing a disabled configuration automatically started an ingress")
 		return nil, nil
 	})
@@ -319,12 +324,12 @@ func TestCloudflareDisabledConfigurationRepairClearsStaleStartupError(t *testing
 	if status := c.Status(); status.State != "error" || status.Error == "" || status.Configured || status.Enabled {
 		t.Fatalf("invalid disabled configuration did not report its error: %+v", status)
 	}
-	settings := profile.Cloudflare{Origin: "https://axv.example.com", Issuer: "https://my-team.cloudflareaccess.com", Audience: "application-audience", OwnerSubject: "owner-stable-subject"}
+	settings := policy.Configuration{Origin: "https://axv.example.com", Issuer: "https://my-team.cloudflareaccess.com", Audience: "application-audience", OwnerSubject: "owner-stable-subject"}
 	data, _ := json.Marshal(map[string]any{"cloudflare": settings})
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if status := c.Status(); status.State != "disabled" || !status.Configured || status.Enabled || status.Error != "" || status.URL != "" || status.Listen != profile.DefaultCloudflareListen {
+	if status := c.Status(); status.State != "disabled" || !status.Configured || status.Enabled || status.Error != "" || status.URL != "" || status.Listen != policy.DefaultDesktopListen {
 		t.Fatalf("repaired disabled configuration retained a stale error: %+v", status)
 	}
 }

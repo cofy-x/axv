@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cofy-x/axv/apps/server/internal/remoteaccess"
+	"github.com/cofy-x/axv/apps/server/internal/tailnet/access"
 	"tailscale.com/client/local"
 	"tailscale.com/client/tailscale/apitype"
 	"tailscale.com/ipn/ipnstate"
@@ -50,7 +50,7 @@ type Status struct {
 type Endpoint struct {
 	Origin      string
 	OwnerUserID string
-	WhoIs       remoteaccess.WhoIsFunc
+	WhoIs       access.WhoIsFunc
 }
 
 type Options struct {
@@ -81,7 +81,7 @@ type backend interface {
 	Status(context.Context) (*ipnstate.Status, error)
 	Certificate(context.Context, string, time.Duration) (*tls.Certificate, error)
 	Listen(string, string) (net.Listener, error)
-	WhoIs(context.Context, string) (remoteaccess.Identity, error)
+	WhoIs(context.Context, string) (access.Identity, error)
 	Close() error
 }
 
@@ -437,21 +437,21 @@ func (n *embeddedBackend) Certificate(ctx context.Context, domain string, validi
 	return &value, err
 }
 
-func (n *embeddedBackend) WhoIs(ctx context.Context, remote string) (remoteaccess.Identity, error) {
+func (n *embeddedBackend) WhoIs(ctx context.Context, remote string) (access.Identity, error) {
 	client, err := n.client()
 	if err != nil {
-		return remoteaccess.Identity{}, errors.New("the embedded peer identity is unavailable")
+		return access.Identity{}, errors.New("the embedded peer identity is unavailable")
 	}
 	who, err := client.WhoIs(ctx, remote)
 	if err != nil || who == nil || who.Node == nil || who.UserProfile == nil {
-		return remoteaccess.Identity{}, errors.New("the embedded peer identity could not be verified")
+		return access.Identity{}, errors.New("the embedded peer identity could not be verified")
 	}
 	return peerIdentity(who), nil
 }
 
-func peerIdentity(who *apitype.WhoIsResponse) remoteaccess.Identity {
+func peerIdentity(who *apitype.WhoIsResponse) access.Identity {
 	if who == nil || who.Node == nil || who.UserProfile == nil {
-		return remoteaccess.Identity{}
+		return access.Identity{}
 	}
 	node := who.Node
 	// A peer's MachineAuthorized bool may be omitted and is not a reliable peer
@@ -464,7 +464,7 @@ func peerIdentity(who *apitype.WhoIsResponse) remoteaccess.Identity {
 	// clock adjustment; comparing KeyExpiry to our local clock would lose it.
 	if node.Expired || node.IsJailed || node.UnsignedPeerAPIOnly ||
 		node.User <= 0 || node.User != who.UserProfile.ID || !presentNodeID(string(node.StableID)) {
-		return remoteaccess.Identity{}
+		return access.Identity{}
 	}
-	return remoteaccess.Identity{UserID: strconv.FormatInt(int64(node.User), 10), NodeID: string(node.StableID), Tagged: node.IsTagged()}
+	return access.Identity{UserID: strconv.FormatInt(int64(node.User), 10), NodeID: string(node.StableID), Tagged: node.IsTagged()}
 }

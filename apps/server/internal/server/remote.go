@@ -10,10 +10,10 @@ import (
 	"strings"
 
 	"github.com/cofy-x/axv/apps/server/internal/diagnostics"
-	"github.com/cofy-x/axv/apps/server/internal/localaccess"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 	"github.com/cofy-x/axv/apps/server/internal/profile"
-	"github.com/cofy-x/axv/apps/server/internal/remoteaccess"
 	"github.com/cofy-x/axv/apps/server/internal/tailnet"
+	"github.com/cofy-x/axv/apps/server/internal/tailnet/access"
 )
 
 // startRemote owns a second transport for the same workstation. Its failure
@@ -25,7 +25,7 @@ func startRemote(ctx context.Context, home string, settings profile.Remote, hand
 		Hostname:    settings.Hostname,
 		OwnerUserID: settings.OwnerUserID,
 		Handler: func(endpoint tailnet.Endpoint) (http.Handler, func(), error) {
-			middleware, err := remoteaccess.NewMiddleware(remoteaccess.MiddlewareOptions{
+			middleware, err := access.NewMiddleware(access.MiddlewareOptions{
 				Origin:         endpoint.Origin,
 				OwnerUserID:    endpoint.OwnerUserID,
 				WhoIs:          endpoint.WhoIs,
@@ -57,7 +57,7 @@ func remoteStatusHandler(instanceID string, status func() remoteSnapshot) http.H
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		if !localaccess.Request(r, false) {
+		if !httpaccess.LocalRequest(r, false) {
 			w.WriteHeader(http.StatusForbidden)
 			_ = json.NewEncoder(w).Encode(map[string]string{"code": "remote_local_only", "error": "Check remote access on the computer running AXV."})
 			return
@@ -74,7 +74,7 @@ func remoteSettingsHandler(controller *remoteController) http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		if !localaccess.Request(r, true) {
+		if !httpaccess.LocalRequest(r, true) {
 			remoteWriteError(w, http.StatusForbidden, "remote_local_only", "Change remote access on the computer running AXV.")
 			return
 		}

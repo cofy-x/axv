@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/cofy-x/axv/apps/server/internal/localaccess"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 )
 
 func testServer(t *testing.T, manager *Manager) *httptest.Server {
@@ -167,7 +167,7 @@ func TestAuthenticatedAccessDoesNotRewriteTransport(t *testing.T) {
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("unauthenticated peer bypassed access protection: %d", w.Code)
 	}
-	authenticated, err := localaccess.WithAuthenticatedRemote(r, origin)
+	authenticated, err := httpaccess.WithAuthenticatedRemote(r, origin)
 	if err != nil {
 		t.Fatal(err)
 	}

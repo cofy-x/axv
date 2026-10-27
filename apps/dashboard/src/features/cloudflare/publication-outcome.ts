@@ -1,6 +1,6 @@
 import { APIError } from '../../shared/api/http';
 
-// These responses precede journal admission in cloudflarepublish.Publish or its
+// These responses precede journal admission in the publication manager or its
 // desktop authentication guards. Other 4xx responses can describe an existing
 // request, so status alone never establishes that publication was rejected.
 const preAcceptanceRefusals = new Map<string, readonly number[]>([

@@ -13,8 +13,10 @@ import type {
 
 export const MENU_HEIGHT = 26;
 export const STRIP_HEIGHT = 76;
-export const DOCK_WIDTH = 76;
-export const ICON_SIZE = { width: 88, height: 84 };
+export const DOCK_SIZE = 56;
+export const DOCK_WIDTH = DOCK_SIZE + 12;
+export const DOCK_HEIGHT = DOCK_SIZE + 8;
+export const ICON_SIZE = { width: 80, height: 76 };
 
 /** The visual viewport, including an on-screen keyboard, determines shell presentation. */
 export function desktopLayoutMode(viewport: Size) {
@@ -69,7 +71,8 @@ export function windowWorkArea(
   const x = 4;
   const y = short ? 64 : mobile ? 90 : MENU_HEIGHT + 2;
   const right = sideDock ? DOCK_WIDTH : 4;
-  const bottom = (sideDock ? 8 : 72) + (hasMiniwindows ? STRIP_HEIGHT : 0);
+  const bottom =
+    (sideDock ? 8 : DOCK_HEIGHT) + (hasMiniwindows ? STRIP_HEIGHT : 0);
   return {
     x,
     y,
