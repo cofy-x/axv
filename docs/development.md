@@ -184,6 +184,12 @@ Review dependency changes with their lockfiles and run the same verification mat
 
 Upgrade Go, Node.js and pnpm deliberately in one change, keeping the version files, manifests, Makefile, Go workspace/modules, README and lockfiles aligned. The npm configuration excludes `node` and `pnpm` updates and `@types/node` major updates. Keep Node.js declarations in the pinned runtime's major version and upgrade them together when selecting a new Node.js major; compatible minor and patch declaration updates remain eligible. A dependency that requires a newer toolchain needs this coordinated upgrade before it can pass CI.
 
+### Dependency patches
+
+The `patchedDependencies` entry in [pnpm-workspace.yaml](../pnpm-workspace.yaml) applies the checked-in xterm.js 6.0.0 patch during installation. It corrects empty alternate-screen buffer capacity after shrinking, so an in-flight terminal repaint cannot lose the final row after the screen grows again. The patch keeps the upstream source and both published JavaScript entry points consistent; it does not change the pinned version or license. [Third-party notices](../THIRD_PARTY_NOTICES.md#application-distributions) records its upstream source and attribution.
+
+The [public terminal API regression](../apps/dashboard/src/shared/terminal/xterm-buffer.test.ts) covers initial and reused alternate screens, visible output and normal-screen preservation. When adopting an upstream release containing this fix, remove the patch and its workspace entry, regenerate the lockfile, and rerun that regression plus the runtime and browser matrix. Keep the regression after removing the patch.
+
 ## Test isolation and diagnostics
 
 Repository verification uses `.data/test` by default for generated host executables, helper fixtures, profiles and temporary files. Set `AXV_TEST_TMPDIR` to choose another private root; relative overrides resolve from the invoking working directory:
