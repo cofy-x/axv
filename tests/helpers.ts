@@ -143,14 +143,18 @@ export async function openDockOptions(
   const choose = async (control: Locator) =>
     touch ? control.tap() : control.click();
   const options = entry.locator('.ns-dock-options');
-  if (await options.isVisible()) await choose(options);
-  else {
-    await choose(page.getByRole('button', { name: 'Dock menu', exact: true }));
-    await choose(
-      menuItem(page.getByRole('menu', { name: 'Dock', exact: true }), title!),
-    );
-  }
+  const dockButton = page.getByRole('button', {
+    name: 'Dock menu',
+    exact: true,
+  });
+  // Resize can replace either control before the click becomes actionable.
+  await choose(options.or(dockButton));
   const menu = page.getByRole('menu', { name: title!, exact: true });
+  const dockMenu = page.getByRole('menu', { name: 'Dock', exact: true });
+  await expect(menu.or(dockMenu)).toBeVisible();
+  if (await dockMenu.isVisible()) {
+    await choose(menuItem(dockMenu, title!));
+  }
   await expect(menu).toBeVisible();
   return menu;
 }

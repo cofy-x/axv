@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { APIRequestContext, Locator, Page, Route } from '@playwright/test';
+import type { DesktopLayout } from '@cofy-x/axv-nextstep';
 import {
   activate,
   createEntry,
@@ -100,6 +101,23 @@ function moduleGate() {
   return { handler, release, requests: () => requests };
 }
 
+async function restoreLayoutOnNextLoad(page: Page, layout: DesktopLayout) {
+  // The current desktop may still save during reload. Supply only the next
+  // bootstrap layout so its keepalive write cannot overwrite this fixture.
+  await page.route(
+    (url) => url.pathname === '/api/bootstrap',
+    async (route) => {
+      const response = await route.fetch();
+      expect(response.ok()).toBeTruthy();
+      await route.fulfill({
+        response,
+        json: { ...(await response.json()), layout },
+      });
+    },
+    { times: 1 },
+  );
+}
+
 async function restoreProjectPreview(
   page: Page,
   request: APIRequestContext,
@@ -192,12 +210,7 @@ async function restoreProjectPreview(
   );
   workspace.activeWindowId = id;
   workspace.order.push(id);
-  const clientId = await page.evaluate(() =>
-    localStorage.getItem('nextstep-browser-id'),
-  );
-  expect(
-    (await request.put('/api/layout', { data: { clientId, layout } })).ok(),
-  ).toBeTruthy();
+  await restoreLayoutOnNextLoad(page, layout);
   return { window: page.locator(`[data-window-id="${id}"]`), content };
 }
 
@@ -489,12 +502,7 @@ test('a restored guest terminal preserves desktop focus and its recorded binding
   );
   workspace.activeWindowId = id;
   workspace.order.push(id);
-  const clientId = await page.evaluate(() =>
-    localStorage.getItem('nextstep-browser-id'),
-  );
-  expect(
-    (await request.put('/api/layout', { data: { clientId, layout } })).ok(),
-  ).toBeTruthy();
+  await restoreLayoutOnNextLoad(page, layout);
   const prefix = `/api/compute/machines/${params.machineId}/guest/terminals/${params.terminalId}`;
   const attached: string[] = [];
   await page.route(
