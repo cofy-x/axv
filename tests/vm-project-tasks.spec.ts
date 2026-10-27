@@ -371,6 +371,9 @@ async function openTasks(page: Page) {
 
 async function selectTask(page: Page, command: string | RegExp) {
   const panel = tasksWindow(page);
+  await expect(
+    panel.getByRole('button', { name: 'New Task', exact: true }),
+  ).toBeVisible();
   const back = panel.getByRole('button', {
     name: 'Back to Tasks',
     exact: true,

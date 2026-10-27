@@ -10,10 +10,205 @@ import {
   launch,
   menuItem,
   openDocument,
+  openDockOptions,
+  openWorkspaceControls,
+  readContent,
   persistedLayout,
   switchWorkspace,
 } from './helpers';
+import { applicationMenu } from './desktop-application-helpers';
 import { expect, openCodexManager, test } from './codex-helpers';
+
+test('compact Workspace commands remain reachable with selected desktop icons', async ({
+  page,
+}, info) => {
+  const touch = info.project.use.hasTouch === true;
+  const choose = async (target: Locator) =>
+    touch ? target.tap() : target.click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const filesMenu = await openDockOptions(page, 'files', touch);
+  await choose(menuItem(filesMenu, 'Show on Desktop'));
+  await switchWorkspace(page, 2, touch);
+  const workspaceMenu = page.getByRole('button', {
+    name: 'Workspace menu',
+    exact: true,
+  });
+  for (const id of ['application:files', 'system:documents']) {
+    const icon = page.locator(`[data-icon-id="${id}"]`);
+    await choose(icon);
+    await expect(icon).toHaveAttribute('aria-pressed', 'true');
+    await choose(workspaceMenu);
+    const menu = page.getByRole('menu', { name: 'Workspace', exact: true });
+    await expect(menuItem(menu, 'Applications')).toBeVisible();
+    await choose(menuItem(menu, 'Clock'));
+    const dialog = page.getByRole('dialog', { name: 'Clock', exact: true });
+    await expect(dialog).toBeVisible();
+    await choose(dialog.getByRole('button', { name: 'OK', exact: true }));
+    await expect(workspaceMenu).toBeFocused();
+    await expect(icon).toHaveAttribute('aria-pressed', 'true');
+  }
+});
+
+test('mobile shell keeps long workspace names and connection states within 320 pixels', async ({
+  page,
+  request,
+}, info) => {
+  const touch = info.project.use.hasTouch === true;
+  const choose = async (control: Locator) =>
+    touch ? control.tap() : control.click();
+  await page.setViewportSize({ width: 320, height: 568 });
+  await openWorkspaceControls(page, touch);
+  await choose(menuItem(page, 'Rename Workspace'));
+  const rename = page.getByRole('dialog', {
+    name: 'Rename Workspace',
+    exact: true,
+  });
+  const workspaceName = 'E2E Mobile workspace with a very long name'.slice(
+    0,
+    40,
+  );
+  await rename
+    .getByRole('textbox', { name: 'Workspace name', exact: true })
+    .fill(workspaceName);
+  await choose(rename.getByRole('button', { name: 'OK', exact: true }));
+  await expect(rename).toBeHidden();
+  const workspaceButton = page.getByRole('button', { name: /^Workspace 1:/ });
+  await expect(workspaceButton).toHaveAccessibleName(
+    `Workspace 1: ${workspaceName}`,
+  );
+  await expect
+    .poll(async () => (await persistedLayout(page, request)).workspaces[0].name)
+    .toBe(workspaceName);
+  const header = page.locator('.ns-desktop-status');
+  const status = header.getByRole('status');
+  const clip = page.getByRole('complementary', { name: 'Workspace Clip' });
+  const menus = page.getByRole('navigation', { name: 'Application menus' });
+  const expectShellFits = async (label: string) => {
+    await expect(status).toHaveText(label);
+    const headerBox = await bounds(header);
+    expect(headerBox).toEqual({ x: 0, y: 0, width: 320, height: 26 });
+    let previousRight = 0;
+    for (const control of [
+      page.getByRole('button', { name: 'Workspace menu', exact: true }),
+      page.getByRole('button', { name: 'Show all windows', exact: true }),
+      status,
+    ]) {
+      const box = await bounds(control);
+      expect(box.x).toBeGreaterThanOrEqual(previousRight);
+      expect(box.x + box.width).toBeLessThanOrEqual(320);
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.y + box.height).toBeLessThanOrEqual(26);
+      previousRight = box.x + box.width;
+    }
+    const clipBox = await bounds(clip);
+    const menuBox = await bounds(menus);
+    expect(clipBox.x + clipBox.width).toBeLessThanOrEqual(menuBox.x);
+    expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(320);
+    const frame = await bounds(filesWindow(page));
+    for (const box of [clipBox, menuBox])
+      expect(box.y + box.height).toBeLessThanOrEqual(frame.y);
+    await expect(menus.locator('.ns-menu-title')).toHaveText('Files');
+    for (const group of ['File', 'Edit', 'View', 'Window', 'Help'])
+      await expect(
+        menus.getByRole('button', { name: group, exact: true }),
+      ).toBeInViewport();
+  };
+  await expectShellFits('Connected');
+  await page.route('**/api/entries', async (route) => {
+    if (route.request().method() === 'GET') await route.abort('failed');
+    else await route.continue();
+  });
+  try {
+    await expectShellFits('Offline');
+    await expect(workspaceButton).toHaveAccessibleName(
+      `Workspace 1: ${workspaceName}`,
+    );
+  } finally {
+    await page.unroute('**/api/entries');
+  }
+  await expectShellFits('Connected');
+});
+
+test('compact application menus keep keyboard focus and pinned commands with their owner', async ({
+  page,
+  request,
+}, info) => {
+  const touch = info.project.use.hasTouch === true;
+  const choose = async (control: Locator) =>
+    touch ? control.tap() : control.click();
+  await page.setViewportSize({ width: 320, height: 844 });
+  const firstEntry = await createEntry(request, 'E2E Compact Owner A.txt');
+  const secondEntry = await createEntry(request, 'E2E Compact Owner B.txt');
+  await page.reload();
+  const first = await openDocument(page, firstEntry, touch);
+  const firstText = first.getByRole('textbox', { name: 'Document text' });
+  await firstText.fill('Only the first document is saved by its pinned menu.');
+  const second = await openDocument(page, secondEntry, touch);
+  const secondText = second.getByRole('textbox', { name: 'Document text' });
+  await secondText.fill('The second document stays an unsaved draft.');
+  await activate(page, first, touch);
+  const appButton = page
+    .getByRole('navigation', { name: 'Application menus' })
+    .getByRole('button', { name: 'File', exact: true });
+  await expect(appButton).toBeInViewport();
+  await appButton.focus();
+  await appButton.press('Enter');
+  const fileMenu = page.getByRole('menu', { name: 'File', exact: true });
+  await expect(fileMenu).toBeFocused();
+  await expect(menuItem(fileMenu, 'Save')).toBeEnabled();
+  await fileMenu.press('Escape');
+  await expect(appButton).toBeFocused();
+  await expect(page.locator('.ns-menu-layer')).toHaveCount(0);
+  await appButton.press('Enter');
+  await fileMenu.press('Tab');
+  await expect(appButton).toBeFocused();
+  await expect(page.locator('.ns-menu-layer')).toHaveCount(0);
+
+  await applicationMenu(page, 'File', touch);
+  const windowCount = await page.locator('[data-window-id]').count();
+  const pin = page.getByRole('button', { name: 'Pin File menu', exact: true });
+  await pin.focus();
+  await pin.press('Enter');
+  const pinned = page.locator(
+    `.ns-pinned-menu[data-owner-window-id="notes:${firstEntry.id}"]`,
+  );
+  await expect(pinned).toBeVisible();
+  await expect(pinned.locator('.ns-menu-owner')).toHaveText(
+    `${firstEntry.name} *`,
+  );
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.locator('[data-window-id]')).toHaveCount(windowCount);
+  await expect(appButton).toBeFocused();
+  await activate(page, second, touch);
+  await expect(second).toHaveClass(/is-active/);
+  await choose(menuItem(pinned, 'Save'));
+  await expect(first.getByTestId('save-status')).toHaveText('Saved');
+  await expect(second.getByTestId('save-status')).toHaveText('Unsaved changes');
+  expect(await readContent(request, firstEntry.id)).toBe(
+    'Only the first document is saved by its pinned menu.',
+  );
+  expect(await readContent(request, secondEntry.id)).toBe('Initial text');
+  await choose(menuItem(pinned, 'Close Window'));
+  await expect(first).toHaveCount(0);
+  await expect(pinned).toHaveCount(0);
+  await expect(secondText).toHaveValue(
+    'The second document stays an unsaved draft.',
+  );
+  await activate(page, filesWindow(page), touch);
+  const menus = page.getByRole('navigation', { name: 'Application menus' });
+  await expect(menus.locator('.ns-menu-title')).toHaveText('Files');
+  await applicationMenu(page, 'View', touch);
+  await expect(
+    menuItem(
+      page.getByRole('menu', { name: 'View', exact: true }),
+      'Arrange Icons',
+    ),
+  ).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(
+    menus.getByRole('button', { name: 'View', exact: true }),
+  ).toBeFocused();
+});
 
 test('short desktops preserve application space, shell commands and saved geometry', async ({
   page,
@@ -26,7 +221,7 @@ test('short desktops preserve application space, shell commands and saved geomet
   await page.setViewportSize({ width: 1440, height: 900 });
   const entry = await createEntry(request, 'E2E Short Desktop.txt');
   await page.reload();
-  const note = await openDocument(page, entry);
+  const note = await openDocument(page, entry, touch);
   const editor = note.getByRole('textbox', { name: 'Document text' });
   await editor.fill(
     'This draft survives a short viewport and workspace changes.',
@@ -78,11 +273,14 @@ test('short desktops preserve application space, shell commands and saved geomet
   ])
     expect((await bounds(control)).height).toBeGreaterThanOrEqual(32);
   const windowCount = await page.locator('[data-window-id]').count();
-  const clock = dock.getByRole('button', {
-    name: 'Clock and date',
-    exact: true,
-  });
-  await expect(clock).toHaveCSS('touch-action', 'pan-y');
+  const scroller = dock.locator('.ns-dock-scroll');
+  await expect(
+    dock.getByRole('button', { name: 'Clock and date' }),
+  ).toHaveCount(0);
+  await expect(dock.locator('.ns-dock-tile').first()).toHaveCSS(
+    'touch-action',
+    'pan-y',
+  );
   await expect(dock.locator('.ns-dock-entry').first()).toHaveCSS(
     'flex-shrink',
     '0',
@@ -114,14 +312,14 @@ test('short desktops preserve application space, shell commands and saved geomet
         touchPoints: [],
       });
       await expect
-        .poll(() => dock.evaluate((element) => element.scrollTop))
+        .poll(() => scroller.evaluate((element) => element.scrollTop))
         .toBeGreaterThan(0);
     } finally {
       await protocol.detach();
     }
   }
   const add = dock.getByRole('button', {
-    name: 'Add application to Dock',
+    name: 'Dock menu',
     exact: true,
   });
   await add.focus();
@@ -135,22 +333,31 @@ test('short desktops preserve application space, shell commands and saved geomet
     })
     .toBe(true);
   await add.press('Enter');
-  await expect(page.getByRole('menu')).toBeVisible();
+  await expect(
+    page.getByRole('menu', { name: 'Dock', exact: true }),
+  ).toBeVisible();
+  await expect(menuItem(page, 'Add application')).toBeInViewport();
   await page.keyboard.press('Escape');
+  await choose(
+    page.getByRole('button', { name: 'Workspace menu', exact: true }),
+  );
+  await choose(menuItem(page, 'Clock'));
+  const clockDialog = page.getByRole('dialog', { name: 'Clock', exact: true });
+  await expect(clockDialog).toBeVisible();
+  await choose(clockDialog.getByRole('button', { name: 'OK', exact: true }));
   expect(await page.locator('[data-window-id]').count()).toBe(windowCount);
-  await choose(menus.getByRole('button', { name: 'Window', exact: true }));
+  await applicationMenu(page, 'Window', touch);
   await expect(menuItem(page, 'Miniaturize')).toBeInViewport();
   await page.keyboard.press('Escape');
-  await switchWorkspace(page, 2);
+  await switchWorkspace(page, 2, touch);
   await expect(note).toBeHidden();
-  await switchWorkspace(page, 1);
+  await switchWorkspace(page, 1, touch);
   await expect(editor).toHaveValue(
     'This draft survives a short viewport and workspace changes.',
   );
-  const workspaceButton = clip.getByRole('button', { name: /^Workspace 1:/ });
-  await choose(workspaceButton);
+  await openWorkspaceControls(page, touch);
   await choose(menuItem(page, 'Add Active Window'));
-  await choose(workspaceButton);
+  await openWorkspaceControls(page, touch);
   await choose(menuItem(page, 'Shortcuts'));
   const title = (await note.getAttribute('aria-label'))!;
   await choose(menuItem(page, title));
@@ -166,7 +373,7 @@ test('short desktops preserve application space, shell commands and saved geomet
     contentType: 'image/png',
   });
   await choose(note.getByRole('button', { name: /^Miniaturize / }));
-  await activate(page, filesWindow(page));
+  await activate(page, filesWindow(page), touch);
   await expect
     .poll(() => bounds(filesWindow(page)))
     .toEqual({ x: 4, y: 64, width: 496, height: 172 });
@@ -196,7 +403,7 @@ test('short desktops preserve application space, shell commands and saved geomet
     await expect(
       note.getByRole('button', { name: /^Close / }),
     ).toBeInViewport();
-    await choose(menus.getByRole('button', { name: 'Window', exact: true }));
+    await applicationMenu(page, 'Window', touch);
     await expect(menuItem(page, 'Miniaturize')).toBeInViewport();
     await page.keyboard.press('Escape');
   }

@@ -617,7 +617,7 @@ test('Codex marks natural exit final and does not create a replacement session',
   expect((await sessions(request)).length).toBe(count);
 });
 
-test('Codex hides all launchers until installed and restores them after reloading', async ({
+test('Codex keeps setup discoverable before installation without starting a process', async ({
   page,
   request,
 }) => {
@@ -648,7 +648,8 @@ test('Codex hides all launchers until installed and restores them after reloadin
   await expect(
     welcome.getByRole('button', { name: 'Refresh', exact: true }),
   ).toHaveCount(0);
-  await expect(welcomeLauncher).toHaveCount(0);
+  await expect(welcomeLauncher).toBeVisible();
+  await expect(page.locator('[data-dock-app="codex"]')).toBeVisible();
   await expect(
     page.getByRole('group', { name: 'Desktop icons' }).getByRole('button', {
       name: 'Codex',
@@ -660,13 +661,22 @@ test('Codex hides all launchers until installed and restores them after reloadin
     .getByRole('button', { name: 'Workspace menu', exact: true })
     .click();
   await menuItem(page, 'Applications').click();
-  await expect(menuItem(page, 'Codex')).toHaveCount(0);
+  await expect(menuItem(page, 'Codex')).toBeVisible();
+  await menuItem(page, 'Codex').click();
+  const manager = page.getByTestId('codex-manager');
+  await expect(manager).toBeVisible();
+  await expect(manager).toContainText('Codex is not installed on this host.');
+  await expect(
+    manager.getByRole('button', { name: 'New Session', exact: true }),
+  ).toBeDisabled();
+  expect(
+    (await sessions(request)).filter((item) => item.status === 'running'),
+  ).toHaveLength(0);
   await page.unroute('**/api/host/codex/info');
   await page.reload();
   await activate(page, welcome);
   await expect(welcomeLauncher).toBeVisible();
   await welcomeLauncher.click();
-  const manager = page.getByTestId('codex-manager');
   await expect(manager).toBeVisible();
   await expect(manager.getByTestId('codex-environment-status')).toContainText(
     'CLI ready',

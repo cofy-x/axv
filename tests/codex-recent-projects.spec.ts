@@ -1,3 +1,4 @@
+import { windowAction } from './helpers';
 import type { Page } from '@playwright/test';
 import {
   choose,
@@ -50,10 +51,7 @@ test('recent projects open by keyboard and close when their owner stops being in
         .evaluate((button: HTMLButtonElement) => button.click());
       await expect(menu).toHaveCount(0);
       if (action === 'Shade Codex') {
-        await choose(
-          frame.getByRole('button', { name: 'Unshade Codex', exact: true }),
-          touch,
-        );
+        await windowAction(page, frame, 'Unshade', touch);
         await expect(
           manager.getByLabel('Project directory', { exact: true }),
         ).toHaveValue(projectPath);

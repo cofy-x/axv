@@ -18,6 +18,9 @@ import {
   expect,
   filesWindow,
   menuItem,
+  openDockOptions,
+  openWorkspaceControls,
+  switchWorkspace,
   persistedLayout,
   test,
 } from './helpers';
@@ -30,14 +33,15 @@ test('overflowing Dock keeps native touch scrolling separate from launch and ord
 }) => {
   test.skip(!isMobile, 'Runs in the explicit touch projects.');
   const dock = page.getByRole('complementary', { name: 'Application Dock' });
-  const clock = dock.getByRole('button', {
-    name: 'Clock and date',
-    exact: true,
-  });
-  const add = dock.getByRole('button', {
-    name: 'Add application to Dock',
-    exact: true,
-  });
+  const scroller = dock.locator('.ns-dock-scroll');
+  const dockMenu = dock.getByRole('button', { name: 'Dock menu', exact: true });
+  const menuBounds = await bounds(dockMenu);
+  expect(menuBounds.width).toBeGreaterThanOrEqual(44);
+  expect(menuBounds.height).toBeGreaterThanOrEqual(44);
+  await expect(
+    dock.getByRole('button', { name: 'Clock and date' }),
+  ).toHaveCount(0);
+  await expect(dock.locator('.ns-dock-options')).toHaveCount(0);
   const order = () =>
     dock
       .locator('[data-dock-app]')
@@ -46,18 +50,15 @@ test('overflowing Dock keeps native touch scrolling separate from launch and ord
       );
   const before = await order();
   const firstEntry = dockEntry(page, before[0]!);
-  const artwork = await bounds(firstEntry.locator('.ns-pixel-icon'));
-  const options = await bounds(firstEntry.locator('.ns-dock-options'));
-  expect(options.width).toBeGreaterThanOrEqual(24);
-  expect(options.height).toBeGreaterThanOrEqual(20);
-  expect(artwork.y + artwork.height).toBeLessThanOrEqual(options.y);
+  const launcher = await bounds(firstEntry.locator('.ns-dock-tile'));
+  expect(launcher.width).toBe(56);
+  expect(launcher.height).toBe(56);
   const windows = await page.locator('[data-window-id]').count();
-  const scrollLeft = () => dock.evaluate((element) => element.scrollLeft);
-  const scrollEnd = await dock.evaluate(
+  const scrollLeft = () => scroller.evaluate((element) => element.scrollLeft);
+  const scrollEnd = await scroller.evaluate(
     (element) => element.scrollWidth - element.clientWidth,
   );
   expect(scrollEnd).toBeGreaterThan(0);
-  await expect(clock).toHaveCSS('touch-action', 'pan-x');
   await expect(dockEntry(page, before[0]!).locator('.ns-dock-tile')).toHaveCSS(
     'touch-action',
     'pan-x',
@@ -73,7 +74,7 @@ test('overflowing Dock keeps native touch scrolling separate from launch and ord
 
   if (browserName === 'chromium') {
     const protocol = await page.context().newCDPSession(page);
-    const area = await bounds(dock);
+    const area = await bounds(scroller);
     const reachable = new Set<string>();
     const recordReachable = async () => {
       const visible = await dock.locator('[data-dock-app]').evaluateAll(
@@ -125,11 +126,7 @@ test('overflowing Dock keeps native touch scrolling separate from launch and ord
     };
     try {
       await recordReachable();
-      const clockBox = await bounds(clock);
-      await swipe(
-        { x: clockBox.x + clockBox.width - 8, y: clockBox.y + 24 },
-        area.x + 6,
-      );
+      await swipeOnApp(true);
       await expect.poll(scrollLeft).toBeGreaterThan(0);
       for (let step = 0; step < before.length; step++) {
         await recordReachable();
@@ -140,7 +137,8 @@ test('overflowing Dock keeps native touch scrolling separate from launch and ord
       }
       await recordReachable();
       await expect.poll(scrollLeft).toBeGreaterThanOrEqual(scrollEnd - 1);
-      await expect(add).toBeInViewport({ ratio: 1 });
+      await expect(dockMenu).toBeInViewport({ ratio: 1 });
+      expect(await bounds(dockMenu)).toEqual(menuBounds);
       expect([...reachable].sort()).toEqual([...before].sort());
       for (let step = 0; step < before.length; step++) {
         const prior = await scrollLeft();
@@ -149,7 +147,7 @@ test('overflowing Dock keeps native touch scrolling separate from launch and ord
         await expect.poll(scrollLeft).toBeLessThan(prior);
       }
       await expect.poll(scrollLeft).toBeLessThanOrEqual(1);
-      await expect(clock).toBeInViewport({ ratio: 1 });
+      await expect(firstEntry).toBeInViewport({ ratio: 1 });
     } finally {
       await protocol.detach();
     }
@@ -160,10 +158,11 @@ test('overflowing Dock keeps native touch scrolling separate from launch and ord
       const entry = dockEntry(page, id);
       await entry.scrollIntoViewIfNeeded();
       await expect(entry).toBeInViewport({ ratio: 1 });
-      await expect(entry.locator('.ns-dock-options')).toBeInViewport();
+      await expect(dockMenu).toBeInViewport({ ratio: 1 });
+      expect(await bounds(dockMenu)).toEqual(menuBounds);
     }
-    await add.scrollIntoViewIfNeeded();
-    await expect(add).toBeInViewport({ ratio: 1 });
+    await expect(dockMenu).toBeInViewport({ ratio: 1 });
+    expect(await bounds(dockMenu)).toEqual(menuBounds);
   }
   await expect(page.locator('[data-window-id]')).toHaveCount(windows);
   await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -177,15 +176,18 @@ test('overflowing Dock keeps native touch scrolling separate from launch and ord
     ),
   ).toBe(false);
 
-  const gallery = dockEntry(page, 'gallery');
-  await gallery.locator('.ns-dock-tile').tap();
-  await expect(page.locator('[data-app-id="gallery"]')).toBeVisible();
-  await gallery.locator('.ns-dock-options').tap();
+  const reorderedId = before[1]!;
+  const reorderedEntry = dockEntry(page, reorderedId);
+  await reorderedEntry.locator('.ns-dock-tile').tap();
+  await expect(
+    page.locator(`[data-app-id="${reorderedId}"]`).first(),
+  ).toBeVisible();
+  await openDockOptions(page, reorderedId, true);
   await menuItem(page, 'Move Earlier').tap();
   const reordered = [...before];
-  const index = reordered.indexOf('gallery');
+  const index = reordered.indexOf(reorderedId);
   reordered.splice(index, 1);
-  reordered.splice(index - 1, 0, 'gallery');
+  reordered.splice(index - 1, 0, reorderedId);
   await expect.poll(order).toEqual(reordered);
   await expect
     .poll(async () =>
@@ -196,6 +198,30 @@ test('overflowing Dock keeps native touch scrolling separate from launch and ord
     .toEqual(reordered);
   await page.reload();
   await expect.poll(order).toEqual(reordered);
+  // Pinning is available from the fixed menu without launching the application.
+  const beforePin = await page.locator('[data-window-id]').count();
+  await dockMenu.tap();
+  await menuItem(
+    page.getByRole('menu', { name: 'Dock', exact: true }),
+    'Add application',
+  ).tap();
+  await menuItem(
+    page.getByRole('menu', { name: 'Add application', exact: true }),
+    'Preferences',
+  ).tap();
+  await expect(dockEntry(page, 'appearance')).toHaveCount(1);
+  await expect(page.locator('[data-window-id]')).toHaveCount(beforePin);
+  const preferencesMenu = await openDockOptions(page, 'appearance', true);
+  await menuItem(preferencesMenu, 'Keep in Dock').tap();
+  await expect(dockEntry(page, 'appearance')).toHaveCount(0);
+  await expect
+    .poll(
+      async () =>
+        (await persistedLayout(page, request)).dock.find(
+          (entry: { appId: string }) => entry.appId === 'appearance',
+        )?.pinned,
+    )
+    .toBe(false);
 });
 
 test('touch can navigate columns, inspect, edit and switch workspaces without right click', async ({
@@ -252,22 +278,22 @@ test('touch can navigate columns, inspect, edit and switch workspaces without ri
   await editor
     .getByRole('textbox', { name: 'Document text' })
     .fill('A touch draft survives workspace switching.');
-  await page.getByRole('button', { name: 'Next workspace', exact: true }).tap();
+  await switchWorkspace(page, 2, true);
   await expect(editor).toBeHidden();
-  await page
-    .getByRole('button', { name: 'Previous workspace', exact: true })
-    .tap();
+  await switchWorkspace(page, 1, true);
   await expect(
     editor.getByRole('textbox', { name: 'Document text' }),
   ).toHaveValue('A touch draft survives workspace switching.');
-  await editor.getByRole('button', { name: /^Shade / }).tap();
+  await editor.getByRole('button', { name: /^Window menu for / }).tap();
+  await menuItem(page, 'Shade').tap();
   await expect(
     editor.getByRole('textbox', { name: 'Document text' }),
   ).toBeHidden();
-  await editor.getByRole('button', { name: /^Unshade / }).tap();
+  await editor.getByRole('button', { name: /^Window menu for / }).tap();
+  await menuItem(page, 'Unshade').tap();
   await editor.getByRole('button', { name: /^Window menu for / }).tap();
   await menuItem(page, 'Add to Clip').tap();
-  await page.getByRole('button', { name: /^Workspace 1:/ }).tap();
+  await openWorkspaceControls(page, true);
   await menuItem(page, 'Shortcuts').tap();
   await menuItem(page, document.name).tap();
   await menuItem(page, 'Open').tap();
@@ -310,11 +336,9 @@ test('touch Terminal supports input, explicit controls and workspace restoration
   await marker(terminal, 'touch-interrupt-ok');
   await terminalAction(page, terminal, 'Clear', true);
   await expect(output(terminal)).not.toContainText('touch-cat');
-  await page.getByRole('button', { name: 'Next workspace', exact: true }).tap();
+  await switchWorkspace(page, 2, true);
   await expect(terminal).toBeHidden();
-  await page
-    .getByRole('button', { name: 'Previous workspace', exact: true })
-    .tap();
+  await switchWorkspace(page, 1, true);
   await expect(terminal).toBeVisible();
   await marker(terminal, 'touch-shell-retained');
   await run(terminal, 'exit');
@@ -355,6 +379,16 @@ test('touch work area releases the miniwindow row while keeping the Dock and win
   const fullArea = { x: 4, y: 90, width: 382, height: 690 };
   const reservedArea = { ...fullArea, height: 614 };
   await expectRect(files, fullArea);
+  for (const action of ['Miniaturize', 'Shade', 'Maximize', 'Close'])
+    await expect(
+      files.getByRole('button', { name: new RegExp(`^${action} `) }),
+    ).toBeInViewport();
+  await expect(
+    files.getByRole('button', { name: /^Window menu for / }),
+  ).toBeInViewport();
+  await expect(
+    page.getByRole('complementary', { name: 'Workspace Clip' }),
+  ).toBeInViewport();
   const dockGap = async () => {
     const frame = await bounds(files);
     const dock = await bounds(page.locator('.ns-dock'));
@@ -364,10 +398,8 @@ test('touch work area releases the miniwindow row while keeping the Dock and win
   await files.getByRole('button', { name: /^Window menu for / }).tap();
   await menuItem(page, 'All Workspaces').tap();
   await captureWorkArea(page, info, 'without-reserve');
-  await page
-    .getByRole('button', { name: 'Welcome Dock options', exact: true })
-    .tap();
-  await menuItem(page, 'Welcome').tap();
+  const welcomeMenu = await openDockOptions(page, 'welcome', true);
+  await menuItem(welcomeMenu, 'Welcome').tap();
   await welcome.getByRole('button', { name: /^Miniaturize / }).tap();
   await expectRect(files, reservedArea);
   await expect.poll(dockGap).toBe(80);
@@ -378,20 +410,19 @@ test('touch work area releases the miniwindow row while keeping the Dock and win
   await expect(miniature).toBeInViewport();
   await expect(files.getByRole('button', { name: /^Close / })).toBeInViewport();
   await captureWorkArea(page, info, 'with-miniwindow');
-  await page.getByRole('button', { name: 'Next workspace', exact: true }).tap();
+  await switchWorkspace(page, 2, true);
   await expectRect(files, fullArea);
   await expect(miniature).toHaveCount(0);
   await expect.poll(dockGap).toBe(4);
-  await page
-    .getByRole('button', { name: 'Previous workspace', exact: true })
-    .tap();
+  await switchWorkspace(page, 1, true);
   await expectRect(files, reservedArea);
   await miniature.tap();
   await expectRect(welcome, fullArea);
   await welcome.getByRole('button', { name: /^Close / }).tap();
   await expectRect(files, fullArea);
-  await expect(
-    page.getByRole('button', { name: 'Files Dock options', exact: true }),
-  ).toBeInViewport();
+  await openDockOptions(page, 'files', true);
+  await expect(menuItem(page, 'Documents')).toBeInViewport();
+  await menuItem(page, 'Documents').tap();
+  await expectRect(files, fullArea);
   await expect(files.getByRole('button', { name: /^Close / })).toBeInViewport();
 });

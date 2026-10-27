@@ -1,5 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import {
+  activate,
   bounds,
   dockEntry,
   expect,
@@ -7,6 +8,7 @@ import {
   persistedLayout,
   test,
 } from './helpers';
+import { showApplicationOnDesktop } from './desktop-application-helpers';
 
 const address = 'https://axv-workstation.example.ts.net';
 // Match the safe summaries returned by server/connection.go.
@@ -637,11 +639,24 @@ test('Preferences and optional Dock launchers share the Tailscale panel without 
     const dockIcon = await dockEntry(page, 'remote-access')
       .locator('.ns-dock-tile svg')
       .boundingBox();
-    const dockOptions = await dockEntry(page, 'remote-access')
-      .locator('.ns-dock-options')
-      .boundingBox();
-    expect(dockIcon && dockOptions).toBeTruthy();
-    expect(dockIcon!.y + dockIcon!.height).toBeLessThanOrEqual(dockOptions!.y);
+    const options = dockEntry(page, 'remote-access').locator(
+      '.ns-dock-options',
+    );
+    expect(dockIcon).toBeTruthy();
+    if (await options.isVisible()) {
+      const dockOptions = await bounds(options);
+      expect(dockIcon!.y + dockIcon!.height).toBeLessThanOrEqual(dockOptions.y);
+    } else {
+      const management = page.getByRole('button', {
+        name: 'Dock menu',
+        exact: true,
+      });
+      await expect(management).toBeInViewport();
+      const target = await bounds(management);
+      expect(target.width).toBeGreaterThanOrEqual(44);
+      expect(target.height).toBeGreaterThanOrEqual(44);
+      expect((await bounds(dockEntry(page, 'remote-access'))).width).toBe(56);
+    }
     if (viewport.width < 600)
       expect(frame!.y + frame!.height).toBeLessThanOrEqual(dock!.y);
     else expect(frame!.x + frame!.width).toBeLessThanOrEqual(dock!.x);
@@ -649,10 +664,18 @@ test('Preferences and optional Dock launchers share the Tailscale panel without 
   await choose(panel(page).getByRole('button', { name: /^Close / }), touch);
   await choose(preferences.getByRole('button', { name: /^Close / }), touch);
   await expect(dockEntry(page, 'remote-access')).toHaveCount(0);
-  await choose(
-    page.getByRole('button', { name: 'Add application to Dock', exact: true }),
-    touch,
-  );
+  const add = page.getByRole('button', {
+    name: 'Add application to Dock',
+    exact: true,
+  });
+  if (await add.isVisible()) await choose(add, touch);
+  else {
+    await choose(
+      page.getByRole('button', { name: 'Dock menu', exact: true }),
+      touch,
+    );
+    await choose(menuItem(page, 'Add application'), touch);
+  }
   await choose(menuItem(page, 'Tailscale'), touch);
   await expect(dockEntry(page, 'remote-access')).toBeVisible();
   await expect
@@ -690,7 +713,9 @@ test('desktop Tailscale launcher opens one panel and stays outside document dele
     return route.fulfill({ json: snapshot() });
   });
   await page.reload();
+  await showApplicationOnDesktop(page, 'Tailscale', touch);
   for (const app of ['files', 'welcome']) {
+    await activate(page, page.locator(`[data-app-id="${app}"]`));
     await choose(
       page
         .locator(`[data-app-id="${app}"]`)

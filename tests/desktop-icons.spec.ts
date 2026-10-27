@@ -1,5 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import {
+  activate,
   bounds,
   createEntry,
   editorWindow,
@@ -9,11 +10,16 @@ import {
   persistedLayout,
   test,
 } from './helpers';
+import {
+  applicationMenu,
+  showApplicationOnDesktop,
+} from './desktop-application-helpers';
 import { captureWorkArea } from './work-area-helpers';
 import { preparationCheckFixture } from './machines-preparation-fixture';
 import type { Machine } from '../apps/dashboard/src/features/machines/api';
 
 async function showDesktop(page: Page) {
+  await activate(page, filesWindow(page));
   await filesWindow(page)
     .getByRole('button', { name: /^Close / })
     .click();
@@ -22,7 +28,7 @@ async function showDesktop(page: Page) {
     .getByRole('button', { name: /^Close / })
     .click();
   await expect(page.locator('[data-window-id]')).toHaveCount(0);
-  await expect(page.locator('[data-icon-id="system:codex"]')).toBeVisible();
+  await expect(page.locator('[data-icon-id="system:documents"]')).toBeVisible();
 }
 
 async function desktopVMHost(page: Page) {
@@ -121,10 +127,7 @@ async function desktopVMHost(page: Page) {
 }
 
 async function cleanUp(page: Page) {
-  await page
-    .getByRole('navigation', { name: 'Application menus' })
-    .getByRole('button', { name: 'View', exact: true })
-    .click();
+  await applicationMenu(page, 'View');
   await menuItem(page, 'Arrange Icons').click();
 }
 
@@ -164,11 +167,14 @@ async function expectIconsInArea(page: Page) {
       const box = await bounds(
         page.getByRole('group', { name: 'Desktop icons' }),
       );
-      return box.x + box.width;
+      const dock = await bounds(page.locator('.ns-dock'));
+      const right =
+        page.viewportSize()!.width < 600
+          ? page.viewportSize()!.width - 8
+          : dock.x - 8;
+      return box.x + box.width - right;
     })
-    .toBe(
-      page.viewportSize()!.width - (page.viewportSize()!.width < 600 ? 8 : 72),
-    );
+    .toBe(0);
   const area = await bounds(page.getByRole('group', { name: 'Desktop icons' }));
   const icons = await page.locator('[data-icon-id]').evaluateAll((elements) =>
     elements.map((element) => {
@@ -201,6 +207,7 @@ test('VM desktop icons retain identity, expose status and stay outside document 
 }, info) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const state = await desktopVMHost(page);
+  await showApplicationOnDesktop(page, 'Virtual Machines');
   const canvas = page.getByRole('group', { name: 'Desktop icons' });
   const launcher = canvas.getByRole('button', {
     name: 'Virtual Machines',
@@ -351,9 +358,7 @@ test('desktop icons use the available right edge and avoid menus, Dock and miniw
     const area = await expectIconsInArea(page);
     const dock = await bounds(page.locator('.ns-dock'));
     if (viewport.width < 600) {
-      const menu = await bounds(
-        page.getByRole('navigation', { name: 'Application menus' }),
-      );
+      const menu = await bounds(page.locator('.ns-desktop-status'));
       expect(area.y).toBeGreaterThanOrEqual(menu.y + menu.height);
       expect(area.x + area.width).toBe(viewport.width - 8);
       expect(area.y + area.height).toBeLessThan(dock.y);

@@ -10,6 +10,9 @@
   --ns-raised: inset 1px 1px #fff, inset -1px -1px #555;
   --ns-recessed: inset 1px 1px #555, inset -1px -1px #eee;
   --ns-control-height: 28px;
+  --ns-titlebar-height: 25px;
+  --ns-font-size-body: 13px;
+  --ns-font-size-secondary: 12px;
 }
 *,
 *::before,
@@ -30,7 +33,7 @@ body,
 }
 body {
   color: var(--ns-text);
-  font: 13px/1.4 var(--ns-font);
+  font: var(--ns-font-size-body)/1.4 var(--ns-font);
 }
 button,
 input,
@@ -186,7 +189,7 @@ select:disabled {
   height: var(--ns-icon-height);
   pointer-events: auto;
   border: 0;
-  padding: 3px 4px;
+  padding: 2px 4px;
   display: flex;
   align-items: center;
   flex-direction: column;
@@ -237,7 +240,7 @@ select:disabled {
   padding: 1px 4px;
   color: #eee;
   background: #343b38;
-  font-size: 11px;
+  font-size: var(--ns-font-size-secondary);
   line-height: 13px;
   white-space: nowrap;
   overflow: hidden;
@@ -342,17 +345,26 @@ select:disabled {
   display: flex;
   border: 1px solid #111;
   box-shadow: var(--ns-raised);
-  background: #aaa;
+  background: var(--ns-face);
 }
-.ns-clip-shortcut > button:first-child {
+.ns-clip-shortcut > button {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 5px;
-  width: 132px;
-  text-align: left;
   border: 0;
   background: transparent;
+}
+.ns-clip-shortcut > button:active {
+  box-shadow: var(--ns-recessed);
+}
+.ns-clip-shortcut > button:focus-visible {
+  outline-offset: -3px;
+}
+.ns-clip-shortcut > button:first-child {
+  flex: 1;
+  min-width: 0;
+  gap: 5px;
+  padding: 3px 5px;
+  text-align: left;
 }
 .ns-clip-shortcut span {
   overflow: hidden;
@@ -360,11 +372,11 @@ select:disabled {
   text-overflow: ellipsis;
   font-size: 11px;
 }
-.ns-shortcut-options {
-  border: 0;
-  border-left: 1px solid #666;
-  background: #aaa;
-  padding: 0 3px;
+.ns-clip-shortcut > .ns-shortcut-options {
+  flex: 0 0 22px;
+  justify-content: center;
+  border-left: 1px solid var(--ns-shadow);
+  padding: 0;
 }
 .ns-clip-shortcut.is-unavailable {
   color: #666;
@@ -439,14 +451,40 @@ select:disabled {
   z-index: 760;
   top: 40px;
   right: 8px;
-  width: var(--ns-dock-size);
+  width: var(--ns-dock-width);
   max-height: calc(100% - 48px);
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-width: none;
   display: flex;
   flex-direction: column;
   gap: 0;
+}
+.ns-dock-scroll {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  overscroll-behavior: contain;
+}
+.ns-dock-menu {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 44px;
+  width: var(--ns-dock-size);
+  height: 44px;
+  padding: 0;
+  border: 1px solid #111;
+  background: var(--ns-face);
+  box-shadow: var(--ns-raised);
+}
+.ns-dock-menu:active {
+  box-shadow: var(--ns-recessed);
+}
+.ns-dock-menu:focus-visible {
+  outline-offset: -3px;
 }
 .ns-dock-entry {
   position: relative;
@@ -562,7 +600,7 @@ select:disabled {
   z-index: 750;
   bottom: 6px;
   left: 8px;
-  right: calc(var(--ns-dock-size) + 18px);
+  right: calc(var(--ns-dock-width) + 18px);
   display: flex;
   gap: 6px;
   height: 64px;
@@ -617,8 +655,8 @@ select:disabled {
   outline: none;
 }
 .ns-window-titlebar {
-  height: 25px;
-  flex: 0 0 25px;
+  height: var(--ns-titlebar-height);
+  flex: 0 0 var(--ns-titlebar-height);
   padding: 1px;
   border-bottom: 1px solid #111;
   box-shadow: inset 0 1px #eee;
@@ -651,6 +689,9 @@ select:disabled {
   text-overflow: ellipsis;
 }
 .ns-window-control {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 21px;
   width: 21px;
   height: 21px;
@@ -666,13 +707,16 @@ select:disabled {
   box-shadow: var(--ns-recessed);
   background: #888;
 }
-.ns-window-control.ns-minimize {
-  font-size: 15px;
-}
-.ns-window-control.ns-shade {
-  font-size: 12px;
+.ns-control-icon {
+  display: block;
+  flex-shrink: 0;
+  pointer-events: none;
 }
 .ns-window-menu {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
   width: 18px;
   height: 21px;
   background: transparent;
@@ -899,7 +943,7 @@ select:disabled {
   color: inherit;
 }
 .ns-menu-shortcut {
-  font-size: 10px;
+  font-size: var(--ns-font-size-secondary);
   color: #444;
   padding-left: 10px;
 }
@@ -1232,7 +1276,7 @@ select:disabled {
   box-shadow: inset 0 1px #eee;
   padding: 3px 8px;
   background: #aaa;
-  font-size: 11px;
+  font-size: var(--ns-font-size-secondary);
   flex-shrink: 0;
 }
 .ns-panel {
@@ -1318,20 +1362,20 @@ select:disabled {
   max-height: none;
   flex-direction: row;
   padding: 1px 2px 2px;
-  overflow-x: auto;
-  overflow-y: hidden;
   background: #3d4247;
   border-top: 1px solid #222;
 }
-.is-mobile .ns-dock > * {
-  flex-shrink: 0;
+.is-mobile .ns-dock-scroll {
+  flex-direction: row;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.is-mobile .ns-dock-menu {
+  width: 44px;
+  height: var(--ns-dock-size);
 }
 .is-mobile .ns-dock-tile {
   touch-action: pan-x;
-}
-.is-mobile .ns-dock-add {
-  height: var(--ns-dock-size);
-  min-width: 24px;
 }
 .is-mobile .ns-miniwindow-shelf {
   bottom: calc(var(--ns-dock-size) + 10px);
@@ -1427,31 +1471,30 @@ select:disabled {
   bottom: 4px;
   left: auto;
   right: 8px;
-  width: var(--ns-dock-size);
+  width: var(--ns-dock-width);
   height: auto;
   max-height: calc(100% - 34px);
   flex-direction: column;
   padding: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
   background: transparent;
   border: 0;
 }
 .is-short.has-side-dock .ns-dock-tile {
   touch-action: pan-y;
 }
-.is-short.has-side-dock .ns-dock > * {
-  flex-shrink: 0;
+.is-short.has-side-dock .ns-dock-scroll {
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
-.is-short.has-side-dock .ns-dock-add {
+.is-short.has-side-dock .ns-dock-menu {
   width: var(--ns-dock-size);
-  height: 32px;
-  min-height: 32px;
+  height: 44px;
 }
 .is-short.has-side-dock .ns-miniwindow-shelf {
   bottom: 6px;
   left: 4px;
-  right: calc(var(--ns-dock-size) + 18px);
+  right: calc(var(--ns-dock-width) + 18px);
 }
 .is-short .ns-recovery {
   top: 64px;
@@ -1463,14 +1506,8 @@ select:disabled {
   .ns-button.ns-icon-button {
     min-width: 32px;
   }
-  .ns-dock-options {
-    width: 24px;
-    height: 20px;
-  }
   .ns-dock-tile > .ns-pixel-icon {
-    top: 1px;
-    width: 32px;
-    height: 32px;
+    top: 5px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

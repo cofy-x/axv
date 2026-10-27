@@ -30,6 +30,8 @@ The [release procedure](https://github.com/cofy-x/axv/blob/main/docs/releasing.m
 
 Project Files uses [CodeMirror 6](https://codemirror.net/) and its CodeMirror/Lezer packages for syntax-aware source views and mapping reading positions after external changes. These packages retain their upstream MIT licenses. Their exact versions are locked in the JavaScript dependency graph above; the release collector includes their original license files with the application distribution.
 
+Terminal views use [xterm.js 6.0.0](https://github.com/xtermjs/xterm.js/tree/6.0.0), with its original [MIT license](https://github.com/xtermjs/xterm.js/blob/6.0.0/LICENSE) retained by the release collector. AXV applies a [pinned dependency patch](patches/@xterm__xterm@6.0.0.patch) for empty alternate-screen buffers losing their final row after resizing ([upstream issue #6163](https://github.com/xtermjs/xterm.js/issues/6163)). The one-condition fix follows [upstream PR #6164 at revision `86d30d7`](https://github.com/xtermjs/xterm.js/pull/6164/commits/86d30d7e88968d27b898838cf1b1885cdad109ea) and applies to the package source and both distributed JavaScript entry points; upstream license and copyright text remain unchanged. [Development](docs/development.md#dependency-patches) owns patch maintenance and removal.
+
 Cloudflare Access verification uses [go-oidc](https://github.com/coreos/go-oidc) and [go-jose](https://github.com/go-jose/go-jose), both under Apache-2.0. Their exact versions and original notices follow the Go module and release-inventory rules above.
 
 ## Separately installed software and VM images

@@ -19,6 +19,10 @@ import {
   persistedLayout,
   test,
 } from './helpers';
+import {
+  applicationMenu,
+  showApplicationOnDesktop,
+} from './desktop-application-helpers';
 
 const id = 'local.checklist';
 const extensionHeaders = (storeId: string) => ({
@@ -607,13 +611,17 @@ test('application icons follow explicit desktop choices across reload, hiding an
   const checklistIcon = page.locator(
     '[data-icon-id="application:extension.local.checklist"]',
   );
-  for (const appId of ['files', 'welcome'])
+  await expect(managerIcon).toHaveCount(0);
+  await showApplicationOnDesktop(page, 'Application Manager', touch);
+  for (const appId of ['files', 'welcome']) {
+    await activate(page, page.locator(`[data-app-id="${appId}"]`));
     await choose(
       page
         .locator(`[data-app-id="${appId}"]`)
         .getByRole('button', { name: /^Close / }),
       touch,
     );
+  }
   await expect(managerIcon).toBeVisible();
   await expect(checklistIcon).toHaveCount(0);
   const openIcon = async (icon: Locator) => {
@@ -658,12 +666,7 @@ test('application icons follow explicit desktop choices across reload, hiding an
     }),
     touch,
   );
-  await choose(
-    page
-      .getByRole('navigation', { name: 'Application menus' })
-      .getByRole('button', { name: 'View', exact: true }),
-    touch,
-  );
+  await applicationMenu(page, 'View', touch);
   await choose(menuItem(page, 'Arrange Icons'), touch);
   const positions = page.viewportSize()!.width < 600 ? 'compactIcons' : 'icons';
   await expect
