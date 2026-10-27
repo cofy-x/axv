@@ -30,6 +30,12 @@ test('touch Codex supports project selection, history, session organization, pro
     await info.attach(name, { path, contentType: 'image/png' });
   };
   const { window, id, runId } = await startCodexInFolder(page, true);
+  // Initial activity can remove its explanation and resize tmux. Let that
+  // layout change finish before swiping the terminal's history.
+  await expect(window.getByTestId('codex-activity')).toHaveAttribute(
+    'data-activity-state',
+    'idle',
+  );
   const input = window.getByLabel('Codex terminal input');
   await window.getByTestId('codex-screen').tap();
   await expect(input).toBeFocused();
