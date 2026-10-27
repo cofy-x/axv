@@ -1,6 +1,6 @@
-// Package projectpreview exposes registered guest development services on
+// Package preview exposes registered guest development services on
 // independent local browser origins, without AXV application or control routes.
-package projectpreview
+package preview
 
 import (
 	"context"

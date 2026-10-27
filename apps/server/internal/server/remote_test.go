@@ -16,7 +16,7 @@ import (
 	computegateway "github.com/cofy-x/axv/apps/server/internal/compute/gateway"
 	"github.com/cofy-x/axv/apps/server/internal/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/profile"
-	"github.com/cofy-x/axv/apps/server/internal/projectfiles"
+	projectfileshttp "github.com/cofy-x/axv/apps/server/internal/projectfiles/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/remoteaccess"
 	"github.com/cofy-x/axv/apps/server/internal/storage"
 	"github.com/cofy-x/axv/apps/server/internal/tailnet"
@@ -41,7 +41,7 @@ func TestAuthenticatedRemoteDesktopSharesFeatureHandlers(t *testing.T) {
 	gateway := computegateway.NewGateway("", computegateway.GatewayOptions{})
 	defer gateway.Close()
 	application := http.NewServeMux()
-	projectfiles.Register(application, store)
+	projectfileshttp.Register(application, store)
 	application.Handle("/api/compute/", gateway)
 	application.Handle("/", httpapi.New(store, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("desktop UI"))

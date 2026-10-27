@@ -16,11 +16,11 @@ import (
 	codexhttp "github.com/cofy-x/axv/apps/server/internal/codex/httpapi"
 	computegateway "github.com/cofy-x/axv/apps/server/internal/compute/gateway"
 	preparehttp "github.com/cofy-x/axv/apps/server/internal/compute/prepare/httpapi"
+	"github.com/cofy-x/axv/apps/server/internal/compute/preview"
 	"github.com/cofy-x/axv/apps/server/internal/extensions"
 	"github.com/cofy-x/axv/apps/server/internal/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/localaccess"
-	"github.com/cofy-x/axv/apps/server/internal/projectfiles"
-	"github.com/cofy-x/axv/apps/server/internal/projectpreview"
+	projectfileshttp "github.com/cofy-x/axv/apps/server/internal/projectfiles/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/storage"
 	"github.com/cofy-x/axv/apps/server/internal/terminal"
 )
@@ -131,7 +131,7 @@ func TestAuthenticatedCloudflareContextSharesFeaturesAndRetainsLocalBoundaries(t
 	defer agents.Close()
 	gateway := computegateway.NewGateway("", computegateway.GatewayOptions{})
 	defer gateway.Close()
-	previews := projectpreview.New(context.Background(), projectpreview.GatewayResolver(gateway))
+	previews := preview.New(context.Background(), preview.GatewayResolver(gateway))
 	defer previews.Close()
 	extensionStore, err := extensions.Open(filepath.Join(t.TempDir(), "extensions.sqlite"))
 	if err != nil {
@@ -139,7 +139,7 @@ func TestAuthenticatedCloudflareContextSharesFeaturesAndRetainsLocalBoundaries(t
 	}
 	defer extensionStore.Close()
 	application := http.NewServeMux()
-	projectfiles.Register(application, store)
+	projectfileshttp.Register(application, store)
 	previews.Register(application)
 	extensions.New(extensionStore).Register(application)
 	application.Handle("/api/compute/", gateway)
