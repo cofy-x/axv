@@ -12,6 +12,7 @@ import {
   persistedLayout,
   readContent,
   switchWorkspace,
+  windowAction,
   test,
 } from './helpers';
 import { openCodexManager, test as codexTest } from './codex-helpers';
@@ -263,7 +264,7 @@ test('closing a loading window cannot start a shell or revive the cancelled wind
   }
 });
 
-for (const focus of ['clock', 'close', 'window menu'] as const) {
+for (const focus of ['desktop', 'close', 'window menu'] as const) {
   test(`loading a terminal preserves deliberate ${focus} focus`, async ({
     page,
     hasTouch,
@@ -277,8 +278,8 @@ for (const focus of ['clock', 'close', 'window menu'] as const) {
       await expect(terminal.getByRole('status')).toHaveText('Loading…');
       await expect.poll(gate.requests).toBe(1);
       const control =
-        focus === 'clock'
-          ? page.getByRole('button', { name: 'Clock and date', exact: true })
+        focus === 'desktop'
+          ? page.getByRole('button', { name: 'Workspace menu', exact: true })
           : terminal.getByRole('button', {
               name: focus === 'close' ? /^Close / : /^Window menu for /,
             });
@@ -299,7 +300,7 @@ for (const focus of ['clock', 'close', 'window menu'] as const) {
 }
 
 for (const kind of ['host', 'vm'] as const) {
-  for (const focus of ['clock', 'close'] as const) {
+  for (const focus of ['desktop', 'close'] as const) {
     test(`loading a ${kind} file preview retains ${focus} focus and explicit file navigation`, async ({
       page,
       request,
@@ -320,13 +321,13 @@ for (const kind of ['host', 'vm'] as const) {
         await page.reload();
         await expect(window.getByRole('status')).toHaveText('Loading…');
         await expect.poll(gate.requests).toBe(1);
-        const clock = page.getByRole('button', {
-          name: 'Clock and date',
+        const desktopControl = page.getByRole('button', {
+          name: 'Workspace menu',
           exact: true,
         });
         const control =
-          focus === 'clock'
-            ? clock
+          focus === 'desktop'
+            ? desktopControl
             : window.getByRole('button', { name: /^Close / });
         await control.focus();
         await expect(control).toBeFocused();
@@ -344,15 +345,16 @@ for (const kind of ['host', 'vm'] as const) {
         await expectEditorText(editor, content);
         await expect(control).toBeFocused();
 
-        await clock.focus();
-        await expect(clock).toBeFocused();
-        await choose(clock, hasTouch);
+        await desktopControl.focus();
+        await expect(desktopControl).toBeFocused();
+        await choose(desktopControl, hasTouch);
+        await choose(menuItem(page, 'Clock'), hasTouch);
         const dialog = page.getByRole('dialog', { name: 'Clock', exact: true });
         await choose(
           dialog.getByRole('button', { name: 'OK', exact: true }),
           hasTouch,
         );
-        await expect(clock).toBeFocused();
+        await expect(desktopControl).toBeFocused();
 
         await choose(
           window.getByRole('button', { name: 'Back', exact: true }),
@@ -382,13 +384,10 @@ for (const kind of ['host', 'vm'] as const) {
           expected += 'Protected draft';
         }
         await expectEditorText(editor, expected);
-        await choose(
-          window.getByRole('button', { name: /^Maximize / }),
-          hasTouch,
-        );
+        await windowAction(page, window, 'Maximize', hasTouch);
         await page.setViewportSize({ width: 1000, height: 844 });
         await expect(directory).toBeVisible();
-        const resizeFocus = focus === 'clock' ? clock : editor;
+        const resizeFocus = focus === 'desktop' ? desktopControl : editor;
         await resizeFocus.focus();
         await page.setViewportSize({ width: 390, height: 844 });
         await expect(directory).toBeHidden();
@@ -430,18 +429,18 @@ codexTest(
       );
       await expect(terminal.getByRole('status')).toHaveText('Loading…');
       await expect.poll(gate.requests).toBe(1);
-      const clock = page.getByRole('button', {
-        name: 'Clock and date',
+      const desktopControl = page.getByRole('button', {
+        name: 'Workspace menu',
         exact: true,
       });
-      await clock.focus();
-      await expect(clock).toBeFocused();
+      await desktopControl.focus();
+      await expect(desktopControl).toBeFocused();
       gate.release();
       await expect(terminal.getByTestId('codex-status')).toHaveAttribute(
         'data-state',
         'connected',
       );
-      await expect(clock).toBeFocused();
+      await expect(desktopControl).toBeFocused();
       await expect(terminal.getByTestId('codex-session')).toHaveAttribute(
         'data-session-id',
         session.id,
@@ -530,18 +529,18 @@ test('a restored guest terminal preserves desktop focus and its recorded binding
     await expect(terminal.getByRole('status')).toHaveText('Loading…');
     await expect.poll(gate.requests).toBe(1);
     expect(attached).toEqual([]);
-    const clock = page.getByRole('button', {
-      name: 'Clock and date',
+    const desktopControl = page.getByRole('button', {
+      name: 'Workspace menu',
       exact: true,
     });
-    await clock.focus();
-    await expect(clock).toBeFocused();
+    await desktopControl.focus();
+    await expect(desktopControl).toBeFocused();
     gate.release();
     await expect(terminal.getByTestId('terminal-status')).toHaveAttribute(
       'data-state',
       'connected',
     );
-    await expect(clock).toBeFocused();
+    await expect(desktopControl).toBeFocused();
     expect(attached).toEqual([`${prefix}/attach`]);
     expect(gate.requests()).toBe(1);
   } finally {
@@ -679,11 +678,11 @@ test('concurrent document windows share loading while hidden views retain their 
     await expect(secondWindow.getByRole('status')).toHaveText('Loading…');
     await expect.poll(gate.requests).toBe(1);
     await switchWorkspace(page, 2);
-    const clock = page.getByRole('button', {
-      name: 'Clock and date',
+    const desktopControl = page.getByRole('button', {
+      name: 'Workspace menu',
       exact: true,
     });
-    await clock.focus();
+    await desktopControl.focus();
     gate.release();
     const firstText = firstWindow.locator(
       'textarea[aria-label="Document text"]',
@@ -697,10 +696,10 @@ test('concurrent document windows share loading while hidden views retain their 
     await expect(secondWindow).toBeHidden();
     await expect(firstWindow).toHaveAttribute('inert', '');
     await expect(secondWindow).toHaveAttribute('inert', '');
-    await expect(clock).toBeFocused();
+    await expect(desktopControl).toBeFocused();
     await firstText.evaluate((element) => element.focus());
     await expect(firstText).not.toBeFocused();
-    await expect(clock).toBeFocused();
+    await expect(desktopControl).toBeFocused();
     expect(gate.requests()).toBe(1);
 
     await switchWorkspace(page, 1);

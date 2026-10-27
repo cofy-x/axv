@@ -5,7 +5,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import { Button, Desktop, PixelIcon } from '@cofy-x/axv-nextstep';
+import { Button, Desktop } from '@cofy-x/axv-nextstep';
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
 import { FilesystemContext } from '../filesystem/context';
 import { trashEntries } from '../filesystem/commands';
@@ -23,10 +23,7 @@ import {
   createMachineDesktopIcons,
   createMachineDesktopMenu,
 } from '../features/machines/desktop-icons';
-import {
-  CodexProvider,
-  useCodexAvailability,
-} from '../features/codex/CodexContext';
+import { CodexProvider } from '../features/codex/CodexContext';
 import { ApplicationCatalogContext } from '../features/extensions/catalog';
 import { createExtensionDefinitions } from '../features/extensions/ExtensionWindow';
 import { extensionStore } from '../features/extensions/store';
@@ -41,7 +38,6 @@ export function App() {
 }
 
 function DesktopApp() {
-  const codex = useCodexAvailability();
   const session = useDesktopSession();
   const {
     bootstrap,
@@ -64,9 +60,8 @@ function DesktopApp() {
     computeStore.getSnapshot,
   );
   const builtins = useMemo(
-    () =>
-      createAppRegistry(filesystem, commands, codex.info?.installed === true),
-    [filesystem, commands, codex.info?.installed],
+    () => createAppRegistry(filesystem, commands),
+    [filesystem, commands],
   );
   const extensions = useSyncExternalStore(
     extensionStore.subscribe,
@@ -95,33 +90,48 @@ function DesktopApp() {
   );
   const machineIcons = createMachineDesktopIcons(compute, getDesktop);
   const icons = [
-    ...createDesktopIcons(
-      filesystem,
-      getDesktop,
-      codex.info?.installed === true,
-    ),
+    ...createDesktopIcons(filesystem, getDesktop),
     ...machineIcons,
   ];
 
   if (!bootstrap)
     return (
-      <div className="startup-screen">
-        <div className="startup-panel">
-          <PixelIcon name="computer" size={64} />
-          <strong>{document.title}</strong>
-          {bootError ? (
-            <>
+      <main className="startup-screen">
+        <section
+          className="startup-panel"
+          aria-label="AXV startup"
+          data-failed={bootError ? true : undefined}
+        >
+          <div className="startup-title">AXV</div>
+          <div className="startup-content">
+            <div className="startup-computer" aria-hidden="true">
+              <img
+                src="/startup-computer.svg"
+                width="120"
+                height="100"
+                alt=""
+              />
+              <span className="startup-cursor" />
+              <span className="startup-power" />
+            </div>
+            <div className="startup-message">
+              <p className="startup-status" role="status">
+                {bootError ? 'Unable to open workspace' : 'Opening workspace…'}
+              </p>
+              <p className="startup-description">Personal cloud workstation</p>
+            </div>
+          </div>
+          {bootError && (
+            <div className="startup-error">
               <p role="alert">{bootError}</p>
               <p>Check that AXV is running, then retry.</p>
               <Button primary onClick={() => void boot()}>
                 Retry
               </Button>
-            </>
-          ) : (
-            <p>Starting AXV…</p>
+            </div>
           )}
-        </div>
-      </div>
+        </section>
+      </main>
     );
 
   return (
@@ -147,14 +157,27 @@ function DesktopApp() {
                 icons={icons}
                 initialLayout={bootstrap.layout || undefined}
                 initialLayoutError={bootstrap.layoutError}
-                initialWindows={[
-                  { appId: 'welcome' },
-                  {
-                    appId: 'files',
-                    params: { folderId: 'documents' },
-                    title: 'Documents',
-                  },
+                initialDesktopApplications={{
+                  notes: false,
+                  terminal: false,
+                  'project-files': false,
+                  'remote-access': false,
+                  appearance: false,
+                  codex: false,
+                  machines: false,
+                  gallery: false,
+                  applications: false,
+                  cloudflare: false,
+                }}
+                initialDockOrder={[
+                  'codex',
+                  'machines',
+                  'project-files',
+                  'terminal',
+                  'files',
+                  'notes',
                 ]}
+                initialWindows={[{ appId: 'welcome' }]}
                 wallpaper={preferences.wallpaper}
                 clock24Hour={preferences.clock24Hour}
                 iconSnap={preferences.iconSnap}

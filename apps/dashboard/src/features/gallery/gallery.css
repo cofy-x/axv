@@ -12,12 +12,10 @@
   gap: 8px;
   align-items: center;
 }
-.gallery-controls input[type='radio'] {
-  accent-color: #222;
-}
 .gallery-controls fieldset {
   margin: 0;
   display: flex;
+  flex-wrap: wrap;
   gap: 14px;
   padding: 8px;
 }
@@ -35,5 +33,8 @@
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: var(--ns-font-size-secondary);
+  overflow-wrap: anywhere;
+  min-width: 0;
+  text-align: center;
 }

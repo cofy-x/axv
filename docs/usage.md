@@ -6,11 +6,13 @@ This guide owns visible actions and their effects. Start with [project status](.
 
 Run the installed `axv` command to start or reopen the workstation in your browser. Closing that launching terminal does not stop its background services. Repeating the command opens the existing instance with its current settings; explicit restart applies changed settings or a newly installed executable. [Startup](startup.md#daily-commands) owns the service commands and their lifetime effects.
 
-The **Dock** launches applications, lists their windows and supports pinning and ordering. Swipe an overflowing Dock to reach its remaining launchers and Add control. Mouse dragging changes application order; **Move Earlier** and **Move Later** in each application's Dock options also work with touch and keyboard. **Clip** switches between four named desktop workspaces and holds their shortcuts. Minimizing a window creates its own miniwindow icon; restoring it preserves the window's content. Window menus move windows between workspaces or show them on all workspaces.
+A new browser layout opens only **Welcome**, with Codex, Virtual Machines and Project Files as its main work entries. Documents opens when requested. The initial Dock pins Codex, Virtual Machines, Project Files, Terminal, Files and Text Editor in that order. The desktop starts with Workspace, Documents, Recycler and available document/VM resources; application launchers are optional through Application Manager. Existing saved layouts and launcher choices are preserved.
+
+The **Dock** launches applications, lists their windows and supports pinning and ordering. Swipe an overflowing Dock to reach its remaining launchers. Compact and touch layouts keep one **Dock menu** outside the scrolling launchers: **Add application** pins an application, and each named application submenu provides its windows, pinning and ordering actions. Desktop pointer layouts also keep the small per-application options and Add controls. Mouse dragging changes application order; **Move Earlier** and **Move Later** work with touch and keyboard. **Clip** switches between four named desktop workspaces and holds their shortcuts. Minimizing a window creates its own miniwindow icon; restoring it preserves the window's content. Window menus move windows between workspaces or show them on all workspaces.
 
 Drag a title bar to move a window and its edges to resize. Double-click the title to fold it. Window menus also offer minimize, maximize, restore and close. Narrow screens fit the active window automatically. Drafts, selections and scrolling survive folding, minimizing and workspace changes.
 
-Menus can be fixed as movable panels. A fixed application menu keeps its original window as its target and closes with that window. **Inspector** follows selection or stays pinned to an object. Both remain non-modal; confirmation dialogs own focus while open.
+Menus can be fixed as movable panels. A fixed application menu keeps its original window as its target and closes with that window. **Inspector** follows selection or stays pinned to an object. A newly opened Inspector prefers space beside the source window; activating an existing or restored Inspector retains its chosen position. Both remain non-modal; confirmation dialogs own focus while open.
 
 | Shortcut                  | Action                             |
 | ------------------------- | ---------------------------------- |
@@ -19,13 +21,13 @@ Menus can be fixed as movable panels. A fixed application menu keeps its origina
 | F10                       | Open the workspace menu            |
 | Arrow keys, Enter, Escape | Navigate, select and dismiss menus |
 
-Touch controls expose menus and window actions without requiring a right-click. Text inputs retain selection, clipboard and undo shortcuts. **Preferences** changes desktop appearance and clock settings; its **Remote access** section provides **Open Tailscale** and **Open Cloudflare**. **Component Gallery** demonstrates the shared controls.
+Touch controls expose menus and window actions without requiring a right-click. Text inputs retain selection, clipboard and undo shortcuts. **Workspace → Clock** shows the date and time; compact layouts omit the separate Dock clock. **Preferences** changes desktop appearance and clock settings; its **Remote access** section provides **Open Tailscale** and **Open Cloudflare**. **Component Gallery** demonstrates the shared controls.
 
-Welcome keeps **Show Desktop** visible and groups **Preferences** and **About AXV** under **More**.
+Welcome keeps **Show Desktop** visible, places remote setup under **Connect from another device**, and groups **Preferences**, **Developer Tools → Component Gallery** and **About AXV** under **More**.
 
 ## Applications and extensions
 
-Open **Application Manager** from its desktop icon, Welcome or **Applications → Application Manager** in the workspace menu. Built-in applications keep their existing launchers and windows. The manager is available without a default Dock pin; use the Dock Add menu to pin it if desired.
+Open **Application Manager** from Welcome’s **Applications** button or **Applications → Application Manager** in the workspace menu. Its desktop icon is optional. Built-in applications keep their existing launchers and windows. The manager is available without a default Dock pin; use the Dock Add control or **Dock menu → Add application** to pin it if desired.
 
 The manager starts with installed extensions. **Open** launches an enabled application; **Enable** makes a disabled application available again. Each extension row's **More** menu contains secondary management actions. **Add package** opens package selection and review; this section opens initially for an empty directory. Collapsing it keeps the current review.
 
@@ -47,7 +49,7 @@ Extensions in this version store only their own data. They cannot access AXV doc
 
 ## Remote desktop
 
-Open **Tailscale** from its desktop icon, **Workspace → Applications** or **Preferences**. The stable desktop launcher opens one non-modal panel and can also be kept in the Dock or added to Clip. Its icon does not indicate connection readiness; the panel checks AXV's connection while active. AXV includes Tailscale and needs no system installation on its server.
+Open **Tailscale** from **Workspace → Applications**, **Preferences** or its optional desktop icon. The stable desktop launcher opens one non-modal panel and can also be kept in the Dock or added to Clip. Its icon does not indicate connection readiness; the panel checks AXV's connection while active. AXV includes Tailscale and needs no system installation on its server.
 
 On the computer running AXV:
 
@@ -66,7 +68,7 @@ VM environment preparation and remote setup require access on the AXV host. Remo
 
 ### Cloudflare desktop access
 
-Open **Cloudflare** from its desktop icon, **Workspace → Applications** or **Preferences → Remote access → Open Cloudflare**. The cloud and tunnel drawing identifies the launcher; it does not indicate connection readiness. The launcher appears by default unless you have hidden it in Application Manager, and hiding it preserves its position. You can also add it to the Dock or Clip; every launcher opens the same panel.
+Open **Cloudflare** from **Workspace → Applications**, **Preferences → Remote access → Open Cloudflare** or its optional desktop icon. The cloud and tunnel drawing identifies the launcher; it does not indicate connection readiness. Application Manager can show or hide the launcher while preserving its position. You can also add it to the Dock or Clip; every launcher opens the same panel.
 
 The window has **Overview**, **Setup**, **Publishing** and **Traffic** tabs. Each view provides its own refresh or reload action. On the AXV host, **Open setup** leads to editable desktop Access settings and an account wizard for publishing. The account wizard focuses on one step at a time; its final **Save settings** action opens a confirmation before writing. Connected accounts offer **Change connection**, with token rotation available separately. Validate values, review the destination and save explicitly. Unsaved changes stay in the window; replacing a draft or closing with edits requires a choice. The advanced manual guide is a fallback. [Cloudflare setup](startup.md#cloudflare-access) owns external Access and connector preparation.
 
@@ -78,7 +80,7 @@ Once configured, **Off** means the AXV entrypoint is disabled. **Enable** saves 
 
 ## Files, saving and recovery
 
-**Workspace / File Manager** manages AXV's virtual disk. Selecting a directory opens the next column; selecting a file updates Inspector. Enter or double-click opens a file, and **Open** opens or activates the selected directory's window. Rename and move preserve file identity. Import and download transfer files to and from the user's computer; supported [formats and limits](api/files.md#import-download-and-preview) are separate from host-project access.
+**Workspace / File Manager** manages AXV's virtual disk. Selecting a directory opens the next column; selecting a file updates Inspector. Narrow windows show one directory at a time, with **Up** and the path for returning to ancestors. Their **View** menu provides sorting without repeating the desktop column-view selector or directory heading. The Up and Down keys select sibling entries; Enter or Right enters a selected folder. Widening the window restores the saved view and column widths. Enter or double-click opens a file, and **Open** opens or activates the selected directory's window. Rename and move preserve file identity. Import and download transfer files to and from the user's computer; supported [formats and limits](api/files.md#import-download-and-preview) are separate from host-project access.
 
 **New** groups folder and text-file creation. The selection toolbar keeps **Open** and **Inspect** visible; **More** contains secondary file commands. Inspector keeps **Open** visible and groups rename, move, download, document details and recycling under **More**. **Restore** stays visible for a deleted item. Inspector keeps location, size and access visible, with dates and revision under **Details**. Toggle **Pin** to keep the inspected item or follow the Files selection.
 
@@ -140,7 +142,7 @@ Linux uses an administrator-provisioned local Firecracker service. The environme
 
 Choose **New VM** once an available provider has a ready image. The initial name is `my-vm`; choose another when it is already in use. New machines start by default; choose to create a stopped machine when needed. Names must be unique on this host, including pending renames. The manager displays VM icons with names and states. Select one for Start/Stop, Terminal and Inspect; **More** contains secondary lifecycle actions. **Inspect** opens configuration and guest access. Search and state filters only allow actions on visible selections. The manager's **Volumes**, **Images** and **Activity** views expose storage and operation status; switching views or Environment keeps unfinished forms. **View Activity** follows an accepted operation through completion or failure and hides when that operation is already selected in Activity. If the local compute service becomes unavailable, the window retains the last known inventory and disables changes until the connection recovers.
 
-The desktop includes a **Virtual Machines** launcher by default and adds an icon for each VM. Application Manager can hide the application launcher independently of those VM icons. Opening a VM icon shows its Inspector without starting the VM or a terminal; the Inspector's back arrow opens **Virtual Machines**. Renaming preserves its desktop position. VM icons are separate from virtual files and cannot be deleted through Recycler. Environment and operation technical details include the profile log location and relevant IDs for diagnosis; [startup](startup.md) owns log files and service commands.
+The initial Dock includes **Virtual Machines**, and the desktop adds an icon for each VM. Application Manager can show or hide the optional application launcher independently of those VM icons. Opening a VM icon shows its Inspector without starting the VM or a terminal; the Inspector's back arrow opens **Virtual Machines**. Renaming preserves its desktop position. VM icons are separate from virtual files and cannot be deleted through Recycler. Environment and operation technical details include the profile log location and relevant IDs for diagnosis; [startup](startup.md) owns log files and service commands.
 
 Volumes keeps **New Volume** and **Copy** visible, with rename, growth, detach and delete under the selected volume's **More** menu. Images keeps **Add Image** visible; the selected image's **More** menu contains **Add Version** and **Remove**. Confirmation, progress and recovery controls stay with their forms.
 
@@ -167,6 +169,8 @@ In **Text to paste**, use the system's native Paste action or type text, then re
 The dialog identifies its original terminal, including a short run or terminal ID for Codex and Guest Terminal. A disconnect, session replacement or closed window invalidates that operation, including when the same terminal later reconnects. Copy any text you still need and open a new paste operation explicitly. AXV does not append Enter, but pasted line breaks or control characters can affect the receiving program, including executing shell commands. Bracketed paste protection depends on that program's support. Clipboard text is not saved in desktop layouts.
 
 ## Codex
+
+The Codex manager remains available while the host CLI is being checked or needs setup. Starting a session stays disabled until the environment is ready; **Environment** explains missing requirements.
 
 Codex runs the official CLI as the service user on macOS/Linux. Install **Codex CLI 0.161.0 or later** and **tmux 3.1 or later**, with the [compatible CLI options](api/host-codex.md#availability-and-environment), then run `codex` in a host terminal to complete sign-in and project trust. AXV uses the CLI's existing credentials, approvals, sandbox and model settings without copying credential files.
 

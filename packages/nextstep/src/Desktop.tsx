@@ -111,7 +111,7 @@ export function Desktop(props: DesktopProps) {
   const openWorkspaceMenu = (element: HTMLElement) => {
     const rect = element.getBoundingClientRect();
     api.contextMenu(
-      desktopItems(gestures.selection),
+      desktopItems([]),
       { x: rect.left, y: rect.bottom },
       { title: 'Workspace', pin: { kind: 'desktop', title: 'Workspace' } },
     );
@@ -128,6 +128,7 @@ export function Desktop(props: DesktopProps) {
         {
           '--ns-viewport-height': `${viewport.height}px`,
           '--ns-dock-size': `${DOCK_SIZE}px`,
+          '--ns-dock-width': `${DOCK_SIZE}px`,
           '--ns-icon-width': `${ICON_SIZE.width}px`,
           '--ns-icon-height': `${ICON_SIZE.height}px`,
         } as CSSProperties
@@ -252,6 +253,7 @@ export function Desktop(props: DesktopProps) {
           api={api}
           layout={layout}
           setLayout={controller.setLayout}
+          compact={mobile || short || viewport.coarsePointer === true}
         />
         {menu && (
           <MenuOverlay

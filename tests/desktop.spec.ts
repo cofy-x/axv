@@ -14,6 +14,7 @@ import {
   menuItem,
   nameDialog,
   newFileItem,
+  openDockOptions,
   openDocument,
   persistedLayout,
   readContent,
@@ -21,6 +22,109 @@ import {
   test,
   windowMenu,
 } from './helpers';
+
+test.describe('fresh desktop defaults', () => {
+  test.use({ initialApp: 'welcome' });
+
+  test('Welcome starts alone and preserves chosen windows and Dock pins after reload', async ({
+    page,
+    request,
+  }) => {
+    const welcome = page.locator('[data-app-id="welcome"]');
+    const coreApplications = [
+      'codex',
+      'machines',
+      'project-files',
+      'terminal',
+      'files',
+      'notes',
+    ];
+    const dockOrder = () =>
+      page
+        .locator('.ns-dock [data-dock-app]')
+        .evaluateAll((items) =>
+          items.map((item) => item.getAttribute('data-dock-app')),
+        );
+    await expect(page.locator('[data-window-id]')).toHaveCount(1);
+    await expect(filesWindow(page)).toHaveCount(0);
+    await expect(welcome).toHaveClass(/is-active/);
+    await expect(
+      welcome.getByRole('button', { name: /^Codex/ }),
+    ).toBeInViewport();
+    await expect(
+      welcome.getByRole('button', { name: /^Project Files/ }),
+    ).toBeInViewport();
+    await expect(page.locator('[data-icon-id="system:terminal"]')).toHaveCount(
+      0,
+    );
+    await expect(
+      page.locator('[data-icon-id="system:documents"]'),
+    ).toBeVisible();
+    await expect(dockEntry(page, 'codex')).toBeVisible();
+    await expect(dockEntry(page, 'gallery')).toHaveCount(0);
+    await expect.poll(dockOrder).toEqual([...coreApplications, 'welcome']);
+    await expect
+      .poll(async () => {
+        const layout = await persistedLayout(page, request);
+        return (
+          layout && {
+            windows: layout.windows.map(
+              (window: { appId: string }) => window.appId,
+            ),
+            pinned: layout.dock
+              .filter((entry: { pinned: boolean }) => entry.pinned)
+              .map((entry: { appId: string }) => entry.appId),
+          }
+        );
+      })
+      .toEqual({ windows: ['welcome'], pinned: coreApplications });
+    await page.reload();
+    await expect(page.locator('[data-window-id]')).toHaveCount(1);
+    await expect(welcome).toHaveClass(/is-active/);
+    await expect.poll(dockOrder).toEqual([...coreApplications, 'welcome']);
+    const options = await openDockOptions(page, 'codex');
+    await menuItem(options, 'Keep in Dock').click();
+    await expect(dockEntry(page, 'codex')).toHaveCount(0);
+    await expect
+      .poll(async () =>
+        (await persistedLayout(page, request))?.dock.some(
+          (entry: { appId: string; pinned: boolean }) =>
+            entry.appId === 'codex' && entry.pinned,
+        ),
+      )
+      .toBe(false);
+    await welcome
+      .getByRole('button', { name: 'Documents', exact: true })
+      .click();
+    await expect(filesWindow(page)).toHaveClass(/is-active/);
+    await expect
+      .poll(async () => (await persistedLayout(page, request))?.activeWindowId)
+      .toBe('files:documents');
+    const chosen = await persistedLayout(page, request);
+    const documentWindow = chosen.windows.find(
+      (window: { id: string }) => window.id === 'files:documents',
+    );
+    await page.reload();
+    await expect(page.locator('[data-window-id]')).toHaveCount(2);
+    await expect(filesWindow(page)).toHaveClass(/is-active/);
+    await expect(dockEntry(page, 'codex')).toHaveCount(0);
+    await expect(page.locator('[data-icon-id="system:terminal"]')).toHaveCount(
+      0,
+    );
+    await expect(dockEntry(page, 'gallery')).toHaveCount(0);
+    await expect
+      .poll(async () => {
+        const layout = await persistedLayout(page, request);
+        return {
+          dock: layout.dock,
+          document: layout.windows.find(
+            (window: { id: string }) => window.id === 'files:documents',
+          ),
+        };
+      })
+      .toEqual({ dock: chosen.dock, document: documentWindow });
+  });
+});
 
 test('windows drag, resize, shade, miniaturize and retain desktop geometry', async ({
   page,
@@ -106,6 +210,11 @@ test('Dock pinning, order, clock, running state and document selection persist',
   await expect(first).toHaveClass(/is-active/);
   await expect(second).toHaveCount(1);
   const gallery = dockEntry(page, 'gallery');
+  await expect(gallery).toHaveCount(0);
+  await page
+    .getByRole('button', { name: 'Add application to Dock', exact: true })
+    .click();
+  await menuItem(page, 'Component Gallery').click();
   await gallery.locator('.ns-dock-options').click();
   await menuItem(page, 'Keep in Dock').click();
   await expect(gallery).toHaveCount(0);
@@ -145,9 +254,9 @@ test('Dock pinning, order, clock, running state and document selection persist',
   changed = await order();
   await expect
     .poll(async () =>
-      (await persistedLayout(page, request))?.dock
-        .filter((item: { pinned: boolean }) => item.pinned)
-        .map((item: { appId: string }) => item.appId),
+      (await persistedLayout(page, request))?.dock.map(
+        (item: { appId: string }) => item.appId,
+      ),
     )
     .toEqual(changed);
   await page.reload();
@@ -167,6 +276,10 @@ test('Dock pinning, order, clock, running state and document selection persist',
 test('Dock drag cancellation and missing clicks do not consume later activation', async ({
   page,
 }) => {
+  await page
+    .getByRole('button', { name: 'Add application to Dock', exact: true })
+    .click();
+  await menuItem(page, 'Component Gallery').click();
   const gallery = dockEntry(page, 'gallery');
   const tile = gallery.locator('.ns-dock-tile');
   const window = page.locator('[data-app-id="gallery"]');
@@ -685,6 +798,11 @@ test('a pinned application menu saves its owner after focus changes and closes w
     `.ns-pinned-menu[data-owner-window-id="notes:${a.id}"]`,
   );
   await expect(pinned).toBeVisible();
+  const pinnedTitle = await bounds(pinned.locator('.ns-menu-title'));
+  await page.mouse.move(pinnedTitle.x + 40, pinnedTitle.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(1100, 210, { steps: 6 });
+  await page.mouse.up();
   const second = await openDocument(page, b);
   await second
     .getByRole('textbox', { name: 'Document text' })

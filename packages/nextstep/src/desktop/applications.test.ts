@@ -236,7 +236,13 @@ describe('unavailable application presentation', () => {
     );
     const props = { apps: [], icons: [] };
     const dock = renderToStaticMarkup(
-      createElement(Dock, { props, layout, api, setLayout: vi.fn() }),
+      createElement(Dock, {
+        props,
+        layout,
+        api,
+        setLayout: vi.fn(),
+        compact: false,
+      }),
     );
     expect(dock).toContain('data-dock-app="org.example.tool"');
     expect(dock).toContain('data-dock-app="another.tool"');

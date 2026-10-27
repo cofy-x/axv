@@ -10,6 +10,7 @@ import {
 } from 'node:fs/promises';
 import { join } from 'node:path';
 import { build } from 'vite';
+import dashboardConfig from '../apps/dashboard/vite.config.ts';
 import {
   analyzeDashboardBundle,
   checkDashboardBudget,
@@ -87,6 +88,118 @@ describe('dashboard startup graph budget', () => {
     expect(() =>
       checkDashboardBudget({ initial: { rawBytes: 1 } }, { rawBytes: NaN }),
     ).toThrow('Invalid');
+  });
+
+  it('counts every chunk containing required startup modules and their static imports without adding unrelated lazy features', () => {
+    const mainModule = { renderedLength: 10, originalLength: 10 };
+    const report = analyzeDashboardBundle(
+      {
+        entry: chunk('entry.js', ['shared.js'], {
+          isEntry: true,
+          dynamicImports: ['main.js'],
+        }),
+        main: chunk('main.js', ['dependency.js'], {
+          modules: { '/repo/src/main.tsx': mainModule },
+          dynamicImports: ['feature.js'],
+        }),
+        anotherMain: chunk('main-copy.js', ['shared.js'], {
+          modules: { '/repo/src/main.tsx': mainModule },
+        }),
+        dependency: chunk('dependency.js', ['shared.js']),
+        shared: chunk('shared.js'),
+        feature: chunk('feature.js', ['feature-only.js']),
+        featureOnly: chunk('feature-only.js'),
+      },
+      '/repo',
+      ['src/main.tsx', '/repo/src/main.tsx'],
+    );
+    expect(report.initial.files).toEqual([
+      'dependency.js',
+      'entry.js',
+      'main-copy.js',
+      'main.js',
+      'shared.js',
+    ]);
+    expect(report.initial.requiredStartupModules).toEqual(['src/main.tsx']);
+    expect(report.initial.rawBytes).toBe(
+      Buffer.byteLength(report.initial.files.join('')),
+    );
+    expect(() =>
+      checkDashboardBudget(report, {
+        rawBytes: report.initial.rawBytes - 1,
+        gzipEstimateBytes: report.initial.gzipEstimateBytes,
+      }),
+    ).toThrow('rawBytes');
+  });
+
+  it('rejects missing required startup modules and incomplete required startup dependencies', () => {
+    const bundle = {
+      entry: chunk('entry.js', [], { isEntry: true }),
+      main: chunk('main.js', ['missing-dependency.js'], {
+        modules: { '/repo/src/main.tsx': { renderedLength: 10 } },
+      }),
+    };
+    expect(() =>
+      analyzeDashboardBundle(bundle, '/repo', ['src/missing.tsx']),
+    ).toThrow(
+      'Missing required startup JavaScript module: /repo/src/missing.tsx',
+    );
+    expect(() =>
+      analyzeDashboardBundle(bundle, '/repo', ['src/main.tsx']),
+    ).toThrow('Missing static JavaScript import: missing-dependency.js');
+    expect(analyzeDashboardBundle(bundle, '/repo').initial.files).toEqual([
+      'entry.js',
+    ]);
+  });
+
+  it('reports required dynamically loaded startup code from actual emitted module identities', async () => {
+    const directory = await mkdtemp(join(process.env.TMPDIR, 'startup-graph-'));
+    try {
+      await Promise.all(
+        [
+          ['index.html', '<script type="module" src="/entry.js"></script>'],
+          ['entry.js', 'import("./main.js");'],
+          [
+            'main.js',
+            'import { value } from "./shared.js"; globalThis.ready = value; globalThis.loadFeature = () => import("./feature.js");',
+          ],
+          [
+            'feature.js',
+            'import { value } from "./shared.js"; export const feature = value;',
+          ],
+          ['shared.js', 'export const value = Math.random();'],
+        ].map(([name, content]) => writeFile(join(directory, name), content)),
+      );
+      const reportPath = join(directory, 'report.json');
+      await build({
+        configFile: false,
+        root: directory,
+        publicDir: false,
+        logLevel: 'silent',
+        plugins: [
+          dashboardBundlePlugin({
+            root: directory,
+            requiredStartupModules: [join(directory, 'main.js')],
+            reportPath,
+          }),
+        ],
+      });
+      const report = JSON.parse(await readFile(reportPath, 'utf8'));
+      const containing = (id) =>
+        report.chunks.find((chunk) =>
+          chunk.modules.some((module) => module.id === id),
+        );
+      const main = containing('main.js');
+      expect(main.isEntry).toBe(false);
+      expect(report.initial.files).toContain(main.fileName);
+      expect(report.initial.files).toContain(containing('shared.js').fileName);
+      expect(report.initial.files).not.toContain(
+        containing('feature.js').fileName,
+      );
+      expect(report.initial.requiredStartupModules).toEqual(['main.js']);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it('budgets final written artifacts and preserves a failure report outside the output', async () => {
@@ -186,6 +299,102 @@ describe('dashboard startup graph budget', () => {
       expect(after.some((item) => item.code.includes('__vite__mapDeps'))).toBe(
         true,
       );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('scopes startup preload recovery to named loader chunks while preserving feature and HTML preloads', () => {
+    const resolver = dashboardConfig.build.modulePreload.resolveDependencies;
+    const dependencies = [
+      'assets/main.js',
+      'assets/shared.js',
+      'assets/main.css',
+    ];
+    expect(
+      resolver('assets/main.js', dependencies, {
+        hostType: 'js',
+        hostId: 'assets/startup-index-contenthash.js',
+      }),
+    ).toEqual(['assets/main.css']);
+    expect(
+      resolver('assets/main.js', dependencies, {
+        hostType: 'js',
+        hostId: 'assets/feature-contenthash.js',
+      }),
+    ).toEqual(['assets/shared.js', 'assets/main.css']);
+    expect(
+      resolver('assets/main.js', dependencies, {
+        hostType: 'html',
+        hostId: 'index.html',
+      }),
+    ).toEqual(dependencies);
+  });
+
+  it('emits startup CSS preloads without startup JavaScript dependency preloads and retains lazy feature dependencies', async () => {
+    const directory = await mkdtemp(
+      join(process.env.TMPDIR, 'startup-preload-'),
+    );
+    try {
+      await Promise.all(
+        [
+          ['index.html', '<script type="module" src="/entry.js"></script>'],
+          ['entry.js', 'import("./main.js");'],
+          [
+            'main.js',
+            'import "./main.css"; import { startup } from "./startup-shared.js"; globalThis.ready = startup; globalThis.feature = () => import("./feature.js"); globalThis.other = () => import("./other.js");',
+          ],
+          ['main.css', 'body { color: #111; }'],
+          [
+            'feature.js',
+            'import { startup } from "./startup-shared.js"; import { lazy } from "./feature-shared.js"; export const feature = startup + lazy;',
+          ],
+          [
+            'other.js',
+            'import { lazy } from "./feature-shared.js"; export const other = lazy;',
+          ],
+          ['startup-shared.js', 'export const startup = Math.random();'],
+          ['feature-shared.js', 'export const lazy = Math.random();'],
+        ].map(([name, content]) => writeFile(join(directory, name), content)),
+      );
+      const result = await build({
+        configFile: false,
+        root: directory,
+        publicDir: false,
+        logLevel: 'silent',
+        build: {
+          ...dashboardConfig.build,
+          write: false,
+          rolldownOptions: {
+            output: {
+              ...dashboardConfig.build.rolldownOptions.output,
+              codeSplitting: {
+                groups: [
+                  { name: 'startup-shared', test: /startup-shared\.js$/ },
+                  { name: 'feature-shared', test: /feature-shared\.js$/ },
+                ],
+              },
+            },
+          },
+        },
+        plugins: [dashboardBundlePlugin({ root: directory })],
+      });
+      const chunks = result.output.filter((item) => item.type === 'chunk');
+      const containing = (id) =>
+        chunks.find((chunk) =>
+          Object.hasOwn(chunk.modules, join(directory, id)),
+        );
+      const entry = chunks.find((chunk) => chunk.isEntry);
+      const main = containing('main.js');
+      const startupShared = containing('startup-shared.js');
+      const featureShared = containing('feature-shared.js');
+      const css = result.output.find((item) => item.fileName.endsWith('.css'));
+      expect(entry.fileName).toMatch(/^assets\/startup-/);
+      expect(startupShared.fileName).not.toBe(main.fileName);
+      expect(entry.code).toContain(css.fileName);
+      expect(entry.code).not.toContain(startupShared.fileName);
+      expect(featureShared.fileName).not.toBe(main.fileName);
+      expect(main.code).toContain(featureShared.fileName);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

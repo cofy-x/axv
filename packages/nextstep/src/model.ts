@@ -8,6 +8,7 @@ import type {
   Point,
   Size,
   WindowParams,
+  Viewport,
   Workspace,
 } from './types';
 
@@ -64,7 +65,7 @@ export function windowIdentity(
 
 /** A miniwindow shelf reserves space only while this workspace has restore icons. */
 export function windowWorkArea(
-  viewport: Size,
+  viewport: Viewport,
   hasMiniwindows: boolean,
 ): Bounds {
   const { mobile, short, sideDock } = desktopLayoutMode(viewport);
@@ -82,7 +83,10 @@ export function windowWorkArea(
 }
 
 /** Icons share the shell's reserved edges, with a small inset for their labels. */
-export function iconWorkArea(viewport: Size, hasMiniwindows: boolean): Bounds {
+export function iconWorkArea(
+  viewport: Viewport,
+  hasMiniwindows: boolean,
+): Bounds {
   const area = windowWorkArea(viewport, hasMiniwindows);
   const y = Math.max(40, area.y + 4);
   return {
@@ -91,6 +95,36 @@ export function iconWorkArea(viewport: Size, hasMiniwindows: boolean): Bounds {
     width: Math.max(1, area.width - 8),
     height: Math.max(1, area.y + area.height - y - 4),
   };
+}
+
+/** Prefer either free side of a source, then clamp on the side with more space. */
+export function adjacentWindowBounds(
+  bounds: Bounds,
+  source: Bounds,
+  workArea: Bounds,
+  minSize?: Size,
+): Bounds {
+  const fitted = visibleBounds(bounds, workArea, minSize);
+  const gap = 12;
+  const right = source.x + source.width + gap;
+  const left = source.x - fitted.width - gap;
+  const rightSpace = workArea.x + workArea.width - right;
+  const leftSpace = source.x - gap - workArea.x;
+  const x =
+    rightSpace >= fitted.width
+      ? right
+      : leftSpace >= fitted.width
+        ? left
+        : rightSpace >= leftSpace
+          ? right
+          : left;
+  const placed = visibleBounds(
+    { ...bounds, x, y: source.y },
+    workArea,
+    minSize,
+  );
+  // A short display may fit presentation, but must not shrink normal saved size.
+  return { ...bounds, x: placed.x, y: placed.y };
 }
 
 /** Fit presentation without changing saved normal or restorable geometry. */

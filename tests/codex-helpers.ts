@@ -121,21 +121,19 @@ export async function codexRowMenu(page: Page, row: Locator, touch = false) {
 }
 
 export async function openCodexManager(page: Page, touch = false) {
-  // Capability detection is asynchronous; open the menu only once the launcher
-  // exists, including when desktop icons are hidden by the narrow layout.
-  await expect(
-    page.getByRole('group', { name: 'Desktop icons' }).getByRole('button', {
-      name: 'Codex',
-      exact: true,
-      includeHidden: true,
-    }),
-  ).toHaveCount(1);
+  // The application menu remains available independently of optional desktop
+  // shortcuts or Dock pins, including before the host CLI is installed.
   await choose(
     page.getByRole('button', { name: 'Workspace menu', exact: true }),
     touch,
   );
   await choose(menuItem(page, 'Applications'), touch);
-  await choose(menuItem(page, 'Codex'), touch);
+  await choose(
+    page
+      .getByRole('menu', { name: 'Applications', exact: true })
+      .getByRole('menuitem', { name: 'Codex', exact: true }),
+    touch,
+  );
   const sessionLauncher = page
     .locator('.ns-window.is-active[data-app-id="codex"]')
     .getByRole('button', { name: 'Sessions', exact: true });

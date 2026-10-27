@@ -57,8 +57,10 @@
 }
 .toolbar-caption {
   flex: 1;
-  font-size: 11px;
+  min-width: 0;
+  font-size: var(--ns-font-size-secondary);
   color: #444;
+  overflow-wrap: anywhere;
 }
 .bottom-toolbar {
   border-top: 1px solid #999;
@@ -92,10 +94,33 @@
   margin: auto;
   padding: 28px 20px;
   color: #666;
-  font-size: 11px;
+  font-size: var(--ns-font-size-secondary);
 }
 .empty-folder p {
   margin: 10px 0 0;
+}
+.app-empty-state {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  background: var(--ns-light);
+  box-shadow: var(--ns-recessed);
+  overflow-wrap: anywhere;
+}
+.app-empty-state > div {
+  min-width: 0;
+}
+.app-empty-state strong {
+  display: block;
+  font-size: var(--ns-font-size-body);
+}
+.app-empty-state p {
+  max-width: 48ch;
+  margin: 4px 0 0;
+  color: #444;
+  font-size: var(--ns-font-size-secondary);
+  line-height: 1.5;
 }
 .visually-hidden {
   position: absolute;
@@ -110,7 +135,9 @@
   border-bottom: 1px solid #999;
   padding: 9px 12px;
   color: #7a1010;
-  font-size: 11px;
+  font-size: var(--ns-font-size-secondary);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 .app-error .app-actions {
   margin-top: 8px;
@@ -121,7 +148,7 @@
   gap: 7px 16px;
   text-align: left;
   margin: 0;
-  font-size: 11px;
+  font-size: var(--ns-font-size-secondary);
 }
 .info-list dt {
   font-weight: bold;
@@ -132,8 +159,10 @@
 }
 .fine-print {
   color: #555;
-  font-size: 10px;
+  font-size: var(--ns-font-size-secondary);
   line-height: 1.5;
+}
+p.fine-print {
   margin-top: 14px !important;
 }
 .panel-heading {
@@ -143,7 +172,7 @@
   margin-bottom: 14px;
 }
 .panel-heading p {
-  font-size: 11px;
+  font-size: var(--ns-font-size-secondary);
   color: #555;
   margin: 3px 0 0;
 }

@@ -1098,13 +1098,27 @@ export function CodexManager({
             </p>
           )}
           {sessionsLoaded && !visibleSessions.length && !sessionError && (
-            <p className="codex-empty">
-              {filter === 'attention'
-                ? 'No action needed.'
-                : filter === 'archived'
-                  ? 'No archived sessions.'
-                  : 'No unarchived sessions.'}
-            </p>
+            <div className="app-empty-state codex-empty">
+              <PixelIcon name="companion" size={32} />
+              <div>
+                <strong>
+                  {filter === 'attention'
+                    ? 'No action needed.'
+                    : filter === 'archived'
+                      ? 'No archived sessions.'
+                      : 'No unarchived sessions.'}
+                </strong>
+                <p>
+                  {filter === 'attention'
+                    ? 'Sessions needing a response or review appear here.'
+                    : filter === 'archived'
+                      ? 'Archive a session from its More menu to keep it here.'
+                      : vmProjectId
+                        ? 'Conversations and activity for this VM project appear here.'
+                        : 'New Session uses the default folder. New in Folder starts in another project.'}
+                </p>
+              </div>
+            </div>
           )}
           <ul className="codex-session-list">
             {visibleSessions.map((session) => {

@@ -7,7 +7,7 @@ const emptyFilesystem = { entries: [] } as unknown as FilesystemData;
 
 describe('dashboard desktop application launchers', () => {
   it('marks pure application launchers independently of resource shortcuts', () => {
-    const icons = createDesktopIcons(emptyFilesystem, () => null, true);
+    const icons = createDesktopIcons(emptyFilesystem, () => null);
     expect(
       icons
         .filter((icon) => icon.applicationLauncher)

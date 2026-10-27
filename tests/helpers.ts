@@ -61,11 +61,11 @@ export function expectedDownloadFilename(name: string, browserName: string) {
     : name;
 }
 
-export function menuItem(page: Page, name: string | RegExp) {
-  return page
+export function menuItem(scope: Page | Locator, name: string | RegExp) {
+  return scope
     .getByRole('menuitem', { name, exact: typeof name === 'string' })
     .or(
-      page.getByRole('menuitemcheckbox', {
+      scope.getByRole('menuitemcheckbox', {
         name,
         exact: typeof name === 'string',
       }),
@@ -102,28 +102,82 @@ export async function newFileItem(
 }
 
 export async function launch(page: Page, appId: string) {
-  await dockEntry(page, appId).locator('.ns-dock-tile').click();
+  const tile = dockEntry(page, appId).locator('.ns-dock-tile');
+  if (await tile.count()) {
+    await tile.click();
+    return;
+  }
+  const titles: Record<string, string> = {
+    welcome: 'Welcome',
+    files: 'Files',
+    notes: 'Text Editor',
+    'project-files': 'Project Files',
+    terminal: 'Terminal',
+    machines: 'Virtual Machines',
+    codex: 'Codex',
+    appearance: 'Preferences',
+    gallery: 'Component Gallery',
+    inspector: 'Inspector',
+    trash: 'Recycler',
+  };
+  const title = titles[appId];
+  expect(title, `Known application title for ${appId}`).toBeTruthy();
+  await page
+    .getByRole('button', { name: 'Workspace menu', exact: true })
+    .click();
+  await menuItem(page, 'Applications').click();
+  await page
+    .getByRole('menu', { name: 'Applications', exact: true })
+    .getByRole('menuitem', { name: title!, exact: true })
+    .click();
 }
 
-export async function activate(page: Page, win: Locator) {
+export async function openDockOptions(
+  page: Page,
+  appId: string,
+  touch = false,
+) {
+  const entry = dockEntry(page, appId);
+  const title = await entry.getAttribute('data-app-title');
+  expect(title, `Dock title for ${appId}`).toBeTruthy();
+  const choose = async (control: Locator) =>
+    touch ? control.tap() : control.click();
+  const options = entry.locator('.ns-dock-options');
+  if (await options.isVisible()) await choose(options);
+  else {
+    await choose(page.getByRole('button', { name: 'Dock menu', exact: true }));
+    await choose(
+      menuItem(page.getByRole('menu', { name: 'Dock', exact: true }), title!),
+    );
+  }
+  const menu = page.getByRole('menu', { name: title!, exact: true });
+  await expect(menu).toBeVisible();
+  return menu;
+}
+
+export async function activate(page: Page, win: Locator, touch = false) {
   const appId = await win.getAttribute('data-app-id');
   const title = await win.getAttribute('aria-label');
   expect(appId).toBeTruthy();
   expect(title).toBeTruthy();
-  await dockEntry(page, appId!).locator('.ns-dock-options').click();
-  await menuItem(page, title!).click();
+  const menu = await openDockOptions(page, appId!, touch);
+  const item = menuItem(menu, title!);
+  if (touch) await item.tap();
+  else await item.click();
   await expect(win).toBeVisible();
   await expect(win).toHaveClass(/is-active/);
 }
 
-export async function openDocument(page: Page, entry: Entry) {
-  await activate(page, filesWindow(page));
-  await filesWindow(page)
-    .getByRole('option', { name: entry.name, exact: true })
-    .click();
-  await filesWindow(page)
-    .getByRole('button', { name: 'Open', exact: true })
-    .click();
+export async function openDocument(page: Page, entry: Entry, touch = false) {
+  const choose = async (control: Locator) =>
+    touch ? control.tap() : control.click();
+  await activate(page, filesWindow(page), touch);
+  await choose(
+    filesWindow(page).getByRole('option', { name: entry.name, exact: true }),
+  );
+  await choose(
+    filesWindow(page).getByRole('button', { name: 'Open', exact: true }),
+  );
   const editor = editorWindow(page, entry.id);
   await expect(
     editor.getByRole('textbox', { name: 'Document text' }),
@@ -143,12 +197,48 @@ export async function windowMenu(page: Page, win: Locator) {
   await win.getByRole('button', { name: /^Window menu for / }).click();
 }
 
-export async function switchWorkspace(page: Page, index: number) {
-  await page.getByRole('button', { name: /^Workspace \d+: / }).click();
-  await menuItem(page, new RegExp(`^${index}\\s+`)).click();
+export async function windowAction(
+  page: Page,
+  win: Locator,
+  action: string,
+  touch = false,
+) {
+  const button = win.getByRole('button', { name: /^Window menu for / });
+  if (touch) await button.tap();
+  else await button.click();
+  const item = menuItem(
+    page.getByRole('menu', { name: 'Window', exact: true }),
+    action,
+  );
+  if (touch) await item.tap();
+  else await item.click();
+}
+
+export async function openWorkspaceControls(page: Page, touch = false) {
+  const choose = async (control: Locator) =>
+    touch ? control.tap() : control.click();
+  await choose(page.getByRole('button', { name: /^Workspace \d+: / }));
+  const menu = page.getByRole('menu', { name: 'Workspaces', exact: true });
+  await expect(menu).toBeVisible();
+  return menu;
+}
+
+export async function expectCurrentWorkspace(page: Page, index: number) {
   await expect(
-    page.getByRole('button', { name: new RegExp(`^Workspace ${index}: `) }),
-  ).toBeVisible();
+    page.getByRole('button', { name: /^Workspace \d+: / }),
+  ).toHaveAccessibleName(new RegExp(`^Workspace ${index}: `));
+}
+
+export async function switchWorkspace(
+  page: Page,
+  index: number,
+  touch = false,
+) {
+  const menu = await openWorkspaceControls(page, touch);
+  const item = menuItem(menu, new RegExp(`^${index}\\s+`));
+  if (touch) await item.tap();
+  else await item.click();
+  await expectCurrentWorkspace(page, index);
 }
 
 export async function bounds(locator: Locator) {
@@ -169,9 +259,13 @@ export async function persistedLayout(page: Page, request: APIRequestContext) {
   return (await response.json()).layout;
 }
 
-export const test = base.extend<{ desktopReady: void }>({
+export const test = base.extend<{
+  desktopReady: void;
+  initialApp: 'files' | 'welcome';
+}>({
+  initialApp: ['files', { option: true }],
   desktopReady: [
-    async ({ page, request }, use, testInfo) => {
+    async ({ page, request, initialApp }, use, testInfo) => {
       // WebKit also maps native navigation-loader diagnostics to pageerror:
       // https://github.com/microsoft/playwright/issues/43120
       // Native ErrorEvent/unhandledrejection remain the uncaught-JS evidence.
@@ -194,10 +288,26 @@ export const test = base.extend<{ desktopReady: void }>({
         ).ok(),
       ).toBeTruthy();
       await page.goto('/');
-      await expect(filesWindow(page)).toBeVisible();
       await expect(
         page.getByRole('complementary', { name: 'Application Dock' }),
       ).toBeVisible();
+      if (initialApp === 'files') {
+        await page
+          .locator('[data-app-id="welcome"]')
+          .getByRole('button', { name: 'Documents', exact: true })
+          .click();
+        await expect(filesWindow(page)).toBeVisible();
+        await expect(filesWindow(page)).toHaveClass(/is-active/);
+        await expect
+          .poll(
+            async () => (await persistedLayout(page, request))?.activeWindowId,
+          )
+          .toBe('files:documents');
+      } else {
+        await expect(page.locator('[data-app-id="welcome"]')).toHaveClass(
+          /is-active/,
+        );
+      }
       await use();
       try {
         expect(

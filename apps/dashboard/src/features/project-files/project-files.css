@@ -138,6 +138,9 @@
 .project-launcher-pane[hidden] {
   display: none;
 }
+.project-launcher-empty {
+  margin-top: 16px;
+}
 .project-register-form {
   display: grid;
   gap: 12px;
@@ -180,6 +183,15 @@
   align-items: start;
   text-align: left;
   overflow-wrap: anywhere;
+  gap: 3px;
+  padding: 8px 10px;
+}
+.project-list .ns-button small {
+  font-size: var(--ns-font-size-secondary);
+  line-height: 1.5;
+}
+.project-list .ns-button:active:not(:disabled) {
+  padding: 9px 9px 7px 11px;
 }
 .project-location {
   padding: 6px 8px;
@@ -488,7 +500,7 @@
   border-right: 1px solid #666;
 }
 .vm-task-list h2 {
-  font-size: 11px;
+  font-size: var(--ns-font-size-secondary);
   margin: 0;
   padding: 7px 8px;
   border-bottom: 1px solid var(--ns-mid);
@@ -518,7 +530,7 @@
   overflow: hidden;
 }
 .vm-task-list button small {
-  font-size: 10px;
+  font-size: var(--ns-font-size-secondary);
 }
 .vm-task-list button:hover {
   background: #c0c0c0;

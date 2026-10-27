@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { Locator, Page, Route } from '@playwright/test';
 import type { CloudflarePublication } from '../apps/dashboard/src/features/cloudflare/types';
 import { activate, bounds, dockEntry, expect, menuItem, test } from './helpers';
+import { showApplicationOnDesktop } from './desktop-application-helpers';
 
 const address = 'https://workstation.example.com';
 const panel = (page: Page) => page.locator('[data-app-id="cloudflare"]');
@@ -149,7 +150,7 @@ test.beforeEach(async ({ page }) => {
   );
 });
 
-test('the default Cloudflare desktop icon opens one utility without polling while closed', async ({
+test('an enabled Cloudflare desktop icon opens one utility without polling while closed', async ({
   page,
 }, info) => {
   const touch = info.project.use.hasTouch === true;
@@ -159,13 +160,16 @@ test('the default Cloudflare desktop icon opens one utility without polling whil
     return route.fulfill({ json: snapshot() });
   });
   await page.reload();
-  for (const app of ['files', 'welcome'])
+  await showApplicationOnDesktop(page, 'Cloudflare', touch);
+  for (const app of ['files', 'welcome']) {
+    await activate(page, page.locator(`[data-app-id="${app}"]`));
     await choose(
       page
         .locator(`[data-app-id="${app}"]`)
         .getByRole('button', { name: /^Close / }),
       touch,
     );
+  }
   const canvas = page.getByRole('group', { name: 'Desktop icons' });
   const launcher = canvas.getByRole('button', {
     name: 'Cloudflare',

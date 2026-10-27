@@ -1,3 +1,4 @@
+import { switchWorkspace } from './helpers';
 import {
   codexOutput,
   codexSessionAction,
@@ -91,12 +92,10 @@ test('touch Codex supports project selection, history, session organization, pro
   await window.getByRole('button', { name: 'Page Up', exact: true }).tap();
   await expect(codexOutput(window)).not.toContainText('HISTORY 099');
   expect(await readState(window, 't2')).toEqual(original);
-  await page.getByRole('button', { name: 'Next workspace', exact: true }).tap();
+  await switchWorkspace(page, 2, true);
   await expect(window).toBeHidden();
   await expect(input).not.toBeFocused();
-  await page
-    .getByRole('button', { name: 'Previous workspace', exact: true })
-    .tap();
+  await switchWorkspace(page, 1, true);
   expect(await readState(window, 't3')).toEqual(original);
   await window.getByRole('button', { name: /^Close / }).tap();
   await expect(window).toHaveCount(0);
