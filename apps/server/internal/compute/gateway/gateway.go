@@ -18,7 +18,7 @@ import (
 	"github.com/cofy-x/axv/apps/server/internal/compute/internal/hostconn"
 	"github.com/cofy-x/axv/apps/server/internal/compute/prepare"
 	"github.com/cofy-x/axv/apps/server/internal/diagnostics"
-	"github.com/cofy-x/axv/apps/server/internal/localaccess"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 )
 
 type GatewayOptions struct {
@@ -295,7 +295,7 @@ func (g *Gateway) Close() {
 
 func local(r *http.Request) bool {
 	requiresOrigin := r.Method != "GET" && r.Method != "HEAD" || strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
-	return localaccess.AllowRequest(r, requiresOrigin)
+	return httpaccess.AllowRequest(r, requiresOrigin)
 }
 
 func write(w http.ResponseWriter, status int, value any) {

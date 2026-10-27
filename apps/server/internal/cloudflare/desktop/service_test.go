@@ -16,7 +16,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/cofy-x/axv/apps/server/internal/cloudflare/internal/accessfixture"
-	"github.com/cofy-x/axv/apps/server/internal/localaccess"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 )
 
 func startFixtureService(t *testing.T, f *accessfixture.Fixture, options Options) *Service {
@@ -83,7 +83,7 @@ func TestEveryRequestRequiresJWTAndPreservesActualTransport(t *testing.T) {
 	options.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handled.Add(1)
 		peer, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil || !net.ParseIP(peer).IsLoopback() || r.TLS != nil || r.Host != "axv.example.com" || !localaccess.AllowRequest(r, false) || localaccess.Request(r, false) {
+		if err != nil || !net.ParseIP(peer).IsLoopback() || r.TLS != nil || r.Host != "axv.example.com" || !httpaccess.AllowRequest(r, false) || httpaccess.LocalRequest(r, false) {
 			t.Error("authenticated ingress did not preserve the actual HTTP transport boundary")
 		}
 		_, _ = io.WriteString(w, "authorized")
@@ -229,7 +229,7 @@ func TestAuthenticatedFeaturesNeverReceiveCloudflareCredentials(t *testing.T) {
 	var handled bool
 	options.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handled = true
-		if r == request || r.Host != request.Host || r.RemoteAddr != request.RemoteAddr || r.TLS != request.TLS || r.Header.Get("Origin") != testOrigin || !localaccess.AllowRequest(r, true) {
+		if r == request || r.Host != request.Host || r.RemoteAddr != request.RemoteAddr || r.TLS != request.TLS || r.Header.Get("Origin") != testOrigin || !httpaccess.AllowRequest(r, true) {
 			t.Error("sanitization changed transport identity or failed to clone the request")
 		}
 		for name := range r.Header {

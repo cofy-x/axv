@@ -10,7 +10,7 @@ import (
 	"sync"
 
 	"github.com/coder/websocket"
-	"github.com/cofy-x/axv/apps/server/internal/localaccess"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 )
 
 const maxSessions = 4
@@ -143,7 +143,7 @@ func jsonResponse(w http.ResponseWriter, status int, value any) {
 }
 
 func localRequest(r *http.Request, requireOrigin bool) bool {
-	return localaccess.AllowRequest(r, requireOrigin)
+	return httpaccess.AllowRequest(r, requireOrigin)
 }
 
 func validSize(cols, rows int) bool { return cols >= 2 && cols <= 500 && rows >= 1 && rows <= 200 }

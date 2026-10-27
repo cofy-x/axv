@@ -1,4 +1,4 @@
-package localaccess
+package httpaccess
 
 import (
 	"context"
@@ -29,8 +29,8 @@ func WithAuthenticatedRemote(r *http.Request, origin string) (*http.Request, err
 	return withAuthenticatedTransport(r, origin, false)
 }
 
-// WithAuthenticatedTunnel records authority established by the Cloudflare
-// Access verifier on its dedicated loopback HTTP listener. The public HTTPS
+// WithAuthenticatedTunnel records authority established by a trusted tunnel
+// verifier on its dedicated loopback HTTP listener. The public HTTPS
 // origin stays intact; neither forwarded headers nor a rewritten local Host
 // can create this authority. This does not authorize machine-local operations.
 func WithAuthenticatedTunnel(r *http.Request, origin string) (*http.Request, error) {
@@ -56,7 +56,7 @@ func withAuthenticatedTransport(r *http.Request, origin string, tunnel bool) (*h
 	}
 	if tunnel {
 		// The connector runs on the deployment machine. Public Host validation
-		// also ensures Request continues to reject this as local authority.
+		// also ensures LocalRequest continues to reject this as local authority.
 		if !peer.Addr().IsLoopback() || r.TLS != nil || localHost(r.Host) ||
 			strings.HasSuffix(u.Hostname(), ".localhost") {
 			return nil, fmt.Errorf("authenticated tunnel access requires its loopback HTTP connection and public Host")
@@ -68,13 +68,13 @@ func withAuthenticatedTransport(r *http.Request, origin string, tunnel bool) (*h
 	return r.WithContext(context.WithValue(r.Context(), authenticatedRemoteKey{}, grant)), nil
 }
 
-// AllowRequest preserves Request's local checks while allowing a remote request
+// AllowRequest preserves LocalRequest's local checks while allowing a remote request
 // that trusted middleware explicitly authenticated. Preparation and other
-// machine-local controls continue to use Request directly.
+// machine-local controls continue to use LocalRequest directly.
 func AllowRequest(r *http.Request, requireOrigin bool) bool {
 	grant, ok := r.Context().Value(authenticatedRemoteKey{}).(authenticatedRemote)
 	if !ok {
-		return Request(r, requireOrigin)
+		return LocalRequest(r, requireOrigin)
 	}
 	if r.Context().Err() != nil || (!grant.tunnel && r.TLS == nil) || r.TLS != grant.tls || r.RemoteAddr != grant.peer || r.Host != grant.host {
 		return false

@@ -19,7 +19,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/cofy-x/axv/apps/server/internal/compute"
-	"github.com/cofy-x/axv/apps/server/internal/remoteaccess"
+	"github.com/cofy-x/axv/apps/server/internal/tailnet/access"
 )
 
 func testBinding() compute.ProjectBinding {
@@ -283,8 +283,8 @@ func TestRemotePreviewControlsReportUnsupportedWithoutLocalURL(t *testing.T) {
 	view := createPreview(t, control, client)
 	handler := http.NewServeMux()
 	m.Register(handler)
-	guard, err := remoteaccess.NewMiddleware(remoteaccess.MiddlewareOptions{Origin: "https://axv.example.ts.net", OwnerUserID: "123", WhoIs: func(context.Context, string) (remoteaccess.Identity, error) {
-		return remoteaccess.Identity{UserID: "123", NodeID: "actual-client"}, nil
+	guard, err := access.NewMiddleware(access.MiddlewareOptions{Origin: "https://axv.example.ts.net", OwnerUserID: "123", WhoIs: func(context.Context, string) (access.Identity, error) {
+		return access.Identity{UserID: "123", NodeID: "actual-client"}, nil
 	}, AllowRoute: func(*http.Request) bool { return true }})
 	if err != nil {
 		t.Fatal(err)

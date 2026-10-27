@@ -12,8 +12,8 @@ import (
 
 	"github.com/cofy-x/axv/apps/server/internal/cloudflare/desktop"
 	cfhttpapi "github.com/cofy-x/axv/apps/server/internal/cloudflare/httpapi"
-	"github.com/cofy-x/axv/apps/server/internal/remoteaccess"
 	"github.com/cofy-x/axv/apps/server/internal/tailnet"
+	"github.com/cofy-x/axv/apps/server/internal/tailnet/access"
 )
 
 func TestRemoteConnectionProjectionNeverIncludesEnrollmentOrDiagnostics(t *testing.T) {
@@ -92,10 +92,10 @@ func TestConnectionStatusRequiresTrustedTransportAndUsesRawLocalIdentity(t *test
 	handler.ServeHTTP(w, r)
 	assertResponse(t, w, true)
 	owner := "123"
-	middleware, err := remoteaccess.NewMiddleware(remoteaccess.MiddlewareOptions{
+	middleware, err := access.NewMiddleware(access.MiddlewareOptions{
 		Origin: "https://workstation.example.ts.net", OwnerUserID: "123", AllowRoute: remoteRoute, LocalOnlyRoute: remoteLocalOnlyRoute,
-		WhoIs: func(context.Context, string) (remoteaccess.Identity, error) {
-			return remoteaccess.Identity{UserID: owner, NodeID: "peer-node"}, nil
+		WhoIs: func(context.Context, string) (access.Identity, error) {
+			return access.Identity{UserID: owner, NodeID: "peer-node"}, nil
 		},
 	})
 	if err != nil {

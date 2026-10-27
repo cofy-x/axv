@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/cofy-x/axv/apps/server/internal/compute"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 	"github.com/cofy-x/axv/apps/server/internal/jsonunicode"
-	"github.com/cofy-x/axv/apps/server/internal/localaccess"
 )
 
 const remoteUnsupported = "Development previews currently require a browser on the computer running AXV. Remote previews require an independently isolated HTTPS origin and are unavailable."
@@ -27,7 +27,7 @@ func (m *Manager) Register(mux *http.ServeMux) {
 }
 
 func allowed(w http.ResponseWriter, r *http.Request) bool {
-	if r.URL.RawQuery != "" || !localaccess.AllowRequest(r, r.Method != http.MethodGet) {
+	if r.URL.RawQuery != "" || !httpaccess.AllowRequest(r, r.Method != http.MethodGet) {
 		fail(w, 403, "preview_forbidden", "Open preview controls from the AXV desktop.")
 		return false
 	}
@@ -75,7 +75,7 @@ func decodeControl(w http.ResponseWriter, r *http.Request, result any) error {
 func (e *entry) snapshot(r *http.Request) View {
 	view := e.view
 	view.URL = ""
-	if !localaccess.Request(r, false) {
+	if !httpaccess.LocalRequest(r, false) {
 		view.RemoteError = remoteUnsupported
 	} else if view.State == "ready" {
 		view.URL = e.local.origin + "/.axv-open/" + e.token
@@ -103,7 +103,7 @@ func (m *Manager) list(w http.ResponseWriter, r *http.Request) {
 		}
 		views = append(views, e.snapshot(r))
 	}
-	supported := localaccess.Request(r, false)
+	supported := httpaccess.LocalRequest(r, false)
 	result := map[string]any{"instanceId": m.instanceID, "supported": supported, "previews": views}
 	if !supported {
 		result["reason"] = remoteUnsupported
@@ -115,7 +115,7 @@ func (m *Manager) create(w http.ResponseWriter, r *http.Request) {
 	if !allowed(w, r) {
 		return
 	}
-	if !localaccess.Request(r, true) {
+	if !httpaccess.LocalRequest(r, true) {
 		fail(w, 501, "preview_remote_unsupported", remoteUnsupported)
 		return
 	}

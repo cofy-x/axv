@@ -8,7 +8,7 @@ import (
 
 	"github.com/cofy-x/axv/apps/server/internal/cloudflare/desktop"
 	cfhttpapi "github.com/cofy-x/axv/apps/server/internal/cloudflare/httpapi"
-	"github.com/cofy-x/axv/apps/server/internal/localaccess"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 	"github.com/cofy-x/axv/apps/server/internal/tailnet"
 )
 
@@ -57,7 +57,7 @@ func connectionHandler(remoteStatus func() remoteSnapshot, cloudflareStatus func
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		if !localaccess.AllowRequest(r, false) {
+		if !httpaccess.AllowRequest(r, false) {
 			w.WriteHeader(http.StatusForbidden)
 			_ = json.NewEncoder(w).Encode(map[string]string{"code": "forbidden", "error": "Connection status requires local or authorized remote access."})
 			return
@@ -66,6 +66,6 @@ func connectionHandler(remoteStatus func() remoteSnapshot, cloudflareStatus func
 			Local      bool                       `json:"local"`
 			Remote     remoteConnectionStatus     `json:"remote"`
 			Cloudflare cfhttpapi.ConnectionStatus `json:"cloudflare"`
-		}{Local: localaccess.Request(r, false), Remote: remoteConnection(remoteStatus()), Cloudflare: cfhttpapi.Connection(cloudflareStatus())})
+		}{Local: httpaccess.LocalRequest(r, false), Remote: remoteConnection(remoteStatus()), Cloudflare: cfhttpapi.Connection(cloudflareStatus())})
 	})
 }

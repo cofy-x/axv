@@ -122,9 +122,9 @@ For remote transport changes, include the owner binding, certificate/lifecycle, 
 
 ```sh
 node scripts/test-go.mjs -race \
-  ./apps/server/internal/tailnet ./apps/server/internal/remoteaccess \
+  ./apps/server/internal/tailnet/... \
   ./apps/server/internal/cloudflare/... \
-  ./apps/server/internal/localaccess ./apps/server/internal/server \
+  ./apps/server/internal/httpaccess ./apps/server/internal/server \
   ./apps/server/internal/profile ./apps/server/internal/config ./apps/server/internal/cli
 ```
 

@@ -1,4 +1,4 @@
-package localaccess
+package httpaccess
 
 import (
 	"context"
@@ -13,14 +13,14 @@ func TestAuthenticatedRemoteGrantCannotMoveToAnotherTransport(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, origin+"/api/projects", nil)
 	r.RemoteAddr = "100.101.102.103:45678"
 	r.Header.Set("Origin", origin)
-	if Request(r, true) || AllowRequest(r, true) {
+	if LocalRequest(r, true) || AllowRequest(r, true) {
 		t.Fatal("an unauthenticated remote request passed local access checks")
 	}
 	authenticated, err := WithAuthenticatedRemote(r, origin)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !AllowRequest(authenticated, true) || Request(authenticated, true) {
+	if !AllowRequest(authenticated, true) || LocalRequest(authenticated, true) {
 		t.Fatal("explicit remote authorization changed the local-only primitive")
 	}
 	for _, tc := range []struct {
@@ -71,7 +71,7 @@ func TestForwardedHeadersCannotMintRemoteAuthority(t *testing.T) {
 	}
 	local := httptest.NewRequest(http.MethodGet, "http://localhost:3001/api/projects", nil)
 	local.RemoteAddr = "127.0.0.1:45678"
-	if !Request(local, false) || !AllowRequest(local, false) {
+	if !LocalRequest(local, false) || !AllowRequest(local, false) {
 		t.Fatal("local policy changed without a remote context")
 	}
 }
@@ -82,14 +82,14 @@ func TestAuthenticatedTunnelPreservesPublicAndLocalBoundaries(t *testing.T) {
 	r.TLS = nil // cloudflared's actual loopback HTTP hop, not synthetic TLS.
 	r.RemoteAddr = "127.0.0.1:45678"
 	r.Header.Set("Origin", origin)
-	if Request(r, true) || AllowRequest(r, true) {
+	if LocalRequest(r, true) || AllowRequest(r, true) {
 		t.Fatal("loopback connector alone established remote authority")
 	}
 	authorized, err := WithAuthenticatedTunnel(r, origin)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !AllowRequest(authorized, true) || Request(authorized, true) || authorized.TLS != nil {
+	if !AllowRequest(authorized, true) || LocalRequest(authorized, true) || authorized.TLS != nil {
 		t.Fatal("tunnel authority changed local checks or invented TLS")
 	}
 	for _, tc := range []struct {

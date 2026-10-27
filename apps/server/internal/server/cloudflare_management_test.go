@@ -19,7 +19,7 @@ import (
 	cfhttpapi "github.com/cofy-x/axv/apps/server/internal/cloudflare/httpapi"
 	cfmanagement "github.com/cofy-x/axv/apps/server/internal/cloudflare/management"
 	"github.com/cofy-x/axv/apps/server/internal/cloudflare/policy"
-	"github.com/cofy-x/axv/apps/server/internal/localaccess"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 	"github.com/cofy-x/axv/apps/server/internal/profile"
 )
 
@@ -70,7 +70,7 @@ func managementRequest(handler http.Handler, method, path, body string, remote b
 		r.Host = "axv.example.com"
 		r.Header.Set("Origin", "https://axv.example.com")
 		var err error
-		r, err = localaccess.WithAuthenticatedTunnel(r, "https://axv.example.com")
+		r, err = httpaccess.WithAuthenticatedTunnel(r, "https://axv.example.com")
 		if err != nil {
 			panic(err)
 		}
