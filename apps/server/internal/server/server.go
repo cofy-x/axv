@@ -22,13 +22,13 @@ import (
 	codexhttp "github.com/cofy-x/axv/apps/server/internal/codex/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/compute"
 	computegateway "github.com/cofy-x/axv/apps/server/internal/compute/gateway"
+	"github.com/cofy-x/axv/apps/server/internal/compute/preview"
 	"github.com/cofy-x/axv/apps/server/internal/config"
 	"github.com/cofy-x/axv/apps/server/internal/diagnostics"
 	"github.com/cofy-x/axv/apps/server/internal/extensions"
 	hostdirhttp "github.com/cofy-x/axv/apps/server/internal/hostdir/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/httpapi"
-	"github.com/cofy-x/axv/apps/server/internal/projectfiles"
-	"github.com/cofy-x/axv/apps/server/internal/projectpreview"
+	projectfileshttp "github.com/cofy-x/axv/apps/server/internal/projectfiles/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/storage"
 	"github.com/cofy-x/axv/apps/server/internal/terminal"
 	"github.com/cofy-x/axv/apps/server/internal/vmwork"
@@ -107,11 +107,11 @@ func RunContext(ctx context.Context, settings config.Config, options Options) (r
 		codexAPI.Close()
 	}()
 	application := http.NewServeMux()
-	previews := projectpreview.New(ctx, projectpreview.GatewayResolver(computeGateway))
+	previews := preview.New(ctx, preview.GatewayResolver(computeGateway))
 	defer previews.Close()
 	previews.Register(application)
 	extensionManager.Register(application)
-	projectfiles.Register(application, store)
+	projectfileshttp.Register(application, store)
 	if options.InstanceID != "" {
 		application.HandleFunc("GET /api/runtime", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")

@@ -1,10 +1,11 @@
-package projectfiles
+package httpapi
 
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cofy-x/axv/apps/server/internal/filelock"
+	"github.com/cofy-x/axv/apps/server/internal/projectfiles"
 	"github.com/cofy-x/axv/apps/server/internal/storage"
 )
 
@@ -140,7 +143,7 @@ func TestTransfersReplayDoNotOverwriteAndPreserveSnapshots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	in := exportRequest{RequestID: "export-request-one", SnapshotID: d.ID, Path: "Plan.md"}
+	in := projectfiles.ExportRequest{RequestID: "export-request-one", SnapshotID: d.ID, Path: "Plan.md"}
 	w := f.request("POST", f.base()+"/export", in)
 	expect(t, w, 200, "")
 	first := w.Body.String()
@@ -166,7 +169,7 @@ func TestTransfersReplayDoNotOverwriteAndPreserveSnapshots(t *testing.T) {
 	if err != nil || string(data) != "# Saved" {
 		t.Fatalf("destination changed %q %v", data, err)
 	}
-	im := importRequest{RequestID: "import-request-one", Path: "Plan.md", SHA256: d.SHA256}
+	im := projectfiles.ImportRequest{RequestID: "import-request-one", Path: "Plan.md", SHA256: d.SHA256}
 	w = f.request("POST", f.base()+"/import", im)
 	expect(t, w, 200, "")
 	first = w.Body.String()
@@ -200,37 +203,8 @@ func TestTransfersReplayDoNotOverwriteAndPreserveSnapshots(t *testing.T) {
 	if err = f.store.Delete(ctx, e.ID); err != nil {
 		t.Fatal(err)
 	}
-	in = exportRequest{RequestID: "export-after-deletion", SnapshotID: d.ID, Path: "Archive.md"}
+	in = projectfiles.ExportRequest{RequestID: "export-after-deletion", SnapshotID: d.ID, Path: "Archive.md"}
 	expect(t, f.request("POST", f.base()+"/export", in), 200, "")
-}
-
-func TestExportRecoversPublicationBeforeReceipt(t *testing.T) {
-	f := setup(t)
-	ctx := context.Background()
-	e, err := f.store.Create(ctx, storage.CreateInput{ParentID: "documents", Name: "Plan.md", Kind: "file", Content: "durable"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	d, err := f.store.CreateSnapshot(ctx, e.ID, e.Revision)
-	if err != nil {
-		t.Fatal(err)
-	}
-	in := exportRequest{RequestID: "interrupted-request", SnapshotID: d.ID, Path: "Recovered.md"}
-	tx := storage.DocumentTransfer{RequestID: in.RequestID, PayloadHash: payloadHash("export", f.project.ID, in), Kind: "export", ProjectID: f.project.ID, Path: in.Path, SHA256: d.SHA256, ParentIdentity: exportTargetIdentity(t, f, in.Path)}
-	tx, err = f.store.ReserveExport(ctx, tx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = os.WriteFile(filepath.Join(f.root, tx.StagePath), []byte(d.Content), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err = os.Link(filepath.Join(f.root, tx.StagePath), filepath.Join(f.root, in.Path)); err != nil {
-		t.Fatal(err)
-	}
-	expect(t, f.request("POST", f.base()+"/export", in), 200, "")
-	if _, err = os.Stat(filepath.Join(f.root, tx.StagePath)); !os.IsNotExist(err) {
-		t.Fatalf("completed staging link remains: %v", err)
-	}
 }
 
 func TestDirectoryPaginationAndSnapshotHTTP(t *testing.T) {
@@ -243,8 +217,8 @@ func TestDirectoryPaginationAndSnapshotHTTP(t *testing.T) {
 	w := f.request("GET", f.base()+"/files?limit=2", nil)
 	expect(t, w, 200, "")
 	var page struct {
-		Entries []fileEntry `json:"entries"`
-		Next    string      `json:"nextCursor"`
+		Entries []projectfiles.Entry `json:"entries"`
+		Next    string               `json:"nextCursor"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil || len(page.Entries) != 2 || page.Next != "2" {
 		t.Fatalf("first page %s %v", w.Body.String(), err)
@@ -276,6 +250,74 @@ func TestDirectoryPaginationAndSnapshotHTTP(t *testing.T) {
 	}
 }
 
+func TestDirectoryQueryValidation(t *testing.T) {
+	f := setup(t)
+	for _, tc := range []struct {
+		query string
+		code  string
+	}{
+		{"limit=", "invalid_request"},
+		{"limit=0", "invalid_request"},
+		{"limit=-1", "invalid_request"},
+		{"limit=201", "invalid_request"},
+		{"limit=invalid", "invalid_request"},
+		{"limit=999999999999999999999999999999", "invalid_request"},
+		{"limit=1&limit=2", "invalid_request"},
+		{"unexpected=1", "invalid_request"},
+		{"cursor=invalid", "invalid_cursor"},
+		{"path=..&limit=invalid", "invalid_path"},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			expect(t, f.request("GET", f.base()+"/files?"+tc.query, nil), 400, tc.code)
+		})
+	}
+	w := f.request("GET", f.base()+"/files?limit=200", nil)
+	expect(t, w, 200, "")
+	var result projectfiles.Listing
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Project.ID != f.project.ID || result.Entries == nil || len(result.Entries) != 0 || result.NextCursor != "" || result.Truncated {
+		t.Fatalf("empty directory contract changed: %s", w.Body.String())
+	}
+}
+
+func TestExportConflictReplayPreservesFailureWithoutOriginalProject(t *testing.T) {
+	f := setup(t)
+	snapshot := exportFixtureSnapshot(t, f)
+	filename := filepath.Join(f.root, "Existing.md")
+	if err := os.WriteFile(filename, []byte(snapshot.Content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	in := projectfiles.ExportRequest{RequestID: "failed-export-replay", SnapshotID: snapshot.ID, Path: "Existing.md"}
+	w := f.request("POST", f.base()+"/export", in)
+	expect(t, w, 409, "name_conflict")
+	original := w.Body.String()
+	if err := os.Remove(filename); err != nil {
+		t.Fatal(err)
+	}
+	// A new service must honor the committed failure even after its cause goes away.
+	mux := http.NewServeMux()
+	Register(mux, f.store)
+	f.handler = mux
+	w = f.request("POST", f.base()+"/export", in)
+	expect(t, w, 409, "name_conflict")
+	if w.Body.String() != original {
+		t.Fatalf("failure replay changed: %s", w.Body.String())
+	}
+	if _, err := os.Stat(filename); !os.IsNotExist(err) {
+		t.Fatalf("failed request was published on replay: %v", err)
+	}
+	if err := os.Rename(f.root, f.root+"-offline"); err != nil {
+		t.Fatal(err)
+	}
+	w = f.request("POST", f.base()+"/export", in)
+	expect(t, w, 409, "name_conflict")
+	if w.Body.String() != original {
+		t.Fatalf("unavailable project changed committed failure: %s", w.Body.String())
+	}
+}
+
 func exportFixtureSnapshot(t *testing.T, f *fixture) storage.DocumentSnapshot {
 	t.Helper()
 	e, err := f.store.Create(context.Background(), storage.CreateInput{ParentID: "documents", Name: "Export.md", Kind: "file", Content: "immutable export"})
@@ -287,21 +329,6 @@ func exportFixtureSnapshot(t *testing.T, f *fixture) storage.DocumentSnapshot {
 		t.Fatal(err)
 	}
 	return snapshot
-}
-
-func exportTargetIdentity(t *testing.T, f *fixture, name string) string {
-	t.Helper()
-	root, err := openProject(f.project)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer root.Close()
-	parent, identity, err := exportParent(root, name)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = parent.Close()
-	return identity
 }
 
 func TestExportCoordinatesIndependentStoreAndAPIInstances(t *testing.T) {
@@ -322,12 +349,13 @@ func TestExportCoordinatesIndependentStoreAndAPIInstances(t *testing.T) {
 	if secondLock, err := secondStore.DocumentTransferLockPath(context.Background()); err != nil || secondLock != lockPath {
 		t.Fatalf("stores do not share export coordination: %q %q %v", lockPath, secondLock, err)
 	}
-	owner := &API{store: f.store}
-	release, err := owner.lockExports(context.Background())
+	owner, err := filelock.TryLock(lockPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	in := exportRequest{RequestID: "shared-export-request", SnapshotID: snapshot.ID, Path: "Shared.md"}
+	release := func() { _ = owner.Close() }
+	t.Cleanup(release)
+	in := projectfiles.ExportRequest{RequestID: "shared-export-request", SnapshotID: snapshot.ID, Path: "Shared.md"}
 	finished := make(chan *httptest.ResponseRecorder, 1)
 	go func() { finished <- other.request("POST", other.base()+"/export", in) }()
 	select {
@@ -366,7 +394,7 @@ func TestIncompleteExportBodyDoesNotBlockAnotherExport(t *testing.T) {
 	}
 	finished := make(chan *httptest.ResponseRecorder, 1)
 	go func() {
-		finished <- f.request("POST", f.base()+"/export", exportRequest{RequestID: "complete-export-request", SnapshotID: snapshot.ID, Path: "Complete.md"})
+		finished <- f.request("POST", f.base()+"/export", projectfiles.ExportRequest{RequestID: "complete-export-request", SnapshotID: snapshot.ID, Path: "Complete.md"})
 	}()
 	select {
 	case result := <-finished:
@@ -383,40 +411,13 @@ func TestIncompleteExportBodyDoesNotBlockAnotherExport(t *testing.T) {
 	}
 }
 
-func TestExportReplayFinishesCleanupAfterReceiptCommit(t *testing.T) {
-	f := setup(t)
-	snapshot := exportFixtureSnapshot(t, f)
-	in := exportRequest{RequestID: "receipt-before-cleanup", SnapshotID: snapshot.ID, Path: "Committed.md"}
-	request := storage.DocumentTransfer{RequestID: in.RequestID, PayloadHash: payloadHash("export", f.project.ID, in), Kind: "export", ProjectID: f.project.ID, Path: in.Path, SHA256: snapshot.SHA256, ParentIdentity: exportTargetIdentity(t, f, in.Path)}
-	request, err := f.store.ReserveExport(context.Background(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	stage := filepath.Join(f.root, request.StagePath)
-	if err := os.WriteFile(stage, []byte(snapshot.Content), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Link(stage, filepath.Join(f.root, in.Path)); err != nil {
-		t.Fatal(err)
-	}
-	result, _ := json.Marshal(map[string]any{"path": in.Path, "sha256": snapshot.SHA256, "snapshotId": snapshot.ID, "projectId": f.project.ID})
-	if err := f.store.CompleteExport(context.Background(), request, result); err != nil {
-		t.Fatal(err)
-	}
-	// A crash here leaves the committed receipt and its retained staging link.
-	expect(t, f.request("POST", f.base()+"/export", in), 200, "")
-	if _, err := os.Stat(stage); !os.IsNotExist(err) {
-		t.Fatalf("replay left committed recovery anchor: %v", err)
-	}
-}
-
 func TestExplicitReplacementRegistrationPreservesOldProjectProvenance(t *testing.T) {
 	f := setup(t)
 	data := []byte("original project content")
 	if err := os.WriteFile(filepath.Join(f.root, "README.md"), data, 0600); err != nil {
 		t.Fatal(err)
 	}
-	w := f.request("POST", f.base()+"/import", importRequest{RequestID: "import-original-project", Path: "README.md", SHA256: digest(data)})
+	w := f.request("POST", f.base()+"/import", projectfiles.ImportRequest{RequestID: "import-original-project", Path: "README.md", SHA256: fmt.Sprintf("%x", sha256.Sum256(data))})
 	expect(t, w, 200, "")
 	var imported struct {
 		Entry storage.Entry `json:"entry"`
@@ -464,107 +465,5 @@ func TestExplicitReplacementRegistrationPreservesOldProjectProvenance(t *testing
 	origins, err := f.store.DocumentOrigins(context.Background(), imported.Entry.ID)
 	if err != nil || len(origins) != 1 || origins[0].ProjectID != f.project.ID {
 		t.Fatalf("old import origin retargeted replacement root: %+v %v", origins, err)
-	}
-}
-
-func TestInterruptedExportNeverReplaysIntoReplacementParentDirectory(t *testing.T) {
-	f := setup(t)
-	snapshot := exportFixtureSnapshot(t, f)
-	parentPath := filepath.Join(f.root, "nested")
-	if err := os.Mkdir(parentPath, 0700); err != nil {
-		t.Fatal(err)
-	}
-	in := exportRequest{RequestID: "interrupted-parent-export", SnapshotID: snapshot.ID, Path: "nested/Report.md"}
-	request := storage.DocumentTransfer{RequestID: in.RequestID, PayloadHash: payloadHash("export", f.project.ID, in), Kind: "export", ProjectID: f.project.ID, Path: in.Path, SHA256: snapshot.SHA256, ParentIdentity: exportTargetIdentity(t, f, in.Path)}
-	request, err := f.store.ReserveExport(context.Background(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	stage := filepath.Join(f.root, request.StagePath)
-	if err := os.WriteFile(stage, []byte(snapshot.Content), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Link(stage, filepath.Join(parentPath, "Report.md")); err != nil {
-		t.Fatal(err)
-	}
-	// Publication happened before a crash; the destination's ancestor was
-	// subsequently moved and replaced while the same project root survived.
-	if err := os.Rename(parentPath, parentPath+"-original"); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(parentPath, 0700); err != nil {
-		t.Fatal(err)
-	}
-	expect(t, f.request("POST", f.base()+"/export", in), 409, "transfer_unresolved")
-	if _, err := os.Stat(filepath.Join(parentPath, "Report.md")); !os.IsNotExist(err) {
-		t.Fatalf("retry published into a replacement parent: %v", err)
-	}
-	if _, err := os.Stat(stage); err != nil {
-		t.Fatalf("unresolved retry removed its recovery anchor: %v", err)
-	}
-	stored, found, err := f.store.DocumentTransfer(context.Background(), in.RequestID, request.PayloadHash)
-	if err != nil || !found || len(stored.Result) != 0 || stored.ParentIdentity != request.ParentIdentity {
-		t.Fatalf("unresolved retry changed its reserved target: %+v %v %v", stored, found, err)
-	}
-	if err := os.Remove(parentPath); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Rename(parentPath+"-original", parentPath); err != nil {
-		t.Fatal(err)
-	}
-	expect(t, f.request("POST", f.base()+"/export", in), 200, "")
-	if _, err := os.Stat(stage); !os.IsNotExist(err) {
-		t.Fatalf("recovered request retained its staging link: %v", err)
-	}
-}
-
-func TestExportLinkUsesCapturedParentHandleAcrossRename(t *testing.T) {
-	f := setup(t)
-	parentPath := filepath.Join(f.root, "nested")
-	if err := os.Mkdir(parentPath, 0700); err != nil {
-		t.Fatal(err)
-	}
-	root, err := openProject(f.project)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer root.Close()
-	parent, identity, err := exportParent(root, "nested/Report.md")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer parent.Close()
-	sourceDirectory, err := root.Open(".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer sourceDirectory.Close()
-	destinationDirectory, err := parent.Open(".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer destinationDirectory.Close()
-	stage := ".axv-export-owned-stage"
-	if err := root.WriteFile(stage, []byte("captured parent"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Rename(parentPath, parentPath+"-original"); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(parentPath, 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := linkDirectories(sourceDirectory, stage, destinationDirectory, "Report.md"); err != nil {
-		t.Fatal(err)
-	}
-	if data, err := os.ReadFile(filepath.Join(parentPath+"-original", "Report.md")); err != nil || string(data) != "captured parent" {
-		t.Fatalf("publication left its captured parent handle: %q %v", data, err)
-	}
-	if _, err := os.Stat(filepath.Join(parentPath, "Report.md")); !os.IsNotExist(err) {
-		t.Fatalf("publication followed a replacement parent path: %v", err)
-	}
-	var failure *storage.Error
-	if err := verifyExportParent(root, storage.DocumentTransfer{Path: "nested/Report.md", ParentIdentity: identity}); !errors.As(err, &failure) || failure.Code != "transfer_unresolved" {
-		t.Fatalf("renamed parent was falsely acknowledged at its old path: %v", err)
 	}
 }

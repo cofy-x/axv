@@ -1,4 +1,4 @@
-package projectpreview
+package preview
 
 import (
 	"bytes"
