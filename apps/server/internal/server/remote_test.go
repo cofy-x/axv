@@ -16,10 +16,10 @@ import (
 	computegateway "github.com/cofy-x/axv/apps/server/internal/compute/gateway"
 	"github.com/cofy-x/axv/apps/server/internal/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/profile"
-	"github.com/cofy-x/axv/apps/server/internal/projectfiles"
-	"github.com/cofy-x/axv/apps/server/internal/remoteaccess"
+	projectfileshttp "github.com/cofy-x/axv/apps/server/internal/projectfiles/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/storage"
 	"github.com/cofy-x/axv/apps/server/internal/tailnet"
+	"github.com/cofy-x/axv/apps/server/internal/tailnet/access"
 	"github.com/cofy-x/axv/apps/server/internal/terminal"
 )
 
@@ -41,7 +41,7 @@ func TestAuthenticatedRemoteDesktopSharesFeatureHandlers(t *testing.T) {
 	gateway := computegateway.NewGateway("", computegateway.GatewayOptions{})
 	defer gateway.Close()
 	application := http.NewServeMux()
-	projectfiles.Register(application, store)
+	projectfileshttp.Register(application, store)
 	application.Handle("/api/compute/", gateway)
 	application.Handle("/", httpapi.New(store, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("desktop UI"))
@@ -49,15 +49,15 @@ func TestAuthenticatedRemoteDesktopSharesFeatureHandlers(t *testing.T) {
 	shared := newHandler(application, terminals, agents)
 	owner := "123"
 	lookups := 0
-	middleware, err := remoteaccess.NewMiddleware(remoteaccess.MiddlewareOptions{
+	middleware, err := access.NewMiddleware(access.MiddlewareOptions{
 		Origin: "https://workstation.example.ts.net", OwnerUserID: "123",
 		AllowRoute: remoteRoute, LocalOnlyRoute: remoteLocalOnlyRoute,
-		WhoIs: func(_ context.Context, address string) (remoteaccess.Identity, error) {
+		WhoIs: func(_ context.Context, address string) (access.Identity, error) {
 			lookups++
 			if address != "100.64.1.2:12345" {
 				t.Fatalf("identity lookup used a rewritten address: %s", address)
 			}
-			return remoteaccess.Identity{UserID: owner, NodeID: "peer-node"}, nil
+			return access.Identity{UserID: owner, NodeID: "peer-node"}, nil
 		},
 	})
 	if err != nil {

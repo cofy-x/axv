@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cofy-x/axv/apps/server/internal/localaccess"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 )
 
 func TestRemoteSwitchRequiresRawLoopbackAndExactOrigin(t *testing.T) {
@@ -32,7 +32,7 @@ func TestRemoteSwitchRequiresRawLoopbackAndExactOrigin(t *testing.T) {
 		if test.authenticated {
 			r.TLS = &tls.ConnectionState{}
 			var err error
-			r, err = localaccess.WithAuthenticatedRemote(r, test.origin)
+			r, err = httpaccess.WithAuthenticatedRemote(r, test.origin)
 			if err != nil {
 				t.Fatal(err)
 			}

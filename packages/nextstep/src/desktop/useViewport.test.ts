@@ -20,7 +20,7 @@ describe('visual desktop viewport', () => {
       x: 4,
       y: 64,
       width: 382,
-      height: 184,
+      height: 192,
     });
   });
 
@@ -33,7 +33,7 @@ describe('visual desktop viewport', () => {
       x: 4,
       y: 90,
       width: 382,
-      height: 682,
+      height: 690,
     });
   });
 });

@@ -10,9 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cofy-x/axv/apps/server/internal/cloudflare"
-	"github.com/cofy-x/axv/apps/server/internal/remoteaccess"
+	"github.com/cofy-x/axv/apps/server/internal/cloudflare/desktop"
+	cfhttpapi "github.com/cofy-x/axv/apps/server/internal/cloudflare/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/tailnet"
+	"github.com/cofy-x/axv/apps/server/internal/tailnet/access"
 )
 
 func TestRemoteConnectionProjectionNeverIncludesEnrollmentOrDiagnostics(t *testing.T) {
@@ -52,8 +53,8 @@ func TestConnectionStatusRequiresTrustedTransportAndUsesRawLocalIdentity(t *test
 	handler := connectionHandler(func() remoteSnapshot {
 		calls++
 		return remoteSnapshot{Enabled: true, Supported: true, Status: tailnet.Status{State: tailnet.StateNeedsLogin, AuthURL: "https://login.tailscale.com/a/private", OwnerUserID: "private-owner", Error: "/private/state"}}
-	}, func() cloudflareSnapshot {
-		return cloudflareSnapshot{Status: cloudflare.Status{State: "disabled", Listen: "127.0.0.1:3002", Error: "private diagnostics"}}
+	}, func() desktop.Snapshot {
+		return desktop.Snapshot{Status: desktop.Status{State: "disabled", Listen: "127.0.0.1:3002", Error: "private diagnostics"}}
 	})
 	for _, tc := range []struct{ name, host, peer, origin string }{
 		{"untrusted-peer", "localhost:3001", "192.0.2.1:1234", ""},
@@ -91,10 +92,10 @@ func TestConnectionStatusRequiresTrustedTransportAndUsesRawLocalIdentity(t *test
 	handler.ServeHTTP(w, r)
 	assertResponse(t, w, true)
 	owner := "123"
-	middleware, err := remoteaccess.NewMiddleware(remoteaccess.MiddlewareOptions{
+	middleware, err := access.NewMiddleware(access.MiddlewareOptions{
 		Origin: "https://workstation.example.ts.net", OwnerUserID: "123", AllowRoute: remoteRoute, LocalOnlyRoute: remoteLocalOnlyRoute,
-		WhoIs: func(context.Context, string) (remoteaccess.Identity, error) {
-			return remoteaccess.Identity{UserID: owner, NodeID: "peer-node"}, nil
+		WhoIs: func(context.Context, string) (access.Identity, error) {
+			return access.Identity{UserID: owner, NodeID: "peer-node"}, nil
 		},
 	})
 	if err != nil {
@@ -117,7 +118,7 @@ func TestConnectionStatusRequiresTrustedTransportAndUsesRawLocalIdentity(t *test
 
 func TestCloudflareConnectionProjectionHidesLocalDetailsAndRejectsUnsafeURLs(t *testing.T) {
 	for _, state := range []string{"disabled", "starting", "listening", "stopped", "error"} {
-		status := cloudflareConnection(cloudflareSnapshot{Enabled: true, Configured: true, Status: cloudflare.Status{State: state, URL: "https://axv.example.com", Listen: "127.0.0.1:3002", Error: "private diagnostic"}})
+		status := cfhttpapi.Connection(desktop.Snapshot{Enabled: true, Configured: true, Status: desktop.Status{State: state, URL: "https://axv.example.com", Listen: "127.0.0.1:3002", Error: "private diagnostic"}})
 		if status.State != state || state == "listening" && status.URL == "" || state != "listening" && status.URL != "" || status.Message == "" {
 			t.Fatalf("lost Cloudflare state: %+v", status)
 		}
@@ -136,12 +137,12 @@ func TestCloudflareConnectionProjectionHidesLocalDetailsAndRejectsUnsafeURLs(t *
 		}
 	}
 	for _, address := range []string{"https://localhost", "http://axv.example.com", "https://axv.example.com:443", "https://private@axv.example.com", "https://axv.example.com/", "https://axv.example.com?private", "https://axv.example.com#private"} {
-		status := cloudflareConnection(cloudflareSnapshot{Status: cloudflare.Status{State: "listening", URL: address}})
+		status := cfhttpapi.Connection(desktop.Snapshot{Status: desktop.Status{State: "listening", URL: address}})
 		if status.State != "error" || status.URL != "" {
 			t.Fatalf("unsafe Cloudflare URL exposed: %+v", status)
 		}
 	}
-	if status := cloudflareConnection(cloudflareSnapshot{Status: cloudflare.Status{State: "private"}}); status.State != "error" {
+	if status := cfhttpapi.Connection(desktop.Snapshot{Status: desktop.Status{State: "private"}}); status.State != "error" {
 		t.Fatal("unknown Cloudflare state was exposed")
 	}
 }

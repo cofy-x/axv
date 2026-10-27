@@ -16,8 +16,8 @@ import (
 
 	"github.com/cofy-x/axv/apps/server/internal/codex"
 	"github.com/cofy-x/axv/apps/server/internal/hostdir"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 	"github.com/cofy-x/axv/apps/server/internal/jsonunicode"
-	"github.com/cofy-x/axv/apps/server/internal/localaccess"
 	"github.com/cofy-x/axv/apps/server/internal/storage"
 )
 
@@ -155,7 +155,7 @@ func (h *Handler) handle(handler http.HandlerFunc) http.HandlerFunc {
 }
 
 func allowed(w http.ResponseWriter, r *http.Request, origin bool) bool {
-	if localaccess.AllowRequest(r, origin) {
+	if httpaccess.AllowRequest(r, origin) {
 		return true
 	}
 	respond(w, nil, requestFailure(403, "host_forbidden", "Host Codex requires a same-origin connection from this computer."))

@@ -219,7 +219,7 @@ export function Dock({ props, layout, api, setLayout }: DockProps) {
                 });
               }}
             >
-              <PixelIcon name={app.icon} size={42} />
+              <PixelIcon name={app.icon} size={36} />
               <span className="ns-dock-running" aria-hidden="true">
                 {running ? '●' : ''}
               </span>

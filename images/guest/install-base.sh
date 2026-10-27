@@ -1,6 +1,15 @@
 #!/bin/sh
 set -eu
-# Build-time only: both provider formats share this dependency and user contract.
+# Build-time only: the provider selects its transport dependencies explicitly.
+if [ "$#" -ne 1 ]; then
+  echo 'Usage: install-base firecracker|lima' >&2
+  exit 1
+fi
+case $1 in
+  firecracker) set -- ;;
+  lima) set -- socat ;;
+  *) echo 'Select firecracker or lima for the guest provider.' >&2; exit 1 ;;
+esac
 # Refuse a previously initialized machine instead of distributing its tokens,
 # host keys or authorized client profiles inside a new image.
 for path in /etc/axv/guest.json /etc/ssh/axv /var/lib/axv-ssh /var/lib/axv; do
@@ -22,17 +31,20 @@ case ${AXV_GUEST_PACKAGE_SOURCE:-preserve} in
     # Minimal OCI inputs can lack TLS roots. Bootstrap this build dependency
     # from the input's signed APT sources before selecting an HTTPS mirror.
     if [ ! -s /etc/ssl/certs/ca-certificates.crt ] || ! command -v python3 >/dev/null; then
-      apt-get update
+      apt-get update --error-on=any
       apt-get install -y --no-install-recommends ca-certificates python3
     fi
     sh /usr/local/lib/axv/configure-package-sources apply "$AXV_GUEST_PACKAGE_SOURCE"
     ;;
   *) echo "AXV_GUEST_PACKAGE_SOURCE must be preserve, official or aliyun." >&2; exit 1;;
 esac
-apt-get update
+apt-get update --error-on=any
+# The pinned base can predate security updates. Upgrade its installed packages
+# inside this private build target before recording the final inventory.
+apt-get upgrade -y --with-new-pkgs --no-install-recommends
 apt-get install -y --no-install-recommends \
   systemd systemd-sysv udev sudo bash ca-certificates iproute2 \
-  util-linux e2fsprogs python3 python3-venv git curl socat openssh-server
+  util-linux e2fsprogs python3 python3-venv git curl openssh-server "$@"
 if getent passwd 1000 >/dev/null && [ "$(getent passwd 1000 | cut -d: -f1)" != axv ]; then
   userdel "$(getent passwd 1000 | cut -d: -f1)"
 fi

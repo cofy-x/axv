@@ -15,18 +15,20 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/cofy-x/axv/apps/server/internal/cloudflarepublish"
+	cfhttpapi "github.com/cofy-x/axv/apps/server/internal/cloudflare/httpapi"
+	cfmanagement "github.com/cofy-x/axv/apps/server/internal/cloudflare/management"
+	"github.com/cofy-x/axv/apps/server/internal/cloudflare/publish"
 	"github.com/cofy-x/axv/apps/server/internal/codex"
 	codexhttp "github.com/cofy-x/axv/apps/server/internal/codex/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/compute"
 	computegateway "github.com/cofy-x/axv/apps/server/internal/compute/gateway"
+	"github.com/cofy-x/axv/apps/server/internal/compute/preview"
 	"github.com/cofy-x/axv/apps/server/internal/config"
 	"github.com/cofy-x/axv/apps/server/internal/diagnostics"
 	"github.com/cofy-x/axv/apps/server/internal/extensions"
 	hostdirhttp "github.com/cofy-x/axv/apps/server/internal/hostdir/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/httpapi"
-	"github.com/cofy-x/axv/apps/server/internal/projectfiles"
-	"github.com/cofy-x/axv/apps/server/internal/projectpreview"
+	projectfileshttp "github.com/cofy-x/axv/apps/server/internal/projectfiles/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/storage"
 	"github.com/cofy-x/axv/apps/server/internal/terminal"
 	"github.com/cofy-x/axv/apps/server/internal/vmwork"
@@ -105,11 +107,11 @@ func RunContext(ctx context.Context, settings config.Config, options Options) (r
 		codexAPI.Close()
 	}()
 	application := http.NewServeMux()
-	previews := projectpreview.New(ctx, projectpreview.GatewayResolver(computeGateway))
+	previews := preview.New(ctx, preview.GatewayResolver(computeGateway))
 	defer previews.Close()
 	previews.Register(application)
 	extensionManager.Register(application)
-	projectfiles.Register(application, store)
+	projectfileshttp.Register(application, store)
 	if options.InstanceID != "" {
 		application.HandleFunc("GET /api/runtime", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
@@ -133,7 +135,7 @@ func RunContext(ctx context.Context, settings config.Config, options Options) (r
 	application.Handle("GET /api/remote/status", remoteStatusHandler(options.InstanceID, remote.Status))
 	application.Handle("PUT /api/remote", remoteSettingsHandler(remote))
 	var cloudflareTransport atomic.Pointer[cloudflareController]
-	publications, publishErr := cloudflarepublish.New(ctx, cloudflarepublish.Options{Home: settings.Home, Gateway: computeGateway, Settings: func() (cloudflarepublish.Settings, error) {
+	publications, publishErr := publish.New(ctx, publish.Options{Home: settings.Home, Gateway: computeGateway, Settings: func() (publish.Settings, error) {
 		return cloudflarePublicationSettings(settings.Home, cloudflareTransport.Load())
 	}})
 	busy := func() bool { return true }
@@ -143,10 +145,10 @@ func RunContext(ctx context.Context, settings config.Config, options Options) (r
 	if publishErr != nil {
 		diagnostics.FromContext(ctx).Error("cloudflare.publishing_unavailable", publishErr)
 		application.HandleFunc("/api/cloudflare-publications", func(w http.ResponseWriter, r *http.Request) {
-			cloudflareProblem(w, 503, "cloudflare_publishing_unavailable", "Cloudflare publication records could not be opened. Inspect the local profile; existing records were preserved.")
+			cfhttpapi.WriteError(w, 503, "cloudflare_publishing_unavailable", "Cloudflare publication records could not be opened. Inspect the local profile; existing records were preserved.")
 		})
 		application.HandleFunc("/api/cloudflare-publications/", func(w http.ResponseWriter, r *http.Request) {
-			cloudflareProblem(w, 503, "cloudflare_publishing_unavailable", "Cloudflare publication records could not be opened. Inspect the local profile; existing records were preserved.")
+			cfhttpapi.WriteError(w, 503, "cloudflare_publishing_unavailable", "Cloudflare publication records could not be opened. Inspect the local profile; existing records were preserved.")
 		})
 	} else {
 		defer func() {
@@ -167,12 +169,11 @@ func RunContext(ctx context.Context, settings config.Config, options Options) (r
 			result = errors.Join(result, fmt.Errorf("close Cloudflare access: %w", err))
 		}
 	}()
-	application.Handle("GET /api/cloudflare/status", cloudflareStatusHandler(options.InstanceID, cloudflare.Status))
-	application.Handle("PUT /api/cloudflare", cloudflareSettingsHandler(cloudflare))
-	cloudflareManagement := newCloudflareManagement(settings.Home, options.InstanceID, cloudflare, busy)
-	cloudflareManagement.validateDesktopOrigin = validateDesktopOrigin
+	application.Handle("GET /api/cloudflare/status", cfhttpapi.DesktopStatus(options.InstanceID, cloudflare.Status))
+	application.Handle("PUT /api/cloudflare", cfhttpapi.DesktopSettings(cloudflare))
+	cloudflareManagement := cfmanagement.New(ctx, cfmanagement.Options{Home: settings.Home, InstanceID: options.InstanceID, Desktop: cloudflare, Busy: busy, ValidateDesktopOrigin: validateDesktopOrigin})
 	defer cloudflareManagement.Close()
-	cloudflareManagement.Register(application)
+	cfhttpapi.New(cloudflareManagement).Register(application)
 	application.Handle("GET /api/connection", connectionHandler(remote.Status, cloudflare.Status))
 	server := &http.Server{
 		Addr:              settings.Addr,

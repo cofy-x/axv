@@ -9,7 +9,7 @@ import (
 	"net/url"
 
 	"github.com/cofy-x/axv/apps/server/internal/hostdir"
-	"github.com/cofy-x/axv/apps/server/internal/localaccess"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 )
 
 // Register adds the local host-directory endpoint independently of any agent.
@@ -18,7 +18,7 @@ func Register(mux *http.ServeMux) {
 }
 
 func directories(w http.ResponseWriter, r *http.Request) {
-	if !localaccess.AllowRequest(r, false) {
+	if !httpaccess.AllowRequest(r, false) {
 		write(w, http.StatusForbidden, map[string]string{"code": "host_forbidden", "error": "Host directories require a same-origin connection from this computer."})
 		return
 	}

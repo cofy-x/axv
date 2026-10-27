@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cofy-x/axv/apps/server/internal/remoteaccess"
+	"github.com/cofy-x/axv/apps/server/internal/tailnet/access"
 	"tailscale.com/client/tailscale/apitype"
 	"tailscale.com/tailcfg"
 )
@@ -22,7 +22,7 @@ func TestPeerIdentityDoesNotRequireSelfOnlyMachineAuthorizationField(t *testing.
 			if err := json.Unmarshal([]byte(data), &who); err != nil {
 				t.Fatal(err)
 			}
-			want := remoteaccess.Identity{UserID: "123", NodeID: "node-client"}
+			want := access.Identity{UserID: "123", NodeID: "node-client"}
 			if got := peerIdentity(&who); got != want {
 				t.Fatalf("valid WhoIs peer rejected for an optional machine field: %+v", got)
 			}
@@ -48,12 +48,12 @@ func TestPeerIdentityRejectsRestrictedEntriesRetainedByWhoIs(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			who := &apitype.WhoIsResponse{Node: &tailcfg.Node{User: 123, StableID: "node-client"}, UserProfile: &tailcfg.UserProfile{ID: 123}}
 			test.change(who)
-			if got := peerIdentity(who); got != (remoteaccess.Identity{}) {
+			if got := peerIdentity(who); got != (access.Identity{}) {
 				t.Fatalf("restricted WhoIs entry authorized a peer: %+v", got)
 			}
 		})
 	}
-	if got := peerIdentity(nil); got != (remoteaccess.Identity{}) {
+	if got := peerIdentity(nil); got != (access.Identity{}) {
 		t.Fatalf("missing WhoIs entry authorized a peer: %+v", got)
 	}
 }
@@ -61,7 +61,7 @@ func TestPeerIdentityRejectsRestrictedEntriesRetainedByWhoIs(t *testing.T) {
 func TestPeerIdentityPreservesProviderExpiryAndTagSemantics(t *testing.T) {
 	for _, expiry := range []time.Time{{}, time.Now().Add(time.Hour), time.Now().Add(-time.Hour)} {
 		who := &apitype.WhoIsResponse{Node: &tailcfg.Node{User: 123, StableID: "node-client", MachineAuthorized: true, KeyExpiry: expiry}, UserProfile: &tailcfg.UserProfile{ID: 123}}
-		want := remoteaccess.Identity{UserID: "123", NodeID: "node-client"}
+		want := access.Identity{UserID: "123", NodeID: "node-client"}
 		if got := peerIdentity(who); got != want {
 			t.Fatalf("valid peer rejected despite authoritative unexpired state: %+v", got)
 		}
