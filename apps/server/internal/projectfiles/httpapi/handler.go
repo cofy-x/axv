@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/cofy-x/axv/apps/server/internal/localaccess"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 	"github.com/cofy-x/axv/apps/server/internal/projectfiles"
 	"github.com/cofy-x/axv/apps/server/internal/storage"
 )
@@ -28,7 +28,7 @@ func Register(mux *http.ServeMux, store *storage.Store) {
 		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "no-store")
 			w.Header().Set("X-Content-Type-Options", "nosniff")
-			if !localaccess.AllowRequest(r, r.Method != http.MethodGet && r.Method != http.MethodHead) {
+			if !httpaccess.AllowRequest(r, r.Method != http.MethodGet && r.Method != http.MethodHead) {
 				fail(w, problem("host_forbidden", "Project files require a same-origin connection from this computer."))
 				return
 			}

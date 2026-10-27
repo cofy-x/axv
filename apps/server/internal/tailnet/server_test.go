@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cofy-x/axv/apps/server/internal/remoteaccess"
+	"github.com/cofy-x/axv/apps/server/internal/tailnet/access"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/types/views"
 )
@@ -84,8 +84,8 @@ func (n *fakeBackend) Listen(string, string) (net.Listener, error) {
 	return listener, err
 }
 
-func (n *fakeBackend) WhoIs(context.Context, string) (remoteaccess.Identity, error) {
-	return remoteaccess.Identity{UserID: "123", NodeID: "peer-client"}, nil
+func (n *fakeBackend) WhoIs(context.Context, string) (access.Identity, error) {
+	return access.Identity{UserID: "123", NodeID: "peer-client"}, nil
 }
 
 func (n *fakeBackend) Close() error { n.closeCalls.Add(1); return n.closeErr }

@@ -1,5 +1,6 @@
-// Package localaccess validates access to host capabilities without trusting forwarded headers.
-package localaccess
+// Package httpaccess validates local requests and carries explicitly authenticated
+// remote HTTP authority without trusting forwarded headers.
+package httpaccess
 
 import (
 	"net"
@@ -9,9 +10,10 @@ import (
 	"strings"
 )
 
-// Request requires a loopback peer and host, and an exact origin when supplied.
-func Request(r *http.Request, requireOrigin bool) bool {
-	if !PeerHost(r) {
+// LocalRequest requires a loopback peer and host, and an exact origin when supplied.
+// Authenticated remote authority never bypasses these local-only checks.
+func LocalRequest(r *http.Request, requireOrigin bool) bool {
+	if !LocalPeerHost(r) {
 		return false
 	}
 	origins := r.Header.Values("Origin")
@@ -31,9 +33,9 @@ func Request(r *http.Request, requireOrigin bool) bool {
 		u.RawQuery == "" && !u.ForceQuery && u.Fragment == "" && u.RawFragment == ""
 }
 
-// PeerHost checks the local listener's network boundary before routing UI and
+// LocalPeerHost checks the local listener's network boundary before routing UI and
 // API reads. Feature handlers retain their own Origin requirements.
-func PeerHost(r *http.Request) bool {
+func LocalPeerHost(r *http.Request) bool {
 	peer, _, err := net.SplitHostPort(r.RemoteAddr)
 	return err == nil && loopbackIP(peer) && localHost(r.Host)
 }

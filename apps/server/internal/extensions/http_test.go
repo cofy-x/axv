@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cofy-x/axv/apps/server/internal/localaccess"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 )
 
 func extensionRequest(t *testing.T, handler http.Handler, expectedStore, method, path, origin, body string, remote bool) *httptest.ResponseRecorder {
@@ -32,7 +32,7 @@ func extensionRequest(t *testing.T, handler http.Handler, expectedStore, method,
 		r.RemoteAddr = "100.64.1.2:34567"
 		r.TLS = &tls.ConnectionState{}
 		var err error
-		r, err = localaccess.WithAuthenticatedRemote(r, base)
+		r, err = httpaccess.WithAuthenticatedRemote(r, base)
 		if err != nil {
 			t.Fatal(err)
 		}

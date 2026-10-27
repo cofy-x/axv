@@ -9,7 +9,7 @@ import (
 
 	"github.com/cofy-x/axv/apps/server/internal/cloudflare/desktop"
 	"github.com/cofy-x/axv/apps/server/internal/cloudflare/management"
-	"github.com/cofy-x/axv/apps/server/internal/localaccess"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 )
 
 func DesktopStatus(instanceID string, status func() desktop.Snapshot) http.Handler {
@@ -17,7 +17,7 @@ func DesktopStatus(instanceID string, status func() desktop.Snapshot) http.Handl
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		if !localaccess.Request(r, false) {
+		if !httpaccess.LocalRequest(r, false) {
 			WriteError(w, http.StatusForbidden, "cloudflare_local_only", "Check Cloudflare access on the computer running AXV.")
 			return
 		}
@@ -33,7 +33,7 @@ func DesktopSettings(controller DesktopController) http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		if !localaccess.Request(r, true) {
+		if !httpaccess.LocalRequest(r, true) {
 			WriteError(w, http.StatusForbidden, "cloudflare_local_only", "Change Cloudflare access on the computer running AXV.")
 			return
 		}

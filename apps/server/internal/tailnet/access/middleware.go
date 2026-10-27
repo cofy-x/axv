@@ -1,6 +1,6 @@
-// Package remoteaccess authenticates explicit private remote HTTP entrypoints.
+// Package access authorizes the owner's untagged Tailscale peers for HTTP access.
 // It does not configure the host network or own desktop and compute processes.
-package remoteaccess
+package access
 
 import (
 	"context"
@@ -14,10 +14,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cofy-x/axv/apps/server/internal/localaccess"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 )
 
-// Identity is resolved from the actual connection by the private network client.
+// Identity is resolved from the actual connection by the embedded Tailscale node.
 // UserID is a canonical positive decimal ID; NodeID is a stable node identifier.
 type Identity struct {
 	UserID string
@@ -25,6 +25,7 @@ type Identity struct {
 	Tagged bool
 }
 
+// WhoIsFunc resolves a peer through the embedded node that owns the HTTPS listener.
 type WhoIsFunc func(context.Context, string) (Identity, error)
 
 type MiddlewareOptions struct {
@@ -174,8 +175,8 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 			writeError(w, http.StatusNotFound, "not_found", "Unknown API endpoint.")
 			return
 		}
-		authenticated, err := localaccess.WithAuthenticatedRemote(r, m.origin)
-		if err != nil || !localaccess.AllowRequest(authenticated, requireOrigin) {
+		authenticated, err := httpaccess.WithAuthenticatedRemote(r, m.origin)
+		if err != nil || !httpaccess.AllowRequest(authenticated, requireOrigin) {
 			writeError(w, http.StatusForbidden, "remote_forbidden", "This request is not authorized for remote access.")
 			return
 		}

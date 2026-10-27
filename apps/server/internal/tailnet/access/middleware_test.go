@@ -1,4 +1,4 @@
-package remoteaccess
+package access
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"time"
 
 	preparehttp "github.com/cofy-x/axv/apps/server/internal/compute/prepare/httpapi"
-	"github.com/cofy-x/axv/apps/server/internal/localaccess"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 )
 
 const testOrigin = "https://axv.example.ts.net"
@@ -87,7 +87,7 @@ func TestMiddlewareAuthorizesActualPeerAndPreservesTransport(t *testing.T) {
 	called := false
 	wrapped := m.Wrap(http.HandlerFunc(func(w http.ResponseWriter, authenticated *http.Request) {
 		called = true
-		if authenticated.RemoteAddr != r.RemoteAddr || authenticated.Host != r.Host || authenticated.TLS != r.TLS || !localaccess.AllowRequest(authenticated, true) || localaccess.Request(authenticated, true) {
+		if authenticated.RemoteAddr != r.RemoteAddr || authenticated.Host != r.Host || authenticated.TLS != r.TLS || !httpaccess.AllowRequest(authenticated, true) || httpaccess.LocalRequest(authenticated, true) {
 			t.Fatal("remote request bypassed authentication by rewriting its transport")
 		}
 		if lookupContext.Err() == nil || authenticated.Context().Err() != nil {
@@ -240,7 +240,7 @@ func TestMiddlewareRevalidatesTheOriginalPeerUntilTheHandlerFinishes(t *testing.
 				defer close(finished)
 				m.Wrap(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 					<-r.Context().Done()
-					if localaccess.AllowRequest(r, false) {
+					if httpaccess.AllowRequest(r, false) {
 						t.Error("revoked request retained remote authority")
 					}
 				})).ServeHTTP(httptest.NewRecorder(), request(http.MethodGet, "/api/terminal"))

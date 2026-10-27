@@ -11,8 +11,8 @@ import (
 
 	"github.com/cofy-x/axv/apps/server/internal/cloudflare/access"
 	"github.com/cofy-x/axv/apps/server/internal/cloudflare/policy"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 	"github.com/cofy-x/axv/apps/server/internal/jsonunicode"
-	"github.com/cofy-x/axv/apps/server/internal/localaccess"
 )
 
 func (m *Manager) Register(mux *http.ServeMux) {
@@ -44,7 +44,7 @@ func writeFailure(w http.ResponseWriter, err error) {
 }
 
 func allowed(w http.ResponseWriter, r *http.Request) bool {
-	if r.URL.RawQuery != "" || r.URL.ForceQuery || !localaccess.AllowRequest(r, r.Method != http.MethodGet && r.Method != http.MethodHead) {
+	if r.URL.RawQuery != "" || r.URL.ForceQuery || !httpaccess.AllowRequest(r, r.Method != http.MethodGet && r.Method != http.MethodHead) {
 		controlError(w, 403, "publication_forbidden", "Open publishing controls from the AXV desktop.")
 		return false
 	}

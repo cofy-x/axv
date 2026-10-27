@@ -15,7 +15,7 @@ import (
 	"github.com/cofy-x/axv/apps/server/internal/cloudflare/access"
 	"github.com/cofy-x/axv/apps/server/internal/cloudflare/internal/origin"
 	"github.com/cofy-x/axv/apps/server/internal/cloudflare/policy"
-	"github.com/cofy-x/axv/apps/server/internal/localaccess"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 )
 
 type Options struct {
@@ -223,8 +223,8 @@ func (s *Service) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			<-ioDone
 		}
 	}()
-	authenticated, err := localaccess.WithAuthenticatedTunnel(r, s.options.Origin)
-	if err != nil || !localaccess.AllowRequest(authenticated, requireOrigin) {
+	authenticated, err := httpaccess.WithAuthenticatedTunnel(r, s.options.Origin)
+	if err != nil || !httpaccess.AllowRequest(authenticated, requireOrigin) {
 		writeError(w, http.StatusForbidden, "cloudflare_forbidden", "This request is not authorized for Cloudflare access.")
 		return
 	}

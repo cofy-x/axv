@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"github.com/cofy-x/axv/apps/server/internal/cloudflare/management"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 	"github.com/cofy-x/axv/apps/server/internal/jsonunicode"
-	"github.com/cofy-x/axv/apps/server/internal/localaccess"
 )
 
 type Handler struct{ service *management.Service }
@@ -65,16 +65,16 @@ func (m *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/cloudflare/health", m.getHealth)
 	mux.HandleFunc("GET /api/cloudflare/traffic", m.getTraffic)
 	mux.HandleFunc("GET /api/cloudflare/capabilities", func(w http.ResponseWriter, r *http.Request) {
-		if !localaccess.AllowRequest(r, false) {
+		if !httpaccess.AllowRequest(r, false) {
 			WriteError(w, 403, "cloudflare_forbidden", "Authenticated desktop access is required.")
 			return
 		}
-		writeJSON(w, map[string]bool{"configure": localaccess.Request(r, false), "publish": true, "health": true, "traffic": true})
+		writeJSON(w, map[string]bool{"configure": httpaccess.LocalRequest(r, false), "publish": true, "health": true, "traffic": true})
 	})
 }
 
 func (m *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
-	if !localaccess.Request(r, false) {
+	if !httpaccess.LocalRequest(r, false) {
 		WriteError(w, 403, "cloudflare_local_only", "Configure Cloudflare on the computer running AXV.")
 		return
 	}
@@ -83,7 +83,7 @@ func (m *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Handler) putConfig(w http.ResponseWriter, r *http.Request) {
-	if !localaccess.Request(r, true) {
+	if !httpaccess.LocalRequest(r, true) {
 		WriteError(w, 403, "cloudflare_local_only", "Configure Cloudflare on the computer running AXV.")
 		return
 	}
@@ -96,7 +96,7 @@ func (m *Handler) putConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Handler) rotateToken(w http.ResponseWriter, r *http.Request) {
-	if !localaccess.Request(r, true) {
+	if !httpaccess.LocalRequest(r, true) {
 		WriteError(w, 403, "cloudflare_local_only", "Rotate Cloudflare credentials on the computer running AXV.")
 		return
 	}
@@ -109,7 +109,7 @@ func (m *Handler) rotateToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Handler) wizard(w http.ResponseWriter, r *http.Request) {
-	if !localaccess.Request(r, true) {
+	if !httpaccess.LocalRequest(r, true) {
 		WriteError(w, 403, "cloudflare_local_only", "Configure Cloudflare on the computer running AXV.")
 		return
 	}
@@ -122,7 +122,7 @@ func (m *Handler) wizard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Handler) getHealth(w http.ResponseWriter, r *http.Request) {
-	if !localaccess.AllowRequest(r, false) {
+	if !httpaccess.AllowRequest(r, false) {
 		WriteError(w, 403, "cloudflare_forbidden", "Authenticated desktop access is required.")
 		return
 	}
@@ -135,7 +135,7 @@ func (m *Handler) getHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Handler) getTraffic(w http.ResponseWriter, r *http.Request) {
-	if !localaccess.AllowRequest(r, false) {
+	if !httpaccess.AllowRequest(r, false) {
 		WriteError(w, 403, "cloudflare_forbidden", "Authenticated desktop access is required.")
 		return
 	}

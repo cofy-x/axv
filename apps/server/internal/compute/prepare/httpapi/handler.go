@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	"github.com/cofy-x/axv/apps/server/internal/compute/prepare"
-	"github.com/cofy-x/axv/apps/server/internal/localaccess"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 )
 
 const prefix = "/api/compute/preparation/"
@@ -94,7 +94,7 @@ func guarded(instanceID string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		mutation := r.Method != http.MethodGet && r.Method != http.MethodHead
-		if !localaccess.Request(r, mutation) {
+		if !httpaccess.LocalRequest(r, mutation) {
 			respond(w, 403, map[string]string{"code": "preparation_forbidden", "error": "VM preparation requires a same-origin connection from this computer."})
 			return
 		}

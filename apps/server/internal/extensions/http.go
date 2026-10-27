@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cofy-x/axv/apps/server/internal/localaccess"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 )
 
 const ContentPolicy = "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
@@ -34,9 +34,9 @@ func (m *Manager) guard(localOnly bool, next http.HandlerFunc) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Content-Type", "application/json")
 		requireOrigin := r.Method != http.MethodGet && r.Method != http.MethodHead
-		allowed := localaccess.AllowRequest(r, requireOrigin)
+		allowed := httpaccess.AllowRequest(r, requireOrigin)
 		if localOnly {
-			allowed = localaccess.Request(r, requireOrigin)
+			allowed = httpaccess.LocalRequest(r, requireOrigin)
 		}
 		// Opaque sandbox documents can issue simple GETs without Origin. Fetch
 		// Metadata closes that browser path as well as explicit Origin:null.

@@ -18,8 +18,8 @@ import (
 	preparehttp "github.com/cofy-x/axv/apps/server/internal/compute/prepare/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/compute/preview"
 	"github.com/cofy-x/axv/apps/server/internal/extensions"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 	"github.com/cofy-x/axv/apps/server/internal/httpapi"
-	"github.com/cofy-x/axv/apps/server/internal/localaccess"
 	projectfileshttp "github.com/cofy-x/axv/apps/server/internal/projectfiles/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/storage"
 	"github.com/cofy-x/axv/apps/server/internal/terminal"
@@ -40,7 +40,7 @@ func TestCloudflareControlsRequireRawLocalAccessAndExactOrigin(t *testing.T) {
 		r.Header.Set("X-Forwarded-Host", "localhost:3001")
 		if tc.host == "axv.example.com" {
 			var err error
-			r, err = localaccess.WithAuthenticatedTunnel(r, tc.origin)
+			r, err = httpaccess.WithAuthenticatedTunnel(r, tc.origin)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -73,7 +73,7 @@ func TestCloudflareLocalStatusAndSwitchNeverExposeAccessIdentity(t *testing.T) {
 			r.Host = "axv.example.com"
 			r.Header.Set("Origin", "https://axv.example.com")
 			var err error
-			r, err = localaccess.WithAuthenticatedTunnel(r, "https://axv.example.com")
+			r, err = httpaccess.WithAuthenticatedTunnel(r, "https://axv.example.com")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -162,11 +162,11 @@ func TestAuthenticatedCloudflareContextSharesFeaturesAndRetainsLocalBoundaries(t
 		r.Header.Set("X-AXV-Host-ID", "original-host")
 		r.Header.Set("Origin", "https://axv.example.com")
 		if authenticated {
-			r, err = localaccess.WithAuthenticatedTunnel(r, "https://axv.example.com")
+			r, err = httpaccess.WithAuthenticatedTunnel(r, "https://axv.example.com")
 			if err != nil {
 				t.Fatal(err)
 			}
-			if localaccess.Request(r, false) || !localaccess.AllowRequest(r, true) || r.TLS != nil || r.RemoteAddr != "127.0.0.1:12345" {
+			if httpaccess.LocalRequest(r, false) || !httpaccess.AllowRequest(r, true) || r.TLS != nil || r.RemoteAddr != "127.0.0.1:12345" {
 				t.Fatal("tunnel authority changed transport facts or became local")
 			}
 		}
