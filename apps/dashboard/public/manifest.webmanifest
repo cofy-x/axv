@@ -1,0 +1,26 @@
+{
+  "id": "/",
+  "name": "AXV",
+  "short_name": "AXV",
+  "description": "A personal cloud workstation.",
+  "lang": "en",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#505b64",
+  "theme_color": "#252729",
+  "icons": [
+    {
+      "src": "/icons/axv-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/axv-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

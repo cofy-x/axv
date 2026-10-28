@@ -16,15 +16,17 @@ import (
 	"time"
 
 	"github.com/cofy-x/axv/apps/server/internal/filelock"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 	"github.com/cofy-x/axv/apps/server/internal/projectfiles"
 	"github.com/cofy-x/axv/apps/server/internal/storage"
 )
 
 type fixture struct {
-	store   *storage.Store
-	handler http.Handler
-	root    string
-	project storage.ProjectRef
+	store      *storage.Store
+	handler    http.Handler
+	root       string
+	project    storage.ProjectRef
+	databaseID string
 }
 
 func setup(t *testing.T) *fixture {
@@ -41,7 +43,11 @@ func setup(t *testing.T) *fixture {
 	}
 	mux := http.NewServeMux()
 	Register(mux, s)
-	f := &fixture{store: s, handler: mux, root: root}
+	identity, err := s.DatabaseID(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := &fixture{store: s, handler: mux, root: root, databaseID: identity}
 	r := f.request("POST", "/api/projects", map[string]any{"name": "Example", "rootPath": root})
 	if r.Code != 201 {
 		t.Fatalf("register: %d %s", r.Code, r.Body.String())
@@ -65,6 +71,7 @@ func (f *fixture) request(method, target string, payload any) *httptest.Response
 	}
 	r := httptest.NewRequest(method, "http://127.0.0.1:7777"+target, bytes.NewReader(data))
 	r.RemoteAddr = "127.0.0.1:12345"
+	r.Header.Set(httpaccess.DatabaseIdentityHeader, f.databaseID)
 	if payload != nil {
 		r.Header.Set("Content-Type", "application/json")
 	}
@@ -345,7 +352,7 @@ func TestExportCoordinatesIndependentStoreAndAPIInstances(t *testing.T) {
 	t.Cleanup(func() { _ = secondStore.Close() })
 	secondMux := http.NewServeMux()
 	Register(secondMux, secondStore)
-	other := &fixture{store: secondStore, handler: secondMux, root: f.root, project: f.project}
+	other := &fixture{store: secondStore, handler: secondMux, root: f.root, project: f.project, databaseID: f.databaseID}
 	if secondLock, err := secondStore.DocumentTransferLockPath(context.Background()); err != nil || secondLock != lockPath {
 		t.Fatalf("stores do not share export coordination: %q %q %v", lockPath, secondLock, err)
 	}
@@ -385,6 +392,7 @@ func TestIncompleteExportBodyDoesNotBlockAnotherExport(t *testing.T) {
 	t.Cleanup(func() { _ = reader.Close(); _ = writer.Close() })
 	r := httptest.NewRequest("POST", "http://127.0.0.1:7777"+f.base()+"/export", reader)
 	r.RemoteAddr = "127.0.0.1:1234"
+	r.Header.Set(httpaccess.DatabaseIdentityHeader, f.databaseID)
 	r.Header.Set("Origin", "http://127.0.0.1:7777")
 	r.Header.Set("Content-Type", "application/json")
 	partialDone := make(chan struct{})

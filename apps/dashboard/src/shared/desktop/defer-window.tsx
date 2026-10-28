@@ -60,10 +60,12 @@ export function deferWindow(load: () => Promise<WindowContent>): WindowContent {
           <Button disabled={props.interactive === false} onClick={start}>
             Retry
           </Button>
+          <p className="fine-print">
+            Save, download or copy unsaved work before reloading.
+          </p>
           <details className="deferred-window-details">
             <summary>Details</summary>
             <p className="deferred-window-error">{current.error}</p>
-            <p>If retry keeps failing, save other work before reloading AXV.</p>
           </details>
         </div>
       );

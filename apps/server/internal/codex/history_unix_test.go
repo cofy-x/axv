@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,7 +30,7 @@ func decodedRun(t *testing.T, status int, data []byte) Session {
 	return result.Session
 }
 
-func waitRunning(t *testing.T, server *httptest.Server, session storage.CodexSession) storage.CodexSession {
+func waitRunning(t *testing.T, server *managerHTTPServer, session storage.CodexSession) storage.CodexSession {
 	t.Helper()
 	eventually(t, func() bool {
 		status, data := jsonRequest(t, server, "GET", runPath(session), nil)
@@ -117,7 +116,7 @@ func TestRealCodexResumePreservesHistoryAndOldRunIsolation(t *testing.T) {
 	m.run = beforeRun
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	stale, response, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+runPath(first)+"/terminal", &websocket.DialOptions{HTTPHeader: map[string][]string{"Origin": {server.URL}}})
+	stale, response, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+runPath(first)+"/terminal", &websocket.DialOptions{HTTPHeader: map[string][]string{"Origin": {server.URL}, "X-AXV-Database-ID": {server.databaseID}}})
 	if stale != nil {
 		stale.CloseNow()
 	}

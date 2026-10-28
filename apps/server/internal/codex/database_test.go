@@ -69,7 +69,7 @@ func TestLaunchDatabaseFencePrecedesReplayValidationAndReservation(t *testing.T)
 	}
 }
 
-func TestLaunchHTTPDatabaseFenceIsOptionalAndPreservesRejectedRequests(t *testing.T) {
+func TestLaunchHTTPDatabaseFenceIsRequiredAndPreservesRejectedRequests(t *testing.T) {
 	manager := testManager(t)
 	rejectServiceHostWork(t, manager)
 	manager.settings.ResolveVMProject = func(context.Context, compute.ProjectBinding) (VMProjectResolution, error) {
@@ -101,7 +101,9 @@ func TestLaunchHTTPDatabaseFenceIsOptionalAndPreservesRejectedRequests(t *testin
 			response := httptest.NewRecorder()
 			mux.ServeHTTP(response, request)
 			status, code := http.StatusBadRequest, "invalid_session"
-			if databaseID == "previous-desktop-database" {
+			if databaseID == "" {
+				status, code = http.StatusPreconditionRequired, "database_identity_required"
+			} else if databaseID == "previous-desktop-database" {
 				status, code = http.StatusConflict, "database_changed"
 			}
 			if response.Code != status || !strings.Contains(response.Body.String(), `"code":"`+code+`"`) {

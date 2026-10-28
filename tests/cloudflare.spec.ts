@@ -648,7 +648,7 @@ test('expired authorization preserves the desktop while a later status refresh r
   await choose(refresh, touch);
   await expect(stateLabel(page)).toHaveText('Unknown');
   await expect(panel(page).getByRole('alert')).toContainText(
-    'Keep this desktop open to preserve drafts, sign in again in another tab, then retry.',
+    'Authorization is required. Restore access, then retry.',
   );
   await expect(
     panel(page).getByRole('link', { name: address, exact: true }),

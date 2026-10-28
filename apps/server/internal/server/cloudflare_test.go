@@ -160,6 +160,9 @@ func TestAuthenticatedCloudflareContextSharesFeaturesAndRetainsLocalBoundaries(t
 		r.RemoteAddr = "127.0.0.1:12345"
 		r.Header.Set("Content-Type", "application/json")
 		r.Header.Set("X-AXV-Host-ID", "original-host")
+		if strings.HasPrefix(path, "/api/") {
+			r.Header.Set(httpaccess.DatabaseIdentityHeader, manager.DatabaseID())
+		}
 		r.Header.Set("Origin", "https://axv.example.com")
 		if authenticated {
 			r, err = httpaccess.WithAuthenticatedTunnel(r, "https://axv.example.com")
@@ -176,6 +179,8 @@ func TestAuthenticatedCloudflareContextSharesFeaturesAndRetainsLocalBoundaries(t
 	}
 	for _, tc := range []struct{ path, contains string }{
 		{"/", "desktop UI"}, {"/api/bootstrap?clientId=cf-browser", `"databaseId"`},
+		{"/manifest.webmanifest", "desktop UI"}, {"/icons/axv-192.png", "desktop UI"},
+		{"/icons/axv-512.png", "desktop UI"}, {"/icons/apple-touch-icon.png", "desktop UI"},
 		{"/api/projects", `"projects"`}, {"/api/terminal/info", `"supported"`},
 		{"/api/host/codex/info", `"supported"`}, {"/api/compute/info", `"configured":false`},
 		{"/api/extensions", `"apps"`}, {"/api/project-previews/project-one", `"supported":false`},
@@ -190,6 +195,7 @@ func TestAuthenticatedCloudflareContextSharesFeaturesAndRetainsLocalBoundaries(t
 		t.Fatalf("authorized document save failed: %d %s", w.Code, w.Body.String())
 	}
 	r := httptest.NewRequest(http.MethodGet, "http://localhost:3001/api/entries", nil)
+	r.Header.Set(httpaccess.DatabaseIdentityHeader, manager.DatabaseID())
 	r.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
 	shared.ServeHTTP(w, r)

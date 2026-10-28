@@ -268,6 +268,30 @@ export const test = base.extend<{
   initialApp: 'files' | 'welcome';
 }>({
   initialApp: ['files', { option: true }],
+  request: async ({ playwright, baseURL }, use) => {
+    const discovery = await playwright.request.newContext({ baseURL });
+    let databaseId: string;
+    try {
+      const response = await discovery.get(
+        '/api/bootstrap?clientId=e2e-fixture',
+      );
+      expect(response.ok()).toBeTruthy();
+      databaseId = (await response.json()).databaseId;
+    } finally {
+      await discovery.dispose();
+    }
+    // Only the test's API client gets this header. Browser requests must obtain
+    // and carry their own binding; injecting browser headers would hide regressions.
+    const request = await playwright.request.newContext({
+      baseURL,
+      extraHTTPHeaders: { 'X-AXV-Database-ID': databaseId },
+    });
+    try {
+      await use(request);
+    } finally {
+      await request.dispose();
+    }
+  },
   desktopReady: [
     async ({ page, request, initialApp }, use, testInfo) => {
       // WebKit also maps native navigation-loader diagnostics to pageerror:

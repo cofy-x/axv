@@ -23,7 +23,21 @@ Menus can be fixed as movable panels. A fixed application menu keeps its origina
 
 Touch controls expose menus and window actions without requiring a right-click. Text inputs retain selection, clipboard and undo shortcuts. **Workspace → Clock** shows the date and time; compact layouts omit the separate Dock clock. **Preferences** changes desktop appearance and clock settings; its **Remote access** section provides **Open Tailscale** and **Open Cloudflare**. **Component Gallery** demonstrates the shared controls.
 
-Welcome keeps **Show Desktop** visible, places remote setup under **Connect from another device**, and groups **Preferences**, **Developer Tools → Component Gallery** and **About AXV** under **More**.
+Welcome keeps **Show Desktop** visible, places remote setup under **Connect from another device** and browser installation guidance under **Install AXV**, and groups **Preferences**, **Developer Tools → Component Gallery** and **About AXV** under **More**.
+
+### Installed window and updates
+
+Follow [browser installation](startup.md#browser-installation) for the initial desktop Chrome/Edge and iPhone Tailscale entrypoints. Opening an installed icon may activate an already open window. A new page uses normal authentication and bootstrap; installation grants no additional access and does not start the host service.
+
+AXV does not refresh an open page automatically during a service update. Keep unsaved work in that window. A window whose application module cannot load offers **Retry** without replacing other windows. If retry continues failing, save or download/copy unsaved text before explicitly reloading through the browser; the initial startup screen also offers **Reload** when application loading fails. A new page receives the current UI. Browser local recovery is a fallback, not a guarantee against system termination or cleared site data.
+
+Text Editor and VM Project Files offer **More → Download Draft** for the current text, including unsaved edits. This downloads a local `.draft.txt` file without a server request, changing the saved version or clearing recovery. Restore a pending draft first to download that text. Check the browser's download result; use normal text selection and copy if it cannot save a download. Extensions have their separate **Export draft** action. Text Editor's **Export** exports a saved document version, and **Save Copy** requires the original online server; neither substitutes for downloading an unsaved draft during a connection failure.
+
+Failed saves also expose **Download Draft** beside their recovery actions. After a database change, Text Editor disables server actions and keeps editing and local downloads available. Closing a dirty protected editor defaults to **Cancel**; downloading from that dialog keeps the editor open. An authorization notice offers a retry after access is restored, without reloading the page or replacing its identity.
+
+A browser tab and an installed window may share or isolate browser data depending on their platform and profile. AXV does not copy, merge or replace their drafts during installation. [Browser recovery](storage.md#browser-recovery) owns the identity boundary. If the server reports that its database changed, keep the old window and download/copy its text before opening the current workstation separately; do not assume an identically named document is the original.
+
+Installing does not change execution lifetimes: disconnecting Host Terminal ends its shell; Codex detaches from its recorded run; Guest Terminal reconnects only to its original surviving terminal; VM tasks retain their original Attempt and receipt. Background suspension and network loss can disconnect a browser. A missing target or expired authorization must be resolved explicitly, without starting a replacement run, project or task. See the [lifetime comparison](architecture.md#codex-attachment-and-process-lifetime).
 
 ## Applications and extensions
 

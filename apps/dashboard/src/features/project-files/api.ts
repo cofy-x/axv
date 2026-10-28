@@ -1,4 +1,9 @@
-import { APIError, request } from '../../shared/api/http';
+import { request as unboundRequest } from '../../shared/api/http';
+import {
+  requestDesktop as request,
+  requestDesktopBlob,
+  desktopDatabase,
+} from '../../shared/api/desktop';
 import type { Entry } from '../../filesystem/types';
 
 export interface Project {
@@ -36,7 +41,7 @@ export interface HostDirectories {
 
 export const projectsAPI = {
   directories: (path?: string, signal?: AbortSignal) =>
-    request<HostDirectories>(
+    unboundRequest<HostDirectories>(
       `/host/directories${path ? `?path=${encodeURIComponent(path)}` : ''}`,
       { signal },
     ),
@@ -58,16 +63,10 @@ export const projectsAPI = {
       `/projects/${id}/file?${new URLSearchParams({ path })}`,
     ),
   download: async (id: string, path: string) => {
-    const response = await fetch(
-      `/api/projects/${id}/download?${new URLSearchParams({ path })}`,
+    const blob = await requestDesktopBlob(
+      `/projects/${id}/download?${new URLSearchParams({ path })}`,
     );
-    if (!response.ok) {
-      const error = await response
-        .json()
-        .catch(() => ({ error: response.statusText, code: 'download_failed' }));
-      throw new APIError(error.error, response.status, error.code);
-    }
-    const blob = await response.blob();
+    desktopDatabase.assertActive();
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;

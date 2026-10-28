@@ -843,6 +843,25 @@ select:disabled {
   left: 0;
   cursor: nesw-resize;
 }
+.ns-status-overlay {
+  position: absolute;
+  z-index: 300;
+  overflow: auto;
+  padding: 2px;
+  padding-bottom: max(2px, env(safe-area-inset-bottom, 0px));
+  pointer-events: none;
+  user-select: text;
+}
+.ns-status-overlay > * {
+  pointer-events: auto;
+}
+.ns-status-overlay:focus-within {
+  /* WebKit needs pointer events on the scroller for native keyboard scrolling. */
+  pointer-events: auto;
+}
+.ns-status-overlay[data-blocked] {
+  visibility: hidden;
+}
 .ns-overview-backdrop {
   position: absolute;
   inset: 26px 0 0;

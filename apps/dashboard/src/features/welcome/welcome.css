@@ -87,7 +87,8 @@
   font-size: var(--ns-font-size-secondary);
 }
 .welcome-remote > summary {
-  width: fit-content;
+  min-height: var(--ns-control-height);
+  padding: 5px 0;
   cursor: pointer;
 }
 .welcome-remote p {
@@ -96,6 +97,19 @@
 }
 .welcome-remote .welcome-tools {
   margin-top: 10px;
+}
+.welcome-install-steps {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 12px 16px;
+  margin: 10px 0 0;
+  line-height: 1.5;
+}
+.welcome-install-steps dt {
+  font-weight: bold;
+}
+.welcome-install-steps dd {
+  margin: 0;
 }
 .welcome-footer {
   justify-content: space-between;
@@ -128,5 +142,12 @@
   .welcome-link {
     padding: 10px;
     gap: 10px;
+  }
+  .welcome-install-steps {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+  .welcome-install-steps dt:not(:first-child) {
+    margin-top: 10px;
   }
 }

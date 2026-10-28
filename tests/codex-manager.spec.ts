@@ -16,6 +16,75 @@ import {
 } from './codex-helpers';
 import type { CodexSession } from './codex-helpers';
 
+test('host launch keeps its original request after uncertain refusal and database protection', async ({
+  page,
+}, info) => {
+  const touch = Boolean(info.project.use.hasTouch);
+  const manager = await selectCodexProject(page, touch);
+  const attempts: { requestId: string; projectPath: string }[] = [];
+  await page.route('**/api/host/codex/sessions', (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    attempts.push(route.request().postDataJSON());
+    return route.fulfill({
+      status: 409,
+      json: {
+        code:
+          attempts.length === 1
+            ? 'history_identity_conflict'
+            : 'database_changed',
+        error:
+          attempts.length === 1
+            ? 'The original launch outcome is uncertain.'
+            : 'The desktop database changed.',
+      },
+    });
+  });
+  await page.evaluate(() => {
+    const generated: string[] = [];
+    Object.defineProperty(globalThis, 'hostStartUUIDs', { value: generated });
+    const randomUUID = crypto.randomUUID.bind(crypto);
+    crypto.randomUUID = () => {
+      const id = randomUUID();
+      generated.push(id);
+      return id;
+    };
+  });
+  const startHere = manager.getByRole('button', {
+    name: 'Start Here',
+    exact: true,
+  });
+  await choose(startHere, touch);
+  await expect(
+    manager.getByText('The original launch outcome is uncertain.', {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(startHere).toBeEnabled();
+  await choose(startHere, touch);
+  await expect(
+    manager.getByText('The desktop database changed.', { exact: true }),
+  ).toBeVisible();
+  await expect(startHere).toBeEnabled();
+  expect(attempts).toHaveLength(2);
+  expect(attempts[1]).toEqual(attempts[0]);
+  // Choosing another project after protection must not replace the held key,
+  // even though transport would reject its eventual request locally.
+  const newSession = manager.getByRole('button', {
+    name: 'New Session',
+    exact: true,
+  });
+  await choose(newSession, touch);
+  await expect(newSession).toBeEnabled();
+  expect(attempts).toHaveLength(2);
+  expect(
+    await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { hostStartUUIDs: string[] })
+          .hostStartUUIDs,
+    ),
+  ).toEqual([attempts[0].requestId]);
+});
+
 test('closing and reopening the folder picker preserves an unsubmitted path', async ({
   page,
 }, info) => {

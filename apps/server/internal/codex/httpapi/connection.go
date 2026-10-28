@@ -15,6 +15,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/cofy-x/axv/apps/server/internal/codex"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 )
 
 func dimensions(raw string) (int, int, bool) {
@@ -24,6 +25,9 @@ func dimensions(raw string) (int, int, bool) {
 		return 0, 0, false
 	}
 	for key, values := range query {
+		if key == "databaseId" {
+			continue
+		}
 		if (key != "cols" && key != "rows") || len(values) != 1 {
 			return 0, 0, false
 		}
@@ -45,12 +49,12 @@ func validSize(cols, rows int) bool {
 }
 
 func (h *Handler) connect(w http.ResponseWriter, r *http.Request) {
-	if !allowed(w, r, true) {
+	if !allowed(w, r, true) || !httpaccess.RequireDatabaseIdentity(w, r, h.manager.DatabaseID(), true) {
 		return
 	}
 	cols, rows, ok := dimensions(r.URL.RawQuery)
 	if !ok {
-		respond(w, nil, requestFailure(400, "invalid_terminal_size", "Use cols 2–500 and rows 1–200; no other query parameters are accepted."))
+		respond(w, nil, requestFailure(400, "invalid_terminal_size", "Use cols 2–500 and rows 1–200; only the captured database identity is accepted alongside dimensions."))
 		return
 	}
 	sessionID, runID := r.PathValue("id"), r.PathValue("run")

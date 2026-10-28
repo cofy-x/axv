@@ -235,6 +235,8 @@ export interface DesktopProps {
   isShortcutAvailable?: (shortcut: ClipShortcut) => boolean;
   iconSnap?: boolean;
   connectionStatus?: 'connected' | 'connecting' | 'offline';
+  /** Host-owned status content, kept clear of the Dock and blocked by transient UI. */
+  statusOverlay?: ReactNode;
   onAppearance?: () => void;
   onAbout?: () => void;
   onHelp?: () => void;

@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -17,7 +18,9 @@ import { createAppRegistry } from './registry';
 import { createDesktopIcons, createDesktopMenu } from './desktop-items';
 import { useDesktopSession } from './useDesktopSession';
 import { DraftNamespaceContext } from '../shared/drafts/context';
-import { getClientId } from './api';
+import { clientIdentityKey } from './client-identity';
+import { useBootstrap } from './useBootstrap';
+import type { ReadyDesktop } from './useBootstrap';
 import { computeStore } from '../features/machines/compute-store';
 import {
   createMachineDesktopIcons,
@@ -30,71 +33,8 @@ import { extensionStore } from '../features/extensions/store';
 import { composeApplicationDefinitions } from '../features/extensions/registry';
 
 export function App() {
-  return (
-    <CodexProvider>
-      <DesktopApp />
-    </CodexProvider>
-  );
-}
-
-function DesktopApp() {
-  const session = useDesktopSession();
-  const {
-    bootstrap,
-    bootError,
-    boot,
-    filesystem,
-    appearance,
-    connection,
-    persistenceError,
-    onLayoutChange,
-    flushLayout,
-  } = session;
-  const { preferences } = appearance;
-  const desktopRef = useRef<DesktopAPI | null>(null);
-  const getDesktop = useCallback(() => desktopRef.current, []);
-  const [commands] = useState(createWindowCommands);
-  useSyncExternalStore(commands.subscribe, commands.getSnapshot);
-  const compute = useSyncExternalStore(
-    computeStore.subscribe,
-    computeStore.getSnapshot,
-  );
-  const builtins = useMemo(
-    () => createAppRegistry(filesystem, commands),
-    [filesystem, commands],
-  );
-  const extensions = useSyncExternalStore(
-    extensionStore.subscribe,
-    extensionStore.getSnapshot,
-  );
-  const apps = useMemo(
-    () =>
-      composeApplicationDefinitions(
-        builtins,
-        createExtensionDefinitions(extensions.definitionApps),
-      ),
-    [builtins, extensions.definitionApps],
-  );
-  const applicationCatalog = useMemo(
-    () => ({
-      clientId: getClientId(),
-      builtins: builtins.map((app) => ({
-        id: app.id,
-        title: app.title,
-        icon: app.icon,
-        launchable: app.launchable !== false,
-        kind: app.kind || 'application',
-      })),
-    }),
-    [builtins],
-  );
-  const machineIcons = createMachineDesktopIcons(compute, getDesktop);
-  const icons = [
-    ...createDesktopIcons(filesystem, getDesktop),
-    ...machineIcons,
-  ];
-
-  if (!bootstrap)
+  const { ready, bootError, boot } = useBootstrap();
+  if (!ready)
     return (
       <main className="startup-screen">
         <section
@@ -124,7 +64,6 @@ function DesktopApp() {
           {bootError && (
             <div className="startup-error">
               <p role="alert">{bootError}</p>
-              <p>Check that AXV is running, then retry.</p>
               <Button primary onClick={() => void boot()}>
                 Retry
               </Button>
@@ -133,10 +72,95 @@ function DesktopApp() {
         </section>
       </main>
     );
+  return (
+    <CodexProvider>
+      <DesktopApp {...ready} />
+    </CodexProvider>
+  );
+}
+
+function DesktopApp({ bootstrap, clientId }: ReadyDesktop) {
+  const {
+    filesystem,
+    appearance,
+    connection,
+    persistenceError,
+    onLayoutChange,
+    flushLayout,
+    databaseError,
+    authenticationError,
+    retryAuthentication,
+  } = useDesktopSession({ bootstrap, clientId });
+  const [identityError, setIdentityError] = useState('');
+  useEffect(() => {
+    const check = () => {
+      try {
+        if (localStorage.getItem(clientIdentityKey) === clientId) return;
+      } catch {
+        // The current page retains its captured identity and in-memory work.
+      }
+      setIdentityError(
+        'Browser storage changed or is unavailable. This page keeps your current work. Save or download drafts before closing.',
+      );
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === clientIdentityKey || event.key === null) check();
+    };
+    globalThis.addEventListener('storage', onStorage);
+    globalThis.addEventListener('focus', check);
+    check();
+    return () => {
+      globalThis.removeEventListener('storage', onStorage);
+      globalThis.removeEventListener('focus', check);
+    };
+  }, [clientId]);
+  const { preferences } = appearance;
+  const desktopRef = useRef<DesktopAPI | null>(null);
+  const getDesktop = useCallback(() => desktopRef.current, []);
+  const [commands] = useState(createWindowCommands);
+  useSyncExternalStore(commands.subscribe, commands.getSnapshot);
+  const compute = useSyncExternalStore(
+    computeStore.subscribe,
+    computeStore.getSnapshot,
+  );
+  const builtins = useMemo(
+    () => createAppRegistry(filesystem, commands),
+    [filesystem, commands],
+  );
+  const extensions = useSyncExternalStore(
+    extensionStore.subscribe,
+    extensionStore.getSnapshot,
+  );
+  const apps = useMemo(
+    () =>
+      composeApplicationDefinitions(
+        builtins,
+        createExtensionDefinitions(extensions.definitionApps),
+      ),
+    [builtins, extensions.definitionApps],
+  );
+  const applicationCatalog = useMemo(
+    () => ({
+      clientId,
+      builtins: builtins.map((app) => ({
+        id: app.id,
+        title: app.title,
+        icon: app.icon,
+        launchable: app.launchable !== false,
+        kind: app.kind || 'application',
+      })),
+    }),
+    [builtins, clientId],
+  );
+  const machineIcons = createMachineDesktopIcons(compute, getDesktop);
+  const icons = [
+    ...createDesktopIcons(filesystem, getDesktop),
+    ...machineIcons,
+  ];
 
   return (
     <DraftNamespaceContext.Provider
-      value={{ databaseId: bootstrap.databaseId, clientId: getClientId() }}
+      value={{ databaseId: bootstrap.databaseId, clientId }}
     >
       <FilesystemContext.Provider value={filesystem}>
         <PreferencesContext.Provider value={appearance}>
@@ -182,6 +206,76 @@ function DesktopApp() {
                 clock24Hour={preferences.clock24Hour}
                 iconSnap={preferences.iconSnap}
                 connectionStatus={connection}
+                statusOverlay={
+                  databaseError ||
+                  identityError ||
+                  persistenceError ||
+                  authenticationError ? (
+                    <div className="desktop-warnings">
+                      {databaseError && (
+                        <div className="persistence-warning" role="alert">
+                          <span>
+                            {databaseError.code === 'database_changed'
+                              ? 'The AXV desktop database changed.'
+                              : 'This page can no longer verify its AXV desktop database.'}{' '}
+                            Keep this page open to preserve unsaved work.
+                          </span>
+                          <a
+                            className="ns-button"
+                            href="/"
+                            target="_blank"
+                            rel="noopener"
+                            title="Open in a new window"
+                          >
+                            Open current AXV
+                          </a>
+                        </div>
+                      )}
+                      {identityError && (
+                        <div className="persistence-warning" role="alert">
+                          <span>{identityError}</span>
+                        </div>
+                      )}
+                      {authenticationError && !databaseError && (
+                        <div className="persistence-warning" role="alert">
+                          <span>
+                            Authorization is required. Restore access for this
+                            browser or installed app, then retry. Keep this page
+                            open to preserve drafts.
+                          </span>
+                          <div className="desktop-warning-actions">
+                            <a
+                              className="ns-button"
+                              href="/"
+                              target="_blank"
+                              rel="noopener"
+                              title="Open in a new window"
+                            >
+                              Open AXV
+                            </a>
+                            <Button
+                              onClick={() =>
+                                void retryAuthentication().catch(() => {})
+                              }
+                            >
+                              Retry
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                      {persistenceError &&
+                        !databaseError &&
+                        !authenticationError && (
+                          <div className="persistence-warning" role="alert">
+                            <span>{persistenceError}</span>
+                            <Button onClick={() => void flushLayout()}>
+                              Retry
+                            </Button>
+                          </div>
+                        )}
+                    </div>
+                  ) : null
+                }
                 onReady={(desktop) => {
                   desktopRef.current = desktop;
                 }}
@@ -202,12 +296,6 @@ function DesktopApp() {
                 onHelp={() => getDesktop()?.openApp('welcome')}
                 helpLabel="Welcome"
               />
-              {persistenceError && (
-                <div className="persistence-warning" role="alert">
-                  <span>{persistenceError}</span>
-                  <Button onClick={() => void flushLayout()}>Retry</Button>
-                </div>
-              )}
             </ApplicationCatalogContext.Provider>
           </WindowCommandsContext.Provider>
         </PreferencesContext.Provider>

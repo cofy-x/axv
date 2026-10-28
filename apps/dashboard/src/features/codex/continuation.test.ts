@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
 import { APIError } from '../../shared/api/http';
+import { desktopDatabase } from '../../shared/api/desktop';
 import { codexAPI } from './api';
 import type { CodexSessionRecord } from './api';
 import { confirmEndSession } from './actions';
@@ -60,6 +61,27 @@ describe('explicit Codex conversation continuation', () => {
       instanceId: 'old-instance',
     },
   };
+
+  it('retains the original continuation receipt when replacement is detected before acknowledgement', async () => {
+    const saved = new Map<string, string>();
+    vi.stubGlobal('sessionStorage', {
+      getItem: (key: string) => saved.get(key) ?? null,
+      setItem: (key: string, value: string) => void saved.set(key, value),
+      removeItem: (key: string) => void saved.delete(key),
+    });
+    const source = { ...previous, vmProject };
+    vi.spyOn(codexAPI, 'resume').mockResolvedValue({ ...running, vmProject });
+    vi.spyOn(desktopDatabase, 'assertUnchanged').mockImplementation(() => {
+      throw new APIError('Changed', 409, 'database_changed');
+    });
+    const requests = new CodexResumeRequests('original-scope', 'original-db');
+    await expect(requests.resume(source, vmProject.binding)).rejects.toThrow(
+      'Changed',
+    );
+    expect(saved.size).toBe(1);
+    expect(requests.hasPending(source.id)).toBe(true);
+    expect(requests.pendingRequestId(source.id)).toBeTruthy();
+  });
 
   it('reviews a fresh VM binding and confirms it explicitly while preserving the old run', async () => {
     const source = { ...previous, vmProject };

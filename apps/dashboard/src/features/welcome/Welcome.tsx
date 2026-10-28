@@ -75,6 +75,22 @@ export function Welcome({ desktop, window }: AppWindowProps) {
             </Button>
           </div>
         </details>
+        <details className="welcome-remote">
+          <summary>Install AXV</summary>
+          <dl className="welcome-install-steps">
+            <dt>Desktop</dt>
+            <dd>
+              In Chrome or Edge, choose the install option in the browser menu.
+            </dd>
+            <dt>iPhone Safari</dt>
+            <dd>
+              Open AXV’s Tailscale HTTPS address, then choose{' '}
+              <strong>Share → Add to Home Screen</strong>. Keep{' '}
+              <strong>Open as Web App</strong> on if shown.
+            </dd>
+          </dl>
+          <p>AXV must stay online. Unsaved drafts are not transferred.</p>
+        </details>
       </div>
       <div className="app-toolbar welcome-footer">
         <IconButton
@@ -142,14 +158,9 @@ export function About() {
         <dd>cofy-x</dd>
       </dl>
       <p className="fine-print">
-        Documents and desktop layout stay on the AXV host. VM project files stay
-        on retained volumes. Host Codex can use the AXV Skill to edit a selected
-        VM project and run its tasks. Codex activity identifies working
-        sessions, pending requests and turn outcomes. Project Files can clone
-        repositories, open development previews and restore independent volume
-        copies. Private remote access uses Tailscale; optional Cloudflare Access
-        supports an externally managed tunnel. Application Manager adds
-        restricted extensions with their own saved data.
+        Documents and desktop layout live on the AXV host. Project files stay in
+        their host directories or VM volumes. Browser recovery copies stay on
+        this device.
       </p>
     </div>
   );

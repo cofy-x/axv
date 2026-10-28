@@ -793,13 +793,19 @@ test('persistent module failures retain recovery guidance and let other windows 
     await choose(retry, hasTouch);
     await expect.poll(() => attempts).toBe(2);
     await expect(error).toContainText('Could not load this window.');
+    await expect(
+      terminal.getByText(
+        'Save, download or copy unsaved work before reloading.',
+        { exact: true },
+      ),
+    ).toBeVisible();
     await choose(
       terminal.locator('summary').filter({ hasText: /^Details$/ }),
       hasTouch,
     );
     await expect(
       terminal.getByText(
-        'If retry keeps failing, save other work before reloading AXV.',
+        'Save, download or copy unsaved work before reloading.',
         { exact: true },
       ),
     ).toBeVisible();
