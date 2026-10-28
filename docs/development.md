@@ -98,6 +98,34 @@ Follow [content ownership](README.md#content-ownership) and review the diff for 
 
 Documentation-only changes do not require runtime suites. A script, configuration or generated runtime input change is not documentation-only merely because it supports the docs. Report the checks performed and any unresolved discrepancy in the task/PR, without adding a permanent audit page.
 
+### Online browser installation acceptance
+
+The [installation workflow](startup.md#browser-installation) targets desktop Chrome/Edge and physical iPhone Safari through the existing Tailscale HTTPS listener. Use current stable browser versions and record the actual OS/browser version in the task or PR. [Project status](../README.md#project-status) owns completed and pending platform claims. A Playwright browser, mobile viewport or simulated standalone media query does not establish OS installation or physical-device acceptance.
+
+| Scenario | Automated coverage | Actual installation/device check |
+| --- | --- | --- |
+| Install | Served HTML/manifest fields, MIME, embedded PNG dimensions, access checks and absence of service worker registration | Browser menu, OS icon, icon cropping and standalone window; iPhone Share workflow |
+| Online reopen | Ordinary bootstrap and unchanged manifest identity across service restarts | Cold launch and existing-window activation from the installed icon; Tailscale HTTPS access |
+| Authorization expires | Rejected requests remain visible without discarding drafts; remote `/api/runtime` stays denied | Independent authorized device, revoke/restore access; installed authentication container behavior |
+| Network loss | Failed saves remain dirty; local draft download succeeds without API access; no request replay | Disconnect/reconnect Wi-Fi or Tailscale, lock screen, background suspension and system termination |
+| Upgrade | Old module failure retains other mounted editors and local Retry; fresh navigation uses current assets | Run production A, leave a dirty editor open, replace with production B at the same address/database with different asset hashes; verify no forced refresh and explicit new-page loading |
+| Database/target changes | Matching document IDs/revisions in a replacement store cannot accept stale operations; no substituted run/project/task | Restart an isolated profile and switch databases explicitly while an installed window remains open |
+| Multiple windows | Same-context and independent-context drafts, copied sessionStorage, revision conflict, unavailable storage and client-ID initialization | Tab plus installed window, independent profiles and repeated installation; record actual clientId/layout/draft sharing |
+
+Use separate production executables and profiles under the [test root](#test-isolation-and-diagnostics) for upgrade and database-switch checks; stop only their owned processes before switching. Do not reset a live store. Preserve the old page, recovery records and original execution identifiers while observing failure. If devices or accounts are unavailable, mark the corresponding cases pending. Do not substitute ordinary Safari navigation or fixture authorization for installed iPhone/Tailscale acceptance.
+
+The reproducible Chromium online-reopen harness accepts two retained production executables and their matching bundle reports. The builds must have different Terminal feature hashes, so an old page actually requests an absent old module after the service is replaced:
+
+```sh
+node scripts/verify-online-reopen.mjs \
+  --before .data/test/build-a/axv --before-report .data/test/build-a/dashboard-bundle.json \
+  --after .data/test/build-b/axv --after-report .data/test/build-b/dashboard-bundle.json
+```
+
+It copies both binaries, launches an isolated profile, leaves a dirty document open while restarting at the same address and database, checks the old module error and a fresh page, then replaces only its stopped test database with a new store containing the same document ID/revision. It checks both stores and the original browser draft, local draft download, and persistent protection after the original database returns. The report and screenshots remain in a printed `reopen-evidence-*` directory under the test root; runtime profiles are cleaned up. Retain each binary's source revision and build report when preparing the inputs. This browser harness does not establish OS installation, iPhone storage sharing or remote authorization.
+
+The original AXV mark lives in [`public/favicon.svg`](../apps/dashboard/public/favicon.svg), shared by the browser tab, Welcome and About. Run `node scripts/render-install-icons.mjs` with the pinned Playwright Chromium installed to regenerate its 192/512 installation PNGs and 180 Apple touch icon from the same source. The renderer uses an isolated browser profile under the test root and rasterizes the vector through canvas; these PNGs are application source assets. Review their appearance at small sizes and under platform icon masks. No external artwork is bundled.
+
 ### Focused checks
 
 Guest protocol, image validation, SSH registration and service request/terminal behavior can be checked without a VM:

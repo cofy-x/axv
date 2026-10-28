@@ -1,3 +1,4 @@
+import { desktopDatabase } from '../../shared/api/desktop';
 import { useEffect, useRef, useState } from 'react';
 import { documentsAPI } from '../../filesystem/documents';
 import type { DocumentSnapshotInfo } from '../../filesystem/documents';
@@ -104,6 +105,7 @@ export async function resolveSavedVersion(
     throw new Error(
       'The captured version does not match the reviewed document.',
     );
+  desktopDatabase.assertUnchanged();
   captured.set(key, snapshot);
   return snapshot;
 }
@@ -121,20 +123,20 @@ export function useSavedVersion(entryId: string, refreshKey = 0) {
 
   useEffect(() => {
     let current = true;
-    void loadSavedVersions(entryId).then(
-      (data) => {
+    void loadSavedVersions(entryId)
+      .then((data) => {
+        desktopDatabase.assertUnchanged();
         if (current)
           setState((previous) => loadedSavedVersion(scope, previous, data));
-      },
-      (error: unknown) => {
+      })
+      .catch((error: unknown) => {
         if (current)
           setState((previous) => ({
             ...scopedSavedVersion(scope, previous),
             loading: false,
             error: error instanceof Error ? error.message : String(error),
           }));
-      },
-    );
+      });
     return () => {
       current = false;
     };

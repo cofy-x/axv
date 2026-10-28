@@ -1,7 +1,8 @@
+import { desktopDatabase } from '../../shared/api/desktop';
 import { useCallback, useRef, useState } from 'react';
 import { Button, Field, IconButton, Select, Tabs } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
-import { useResource } from '../../shared/api/useResource';
+import { useDesktopResource as useResource } from '../../shared/api/useDesktopResource';
 import { RequestIdentity } from '../../shared/api/request-identity';
 import { projectsAPI } from '../project-files/api';
 import { projectLabel } from '../project-files/presentation';
@@ -227,6 +228,7 @@ export function DocumentWorkflow({ window, desktop }: AppWindowProps) {
                       requestId,
                       snapshotIds,
                     );
+                    desktopDatabase.assertUnchanged();
                     if (
                       batch.status !== 'unknown' &&
                       !attachRequest.current.complete(requestId)
@@ -270,6 +272,7 @@ export function DocumentWorkflow({ window, desktop }: AppWindowProps) {
                       ...payload,
                       requestId,
                     });
+                    desktopDatabase.assertUnchanged();
                     if (!exportRequest.current.complete(requestId))
                       setError(
                         'The export succeeded, but its retry identity could not be cleared in this browser.',

@@ -89,9 +89,7 @@ describe('authorization failures preserve the current desktop', () => {
       ).rejects.toMatchObject({
         status: 401,
         code: 'authentication_required',
-        message: expect.stringContaining(
-          'Keep this desktop open to preserve drafts',
-        ),
+        message: 'Authorization is required. Restore access, then retry.',
       });
       expect(fetch).toHaveBeenCalledTimes(1);
     },

@@ -1,6 +1,7 @@
 import { useState, useSyncExternalStore } from 'react';
 import { Button, Select } from '@cofy-x/axv-nextstep';
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
+import { desktopDatabase } from '../../shared/api/desktop';
 import { documentsAPI } from '../../filesystem/documents';
 import type { DocumentLink, DocumentTarget } from '../../filesystem/documents';
 import { computeStore } from '../machines/compute-store';
@@ -101,6 +102,7 @@ export function DocumentDetails({
                   onClick={() =>
                     void perform(async () => {
                       await documentsAPI.unlink(link.id);
+                      desktopDatabase.assertUnchanged();
                       onRefresh();
                       setFeedback('Link removed.');
                     })
@@ -140,6 +142,7 @@ export function DocumentDetails({
                   )?.value;
                   if (!value) throw new Error('Choose an available target.');
                   await documentsAPI.link(entryId, value);
+                  desktopDatabase.assertUnchanged();
                   onRefresh();
                   setFeedback('Link added.');
                 })

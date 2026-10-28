@@ -8,7 +8,7 @@ Codex runs the official CLI as the desktop service's host user. Its persistent P
 
 The [local access rules](README.md#access-and-identity-boundaries) apply before dependency probes, filesystem access or process creation. Responses use `Cache-Control: no-store`. JSON writes require `Content-Type: application/json`, one object with no unknown fields, and at most **16 KiB**.
 
-Create and resume optionally accept `X-AXV-Database-ID`. The VM-project interface supplies the desktop identity captured with its pending request. A mismatch returns `409 database_changed` before replay lookup, environment verification, directory access or run reservation. The original pending request must be retained: it may already have committed in the previous store. Changing a browser namespace does not authorize replay into another desktop database.
+Every projects, sessions and run request requires the [captured desktop database identity](desktop.md#database-identity-and-local-recovery). `/info` remains an unbound capability probe. HTTP clients supply `X-AXV-Database-ID`; browser terminal WebSockets supply `databaseId` in the query instead. The guard runs after access checks and before replay lookup, environment verification, directory access, attachment or run reservation. The original pending request must be retained after a database mismatch: it may already have committed in the previous store. Changing a browser namespace does not authorize replay into another desktop database. Existing run and disconnect lifetimes are unchanged.
 
 ## Routes
 
@@ -54,7 +54,7 @@ Create and resume optionally accept `X-AXV-Database-ID`. The VM-project interfac
 - `POST /api/host/codex/sessions/:id/runs/:runId/end`
   - Response: `{ session }`.
 
-- `GET /api/host/codex/sessions/:id/runs/:runId/terminal?cols=80&rows=24`
+- `GET /api/host/codex/sessions/:id/runs/:runId/terminal?cols=80&rows=24&databaseId=<captured-id>`
   - Request: WebSocket upgrade.
   - Response: Terminal byte and control frames.
 

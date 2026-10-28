@@ -13,12 +13,13 @@ import (
 
 	"github.com/cofy-x/axv/apps/server/internal/codex"
 	"github.com/cofy-x/axv/apps/server/internal/codex/runner"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 	"github.com/cofy-x/axv/apps/server/internal/jsonfile"
 	"github.com/cofy-x/axv/apps/server/internal/storage"
 )
 
 func TestActivityReviewChecksAccessAndStrictInput(t *testing.T) {
-	handler, _ := testHandler(t)
+	handler, manager := testHandler(t)
 	mux := http.NewServeMux()
 	handler.Register(mux)
 	for _, tc := range []struct {
@@ -37,6 +38,7 @@ func TestActivityReviewChecksAccessAndStrictInput(t *testing.T) {
 			r := httptest.NewRequest("POST", "/api/host/codex/sessions/missing/runs/original/activity/review", strings.NewReader(tc.body))
 			r.RemoteAddr, r.Host = "127.0.0.1:3456", "localhost:3001"
 			r.Header.Set("Content-Type", "application/json")
+			r.Header.Set(httpaccess.DatabaseIdentityHeader, manager.DatabaseID())
 			if tc.origin != "" {
 				r.Header.Set("Origin", tc.origin)
 			}
@@ -106,6 +108,7 @@ func TestActivitySuccessfulTurnRejectsDismissalWithoutChangingExistingRecord(t *
 	r := httptest.NewRequest("POST", "/api/host/codex/sessions/"+run.ID+"/runs/"+run.RunID+"/activity/review", strings.NewReader(`{"eventId":"`+event+`"}`))
 	r.RemoteAddr, r.Host = "127.0.0.1:3456", "localhost:3001"
 	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set(httpaccess.DatabaseIdentityHeader, manager.DatabaseID())
 	r.Header.Set("Origin", "http://localhost:3001")
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, r)

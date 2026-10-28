@@ -6,11 +6,15 @@ Use this guide for UI changes. It owns enduring presentation, interaction and ac
 
 Use **AXV** for the visible product name and `axv` for technical identifiers. The tagline and name interpretation belong in [product identity](product.md#identity). Welcome, About and page metadata describe the enduring product purpose, without release notes, validation matrices or roadmap lists. Keep their claims consistent with [project status](../README.md#project-status), which owns those changing details.
 
-Use direct action labels, identify the execution target and explain capability limits where they affect a choice. Product branding belongs in the dashboard and public assets; generic desktop controls remain reusable.
+Use direct action labels, identify the execution target and explain capability limits where they affect a choice.
+
+AXV uses an [original AX monogram](../apps/dashboard/public/favicon.svg) across installation icons, the favicon, Welcome and About; the product name remains AXV, and small sizes may use optical adjustments. Product branding belongs in the dashboard and public assets; generic desktop icons and controls remain reusable. The standard standalone browser frame uses a theme color matching the desktop status bar, retaining native controls without Window Controls Overlay.
 
 Keep buttons brief, usually one or two words. Use surrounding context instead of repeating object names. Put consequences in nearby guidance or confirmations, preserving execution targets and lifecycle distinctions.
 
 Show guidance when it explains a restriction, progress or recovery. Omit routine instructions already clear from the visible controls.
+
+State shared failures once at the desktop level. An affected editor shows its available recovery action instead of repeating the global explanation. Keep install steps in Welcome and feature details in their owning views; About describes enduring purpose and storage ownership.
 
 Keep frequent actions visible and group secondary commands in one accessible menu. Name action menus for their view or selected target, including a short identifier when names can repeat. Use the shared icon button for familiar actions such as copy, paste and paging; keep lifecycle and destructive actions clearly named. Icon buttons retain accessible names, tooltips, focus feedback and touch hit areas.
 
@@ -64,6 +68,8 @@ Empty, loading, failed and unsaved states are part of the design. Preserve visib
 The first HTML response presents a gray startup panel on the default slate desktop background, without waiting for application scripts or styles. An original retro computer illustration uses a blinking screen cursor to suggest boot activity; stop it on failure or when JavaScript is disabled, and respect reduced motion. Keep its branding, typography and geometry stable while opening the workspace. Name the current loading stage, show actionable failures and JavaScript requirements, and enter the desktop as soon as it is ready; do not add artificial progress or a minimum splash duration.
 
 Load application content inside its existing window, with a concise accessible status and a local Retry action on failure. Keep diagnostics expandable and long errors wrapping on narrow screens. Loading and retries must preserve other windows, drafts and sessions; they must not queue input, steal focus or automatically reload the desktop. Keep unavailable owner commands disabled until the original view registers them.
+
+Browser installation uses the ordinary desktop and its existing safe-area layout. Keep installation instructions in Welcome without prompting over active work. Updates never replace an open desktop automatically. Draft downloads belong to the editor that owns the text and remain distinct from saved-document export; installing or reopening must not silently transfer browser drafts.
 
 Use shared Tabs for sections within a panel and ButtonGroup for related mode or filter buttons. Tabs join the selected section to its content surface; button groups use a shared pressed treatment. Keep each control's existing state and focus behavior, and retain panel contents when switching would otherwise discard work.
 

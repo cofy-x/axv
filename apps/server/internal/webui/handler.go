@@ -41,6 +41,10 @@ func fromFS(files fs.FS) http.Handler {
 			static.ServeHTTP(response, copy)
 			return
 		}
+		if info.Mode().IsRegular() && path.Ext(name) == ".webmanifest" {
+			// Do not depend on the deployment host's MIME database.
+			w.Header().Set("Content-Type", "application/manifest+json")
+		}
 		if info.Mode().IsRegular() && r.URL.Path == "/"+name && fingerprintedAsset.MatchString(name) {
 			response.cacheControl = "private, max-age=31536000, immutable"
 		}

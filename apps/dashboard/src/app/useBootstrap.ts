@@ -1,34 +1,43 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ConnectionStatus } from '../shared/api/connection';
+import { desktopDatabase } from '../shared/api/desktop';
 import { desktopApi } from './api';
 import type { Bootstrap } from './api';
+import { initializeClientId } from './client-identity';
 
-export function useBootstrap(
-  onLoaded: (result: Bootstrap) => void,
-  onConnectionChange: (status: ConnectionStatus) => void,
-) {
-  const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
+export interface ReadyDesktop {
+  bootstrap: Bootstrap;
+  clientId: string;
+}
+
+export function useBootstrap() {
+  const [ready, setReady] = useState<ReadyDesktop | null>(null);
   const [bootError, setBootError] = useState('');
   const generation = useRef(0);
+  const loaded = useRef(false);
   const boot = useCallback(async () => {
+    if (loaded.current) return;
     const current = ++generation.current;
     setBootError('');
-    onConnectionChange('connecting');
     try {
-      const result = await desktopApi.bootstrap();
+      const clientId = await initializeClientId();
       if (current !== generation.current) return;
-      onLoaded(result);
-      setBootstrap(result);
-      onConnectionChange('connected');
+      const result = await desktopApi.bootstrap(clientId);
+      if (current !== generation.current) return;
+      desktopDatabase.bind(result.databaseId);
+      loaded.current = true;
+      setReady({ bootstrap: result, clientId });
     } catch (error) {
       if (current === generation.current) {
         setBootError(error instanceof Error ? error.message : String(error));
-        onConnectionChange('offline');
       }
     }
-  }, [onLoaded, onConnectionChange]);
+  }, []);
+  const cancelBoot = useCallback(() => {
+    generation.current++;
+  }, []);
   useEffect(() => {
     void boot();
-  }, [boot]);
-  return { bootstrap, bootError, boot };
+    return cancelBoot;
+  }, [boot, cancelBoot]);
+  return { ready, bootError, boot };
 }

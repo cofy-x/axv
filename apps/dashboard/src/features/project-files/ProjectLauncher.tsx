@@ -1,3 +1,4 @@
+import { desktopDatabase } from '../../shared/api/desktop';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Button,
@@ -7,7 +8,7 @@ import {
   Tabs,
 } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
-import { useResource } from '../../shared/api/useResource';
+import { useDesktopResource as useResource } from '../../shared/api/useDesktopResource';
 import { projectsAPI } from './api';
 import { projectLabel } from './presentation';
 import { HostFolderChooser } from './HostFolderChooser';
@@ -52,6 +53,7 @@ export function ProjectLauncher(props: AppWindowProps) {
     setError('');
     try {
       const { project } = await projectsAPI.register(root.trim());
+      desktopDatabase.assertUnchanged();
       if (!mounted.current) return;
       const projects = [
         ...(result.data?.projects || []).filter(

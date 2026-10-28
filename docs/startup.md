@@ -47,6 +47,21 @@ Follow the printed PATH guidance if the directory is missing or another `axv` ta
 
 Replacing the installed command or selecting a new archive directory on `PATH` does not interrupt live services. Both foreground and background desktops capture immutable executable copies under `AXV_HOME/bin` for their host and Codex children. Reopening with `axv` retains the current service version and settings. Use `axv daemon restart` to apply the installed desktop version; explicit stop/start updates both managed desktop and host services. Existing Codex runs keep their original executable and session identity.
 
+### Browser installation
+
+The browser installation opens AXV in a standalone window using its existing online service. Install from the production desktop address you intend to keep: a stable loopback address on the deployment machine, or the enrolled [Tailscale HTTPS address](#remote-access) on another device. A Vite development address can change between launches. On a phone, `localhost` refers to that phone, not the AXV host.
+
+- **Desktop Chrome or Edge:** Open AXV, then use the browser's install action in its address bar or menu. Browser engagement rules can delay an install suggestion; AXV does not depend on an automatic prompt.
+- **iPhone Safari through Tailscale:** Connect the phone with the authorized Tailscale account, open AXV's HTTPS address in Safari, then choose **Share → Add to Home Screen**. Keep **Open as Web App** enabled when that option appears.
+
+These are the initial acceptance targets; [project status](../README.md#project-status) records completed and pending device validation. Android, iPadOS, macOS Safari and Firefox installation are outside the initial acceptance scope. Their normal browser access remains separate from installation support.
+
+Installation does not start the AXV service, establish remote authorization or copy another window's unsaved work. The service must remain running and reachable; a cold open while disconnected may show the browser's network error. Reopening uses the normal authentication and bootstrap paths, and remote access still cannot use `/api/runtime`. [Using the installed window](usage.md#installed-window-and-updates) explains updates, drafts and session lifetimes.
+
+The [manifest](../apps/dashboard/public/manifest.webmanifest) keeps `id`, `start_url` and `scope` fixed at `/`, independently of `instanceId`, `launchId`, database and browser client identity. Changing the scheme, hostname or port changes the browser origin and may create a separate installation and data container. Removing the icon, clearing browser data, withdrawing remote access and stopping the service are separate operations; clearing site data can remove unsaved browser drafts.
+
+No service worker is needed for this online entry: current [Chrome install criteria](https://web.dev/articles/install-criteria), [Edge's optional service worker](https://learn.microsoft.com/en-us/microsoft-edge/progressive-web-apps/how-to/#a-service-worker-is-optional) and [WebKit's Home Screen behavior](https://webkit.org/blog/17333/webkit-features-in-safari-26-0/#every-site-can-be-a-web-app-on-ios-and-ipados) support installation without one. AXV adds no offline cache for protected HTML, APIs, documents or sessions.
+
 ## Uninstallation
 
 Use the same operating-system account and `AXV_HOME` as the workstation you intend to remove. Other profiles and independently supervised services have separate lifetimes.

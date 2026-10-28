@@ -4,7 +4,7 @@
 
 These local routes address explicitly registered host projects and immutable document snapshots. [Compute project routes](compute.md#vm-projects) separately address VM project volumes; neither replaces the [virtual-file API](files.md). [Document storage](../storage.md) owns persistence and transaction mechanisms; [Host Codex](host-codex.md) owns attaching a snapshot to an agent conversation.
 
-All routes follow the shared [local-access policy](README.md#access-and-identity-boundaries), including Origin on mutations. JSON requests contain one object with no unknown fields, use `application/json`, and are limited to **64 KiB**. Responses disable caching and MIME sniffing.
+All routes follow the shared [local-access policy](README.md#access-and-identity-boundaries), including Origin on mutations. All project and document-exchange routes require the [captured desktop database identity](desktop.md#database-identity-and-local-recovery) header, including host-file reads and downloads. The database is checked before resolving a registered root or performing any copy; a query parameter is not accepted as an alternative. JSON requests contain one object with no unknown fields, use `application/json`, and are limited to **64 KiB**. Responses disable caching and MIME sniffing.
 
 ## Registered projects
 

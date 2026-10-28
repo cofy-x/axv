@@ -1,6 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { APIError } from '../../shared/api/http';
+import { createDesktopDatabase } from '../../shared/api/desktop';
 import { createNoteDocument } from './note-document';
+import type { DraftRemoval } from '../../shared/drafts/storage';
+
+afterEach(() => vi.unstubAllGlobals());
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -17,6 +21,265 @@ function stored(content: string, revision: number) {
 }
 
 describe('note document lifecycle', () => {
+  it('keeps its draft when database replacement wins the save acknowledgement microtask', async () => {
+    const database = createDesktopDatabase();
+    database.bind('original');
+    const drafts = {
+      read: vi.fn().mockResolvedValue(undefined),
+      write: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn().mockResolvedValue(undefined),
+    };
+    const document = createNoteDocument(
+      {
+        read: async () => stored('Saved original', 1),
+        write: () => database.request('/save', { method: 'PATCH' }),
+        refresh: async () => {},
+        assertCurrent: database.assertActive,
+      },
+      drafts,
+    );
+    await document.load();
+    document.edit('Keep this draft');
+    await document.flushDraft();
+    vi.stubGlobal('fetch', async (path: string) =>
+      path.endsWith('/save')
+        ? {
+            ok: true,
+            json: async () => {
+              await Promise.resolve();
+              return { entry: { revision: 2 } };
+            },
+          }
+        : {
+            ok: false,
+            status: 409,
+            json: async () => ({ code: 'database_changed', error: 'Changed' }),
+          },
+    );
+    const saving = document.save();
+    await expect(database.request('/entries')).rejects.toMatchObject({
+      code: 'database_changed',
+    });
+    await expect(saving).resolves.toBe(false);
+    await document.flushDraft();
+    expect(document.getSnapshot()).toMatchObject({
+      text: 'Keep this draft',
+      saved: 'Saved original',
+      revision: 1,
+      dirty: true,
+      error: 'Changed',
+    });
+    expect(drafts.remove).not.toHaveBeenCalled();
+  });
+
+  it('rejects a late reload before removing the recovery copy or replacing typing', async () => {
+    let changed = false;
+    const draft = { text: 'Draft', saved: 'Saved', baseRevision: 1 };
+    const local = {
+      read: vi.fn().mockResolvedValue(draft),
+      write: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn().mockResolvedValue(undefined),
+    };
+    const read = vi.fn().mockResolvedValue(stored('Saved', 1));
+    const document = createNoteDocument(
+      {
+        read,
+        write: vi.fn(),
+        refresh: async () => {},
+        assertCurrent: () => {
+          if (changed) throw new Error('Changed');
+        },
+      },
+      local,
+    );
+    await document.load();
+    document.restoreDraft();
+    await document.flushDraft();
+    read.mockImplementationOnce(async () => {
+      queueMicrotask(() => {
+        changed = true;
+      });
+      return stored('Late server value', 2);
+    });
+    await expect(document.reload()).rejects.toThrow('Changed');
+    expect(document.getSnapshot()).toMatchObject({
+      text: 'Draft',
+      dirty: true,
+      revision: 1,
+    });
+    expect(local.remove).not.toHaveBeenCalled();
+  });
+
+  it('restores the exact draft when replacement wins after reload cleanup commits', async () => {
+    let changed = false;
+    const original = { text: 'Draft', saved: 'Saved', baseRevision: 1 };
+    let record: typeof original | undefined = original;
+    const removing = deferred<DraftRemoval>();
+    const started = deferred<void>();
+    const document = createNoteDocument(
+      {
+        read: async () => stored('Saved', 1),
+        write: vi.fn(),
+        refresh: async () => {},
+        assertCurrent: () => {
+          if (changed) throw new Error('Changed');
+        },
+      },
+      {
+        read: async () => record,
+        write: async (draft) => {
+          record = draft;
+        },
+        remove: async () => {
+          record = undefined;
+          started.resolve();
+          return removing.promise;
+        },
+      },
+    );
+    await document.load();
+    document.restoreDraft();
+    await document.flushDraft();
+    const reload = document.reload();
+    await started.promise;
+    changed = true;
+    removing.resolve({
+      restore: async () => {
+        record ??= original;
+      },
+    });
+    await expect(reload).rejects.toThrow('Changed');
+    expect(record).toEqual(original);
+    expect(document.getSnapshot()).toMatchObject({
+      text: 'Draft',
+      saved: 'Saved',
+      dirty: true,
+      revision: 1,
+    });
+  });
+
+  it('preserves newer typing when guarded save cleanup loses its acknowledgement', async () => {
+    let changed = false;
+    const original = { text: 'First draft', saved: 'Saved', baseRevision: 1 };
+    let record: typeof original | undefined;
+    const removing = deferred<DraftRemoval>();
+    const started = deferred<void>();
+    const document = createNoteDocument(
+      {
+        read: async () => stored('Saved', 1),
+        write: async () => ({ entry: { revision: 2 } }),
+        refresh: async () => {},
+        assertCurrent: () => {
+          if (changed) throw new Error('Changed');
+        },
+      },
+      {
+        read: async () => record,
+        write: async (draft) => {
+          record = draft;
+        },
+        remove: async () => {
+          record = undefined;
+          started.resolve();
+          return removing.promise;
+        },
+      },
+    );
+    await document.load();
+    document.edit(original.text);
+    await document.flushDraft();
+    const save = document.save();
+    await started.promise;
+    document.edit('Newer typing');
+    changed = true;
+    removing.resolve({
+      restore: async () => {
+        record ??= original;
+      },
+    });
+    await save;
+    await document.flushDraft();
+    expect(record).toEqual({
+      text: 'Newer typing',
+      saved: 'First draft',
+      baseRevision: 2,
+    });
+    expect(document.getSnapshot()).toMatchObject({
+      text: 'Newer typing',
+      dirty: true,
+    });
+  });
+
+  it.each(['replacement', 'cancel', 'restore failure'])(
+    'preserves recovery when %s wins between cleanup and reload state commit',
+    async (failure) => {
+      let changed = false;
+      let restoreFailed = false;
+      const original = { text: 'Draft', saved: 'Saved', baseRevision: 1 };
+      let record: typeof original | undefined = original;
+      const document = createNoteDocument(
+        {
+          read: async () => stored('Saved', 1),
+          write: vi.fn(),
+          refresh: async () => {},
+          assertCurrent: () => {
+            if (changed) throw new Error('Changed');
+          },
+        },
+        {
+          read: async () => record,
+          write: async (draft) => {
+            if (restoreFailed) throw new Error('Storage unavailable');
+            record = draft;
+          },
+          remove: async () => {
+            record = undefined;
+            return {
+              restore: async () => {
+                if (failure === 'restore failure') {
+                  restoreFailed = true;
+                  throw new Error('Storage unavailable');
+                }
+                record ??= original;
+              },
+            };
+          },
+        },
+      );
+      await document.load();
+      document.restoreDraft();
+      await document.flushDraft();
+      document.subscribe(() => {
+        const snapshot = document.getSnapshot();
+        if (snapshot.resolvingRecovery && snapshot.localStatus === '')
+          queueMicrotask(() => {
+            if (failure === 'cancel') document.cancelLoad();
+            else changed = true;
+          });
+      });
+      const reload = document.reload();
+      if (failure === 'cancel') await reload;
+      else
+        await expect(reload).rejects.toThrow(
+          failure === 'restore failure' ? 'Storage unavailable' : 'Changed',
+        );
+      if (failure === 'restore failure') {
+        await document.flushDraft();
+        expect(record).toBeUndefined();
+        expect(document.getSnapshot().localStatus).toContain('unavailable');
+        restoreFailed = false;
+        await document.flushDraft();
+      }
+      expect(record).toEqual(original);
+      expect(document.getSnapshot()).toMatchObject({
+        text: 'Draft',
+        saved: 'Saved',
+        dirty: true,
+        revision: 1,
+      });
+    },
+  );
+
   it('saves only the requested snapshot and leaves later typing dirty', async () => {
     const first = deferred<{ entry: { revision: number } }>();
     const write = vi

@@ -130,7 +130,7 @@ func TestShutdownInterruptsIncompleteRequestBody(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	_, err = fmt.Fprintf(conn, "POST /api/host/codex/sessions HTTP/1.1\r\nHost: %s\r\nOrigin: %s\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{", server.Listener.Addr(), server.URL)
+	_, err = fmt.Fprintf(conn, "POST /api/host/codex/sessions HTTP/1.1\r\nHost: %s\r\nOrigin: %s\r\nContent-Type: application/json\r\nX-AXV-Database-ID: %s\r\nContent-Length: 100\r\n\r\n{", server.Listener.Addr(), server.URL, m.databaseID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,6 +195,7 @@ func TestSlowRunInspectionDoesNotBlockMetadataOrAnotherRun(t *testing.T) {
 	client := &http.Client{Timeout: time.Second}
 	request, _ := http.NewRequest("POST", server.URL+"/api/host/codex/sessions/"+second.ID+"/runs/"+second.RunID+"/end", nil)
 	request.Header.Set("Origin", server.URL)
+	request.Header.Set("X-AXV-Database-ID", server.databaseID)
 	response, err := client.Do(request)
 	if err != nil {
 		t.Fatalf("another run was blocked by inspection: %v", err)
@@ -205,6 +206,7 @@ func TestSlowRunInspectionDoesNotBlockMetadataOrAnotherRun(t *testing.T) {
 	}
 	request, _ = http.NewRequest("PATCH", server.URL+"/api/host/codex/sessions/"+first.ID, strings.NewReader(`{"revision":1,"title":"metadata stays available"}`))
 	request.Header.Set("Origin", server.URL)
+	request.Header.Set("X-AXV-Database-ID", server.databaseID)
 	request.Header.Set("Content-Type", "application/json")
 	response, err = client.Do(request)
 	if err != nil {

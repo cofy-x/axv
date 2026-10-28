@@ -34,6 +34,28 @@ func TestAssetHandlerAndSPAFallback(t *testing.T) {
 	}
 }
 
+func TestManifestResponse(t *testing.T) {
+	content := `{"id":"/","start_url":"/"}`
+	h := fromFS(fstest.MapFS{"manifest.webmanifest": {Data: []byte(content)}})
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		t.Run(method, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, httptest.NewRequest(method, "/manifest.webmanifest", nil))
+			if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "application/manifest+json" || w.Header().Get("Cache-Control") != "no-cache" {
+				t.Fatalf("HTTP %d: %v", w.Code, w.Header())
+			}
+			if method == http.MethodGet && w.Body.String() != content || method == http.MethodHead && w.Body.Len() != 0 {
+				t.Fatalf("unexpected manifest body: %q", w.Body.String())
+			}
+		})
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/missing.webmanifest", nil))
+	if w.Code != http.StatusNotFound || w.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("missing manifest: HTTP %d: %v", w.Code, w.Header())
+	}
+}
+
 func TestCompressedAssetsPreserveContentAndHTTPMetadata(t *testing.T) {
 	modified := time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
 	for _, name := range []string{"assets/app.js", "assets/app.css"} {

@@ -67,9 +67,11 @@ export async function session(
   request: APIRequestContext,
   id: string,
   runId?: string,
+  databaseId?: string,
 ): Promise<CodexSession> {
   const response = await request.get(
     `/api/host/codex/sessions/${id}${runId ? `/runs/${runId}` : ''}`,
+    databaseId ? { headers: { 'X-AXV-Database-ID': databaseId } } : undefined,
   );
   expect(response.ok()).toBeTruthy();
   return (await response.json()).session;
@@ -252,6 +254,7 @@ async function createCodex(
         page.request,
         current.id,
         current.runId,
+        response.request().headers()['x-axv-database-id'],
       );
       return initialized.status === 'running' && !!initialized.conversationId;
     })

@@ -14,6 +14,7 @@ import (
 	"github.com/cofy-x/axv/apps/server/internal/codex"
 	codexhttp "github.com/cofy-x/axv/apps/server/internal/codex/httpapi"
 	computegateway "github.com/cofy-x/axv/apps/server/internal/compute/gateway"
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 	"github.com/cofy-x/axv/apps/server/internal/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/profile"
 	projectfileshttp "github.com/cofy-x/axv/apps/server/internal/projectfiles/httpapi"
@@ -73,6 +74,9 @@ func TestAuthenticatedRemoteDesktopSharesFeatureHandlers(t *testing.T) {
 			r.Header.Set("Origin", origin)
 		}
 		r.Header.Set("Content-Type", "application/json")
+		if strings.HasPrefix(path, "/api/") {
+			r.Header.Set(httpaccess.DatabaseIdentityHeader, manager.DatabaseID())
+		}
 		w := httptest.NewRecorder()
 		remote.ServeHTTP(w, r)
 		return w
@@ -81,6 +85,10 @@ func TestAuthenticatedRemoteDesktopSharesFeatureHandlers(t *testing.T) {
 		path, contains string
 	}{
 		{"/", "desktop UI"},
+		{"/manifest.webmanifest", "desktop UI"},
+		{"/icons/axv-192.png", "desktop UI"},
+		{"/icons/axv-512.png", "desktop UI"},
+		{"/icons/apple-touch-icon.png", "desktop UI"},
 		{"/api/health", `"status":"ok"`},
 		{"/api/bootstrap?clientId=remote-browser", `"databaseId"`},
 		{"/api/projects", `"projects"`},
@@ -115,6 +123,7 @@ func TestAuthenticatedRemoteDesktopSharesFeatureHandlers(t *testing.T) {
 	}
 	// The local listener immediately sees the same committed document.
 	r := httptest.NewRequest("GET", "/api/entries", nil)
+	r.Header.Set(httpaccess.DatabaseIdentityHeader, manager.DatabaseID())
 	r.Host, r.RemoteAddr = "localhost:3001", "127.0.0.1:12345"
 	local := httptest.NewRecorder()
 	shared.ServeHTTP(local, r)
@@ -122,9 +131,9 @@ func TestAuthenticatedRemoteDesktopSharesFeatureHandlers(t *testing.T) {
 		t.Fatalf("shared local document: HTTP %d: %s", local.Code, local.Body.String())
 	}
 	owner = "456"
-	for _, path := range []string{"/", "/assets/app.js", "/api/entries", "/api/terminal/info"} {
+	for _, path := range []string{"/", "/assets/app.js", "/manifest.webmanifest", "/icons/axv-192.png", "/icons/axv-512.png", "/icons/apple-touch-icon.png", "/api/entries", "/api/terminal/info"} {
 		w := request("GET", path, "", "")
-		if w.Code != http.StatusForbidden || strings.Contains(w.Body.String(), "saved remotely") {
+		if w.Code != http.StatusForbidden || strings.Contains(w.Body.String(), "saved remotely") || strings.Contains(w.Body.String(), "desktop UI") {
 			t.Fatalf("unauthorized %s: HTTP %d: %s", path, w.Code, w.Body.String())
 		}
 	}

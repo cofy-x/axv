@@ -8,10 +8,10 @@ export class APIError extends Error {
   }
 }
 
-export async function request<T>(
+export async function requestResponse(
   path: string,
   init: RequestInit = {},
-): Promise<T> {
+): Promise<Response> {
   const headers = new Headers(init.headers);
   if (!headers.has('X-Requested-With'))
     // Access returns 401 for expired AJAX authorization rather than an HTML
@@ -39,7 +39,7 @@ export async function request<T>(
       (code === 'cloudflare_unauthorized' || code === 'http_error')
     )
       throw new APIError(
-        'Authorization is required. Keep this desktop open to preserve drafts, sign in again in another tab, then retry.',
+        'Authorization is required. Restore access, then retry.',
         response.status,
         'authentication_required',
       );
@@ -51,5 +51,12 @@ export async function request<T>(
       code,
     );
   }
-  return response.json() as Promise<T>;
+  return response;
+}
+
+export async function request<T>(
+  path: string,
+  init: RequestInit = {},
+): Promise<T> {
+  return (await requestResponse(path, init)).json() as Promise<T>;
 }
