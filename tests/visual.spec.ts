@@ -45,7 +45,7 @@ for (const viewport of [
       files.getByRole('button', { name: /^Close / }),
     ).toBeInViewport();
     await expect(
-      page.getByRole('button', { name: /^Workspace 1:/ }),
+      page.getByRole('button', { name: 'Workspace menu', exact: true }),
     ).toBeInViewport();
     await capture('desktop-columns');
     await files

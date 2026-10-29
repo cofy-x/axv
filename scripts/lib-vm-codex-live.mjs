@@ -35,6 +35,7 @@ export async function verifyVMCodexLive({
   const progressPath = join(owned, 'progress.json');
   const progress = { provider: 'real-codex', projectId: project.id };
   let desktop;
+  let databaseId;
   let active;
   let terminal;
   let terminalFailure;
@@ -72,7 +73,13 @@ export async function verifyVMCodexLive({
   async function api(path, method = 'GET', body) {
     const response = await fetch(`${desktop.base}/api${path}`, {
       method,
-      headers: { Origin: desktop.base, 'Content-Type': 'application/json' },
+      headers: {
+        Origin: desktop.base,
+        'Content-Type': 'application/json',
+        ...(databaseId && path !== '/host/codex/info'
+          ? { 'X-AXV-Database-ID': databaseId }
+          : {}),
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.any(
         [cleaning ? undefined : signal, AbortSignal.timeout(30_000)].filter(
@@ -210,6 +217,7 @@ export async function verifyVMCodexLive({
       desktop.base,
     );
     url.protocol = 'ws:';
+    url.searchParams.set('databaseId', databaseId);
     terminal = new WebSocket(url, { headers: { Origin: desktop.base } });
     terminal.binaryType = 'arraybuffer';
     const decoder = new TextDecoder();
@@ -514,6 +522,9 @@ export async function verifyVMCodexLive({
         ADDR: '127.0.0.1:0',
       },
     });
+    databaseId = (await api('/bootstrap?clientId=vm-codex-live')).databaseId;
+    assert.equal(typeof databaseId, 'string');
+    assert.ok(databaseId);
     const info = await api('/host/codex/info');
     assert.ok(
       info.ready,

@@ -10,6 +10,9 @@ export default defineConfig({
     react(),
     dashboardBundlePlugin({
       root: repositoryRoot.replace(/\/$/, ''),
+      requiredStartupModules: [
+        fileURLToPath(new URL('./src/main.tsx', import.meta.url)),
+      ],
       budgetPath: fileURLToPath(
         new URL('../../scripts/dashboard-bundle-budget.json', import.meta.url),
       ),
@@ -17,13 +20,18 @@ export default defineConfig({
     }),
   ],
   build: {
+    rolldownOptions: {
+      output: { entryFileNames: 'assets/startup-[name]-[hash].js' },
+    },
     modulePreload: {
-      // WebKit retains failed entry preloads and can block an explicit retry.
-      // Keep dependency preloads; let import() fetch the dynamic entry itself.
-      resolveDependencies: (filename, dependencies, { hostType }) =>
-        hostType === 'js'
-          ? dependencies.filter((dependency) => dependency !== filename)
-          : dependencies,
+      // WebKit retains failed module preloads across explicit startup reloads.
+      // Identify the loader by its output prefix; Vite retains CSS separately.
+      resolveDependencies: (filename, dependencies, { hostType, hostId }) =>
+        hostType !== 'js'
+          ? dependencies
+          : hostId.startsWith('assets/startup-')
+            ? dependencies.filter((dependency) => dependency.endsWith('.css'))
+            : dependencies.filter((dependency) => dependency !== filename),
     },
   },
   resolve: { dedupe: ['react', 'react-dom'] },

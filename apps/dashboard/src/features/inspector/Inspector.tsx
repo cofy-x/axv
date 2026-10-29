@@ -1,3 +1,4 @@
+import { desktopDatabase } from '../../shared/api/desktop';
 import { useEffect, useRef, useState } from 'react';
 import { Button, IconButton, PixelIcon, Select } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps, MenuItem } from '@cofy-x/axv-nextstep';
@@ -81,6 +82,7 @@ export function Inspector({ window, desktop }: AppWindowProps) {
     void filesystemApi
       .entry(entryId)
       .then((result) => {
+        desktopDatabase.assertUnchanged();
         if (active)
           setPreview({
             id: entryId,

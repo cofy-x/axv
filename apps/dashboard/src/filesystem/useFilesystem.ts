@@ -1,13 +1,15 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { ConnectionStatus } from '../shared/api/connection';
+import { desktopDatabase } from '../shared/api/desktop';
 import { filesystemApi } from './api';
 import type { FilesystemData } from './context';
 import type { Entry } from './types';
 
 export function useFilesystem(
   onConnectionChange: (status: ConnectionStatus) => void,
+  initialEntries: Entry[] = [],
 ) {
-  const [entries, setEntries] = useState<Entry[]>([]);
+  const [entries, setEntries] = useState<Entry[]>(initialEntries);
   const [selectionWindowId, setSelectionWindowId] = useState<string | null>(
     null,
   );
@@ -21,6 +23,7 @@ export function useFilesystem(
     const current = ++generation.current;
     try {
       const result = await filesystemApi.entries();
+      desktopDatabase.assertActive();
       if (current === generation.current) setEntries(result.entries);
       onConnectionChange('connected');
     } catch (error) {
@@ -35,6 +38,7 @@ export function useFilesystem(
       selections,
       selectionWindowId,
       metadataChanged: (entry, revision) => {
+        desktopDatabase.assertActive();
         for (const listener of metadataListeners) listener(entry, revision);
       },
       onMetadataChanged: (listener) => {

@@ -298,6 +298,10 @@ export function MenuOverlay({
                 <button
                   type="button"
                   aria-label={`Pin ${request.options.title} menu`}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ')
+                      event.stopPropagation();
+                  }}
                   onClick={() => pin(positions[0] ?? request.point)}
                 >
                   ◆

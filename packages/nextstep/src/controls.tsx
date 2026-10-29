@@ -390,6 +390,52 @@ type ButtonIcon =
   | 'page-up'
   | 'page-down';
 
+/** Original monochrome drawings shared by window chrome and small controls. */
+export function WindowControlIcon({
+  icon,
+}: {
+  icon:
+    | 'minimize'
+    | 'menu'
+    | 'shade'
+    | 'unshade'
+    | 'maximize'
+    | 'restore'
+    | 'close';
+}) {
+  return (
+    <svg
+      className="ns-control-icon"
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinejoin="miter"
+      aria-hidden="true"
+      focusable="false"
+    >
+      {icon === 'minimize' ? (
+        <>
+          <path d="M3 3h10v10H3z" />
+          <path d="M5 9h6v2H5z" fill="currentColor" stroke="none" />
+        </>
+      ) : icon === 'menu' || icon === 'unshade' ? (
+        <path d="m4 6 4 4 4-4" />
+      ) : icon === 'shade' ? (
+        <path d="m4 10 4-4 4 4" />
+      ) : icon === 'maximize' ? (
+        <path d="M3 3h10v10H3zM3 5h10" />
+      ) : icon === 'restore' ? (
+        <path d="M6 6h7v7H6zM3 10V3h7v3" />
+      ) : (
+        <path d="m4 4 8 8M12 4l-8 8" />
+      )}
+    </svg>
+  );
+}
+
 export function IconButton({
   icon,
   label,

@@ -41,10 +41,13 @@ export function Appearance({ desktop }: AppWindowProps) {
               <button
                 key={wallpaper}
                 aria-pressed={data.preferences.wallpaper === wallpaper}
-                className={`wallpaper-swatch ${wallpaper} ${data.preferences.wallpaper === wallpaper ? 'chosen' : ''}`}
+                className={`wallpaper-swatch ${data.preferences.wallpaper === wallpaper ? 'chosen' : ''}`}
                 onClick={() => update({ wallpaper })}
               >
-                <span className="swatch-preview" />
+                <span
+                  className={`swatch-preview ns-wallpaper-${wallpaper}`}
+                  aria-hidden="true"
+                />
                 <span>
                   {wallpaper === 'slate'
                     ? 'Slate'

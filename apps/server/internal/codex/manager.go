@@ -108,3 +108,6 @@ func (m *Manager) begin(parent context.Context) (context.Context, func(), error)
 	stop := context.AfterFunc(m.ctx, cancel)
 	return ctx, func() { stop(); cancel(); m.wg.Done() }, nil
 }
+
+// DatabaseID is the immutable desktop store identity captured at startup.
+func (m *Manager) DatabaseID() string { return m.databaseID }

@@ -1,3 +1,4 @@
+import { desktopDatabase } from '../../shared/api/desktop';
 import type { CodexSessionRecord } from './api';
 
 type Listener = (session: CodexSessionRecord) => void;
@@ -23,6 +24,7 @@ export function mergeSessionMetadata(
 }
 
 export function publishSessionMetadata(session: CodexSessionRecord) {
+  desktopDatabase.assertUnchanged();
   for (const listener of listeners) listener(session);
 }
 

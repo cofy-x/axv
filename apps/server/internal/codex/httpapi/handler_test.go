@@ -63,7 +63,7 @@ func TestCloseDrainsIncompleteRequestWithoutStoppingService(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	if _, err := fmt.Fprintf(conn, "POST /api/host/codex/sessions HTTP/1.1\r\nHost: %s\r\nOrigin: %s\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{", server.Listener.Addr(), server.URL); err != nil {
+	if _, err := fmt.Fprintf(conn, "POST /api/host/codex/sessions HTTP/1.1\r\nHost: %s\r\nOrigin: %s\r\nContent-Type: application/json\r\nX-AXV-Database-ID: %s\r\nContent-Length: 100\r\n\r\n{", server.Listener.Addr(), server.URL, manager.DatabaseID()); err != nil {
 		t.Fatal(err)
 	}
 	<-entered

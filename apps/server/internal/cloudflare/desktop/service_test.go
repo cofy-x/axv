@@ -104,9 +104,18 @@ func TestEveryRequestRequiresJWTAndPreservesActualTransport(t *testing.T) {
 	}{
 		{name: "UI without token", path: "/", want: 401},
 		{name: "asset without token", path: "/assets/app.js", want: 401},
+		{name: "manifest without token", path: "/manifest.webmanifest", want: 401},
+		{name: "small icon without token", path: "/icons/axv-192.png", want: 401},
+		{name: "large icon without token", path: "/icons/axv-512.png", want: 401},
+		{name: "Apple icon without token", path: "/icons/apple-touch-icon.png", want: 401},
+		{name: "manifest HEAD without token", path: "/manifest.webmanifest", method: "HEAD", want: 401},
 		{name: "document read without token", path: "/api/files", want: 401},
 		{name: "forged identity headers", path: "/api/files", token: "forged", want: 401},
 		{name: "authorized UI", path: "/", token: raw, want: 200},
+		{name: "authorized manifest", path: "/manifest.webmanifest", token: raw, want: 200},
+		{name: "authorized small icon", path: "/icons/axv-192.png", token: raw, want: 200},
+		{name: "authorized large icon", path: "/icons/axv-512.png", token: raw, want: 200},
+		{name: "authorized Apple icon", path: "/icons/apple-touch-icon.png", token: raw, want: 200},
 		{name: "authorized read origin optional", path: "/api/files", token: raw, want: 200},
 		{name: "authorized write", path: "/api/files", method: "POST", origin: testOrigin, token: raw, want: 200},
 		{name: "write missing origin", method: "POST", token: raw, want: 403},
@@ -171,7 +180,7 @@ func TestEveryRequestRequiresJWTAndPreservesActualTransport(t *testing.T) {
 			}
 		})
 	}
-	if got := handled.Load(); got != 3 {
+	if got := handled.Load(); got != 7 {
 		t.Fatalf("unauthorized request reached shared handler: %d calls", got)
 	}
 	if err := service.Close(); err != nil {

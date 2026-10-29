@@ -44,6 +44,7 @@ export async function verifyVMCodexWorkflow({
   const dataDir = join(fixtureDirectory, 'data');
   const fixture = await createCodexFixture(fixtureDirectory);
   let desktop;
+  let databaseId;
   let active;
   let closed = false;
   const terminals = new Set();
@@ -63,7 +64,13 @@ export async function verifyVMCodexWorkflow({
   async function api(path, method = 'GET', body) {
     const response = await fetch(`${desktop.base}/api${path}`, {
       method,
-      headers: { Origin: desktop.base, 'Content-Type': 'application/json' },
+      headers: {
+        Origin: desktop.base,
+        'Content-Type': 'application/json',
+        ...(databaseId && path !== '/host/codex/info'
+          ? { 'X-AXV-Database-ID': databaseId }
+          : {}),
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.any(
         [closed ? undefined : signal, AbortSignal.timeout(15_000)].filter(
@@ -112,6 +119,12 @@ export async function verifyVMCodexWorkflow({
         ADDR: '127.0.0.1:0',
       },
     });
+    if (!databaseId) {
+      databaseId = (await api('/bootstrap?clientId=vm-codex-workflow'))
+        .databaseId;
+      assert.equal(typeof databaseId, 'string');
+      assert.ok(databaseId);
+    }
   }
 
   async function running(session) {
@@ -131,6 +144,7 @@ export async function verifyVMCodexWorkflow({
       desktop.base,
     );
     url.protocol = 'ws:';
+    url.searchParams.set('databaseId', databaseId);
     const terminal = new WebSocket(url, {
       headers: { Origin: desktop.base },
     });

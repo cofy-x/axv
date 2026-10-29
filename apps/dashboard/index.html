@@ -11,23 +11,236 @@
       content="AXV is a personal cloud workstation for virtual machines, coding-agent sessions with activity and attention tracking, persistent VM projects, private development previews and optional authenticated remote access."
     />
     <meta name="application-name" content="AXV" />
-    <meta name="theme-color" content="#242424" />
+    <meta name="theme-color" content="#252729" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link
+      rel="manifest"
+      href="/manifest.webmanifest"
+      crossorigin="use-credentials"
+    />
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="/icons/apple-touch-icon.png"
+    />
     <title>AXV</title>
+    <!-- Keep the startup surface available before application CSS or JavaScript. -->
+    <style>
+      html {
+        background: #505b64;
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+      }
+      body {
+        margin: 0;
+      }
+      .startup-screen,
+      .startup-screen * {
+        box-sizing: border-box;
+      }
+      .startup-screen {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        overflow: auto;
+        padding: 24px 16px;
+        padding: max(24px, env(safe-area-inset-top))
+          max(16px, env(safe-area-inset-right))
+          max(24px, env(safe-area-inset-bottom))
+          max(16px, env(safe-area-inset-left));
+        background: #505b64;
+        background-image: repeating-linear-gradient(
+          0deg,
+          #ffffff03 0 1px,
+          transparent 1px 3px
+        );
+        color: #111;
+        font:
+          13px/1.4 'Helvetica Neue',
+          Helvetica,
+          Arial,
+          sans-serif;
+      }
+      .startup-panel {
+        flex: 0 1 320px;
+        min-width: 0;
+        margin: auto;
+        padding: 3px;
+        border: 1px solid #111;
+        background: #aaa;
+        box-shadow:
+          inset 1px 1px #fff,
+          inset -1px -1px #555,
+          2px 2px #111;
+      }
+      .startup-title {
+        display: flex;
+        align-items: center;
+        min-height: 25px;
+        padding: 3px 8px;
+        background: #111;
+        color: #fff;
+        font-weight: 700;
+      }
+      .startup-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 18px;
+        padding: 24px 20px 22px;
+      }
+      .startup-computer {
+        position: relative;
+        width: 120px;
+        height: 100px;
+      }
+      .startup-computer > img {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      .startup-cursor {
+        position: absolute;
+        left: 48px;
+        top: 53px;
+        width: 7px;
+        height: 2px;
+        background: #eee;
+        animation: startup-blink 1.2s steps(1, end) infinite;
+      }
+      .startup-power {
+        position: absolute;
+        left: 95px;
+        top: 67px;
+        width: 4px;
+        height: 1px;
+        background: #9dc777;
+      }
+      .startup-panel[data-failed] .startup-cursor {
+        animation: none;
+        opacity: 0;
+      }
+      .startup-panel[data-failed] .startup-power {
+        background: #d5ae67;
+      }
+      @keyframes startup-blink {
+        50% {
+          opacity: 0;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .startup-cursor {
+          animation: none;
+        }
+      }
+      .startup-message {
+        min-width: 0;
+        text-align: center;
+      }
+      .startup-panel p {
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+      .startup-status {
+        font-weight: 700;
+      }
+      .startup-panel .startup-description {
+        margin-top: 4px;
+        font-size: 12px;
+      }
+      .startup-error {
+        display: grid;
+        gap: 12px;
+        margin: 0 20px 20px;
+        font-size: 12px;
+      }
+      .startup-error[hidden] {
+        display: none;
+      }
+      .startup-error > button {
+        justify-self: end;
+      }
+      .startup-reload {
+        min-width: 70px;
+        min-height: 28px;
+        padding: 3px 12px;
+        border: 1px solid #111;
+        border-radius: 0;
+        background: #aaa;
+        box-shadow:
+          inset 1px 1px #fff,
+          inset -1px -1px #555;
+        color: #111;
+        font:
+          bold 13px/1.4 'Helvetica Neue',
+          Helvetica,
+          Arial,
+          sans-serif;
+        cursor: default;
+      }
+      .startup-reload:active {
+        box-shadow:
+          inset 1px 1px #555,
+          inset -1px -1px #eee;
+      }
+      .startup-reload:focus-visible {
+        outline: 2px solid #205a8a;
+        outline-offset: 2px;
+      }
+      @media (pointer: coarse) {
+        .startup-reload {
+          min-height: 32px;
+        }
+      }
+    </style>
+    <noscript>
+      <style>
+        .startup-status {
+          display: none;
+        }
+        .startup-cursor {
+          animation: none;
+          opacity: 0;
+        }
+        .startup-power {
+          background: #d5ae67;
+        }
+      </style>
+    </noscript>
   </head>
   <body>
     <div id="root">
-      <div class="startup-screen">
-        <div class="startup-panel" role="status">
-          <img src="/favicon.svg" width="64" height="64" alt="" />
-          <strong>AXV</strong>
-          <p>Loading AXV…</p>
+      <main class="startup-screen">
+        <section class="startup-panel" aria-label="AXV startup">
+          <div class="startup-title">AXV</div>
+          <div class="startup-content">
+            <div class="startup-computer" aria-hidden="true">
+              <img
+                src="/startup-computer.svg"
+                width="120"
+                height="100"
+                alt=""
+              />
+              <span class="startup-cursor"></span>
+              <span class="startup-power"></span>
+            </div>
+            <div class="startup-message">
+              <p class="startup-status" role="status">Loading AXV…</p>
+              <p class="startup-description">Personal cloud workstation</p>
+            </div>
+          </div>
+          <div class="startup-error" hidden>
+            <p role="alert">Check your connection, then reload AXV.</p>
+            <button class="startup-reload" type="button">Reload</button>
+          </div>
           <noscript>
-            <p>Enable JavaScript to open AXV.</p>
+            <div class="startup-error">
+              <p>Enable JavaScript to open AXV.</p>
+            </div>
           </noscript>
-        </div>
-      </div>
+        </section>
+      </main>
     </div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module" src="/src/entry.ts"></script>
   </body>
 </html>

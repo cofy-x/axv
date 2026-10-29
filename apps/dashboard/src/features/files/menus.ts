@@ -274,6 +274,7 @@ export function createFilesContextMenu(
     },
     { separator: true },
     {
+      id: 'view',
       label: 'View',
       children: [
         {

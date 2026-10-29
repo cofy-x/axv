@@ -32,7 +32,14 @@ func Register(mux *http.ServeMux, store *storage.Store) {
 				fail(w, problem("host_forbidden", "Project files require a same-origin connection from this computer."))
 				return
 			}
-			handler(w, r)
+			identity, err := store.DatabaseID(r.Context())
+			if err != nil {
+				fail(w, err)
+				return
+			}
+			if httpaccess.RequireDatabaseIdentity(w, r, identity, false) {
+				handler(w, r)
+			}
 		})
 	}
 	register("GET /api/projects", a.projects)

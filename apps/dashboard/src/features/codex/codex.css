@@ -19,13 +19,13 @@
 }
 .codex-vm-project code,
 .codex-vm-target {
-  font: 11px var(--ns-mono);
+  font: var(--ns-font-size-secondary) var(--ns-mono);
   overflow-wrap: anywhere;
 }
 .codex-default-project {
   margin: 0 0 8px;
   line-height: 1.45;
-  font-size: 11px;
+  font-size: var(--ns-font-size-secondary);
 }
 .codex-default-project > summary {
   cursor: pointer;
@@ -38,7 +38,7 @@
 .codex-default-project code {
   display: block;
   margin-top: 4px;
-  font: 11px var(--ns-mono);
+  font: var(--ns-font-size-secondary) var(--ns-mono);
   overflow-wrap: anywhere;
 }
 .codex-default-project p {
@@ -96,14 +96,14 @@
 .codex-environment-content code {
   display: block;
   margin-top: 2px;
-  font: 11px var(--ns-mono);
+  font: var(--ns-font-size-secondary) var(--ns-mono);
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
 .codex-environment-guidance {
   margin: 0 0 14px;
   padding-left: 18px;
-  font-size: 11px;
+  font-size: var(--ns-font-size-secondary);
 }
 .codex-section {
   margin-top: 14px;
@@ -142,7 +142,7 @@
   overflow-wrap: anywhere;
 }
 .codex-directory-context code {
-  font: 11px var(--ns-mono);
+  font: var(--ns-font-size-secondary) var(--ns-mono);
 }
 .codex-directory-list {
   margin-top: 8px;
@@ -180,11 +180,13 @@
   overflow-wrap: anywhere;
   min-width: 0;
 }
-.codex-directory-list p,
-.codex-empty {
+.codex-directory-list p {
   padding: 8px;
   font-size: 12px;
   color: #555;
+}
+.codex-empty {
+  margin-top: 12px;
 }
 .codex-project-choice {
   display: flex;
@@ -196,7 +198,7 @@
   font-size: 12px;
 }
 .codex-note {
-  font-size: 11px;
+  font-size: var(--ns-font-size-secondary);
   line-height: 1.45;
   color: #444;
   margin: 6px 0;
@@ -295,7 +297,7 @@
 .codex-activity-reason {
   min-width: 0;
   flex: 1 1 160px;
-  font-size: 11px;
+  font-size: var(--ns-font-size-secondary);
   overflow-wrap: anywhere;
 }
 .codex-recent {
@@ -307,6 +309,9 @@
   padding: 0;
   margin: 0;
   border-top: 1px solid var(--ns-shadow);
+}
+.codex-session-list:empty {
+  border: 0;
 }
 .codex-session-list li {
   display: flex;
@@ -341,11 +346,11 @@
   white-space: nowrap;
 }
 .codex-session-summary code {
-  font: 11px var(--ns-mono);
+  font: var(--ns-font-size-secondary) var(--ns-mono);
 }
 .codex-session-summary > span {
   color: #555;
-  font-size: 11px;
+  font-size: var(--ns-font-size-secondary);
 }
 .codex-session-actions {
   display: flex;
@@ -408,11 +413,11 @@
   font-weight: bold;
 }
 .codex-session-details {
-  font-size: 11px;
+  font-size: var(--ns-font-size-secondary);
   line-height: 1.45;
 }
 .codex-session-details code {
-  font: 11px var(--ns-mono);
+  font: var(--ns-font-size-secondary) var(--ns-mono);
   overflow-wrap: anywhere;
   user-select: text;
 }

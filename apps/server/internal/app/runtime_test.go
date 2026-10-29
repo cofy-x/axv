@@ -67,8 +67,27 @@ func TestDesktopOwnershipAndShutdown(t *testing.T) {
 	if pinned, err := os.Stat(state.Executable); err != nil || !pinned.Mode().IsRegular() {
 		t.Fatalf("ready runtime executable is unavailable: %v", err)
 	}
+	bootstrapResponse, err := client.Get(state.URL + "/api/bootstrap?clientId=runtime-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bootstrap struct {
+		DatabaseID string `json:"databaseId"`
+	}
+	err = json.NewDecoder(bootstrapResponse.Body).Decode(&bootstrap)
+	bootstrapResponse.Body.Close()
+	if err != nil || bootstrapResponse.StatusCode != http.StatusOK || bootstrap.DatabaseID == "" {
+		t.Fatalf("bootstrap identity: HTTP %d, %v", bootstrapResponse.StatusCode, err)
+	}
 	for _, path := range []string{"/api/compute/info", "/api/host/codex/sessions", "/api/health"} {
-		response, err := client.Get(state.URL + path)
+		request, err := http.NewRequest("GET", state.URL+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if path == "/api/host/codex/sessions" {
+			request.Header.Set("X-AXV-Database-ID", bootstrap.DatabaseID)
+		}
+		response, err := client.Do(request)
 		if err != nil {
 			t.Fatal(err)
 		}

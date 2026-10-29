@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -15,17 +16,27 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cofy-x/axv/apps/server/internal/httpaccess"
 	"github.com/cofy-x/axv/apps/server/internal/storage"
 )
 
-func testAPI(t *testing.T) http.Handler {
+type apiFixture struct {
+	http.Handler
+	databaseID string
+}
+
+func testAPI(t *testing.T) *apiFixture {
 	t.Helper()
 	s, err := storage.Open(filepath.Join(t.TempDir(), "api.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { s.Close() })
-	return New(s, http.NotFoundHandler())
+	identity, err := s.DatabaseID(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &apiFixture{Handler: New(s, http.NotFoundHandler()), databaseID: identity}
 }
 
 func request(t *testing.T, h http.Handler, method, path string, body any) *httptest.ResponseRecorder {
@@ -39,6 +50,9 @@ func request(t *testing.T, h http.Handler, method, path string, body any) *httpt
 		reader = bytes.NewReader(data)
 	}
 	r := httptest.NewRequest(method, path, reader)
+	if f, ok := h.(*apiFixture); ok {
+		r.Header.Set(httpaccess.DatabaseIdentityHeader, f.databaseID)
+	}
 	if body != nil {
 		r.Header.Set("Content-Type", "application/json")
 	}
@@ -123,6 +137,7 @@ func TestHTTPUploadSniffsContentAndLimits(t *testing.T) {
 				t.Fatal(err)
 			}
 			r := httptest.NewRequest("POST", "/api/import", &body)
+			r.Header.Set(httpaccess.DatabaseIdentityHeader, h.databaseID)
 			r.Header.Set("Content-Type", writer.FormDataContentType())
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, r)
@@ -181,6 +196,7 @@ func TestHTTPValidationAndSettings(t *testing.T) {
 		t.Fatalf("invalid wallpaper: %s", w.Body.String())
 	}
 	r := httptest.NewRequest("POST", "/api/entries", strings.NewReader(`{"name":"bad"}`))
+	r.Header.Set(httpaccess.DatabaseIdentityHeader, h.databaseID)
 	r.Header.Set("Content-Type", "text/plain")
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, r)
@@ -188,6 +204,7 @@ func TestHTTPValidationAndSettings(t *testing.T) {
 		t.Fatal("accepted incorrect content type")
 	}
 	r = httptest.NewRequest("DELETE", "http://localhost:3001/api/trash", nil)
+	r.Header.Set(httpaccess.DatabaseIdentityHeader, h.databaseID)
 	r.Header.Set("Origin", "https://malicious.example")
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, r)
@@ -195,6 +212,7 @@ func TestHTTPValidationAndSettings(t *testing.T) {
 		t.Fatal("accepted external origin mutation")
 	}
 	r = httptest.NewRequest("DELETE", "http://localhost:3001/api/trash", nil)
+	r.Header.Set(httpaccess.DatabaseIdentityHeader, h.databaseID)
 	r.Header.Set("Origin", "http://localhost:5173")
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, r)
@@ -202,6 +220,7 @@ func TestHTTPValidationAndSettings(t *testing.T) {
 		t.Fatal("rejected loopback development origin")
 	}
 	r = httptest.NewRequest("POST", "/api/entries", strings.NewReader(fmt.Sprintf(`{"parentId":"documents","name":"a","kind":"file"} %s`, "{}")))
+	r.Header.Set(httpaccess.DatabaseIdentityHeader, h.databaseID)
 	r.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, r)

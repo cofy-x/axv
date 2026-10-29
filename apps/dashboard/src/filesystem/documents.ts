@@ -1,4 +1,4 @@
-import { request } from '../shared/api/http';
+import { requestDesktop as request } from '../shared/api/desktop';
 
 export interface DocumentSnapshotInfo {
   id: string;

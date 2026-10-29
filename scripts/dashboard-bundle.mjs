@@ -5,8 +5,12 @@ import { open, readFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import { prepareTestOutputPath } from './test-output.mjs';
 
-/** Count the complete static entry graph once, including shared preloads. */
-export function analyzeDashboardBundle(bundle, root) {
+/** Count entry and explicitly required startup graphs once, including shared preloads. */
+export function analyzeDashboardBundle(
+  bundle,
+  root,
+  requiredStartupModules = [],
+) {
   const chunks = Object.values(bundle)
     .filter((item) => item.type === 'chunk')
     .map((chunk) => ({
@@ -37,12 +41,24 @@ export function analyzeDashboardBundle(bundle, root) {
   if (entries.length === 0)
     throw new Error('The dashboard has no JavaScript entry chunk.');
   for (const entry of entries) visit(entry.fileName);
+  const modulePath = (id) => resolve(root, id).replaceAll('\\', '/');
+  const requiredModules = [
+    ...new Set(requiredStartupModules.map(modulePath)),
+  ].sort();
+  for (const id of requiredModules) {
+    const matching = chunks.filter((chunk) =>
+      chunk.modules.some((module) => modulePath(module.id) === id),
+    );
+    if (!matching.length)
+      throw new Error(`Missing required startup JavaScript module: ${id}`);
+    for (const chunk of matching) visit(chunk.fileName);
+  }
   const initialChunks = chunks.filter((chunk) => initial.has(chunk.fileName));
   return {
     schemaVersion: 1,
     interpretation: {
       initialGraph:
-        'All emitted entry chunks and their recursive static imports, counted once; dynamic imports are excluded until requested.',
+        'All emitted entry chunks, chunks containing explicitly required startup modules, and their recursive static imports, counted once; other dynamic imports are excluded until requested.',
       gzipEstimate:
         'Sum of independent Node zlib default gzip streams, not actual Go HTTP gzip response bytes or network transfer.',
       moduleAttribution:
@@ -50,6 +66,7 @@ export function analyzeDashboardBundle(bundle, root) {
     },
     initial: {
       files: initialChunks.map((chunk) => chunk.fileName),
+      requiredStartupModules: requiredModules.map((id) => relative(root, id)),
       rawBytes: initialChunks.reduce(
         (total, chunk) => total + chunk.rawBytes,
         0,
@@ -69,13 +86,18 @@ export function checkDashboardBudget(report, budget) {
       throw new Error(`Invalid dashboard startup budget: ${key}`);
     if (report.initial[key] > budget[key])
       throw new Error(
-        `Dashboard startup ${key} is ${report.initial[key]} bytes; budget is ${budget[key]}. Review the full static entry graph before changing the budget.`,
+        `Dashboard startup ${key} is ${report.initial[key]} bytes; budget is ${budget[key]}. Review the full entry and required startup graphs before changing the budget.`,
       );
   }
 }
 
 /** Build evidence stays outside the served UI; ordinary builds enforce bytes. */
-export function dashboardBundlePlugin({ root, budgetPath, reportPath }) {
+export function dashboardBundlePlugin({
+  root,
+  budgetPath,
+  reportPath,
+  requiredStartupModules = [],
+}) {
   let preloadPolicy;
   return {
     name: 'axv-dashboard-bundle-budget',
@@ -113,7 +135,11 @@ export function dashboardBundlePlugin({ root, budgetPath, reportPath }) {
           ]),
         ),
       );
-      const report = analyzeDashboardBundle(emitted, root);
+      const report = analyzeDashboardBundle(
+        emitted,
+        root,
+        requiredStartupModules,
+      );
       const budget = budgetPath
         ? JSON.parse(await readFile(budgetPath, 'utf8'))
         : null;

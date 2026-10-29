@@ -56,13 +56,13 @@ VERSION=1.2.3 make smoke-production
 
 ### Dashboard loading and performance
 
-Every production dashboard build reports and checks the complete static JavaScript entry graph through [`dashboard-bundle.mjs`](../scripts/dashboard-bundle.mjs) and the checked-in [byte budgets](../scripts/dashboard-bundle-budget.json). Shared imports count once; moving eager code into several chunks does not reduce the total. Raw bytes and the sum of independent Node gzip estimates have separate budgets. These estimates differ from the embedded Go server's actual gzip responses and exclude dynamic code until it is requested. Keep Vite's existing chunk warning enabled.
+Every production dashboard build reports and checks the JavaScript entry graph and explicitly required startup modules through [`dashboard-bundle.mjs`](../scripts/dashboard-bundle.mjs) and the checked-in [byte budgets](../scripts/dashboard-bundle-budget.json). The [Vite configuration](../apps/dashboard/vite.config.ts) declares `src/main.tsx` as required startup even though the HTML entry loads it dynamically. Every emitted chunk containing a declared module and its recursive static imports counts alongside the static entry graph; a missing declared module fails the build. Shared imports count once, and the report records the declarations, so splitting required startup code into dynamic chunks does not reduce the measured total. Raw bytes and the sum of independent Node gzip estimates have separate budgets. These estimates differ from the embedded Go server's actual gzip responses and exclude unrelated lazy feature chunks until requested. Keep Vite's existing chunk warning enabled.
 
 The budget leaves limited growth above the measured feature-loading baseline. Review module attribution and real startup requests before changing it; do not raise it merely to silence a failed build. Module rendered lengths are contribution hints before compression, not additive final compressed savings. The build reads final emitted files and records their digests, avoiding differences between bundler hooks and shipped artifacts.
 
 The documented build writes a private module/chunk report to `dashboard-bundle.json` under the selected test root. `AXV_BUNDLE_REPORT` can select another file within that root. Evidence writers reject symbolic links below the selected root, including the report file, and the build excludes the actual served output directory. Reports are excluded from embedded/served assets. Browser loading regressions use that report to locate actual feature chunks rather than fixed hash filenames. Preserve the production binary, report and source identity together when comparing versions.
 
-The Vite configuration retains initial HTML and dependency preloads while excluding each dynamic JavaScript entry itself from its preload list. This preserves same-page retries after a transient entry failure in WebKit; preloading that failed entry can poison its module cache. The bundle plugin includes the resolved preload options and self-contained resolver in chunk hashes because Vite rewrites preload lists after assigning filenames. Keep resolver dependencies reflected in that hash input. Native static-dependency failures may still require a manual reload after saving other work. Do not add URL cache-busting that duplicates module identity or automatically replace a desktop containing drafts.
+The Vite configuration identifies the startup loader through an explicit output filename prefix and omits its JavaScript dependency preloads while retaining CSS preloads. Native imports discover the required startup JavaScript dependencies; this avoids failed module preloads surviving an explicit startup reload in WebKit. Initial HTML preloads remain enabled. Later feature imports retain dependency preloads but exclude the dynamic entry itself, allowing same-page retries after transient entry failures. The bundle plugin includes the resolved preload options and self-contained resolver in chunk hashes because Vite rewrites preload lists after assigning filenames. Keep resolver dependencies reflected in that hash input. Native static-dependency failures may still require a manual reload after saving other work. Do not add URL cache-busting that duplicates module identity or automatically replace a desktop containing drafts.
 
 Measure the current embedded production executable with the isolated launcher:
 
@@ -97,6 +97,34 @@ For desktop or cross-layer changes, also run `make test-e2e` and complete visual
 Follow [content ownership](README.md#content-ownership) and review the diff for changed claims, examples and moved sections. Check relative file/directory links and heading fragments, including inbound links to moved content. Verify changed commands, defaults, limits and ownership against the linked implementation or manifests. Preserve an intentional rule when code disagrees and report the discrepancy.
 
 Documentation-only changes do not require runtime suites. A script, configuration or generated runtime input change is not documentation-only merely because it supports the docs. Report the checks performed and any unresolved discrepancy in the task/PR, without adding a permanent audit page.
+
+### Online browser installation acceptance
+
+The [installation workflow](startup.md#browser-installation) targets desktop Chrome/Edge and physical iPhone Safari through the existing Tailscale HTTPS listener. Use current stable browser versions and record the actual OS/browser version in the task or PR. [Project status](../README.md#project-status) owns completed and pending platform claims. A Playwright browser, mobile viewport or simulated standalone media query does not establish OS installation or physical-device acceptance.
+
+| Scenario | Automated coverage | Actual installation/device check |
+| --- | --- | --- |
+| Install | Served HTML/manifest fields, MIME, embedded PNG dimensions, access checks and absence of service worker registration | Browser menu, OS icon, icon cropping and standalone window; iPhone Share workflow |
+| Online reopen | Ordinary bootstrap and unchanged manifest identity across service restarts | Cold launch and existing-window activation from the installed icon; Tailscale HTTPS access |
+| Authorization expires | Rejected requests remain visible without discarding drafts; remote `/api/runtime` stays denied | Independent authorized device, revoke/restore access; installed authentication container behavior |
+| Network loss | Failed saves remain dirty; local draft download succeeds without API access; no request replay | Disconnect/reconnect Wi-Fi or Tailscale, lock screen, background suspension and system termination |
+| Upgrade | Old module failure retains other mounted editors and local Retry; fresh navigation uses current assets | Run production A, leave a dirty editor open, replace with production B at the same address/database with different asset hashes; verify no forced refresh and explicit new-page loading |
+| Database/target changes | Matching document IDs/revisions in a replacement store cannot accept stale operations; no substituted run/project/task | Restart an isolated profile and switch databases explicitly while an installed window remains open |
+| Multiple windows | Same-context and independent-context drafts, copied sessionStorage, revision conflict, unavailable storage and client-ID initialization | Tab plus installed window, independent profiles and repeated installation; record actual clientId/layout/draft sharing |
+
+Use separate production executables and profiles under the [test root](#test-isolation-and-diagnostics) for upgrade and database-switch checks; stop only their owned processes before switching. Do not reset a live store. Preserve the old page, recovery records and original execution identifiers while observing failure. If devices or accounts are unavailable, mark the corresponding cases pending. Do not substitute ordinary Safari navigation or fixture authorization for installed iPhone/Tailscale acceptance.
+
+The reproducible Chromium online-reopen harness accepts two retained production executables and their matching bundle reports. The builds must have different Terminal feature hashes, so an old page actually requests an absent old module after the service is replaced:
+
+```sh
+node scripts/verify-online-reopen.mjs \
+  --before .data/test/build-a/axv --before-report .data/test/build-a/dashboard-bundle.json \
+  --after .data/test/build-b/axv --after-report .data/test/build-b/dashboard-bundle.json
+```
+
+It copies both binaries, launches an isolated profile, leaves a dirty document open while restarting at the same address and database, checks the old module error and a fresh page, then replaces only its stopped test database with a new store containing the same document ID/revision. It checks both stores and the original browser draft, local draft download, and persistent protection after the original database returns. The report and screenshots remain in a printed `reopen-evidence-*` directory under the test root; runtime profiles are cleaned up. Retain each binary's source revision and build report when preparing the inputs. This browser harness does not establish OS installation, iPhone storage sharing or remote authorization.
+
+The original AXV mark lives in [`public/favicon.svg`](../apps/dashboard/public/favicon.svg), shared by the browser tab, Welcome and About. Run `node scripts/render-install-icons.mjs` with the pinned Playwright Chromium installed to regenerate its 192/512 installation PNGs and 180 Apple touch icon from the same source. The renderer uses an isolated browser profile under the test root and rasterizes the vector through canvas; these PNGs are application source assets. Review their appearance at small sizes and under platform icon masks. No external artwork is bundled.
 
 ### Focused checks
 
@@ -183,6 +211,12 @@ The [Dependabot configuration](../.github/dependabot.yml) checks Actions, the ro
 Review dependency changes with their lockfiles and run the same verification matrix. For pnpm updates, check the workspace manifests, overrides and frozen-lockfile installation together. The hosted Dependabot updater has been verified to install and use the pnpm version pinned by `packageManager`. Keep Action references pinned to full commit SHAs and verify replacement SHAs against the upstream release. Review compiler-major migrations against the lint plugins' supported TypeScript range and resolve migration errors before accepting the update.
 
 Upgrade Go, Node.js and pnpm deliberately in one change, keeping the version files, manifests, Makefile, Go workspace/modules, README and lockfiles aligned. The npm configuration excludes `node` and `pnpm` updates and `@types/node` major updates. Keep Node.js declarations in the pinned runtime's major version and upgrade them together when selecting a new Node.js major; compatible minor and patch declaration updates remain eligible. A dependency that requires a newer toolchain needs this coordinated upgrade before it can pass CI.
+
+### Dependency patches
+
+The `patchedDependencies` entry in [pnpm-workspace.yaml](../pnpm-workspace.yaml) applies the checked-in xterm.js 6.0.0 patch during installation. It corrects empty alternate-screen buffer capacity after shrinking, so an in-flight terminal repaint cannot lose the final row after the screen grows again. The patch keeps the upstream source and both published JavaScript entry points consistent; it does not change the pinned version or license. [Third-party notices](../THIRD_PARTY_NOTICES.md#application-distributions) records its upstream source and attribution.
+
+The [public terminal API regression](../apps/dashboard/src/shared/terminal/xterm-buffer.test.ts) covers initial and reused alternate screens, visible output and normal-screen preservation. When adopting an upstream release containing this fix, remove the patch and its workspace entry, regenerate the lockfile, and rerun that regression plus the runtime and browser matrix. Keep the regression after removing the patch.
 
 ## Test isolation and diagnostics
 

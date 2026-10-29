@@ -10,6 +10,8 @@ export const inspectorApp: AppDefinition = {
   title: 'Inspector',
   icon: 'info',
   kind: 'panel',
+  initialPlacement: 'beside-active',
+  defaultPinned: false,
   windowKey: () => 'main',
   component: Inspector,
   defaultSize: { width: 350, height: 510 },
