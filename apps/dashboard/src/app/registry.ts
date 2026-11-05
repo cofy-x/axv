@@ -18,6 +18,10 @@ import { galleryApp } from '../features/gallery/definition';
 import { createTerminalApp } from '../features/terminal/definition';
 import { tailscaleApp } from '../features/tailscale';
 import { cloudflareApp } from '../features/cloudflare';
+import {
+  notificationsApp,
+  notificationWorkApp,
+} from '../features/notifications/definition';
 import { applicationsApp } from '../features/extensions/definition';
 import {
   createCodexApp,
@@ -53,6 +57,8 @@ export function createAppRegistry(
     codexEnvironmentApp,
     tailscaleApp,
     cloudflareApp,
+    notificationsApp,
+    notificationWorkApp,
     applicationsApp,
     imageViewerApp,
     inspectorApp,

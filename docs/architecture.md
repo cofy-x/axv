@@ -15,6 +15,7 @@ flowchart TB
     Browser -->|HTTP / WebSocket| API["Desktop service"]
     API --> Documents[(desktop.sqlite)]
     API --> Extensions[(extensions.sqlite)]
+    API --> NotificationStore[(notifications/state.json)]
     API --> Preparation[(preparation.sqlite)]
     API --> Shell["Ephemeral host shells"]
     API -->|attach and control| Codex["tmux<br/>independent Codex runners"]
@@ -33,6 +34,7 @@ flowchart TB
 | Documents and installed applications | [`filesystem`](../apps/dashboard/src/filesystem) owns the virtual-file model with tree logic independent of React and HTTP; [`storage`](../apps/server/internal/storage) owns desktop transactions. [Installed applications](api/extensions.md) have a separate store and sandbox broker, without host-execution or virtual-document dependencies. [Storage](storage.md) owns database and recovery mechanisms. |
 | Host work | [`terminal`](../apps/server/internal/terminal) owns connection-bound shells; [`codex`](../apps/server/internal/codex) controls independent runners. Shared [`hostdir`](../apps/server/internal/hostdir) validation and [`projectfiles`](../apps/server/internal/projectfiles) access do not depend on Codex lifecycle. See [Terminal](desktop.md#terminal-sessions), [Codex](codex.md) and [project files](api/project-files.md). |
 | Compute and guest | [`compute/host`](../apps/server/internal/compute/host) composes the controller, private API and provider drivers against shared `compute` contracts. Desktop gateway and CLI clients use the same verified local host boundary; [`guest`](../apps/server/internal/guest) executes inside VMs. [VM architecture](vm-platform.md) owns preparation, execution and retained projects. |
+| Work notifications | [`notifications`](../apps/server/internal/notifications) owns the desktop outbox and private adapter configuration. Independent Codex runners and the compute owner retain sanitized producer journals; feature-neutral [`notificationevent`](../apps/server/internal/notificationevent) carries exact identities. Observation never controls execution. [Notifications](api/notifications.md) owns checkpoints, gaps, delivery and read-only links. |
 | Startup | [`cli`](../apps/server/internal/cli) owns parsing and I/O; [`app`](../apps/server/internal/app) composes desktop, host activation and preparation. [`profile`](../apps/server/internal/profile) storage and [`app/launch`](../apps/server/internal/app/launch) verification remain independent of service execution. [Startup](startup.md) owns configuration and supervision. |
 | Remote access and project services | [Tailscale](api/tailscale.md) and [Cloudflare](api/cloudflare.md) add authenticated desktop listeners sharing existing feature managers. [Local previews](api/project-previews.md) and [Cloudflare publications](api/cloudflare.md#published-project-services) capture exact project targets and use separate browser origins. Shared [access rules](api/README.md#access-and-identity-boundaries) constrain every transport. |
 

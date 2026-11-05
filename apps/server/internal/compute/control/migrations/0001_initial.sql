@@ -1,5 +1,5 @@
--- AXC3 identifies the compute database independently of the migration sequence.
-PRAGMA application_id = 0x41584333;
+-- AXC4 identifies the compute database independently of the migration sequence.
+PRAGMA application_id = 0x41584334;
 
 -- One persistent host identity; reopening never allocates a replacement.
 CREATE TABLE identity (
@@ -94,6 +94,18 @@ CREATE TABLE task_requests (
     request_id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL REFERENCES projects(id),
     fingerprint TEXT NOT NULL,
+    task_id TEXT NOT NULL REFERENCES project_tasks(id),
+    attempt_id TEXT NOT NULL REFERENCES task_attempts(id)
+);
+
+-- Sanitized task outcomes commit with the corresponding attempt transition.
+-- AUTOINCREMENT preserves cursor identity after bounded event pruning.
+CREATE TABLE task_notification_events (
+    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT NOT NULL UNIQUE,
+    observed_at TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('unknown','succeeded','failed','cancelled','interrupted')),
+    project_id TEXT NOT NULL REFERENCES projects(id),
     task_id TEXT NOT NULL REFERENCES project_tasks(id),
     attempt_id TEXT NOT NULL REFERENCES task_attempts(id)
 );

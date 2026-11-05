@@ -50,6 +50,8 @@ The browser gateway uses `/api/compute`. Host routes use `/v1` on the private ho
 | POST | `/projects/:id/tasks/:taskId/retry` | 202 `{ task, attempt, attempts }` |
 | POST | `/projects/:id/tasks/:taskId/attempts/:attemptId/cancel` | 202 `{ task, attempt, attempts }` |
 | GET | `/projects/:id/tasks/:taskId/attempts/:attemptId/logs?offset=&limit=` | Byte-offset log chunk |
+| GET | `/task-events?after=` | Sanitized durable task outcome event page |
+| GET | `/projects/:id/tasks/:taskId/attempts/:attemptId/status` | Sanitized exact-attempt notification resolution |
 | GET | `/images` | `{ images }` |
 | POST | `/images` | 202 `{ image, operation }` |
 | POST | `/images/import` | 202 `{ image, operation }` |
@@ -203,7 +205,7 @@ Backup and restore share durable operation request IDs with other compute operat
 
 Project tasks run installation, builds and tests in a registered project's VM. A task identifies an immutable specification; an attempt identifies one execution in an exact project/volume/VM/boot/guest-service binding. These IDs are separate from VM lifecycle/preparation operations and from a VM's task-kind TTL. No endpoint selects a replacement environment or falls back to host execution.
 
-All routes require the original `X-AXV-Host-ID`, including list, receipt, status and logs. Mutations use the shared Origin/access policy and require `application/json`, a single object with no unknown fields and valid Unicode. Task mutation bodies allow **256 KiB** for escaped arguments. Query parameters are allowed only on the logs route, as described below.
+All routes require the original `X-AXV-Host-ID`, including list, receipt, status, logs and outcome events. Mutations use the shared Origin/access policy and require `application/json`, a single object with no unknown fields and valid Unicode. Task mutation bodies allow **256 KiB** for escaped arguments. The logs route accepts its documented byte-range query, and the outcome feed accepts its documented cursor query; other task routes reject query parameters.
 
 `POST /projects/:id/tasks` accepts `{ requestId, binding, spec }`. `binding` is the complete explicitly captured project binding used by file access, with identity fields of at most 128 UTF-8 bytes; it must match both the URL project and transport host. `spec` contains `{ argv, directory, limits }`. `directory` defaults to the project root and follows its relative-path rules; this starting-directory check does not sandbox subsequent guest process filesystem access. `argv` contains **1–128** valid UTF-8 arguments, without NUL, totaling at most **32 KiB**; the first argument cannot be empty. Arguments are executed directly, without shell interpolation.
 
@@ -238,6 +240,18 @@ The logs route accepts only `offset` (nonnegative byte offset, default **0**) an
 Task endpoints retain the project binding/storage error mapping above. Invalid specifications or log ranges return `400 invalid_request`; mismatched execution bindings return `409 binding_changed`; retrying active or uncertain work returns `409 task_conflict`. Task/history capacity exhaustion returns `429 capacity_exceeded` or `task_limit`; unavailable durable guest state returns `503 task_state_unavailable`; unsupported resource enforcement returns `503 unsupported`. Disk exhaustion remains visible as `507 disk_full`.
 
 [VM project CLI](../startup.md#vm-project-tasks) owns command-line use. Guest execution supervision and controller reconciliation belong to [VM architecture](../vm-platform.md#persistent-project-tasks); [project-volume backup/restore](#vm-project-backups) has separate offline-copy and binding contracts.
+
+### Task outcome events
+
+`GET /task-events?after=N` reads the compute owner's durable outcome journal without contacting a guest. `after` defaults to **0**, is an inclusive consumed sequence, and accepts one integer from **0** through **9,223,372,036,854,775,807**. Unknown or duplicate query parameters and invalid cursors return `400 invalid_request`. The host retains the newest **2,048** events and returns at most **256** events per page in increasing sequence order.
+
+The response is `{ sourceId, storeId, first, next, events, gap, unavailable }`. `sourceId` is `compute:<hostId>` and `storeId` is the persistent host ID. `first` is the oldest retained sequence, or **0** for an empty journal. `next` is the last returned sequence, or the latest retained sequence when no events are returned; it is an inclusive checkpoint rather than the following sequence. Continue from `after=next` after durably importing the returned page. `gap` is true when `after < first - 1`, indicating pruned history; it never establishes an outcome for missing work. `unavailable` is false for successful compute reads; owner or transport failures return an HTTP failure and consumers preserve their previous checkpoint. A changed store/source identity requires a separate cursor starting at **0**; a cursor from one host must not skip another host's events.
+
+Each event contains `{ id, sequence, observedAt, state, target }`. `id` is opaque, `sequence` increases within the store, and `observedAt` is the host's UTC observation time. `state` is `unknown`, `succeeded`, `failed`, `cancelled` or `interrupted`. `target` contains `{ kind: "task", storeId, hostId, projectId, taskId, attemptId, eventId }`; `eventId` matches the event's `id`. The host appends an event only when an attempt changes into one of these states, in the same transaction as that state change. An uncertain or unreconciled attempt cannot become a successful event without a verified task result. Commands, paths, task arguments, logs and diagnostic text are excluded.
+
+`GET /projects/:id/tasks/:taskId/attempts/:attemptId/status` returns `{ available, current, state, target }` for the exact recorded attempt. `available` is false when that original project/task/attempt combination is missing. For available attempts, `state` is the recorded attempt status, and `current` reports whether it remains the task's current attempt. An older attempt remains available with its own status after retry and has `current: false`; the route never substitutes the retry or acquires a guest binding. The returned target contains the exact route identities and store/host identity, without an originating `eventId`.
+
+Both reads require the original `X-AXV-Host-ID` before cursor parsing or record lookup, return `Cache-Control: no-store`, and use the compute gateway/private Unix socket access boundary. A mismatched host returns `409 binding_changed`. The desktop event consumer captures one verified host route for each request; a later gateway rebind cannot redirect an in-flight request or an exact-attempt lookup. Consumer configuration, delivery history and opaque return links belong to the [notification API](notifications.md).
 
 ## Images
 

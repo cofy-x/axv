@@ -12,6 +12,7 @@
 @import '../features/machines/machines.css';
 @import '../features/tailscale/tailscale.css';
 @import '../features/cloudflare/cloudflare.css';
+@import '../features/notifications/notifications.css';
 @import '../features/extensions/styles.css';
 @import '../features/extensions/runtime.css';
 @import './app.css';

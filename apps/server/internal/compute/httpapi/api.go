@@ -139,6 +139,7 @@ func Handler(service *control.Service) http.Handler {
 	registerProjects(mux, service)
 	registerProjectPreview(mux, service)
 	registerTasks(mux, service)
+	registerNotifications(mux, service)
 	registerProjectInitialization(mux, service)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
