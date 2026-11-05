@@ -550,10 +550,16 @@ test('revision conflicts preserve local text and save a separate copy', async ({
     .getByRole('button', { name: 'More document actions', exact: true })
     .click();
   await menuItem(page, 'Save Copy').click();
+  const copyCreated = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/entries') &&
+      response.request().method() === 'POST',
+  );
   await nameDialog(page, 'E2E Preserved.txt');
-  const copy = (await entries(request)).find(
-    (item) => item.name === 'E2E Preserved.txt',
-  )!;
+  const response = await copyCreated;
+  expect(response.ok()).toBeTruthy();
+  const copy = (await response.json()).entry;
+  expect(copy.name).toBe('E2E Preserved.txt');
   await expect(
     editorWindow(page, copy.id).getByRole('textbox', { name: 'Document text' }),
   ).toHaveValue('My local draft stays intact');
