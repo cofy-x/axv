@@ -34,7 +34,9 @@ export const guestTerminalRequests = new GuestTerminalRequests();
 
 export function openGuestTerminal(
   desktop: DesktopAPI,
-  machine: Machine,
+  machine: Pick<Machine, 'id' | 'hostId'> & {
+    spec: Pick<Machine['spec'], 'name'>;
+  },
   session: GuestTerminal,
 ) {
   return desktop.openApp(
