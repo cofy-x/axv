@@ -65,6 +65,8 @@ export function Welcome({ desktop, window }: AppWindowProps) {
           <p>
             Set up private access with Tailscale, or browser access with
             Cloudflare. Configure access on the AXV host before connecting.
+            Optional Pocket Alert notifications can link back to the original
+            work.
           </p>
           <div className="welcome-tools">
             <Button onClick={() => desktop.openApp('remote-access')}>
@@ -72,6 +74,9 @@ export function Welcome({ desktop, window }: AppWindowProps) {
             </Button>
             <Button onClick={() => desktop.openApp('cloudflare')}>
               Cloudflare
+            </Button>
+            <Button onClick={() => desktop.openApp('notifications')}>
+              Notifications
             </Button>
           </div>
         </details>
@@ -158,9 +163,9 @@ export function About() {
         <dd>cofy-x</dd>
       </dl>
       <p className="fine-print">
-        Documents and desktop layout live on the AXV host. Project files stay in
-        their host directories or VM volumes. Browser recovery copies stay on
-        this device.
+        Documents, notification history and desktop layout live on the AXV host.
+        Project files stay in their host directories or VM volumes. Browser
+        recovery copies stay on this device.
       </p>
     </div>
   );

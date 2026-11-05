@@ -23,8 +23,15 @@ func attemptRecord(ctx context.Context, q querier, id string) (compute.TaskAttem
 }
 
 func writeAttempt(ctx context.Context, tx *sql.Tx, a compute.TaskAttempt) error {
+	var previous string
+	if err := tx.QueryRowContext(ctx, "SELECT status FROM task_attempts WHERE id=?", a.ID).Scan(&previous); err != nil {
+		return err
+	}
 	_, err := tx.ExecContext(ctx, "UPDATE task_attempts SET status=?,log_bytes=?,cached_bytes=?,updated_at=?,data=? WHERE id=?", a.Status, a.LogBytes, a.CachedBytes, time.Now().UTC().Format(time.RFC3339Nano), encode(a), a.ID)
-	return err
+	if err != nil || previous == a.Status {
+		return err
+	}
+	return appendTaskNotification(ctx, tx, a)
 }
 
 func (s *Store) taskResult(ctx context.Context, projectID, id, attemptID string) (compute.ProjectTaskResult, error) {

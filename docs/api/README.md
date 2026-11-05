@@ -11,6 +11,7 @@ These pages own routes, request/response shapes, limits, errors and caller retry
 - [Host Terminal](host-terminal.md): An ephemeral host shell owned by one WebSocket connection.
 - [Host directories](host-directories.md): Shared local directory selection and path validation for host tools.
 - [Host Codex](host-codex.md): Conversations, exact process runs and attachments.
+- [Work notifications](notifications.md): Producer checkpoints, bounded delivery, optional Pocket Alert and authenticated read-only return links.
 - [Compute](compute.md): Environment preparation, service readiness, machines, volumes, images, durable operations and VM project bindings/files.
 - [VM project previews](project-previews.md): Explicit guest HTTP/WebSocket services on independent local origins, with exact registration recovery and remote owner inspection/revocation.
 - [Guest execution](guest.md): Guest health, commands, detachable guest terminals, network observation and local SSH access.

@@ -100,6 +100,10 @@ Use **Virtual Machines** for the application/window title, **VMs** for compact l
 
 Official versioned AXV enhanced images are the intended long-term default preparation source; changing the default requires an explicit product decision. Advanced users may explicitly choose custom images, with AXV guest software supplying optional enhanced features. [VM architecture](vm-platform.md#image-and-capability-contract) owns the image and capability contract, [startup](startup.md#first-time-macos-setup) owns preparation choices, and the [README](../README.md#project-status) owns publication and validation status.
 
+## Work notification boundaries
+
+Optional external work notifications report minimal observed status and link back to authenticated original work. Independent execution owners retain recoverable metadata; the desktop owns bounded intake checkpoints and dispatch while running. Gaps and uncertainty are visible, and provider acceptance is distinct from phone delivery. Notification observation and return links never answer approvals or operate on tasks. Successful turns and successful tasks remain separate opt-in choices. [Notifications](api/notifications.md) owns the implemented contract.
+
 ## Application extensibility
 
 AXV combines feature-owned built-in applications with explicitly installed, restricted extensions. Both use the existing desktop window and launcher system. Built-ins remain compiled React features; extensions use a versioned Web runtime. Source, runtime and granted capabilities are independent concerns. Application identity does not derive from a display title, and an extension cannot override a built-in application by reusing its ID.

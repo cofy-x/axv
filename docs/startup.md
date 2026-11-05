@@ -302,6 +302,12 @@ AXV creates a private Ed25519 client key and known-hosts file under `AXV_HOME/ss
 
 See the [Guest API](api/guest.md#ssh-access) for transport and key-registration limits.
 
+## Work notifications
+
+Open **Notifications** from Preferences or Applications on the local AXV host. Configure the optional Pocket Alert account, selected events and the verified AXV return origin, save, then send a synthetic test. The deployment machine needs outbound HTTPS to `api.pocketalert.app`; no new inbound listener or phone-control route is created. Credentials stay in the private `AXV_HOME/notifications/` feature directory. Browser absence does not stop dispatch; desktop shutdown delays it until restart. Existing runners without producer journals expose an observation gap. [Usage](usage.md#work-notifications) owns setup actions; [the notification contract](api/notifications.md) owns identity, retention and bounded retries.
+
+Compute task intake requires the current AXC4 experimental database baseline. Old compute stores are rejected unchanged; follow the [compute baseline](vm-platform.md#state-and-operations) before an explicit reset with all affected writers and runs stopped. Notification setup never resets a compute store or upgrades a running runner.
+
 ## Remote access
 
 Private remote access is optional and disabled by default. AXV embeds its own [tsnet](https://tailscale.com/docs/features/tsnet) node and serves the production desktop over HTTPS on macOS/Linux. The deployment machine does not need the system Tailscale service running: AXV does not use `tailscale up`, change host DNS/routes or install host firewall rules. In particular, keep the system service stopped and disabled on hosts where the tailnet's CGNAT range conflicts with the system DNS servers.

@@ -99,8 +99,11 @@ type activityObserver struct {
 	path                    string
 	publish                 func(string, Activity) error
 	unavailable             func(string)
+	journal                 func(string, Activity) error
+	journalUnavailable      func(string)
 	now                     func() time.Time
 	dirty                   bool
+	journalDirty            bool
 	active                  bool
 	threadState             string
 	approvalFlag, inputFlag bool
@@ -118,6 +121,7 @@ func newActivityObserver(statePath, runID, threadID string) *activityObserver {
 		current: Activity{RunID: runID, ThreadID: threadID},
 		path:    filepath.Join(filepath.Dir(statePath), "activity.json"),
 		publish: writeActivity, unavailable: markActivityUnavailable, now: time.Now,
+		journal: appendActivityEvent, journalUnavailable: markActivityEventsUnavailable,
 		requests: make(map[string]activityRequest), retired: make(map[string]bool),
 	}
 	observer.record(ActivityUnknown, "")
@@ -133,6 +137,7 @@ func (observer *activityObserver) advance(state, turnID string, newEvent bool) {
 		var nonce [16]byte
 		if _, err := rand.Read(nonce[:]); err != nil || observer.current.Sequence >= maxActivitySequence {
 			observer.unavailable(observer.path)
+			observer.journalUnavailable(observer.path)
 			return
 		}
 		observer.current.State, observer.current.TurnID = state, turnID
@@ -140,6 +145,15 @@ func (observer *activityObserver) advance(state, turnID string, newEvent bool) {
 		observer.current.Sequence++
 		observer.current.UpdatedAt = observer.now().UTC()
 		observer.dirty = true
+		observer.journalDirty = true
+	}
+	if observer.journalDirty {
+		if err := observer.journal(observer.path, observer.current); err != nil {
+			observer.journalUnavailable(observer.path)
+			log.Print("Codex activity event publication is unavailable")
+		} else {
+			observer.journalDirty = false
+		}
 	}
 	if !observer.dirty {
 		return

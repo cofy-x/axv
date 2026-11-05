@@ -1,0 +1,128 @@
+.notifications-app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.notifications-app > .ns-tabs {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.notifications-app .ns-tab-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+.notifications-content,
+.notifications-work-content {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.notifications-work-content {
+  flex: 1;
+  overflow: auto;
+}
+.notification-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.notification-heading h2 {
+  margin: 0;
+  font-size: var(--ns-font-size-body);
+}
+.notification-heading .ns-button {
+  flex-shrink: 0;
+}
+.notifications-content .ns-field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-block: 10px;
+}
+.notifications-content .ns-field {
+  min-width: 0;
+  width: 100%;
+}
+.notifications-content .ns-checkbox {
+  display: flex;
+  margin-bottom: 7px;
+}
+.notification-event-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(205px, 1fr));
+  gap: 0 10px;
+}
+.notification-error {
+  color: #7a1010;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.notification-history {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.notification-history > li {
+  border-bottom: 1px solid var(--ns-shadow);
+  padding-block: 8px;
+}
+.notification-history-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  width: 100%;
+  padding: 6px 4px;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+.notification-history-item[aria-pressed='true'] {
+  color: #fff;
+  background: var(--ns-text);
+}
+.notification-history-item time {
+  width: 100%;
+  font-size: var(--ns-font-size-secondary);
+}
+.notification-history > li p {
+  margin: 5px 4px 0;
+}
+.notification-details {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ns-shadow);
+}
+.notification-identity {
+  display: block;
+  margin-block: 8px;
+}
+.notification-identity > div {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 8px;
+  margin-bottom: 5px;
+}
+.notification-identity dd {
+  margin: 0;
+  font-family: monospace;
+  overflow-wrap: anywhere;
+}
+.notification-task-output {
+  max-height: 260px;
+  overflow: auto;
+  padding: 8px;
+  background: var(--ns-light);
+  box-shadow: var(--ns-recessed);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

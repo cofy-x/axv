@@ -31,6 +31,10 @@ import { ApplicationCatalogContext } from '../features/extensions/catalog';
 import { createExtensionDefinitions } from '../features/extensions/ExtensionWindow';
 import { extensionStore } from '../features/extensions/store';
 import { composeApplicationDefinitions } from '../features/extensions/registry';
+import {
+  notificationLink,
+  openNotification,
+} from '../features/notifications/definition';
 
 export function App() {
   const { ready, bootError, boot } = useBootstrap();
@@ -116,6 +120,7 @@ function DesktopApp({ bootstrap, clientId }: ReadyDesktop) {
   }, [clientId]);
   const { preferences } = appearance;
   const desktopRef = useRef<DesktopAPI | null>(null);
+  const notificationOpened = useRef(false);
   const getDesktop = useCallback(() => desktopRef.current, []);
   const [commands] = useState(createWindowCommands);
   useSyncExternalStore(commands.subscribe, commands.getSnapshot);
@@ -192,6 +197,7 @@ function DesktopApp({ bootstrap, clientId }: ReadyDesktop) {
                   gallery: false,
                   applications: false,
                   cloudflare: false,
+                  notifications: false,
                 }}
                 initialDockOrder={[
                   'codex',
@@ -278,6 +284,13 @@ function DesktopApp({ bootstrap, clientId }: ReadyDesktop) {
                 }
                 onReady={(desktop) => {
                   desktopRef.current = desktop;
+                  if (!notificationOpened.current) {
+                    notificationOpened.current = true;
+                    const reference = notificationLink(
+                      globalThis.location.search,
+                    );
+                    if (reference) openNotification(desktop, reference);
+                  }
                 }}
                 onLayoutChange={onLayoutChange}
                 onTrashIcons={(ids) => {

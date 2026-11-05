@@ -107,6 +107,19 @@ func RunContext(ctx context.Context, settings config.Config, options Options) (r
 		codexAPI.Close()
 	}()
 	application := http.NewServeMux()
+	workNotifications, notificationErr := workstationNotifications(ctx, settings.Home, codexSessions, computeGateway)
+	if notificationErr != nil {
+		application.HandleFunc("/api/notifications", notificationsUnavailable)
+		application.HandleFunc("/api/notifications/", notificationsUnavailable)
+	} else {
+		defer func() {
+			if err := workNotifications.Close(); err != nil {
+				diagnostics.FromContext(ctx).Error("notifications.close_failed", err)
+				result = errors.Join(result, errors.New("close notification delivery failed"))
+			}
+		}()
+		workNotifications.Register(application)
+	}
 	previews := preview.New(ctx, preview.GatewayResolver(computeGateway))
 	defer previews.Close()
 	previews.Register(application)
