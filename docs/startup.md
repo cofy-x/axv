@@ -191,7 +191,7 @@ Initialization returns an accepted persistent task, not a completed project. Ins
 
 ### VM project tasks
 
-`axv vm project task` is the host-agent interface for dependency installation, builds and tests inside a registered VM project. Its image and current guest must support `project-tasks`. Capture the intended environment explicitly, then submit argv after `--`:
+`axv vm project task` is the host-agent interface for dependency installation, builds and tests inside a registered VM project. Its image and current guest must support `project-tasks`. Follow [guest-owned credential guidance](usage.md#credentials-for-project-tasks) before running commands that need secrets. Capture the intended environment explicitly, then submit argv after `--`:
 
 ```bash
 axv vm project binding <project-id> > task-binding.json
