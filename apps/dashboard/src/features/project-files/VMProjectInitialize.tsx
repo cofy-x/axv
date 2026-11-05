@@ -18,6 +18,7 @@ import type { PendingInitialization } from './vm-init-api';
 import { taskFinished, vmTasksAPI } from './vm-task-api';
 import type { VMTaskResult } from './vm-task-api';
 import { replaceVMRecoveryRecord } from './vm-workflow-recovery';
+import { VMPrivateRepositorySetup } from './VMPrivateRepositorySetup';
 import './project-initialize.css';
 
 const describe = (error: unknown) =>
@@ -37,6 +38,7 @@ export function VMProjectInitialize({
     volumeId: string;
     volumeRevision: number;
     machineId: string;
+    machineName: string;
     label: string;
   } | null;
   mode: 'create' | 'clone';
@@ -404,6 +406,14 @@ export function VMProjectInitialize({
             </p>
           </div>
         </form>
+      )}
+      {(pending ? !!pending.repository : mode === 'clone') && (
+        <VMPrivateRepositorySetup
+          desktop={desktop}
+          interactive={interactive && !busy}
+          repository={pending?.repository ?? repository}
+          target={pending || target}
+        />
       )}
       {[...new Set([error, recoveryError].filter(Boolean))].map((reason) => (
         <p role="alert" key={reason}>
