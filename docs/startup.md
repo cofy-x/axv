@@ -171,7 +171,7 @@ Projects retain their identity through desktop/controller restart and replacemen
 
 ### VM project initialization
 
-Register the retained volume root as a parent workspace, capture its binding, then initialize a new directory with an explicit persistent request ID. The selected image and guest need both `project-files` and `project-tasks`:
+Register the retained volume root as a parent workspace, capture its binding, then initialize a new directory with an explicit persistent request ID. The selected image and guest need `project-files`, `project-tasks` and `project-initialization`:
 
 ```bash
 axv vm project register --machine dev --volume <volume-id> --name 'Volume workspace' --json
@@ -185,9 +185,9 @@ axv vm project finish-initialization <parent-project-id> clone-repository-001 \
   --binding-file workspace-binding.json
 ```
 
-Omit `--repository` to create an empty project directory. Only one new directory component is accepted; the parent must exist. HTTPS and SSH URLs must omit inline passwords, HTTPS credentials, query parameters and fragments. Existing guest Git authentication is used without interactive prompts; SSH also requires existing host trust. An existing destination fails without changing its files. A failed clone preserves its partial directory; inspect it in the parent workspace before explicitly choosing another destination or performing manual cleanup. AXV does not automatically overwrite or delete it.
+Omit `--repository` to create an empty project directory. Only one new directory component is accepted; the parent must exist. HTTPS and SSH URLs must omit inline passwords, HTTPS credentials, query parameters and fragments. Existing guest Git authentication is used without interactive prompts; SSH also requires existing host trust. Follow [private repository authentication](usage.md#private-repository-authentication) for guest-owned HTTPS helpers, SSH setup and credential lifetime. An existing destination fails without changing its files. A failed clone preserves its partial directory; inspect it in the parent workspace before explicitly choosing another destination or performing manual cleanup. AXV does not automatically overwrite or delete it.
 
-Initialization returns an accepted persistent task, not a completed project. Inspect its original task receipt and logs until it succeeds, then explicitly finish with the original binding to register the new project. After a lost response, query the same receipt or repeat the exact initialize command with its original request ID and arguments. Replaying finish returns its original project; neither command silently selects a replacement VM. In the desktop, use **Project Files → VM → Create Project / Clone Repository**, then **Open Project** and **Codex**. [Compute initialization](api/compute.md#vm-project-initialization) owns defaults and retry boundaries.
+Initialization returns an accepted persistent task, not a completed project. Inspect its original task receipt and logs until it succeeds, then explicitly finish with the original binding to register the new project. After a lost response, query the same receipt or repeat the exact initialize command with its original request ID and arguments. A recorded failed attempt is not rerun after authentication is repaired: explicitly initialize a new unused directory with a new request ID. Replaying finish returns its original project; neither command silently selects a replacement VM. In the desktop, use **Project Files → VM → Create Project / Clone Repository**, then **Open Project** and **Codex**. [Compute initialization](api/compute.md#vm-project-initialization) owns defaults and retry boundaries.
 
 ### VM project tasks
 

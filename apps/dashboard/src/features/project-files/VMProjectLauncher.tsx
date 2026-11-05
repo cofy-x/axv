@@ -209,6 +209,10 @@ export function VMProjectLauncher({ desktop, interactive }: AppWindowProps) {
                   volumeId: volume.id,
                   volumeRevision: volume.revision,
                   machineId: volume.machineId,
+                  machineName:
+                    data.machines.find(
+                      (machine) => machine.id === volume.machineId,
+                    )?.spec.name || volume.machineId,
                   label: `${volume.name} · ${data.machines.find((machine) => machine.id === volume.machineId)?.spec.name || volume.machineId}`,
                 }
               : null

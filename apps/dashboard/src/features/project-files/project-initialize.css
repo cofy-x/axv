@@ -46,6 +46,32 @@
   gap: 6px;
   margin-block: 8px;
 }
+.vm-private-repository-setup {
+  margin-block: 8px;
+  line-height: 1.4;
+}
+.vm-private-repository-setup summary {
+  cursor: pointer;
+}
+.vm-private-repository-setup dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 10px;
+}
+.vm-private-repository-setup dd {
+  min-width: 0;
+  margin: 0;
+}
+.vm-private-repository-setup ol {
+  padding-inline-start: 24px;
+}
+.vm-private-repository-setup li + li {
+  margin-top: 8px;
+}
+.vm-private-repository-setup pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 @container project-files (max-width: 440px) {
   .vm-project-launcher .project-register-fields,
   .vm-project-initialize-fields {

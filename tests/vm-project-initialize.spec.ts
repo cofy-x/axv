@@ -33,6 +33,11 @@ const projects = (page: Page) =>
 
 async function fixture(page: Page, loseReply = false, changeBinding = false) {
   const submissions: VMProjectInitialization[] = [];
+  const terminalRequests: { path: string; hostId: string; body: unknown }[] =
+    [];
+  let guestBoot = binding.bootId;
+  let guestInstance = binding.instanceId;
+  let terminalBoot = binding.bootId;
   let receipt: VMTaskResult | null = null;
   let finished: VMProject | null = null;
   let registered = false;
@@ -95,10 +100,25 @@ async function fixture(page: Page, loseReply = false, changeBinding = false) {
     if (path.endsWith('/guest/health'))
       return json({
         machineId: binding.machineId,
-        bootId: binding.bootId,
-        instanceId: binding.instanceId,
+        bootId: guestBoot,
+        instanceId: guestInstance,
         ready: true,
       });
+    if (path.includes('/guest/terminals')) {
+      expect(request.headers()['x-axv-host-id']).toBe(parent.hostId);
+      if (request.method() === 'POST') {
+        terminalRequests.push({
+          path,
+          hostId: request.headers()['x-axv-host-id'],
+          body: request.postDataJSON(),
+        });
+      }
+      return json({
+        id: 'authentication-terminal',
+        bootId: terminalBoot,
+        status: 'running',
+      });
+    }
     if (!path.startsWith('/api/compute/projects')) return route.continue();
     expect(request.headers()['x-axv-host-id']).toBe(parent.hostId);
     if (path === '/api/compute/projects') {
@@ -214,8 +234,31 @@ async function fixture(page: Page, loseReply = false, changeBinding = false) {
       });
     return route.continue();
   });
+  await page.routeWebSocket(
+    (url) => url.pathname.includes('/guest/terminals/'),
+    (socket) => {
+      socket.send(JSON.stringify({ ready: true, bootId: terminalBoot }));
+      socket.send(Buffer.from('authentication-test> '));
+    },
+  );
   return {
     submissions,
+    terminalRequests,
+    replaceGuest: () => {
+      guestBoot = 'replacement-boot';
+    },
+    restartDuringTerminalCreation: () => {
+      terminalBoot = 'replacement-boot';
+    },
+    restartGuestService: () => {
+      guestInstance = 'replacement-guest';
+    },
+    fail: () => {
+      if (!receipt) throw new Error('No initialization submitted');
+      receipt.attempt.status = 'failed';
+      receipt.attempt.guestFinal = true;
+      receipt.attempt.reason = 'Git clone failed. Check guest authentication.';
+    },
     makeOrdinary: () => {
       if (!receipt) throw new Error('No initialization submitted');
       delete receipt.task.spec.initialization;
@@ -271,6 +314,10 @@ test('clone recovers its original task after reload and opens the initialized pr
   await expect(panel.getByText('Original VM:', { exact: false })).toContainText(
     binding.machineId,
   );
+  const setup = panel.locator('.vm-private-repository-setup');
+  await setup.locator(':scope > summary').click();
+  await expect(setup).toContainText('https://example.com/repository.git');
+  await expect(setup).toContainText(binding.bootId);
   await panel.getByRole('button', { name: 'Recover', exact: true }).click();
   await expect(
     panel
@@ -350,12 +397,232 @@ test('inline Git credentials never reach submission or browser recovery', async 
   await panel
     .getByLabel('Repository URL')
     .fill('https://supersecret@example.com/repository.git');
+  const setup = panel.locator('.vm-private-repository-setup');
+  await setup.locator(':scope > summary').click();
+  await expect(setup).not.toContainText('supersecret');
+  await expect(setup).toContainText('Use a repository URL without credentials');
   await panel.getByRole('button', { name: 'Clone', exact: true }).click();
   await expect(panel.getByRole('alert')).toContainText('credential-free');
   expect(state.submissions).toHaveLength(0);
   expect(
     await page.evaluate(() => JSON.stringify({ ...localStorage })),
   ).not.toContain('supersecret');
+});
+
+test('private repository setup opens the selected guest terminal without sending credentials', async ({
+  page,
+}, info) => {
+  const state = await fixture(page);
+  const panel = await launcher(page);
+  await panel.getByLabel('Project action').selectOption('clone');
+  await panel.getByLabel('Project volume').selectOption(parent.volumeId);
+  await panel
+    .getByLabel('Repository URL')
+    .fill('https://github.com/example/private.git');
+  const setup = panel.locator('.vm-private-repository-setup');
+  const summary = setup.locator(':scope > summary');
+  await expect(
+    setup.getByRole('button', { name: 'Guest Terminal' }),
+  ).toBeHidden();
+  await summary.focus();
+  await summary.press('Enter');
+  await expect(setup).toContainText('Project VM');
+  await expect(setup).toContainText(binding.machineId);
+  await expect(setup).toContainText('axv (/home/axv)');
+  await expect(setup).toContainText('auth setup-git --hostname github.com');
+  await expect(setup).toContainText('terminal-only environment exports');
+  await expect(setup).toContainText(
+    'Keep credentials off the retained project volume',
+  );
+  await setup
+    .getByRole('button', { name: 'Guest Terminal' })
+    .scrollIntoViewIfNeeded();
+  await panel.screenshot({
+    path: info.outputPath('private-repository-setup-desktop.png'),
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect
+    .poll(async () => {
+      const bounds = await setup.boundingBox();
+      return bounds ? bounds.x + bounds.width : Number.POSITIVE_INFINITY;
+    })
+    .toBeLessThanOrEqual(390);
+  await setup.locator('li').nth(1).scrollIntoViewIfNeeded();
+  await panel.screenshot({
+    path: info.outputPath('private-repository-setup.png'),
+  });
+  await setup
+    .getByRole('button', { name: 'Guest Terminal', exact: true })
+    .click();
+  const terminal = page.locator('[data-app-id="guest-terminal"]');
+  await expect(terminal).toBeVisible();
+  await expect(terminal.getByTestId('terminal-status')).toHaveAttribute(
+    'data-state',
+    'connected',
+  );
+  expect(state.submissions).toHaveLength(0);
+  expect(state.terminalRequests).toHaveLength(1);
+  expect(state.terminalRequests[0]).toMatchObject({
+    path: `/api/compute/machines/${binding.machineId}/guest/terminals`,
+    hostId: parent.hostId,
+    body: { cols: 80, rows: 24 },
+  });
+  expect(
+    await page.evaluate(() => JSON.stringify({ ...localStorage })),
+  ).not.toContain('private.git');
+});
+
+test('failed private clones retain authentication help and refuse a replacement guest', async ({
+  page,
+}) => {
+  const state = await fixture(page);
+  const panel = await launcher(page);
+  await panel.getByLabel('Project action').selectOption('clone');
+  await panel.getByLabel('Project volume').selectOption(parent.volumeId);
+  await panel.getByLabel('New directory').fill('private-repository');
+  await panel
+    .getByLabel('Repository URL')
+    .fill('https://github.com/example/private.git');
+  await panel.getByRole('button', { name: 'Clone', exact: true }).click();
+  await expect.poll(() => state.submissions.length).toBe(1);
+  state.fail();
+  await expect(
+    panel.getByText('The destination and any partial clone were preserved.', {
+      exact: false,
+    }),
+  ).toBeVisible();
+  const setup = panel.locator('.vm-private-repository-setup');
+  await setup.locator(':scope > summary').click();
+  await expect(setup).toContainText(binding.bootId);
+  await expect(setup).toContainText('does not rerun a failed clone');
+  state.replaceGuest();
+  await setup
+    .getByRole('button', { name: 'Guest Terminal', exact: true })
+    .click();
+  await expect(setup.getByRole('alert')).toContainText(
+    'Authentication was not redirected',
+  );
+  expect(state.terminalRequests).toHaveLength(0);
+  await panel.getByRole('button', { name: 'Recover', exact: true }).click();
+  expect(state.submissions).toHaveLength(1);
+  await expect(panel.getByText('Original VM:', { exact: false })).toContainText(
+    binding.machineId,
+  );
+});
+
+test('late authentication terminals cannot open after switching the selected volume or hiding setup', async ({
+  page,
+}) => {
+  const state = await fixture(page);
+  const panel = await launcher(page);
+  await panel.getByLabel('Project action').selectOption('clone');
+  const volume = panel.getByLabel('Project volume');
+  await volume.selectOption(parent.volumeId);
+  const setup = panel.locator('.vm-private-repository-setup');
+  await setup.locator(':scope > summary').click();
+  let releaseTerminal!: () => void;
+  let terminalReply = new Promise<void>((resolve) => {
+    releaseTerminal = resolve;
+  });
+  let requested = false;
+  await page.route('**/guest/terminals', async (route) => {
+    requested = true;
+    await terminalReply;
+    await route.fallback();
+  });
+  try {
+    await setup
+      .getByRole('button', { name: 'Guest Terminal', exact: true })
+      .click();
+    await expect.poll(() => requested).toBe(true);
+    await volume.selectOption('');
+  } finally {
+    releaseTerminal();
+  }
+  await expect(setup.getByRole('status')).toContainText(binding.machineId);
+  await expect(page.locator('[data-app-id="guest-terminal"]')).toHaveCount(0);
+  expect(state.terminalRequests).toHaveLength(1);
+  await volume.selectOption(parent.volumeId);
+  terminalReply = new Promise<void>((resolve) => {
+    releaseTerminal = resolve;
+  });
+  requested = false;
+  try {
+    await setup
+      .getByRole('button', { name: 'Guest Terminal', exact: true })
+      .click();
+    await expect.poll(() => requested).toBe(true);
+    await panel.getByRole('tab', { name: 'Host', exact: true }).click();
+  } finally {
+    releaseTerminal();
+  }
+  await expect.poll(() => state.terminalRequests.length).toBe(2);
+  await expect(page.locator('[data-app-id="guest-terminal"]')).toHaveCount(0);
+  const terminalButton = setup.getByRole('button', {
+    name: 'Guest Terminal',
+    exact: true,
+    includeHidden: true,
+  });
+  await expect(terminalButton).toBeDisabled();
+  await terminalButton.evaluate((element: HTMLButtonElement) =>
+    element.click(),
+  );
+  expect(state.terminalRequests).toHaveLength(2);
+});
+
+test('authentication terminal errors remain visible and a changed boot never opens', async ({
+  page,
+}) => {
+  const state = await fixture(page);
+  const panel = await launcher(page);
+  await panel.getByLabel('Project action').selectOption('clone');
+  await panel.getByLabel('Project volume').selectOption(parent.volumeId);
+  const setup = panel.locator('.vm-private-repository-setup');
+  await setup.locator(':scope > summary').click();
+  await page.route('**/guest/terminals', async (route) => {
+    await route.fulfill({
+      status: 503,
+      json: { code: 'guest_unavailable', error: 'Guest connection lost.' },
+    });
+  });
+  await setup
+    .getByRole('button', { name: 'Guest Terminal', exact: true })
+    .click();
+  await expect(setup.getByRole('alert')).toContainText(
+    'Guest connection lost.',
+  );
+  await page.unroute('**/guest/terminals');
+  state.restartDuringTerminalCreation();
+  await setup
+    .getByRole('button', { name: 'Guest Terminal', exact: true })
+    .click();
+  await expect(setup.getByRole('alert')).toContainText(
+    'guest service restarted',
+  );
+  await expect(page.locator('[data-app-id="guest-terminal"]')).toHaveCount(0);
+});
+
+test('authentication refuses guest service replacement between preflight and terminal creation', async ({
+  page,
+}) => {
+  const state = await fixture(page);
+  const panel = await launcher(page);
+  await panel.getByLabel('Project action').selectOption('clone');
+  await panel.getByLabel('Project volume').selectOption(parent.volumeId);
+  const setup = panel.locator('.vm-private-repository-setup');
+  await setup.locator(':scope > summary').click();
+  await page.route('**/guest/terminals', async (route) => {
+    state.restartGuestService();
+    await route.fallback();
+  });
+  await setup
+    .getByRole('button', { name: 'Guest Terminal', exact: true })
+    .click();
+  await expect(setup.getByRole('alert')).toContainText(
+    'guest service restarted',
+  );
+  await expect(page.locator('[data-app-id="guest-terminal"]')).toHaveCount(0);
+  expect(state.terminalRequests).toHaveLength(1);
 });
 
 test('switching project modes preserves the draft and keeps hidden input inactive', async ({
