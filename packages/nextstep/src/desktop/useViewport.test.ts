@@ -10,7 +10,7 @@ describe('visual desktop viewport', () => {
     vi.stubGlobal('innerHeight', 844);
     vi.stubGlobal('visualViewport', { height: 320 });
     const viewport = viewportSize();
-    expect(viewport).toEqual({ width: 390, height: 320 });
+    expect(viewport).toEqual({ width: 390, height: 320, coarsePointer: false });
     expect(desktopLayoutMode(viewport)).toEqual({
       mobile: true,
       short: true,
@@ -34,6 +34,21 @@ describe('visual desktop viewport', () => {
       y: 90,
       width: 382,
       height: 690,
+    });
+  });
+
+  it('reads pointer mode without widening the side Dock', () => {
+    vi.stubGlobal('innerWidth', 1024);
+    vi.stubGlobal('innerHeight', 768);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: true })),
+    );
+    expect(windowWorkArea(viewportSize(), false)).toEqual({
+      x: 4,
+      y: 28,
+      width: 952,
+      height: 732,
     });
   });
 });

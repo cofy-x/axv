@@ -24,6 +24,7 @@ let codex;
 let shellEnvironment;
 const terminalSockets = new Set();
 const servers = new Set();
+const databaseIdentities = new Map();
 
 function cleanup() {
   cleaning ??= (async () => {
@@ -89,6 +90,14 @@ async function start(options = {}) {
     },
   });
   servers.add(server);
+  const bootstrap = await fetch(
+    `${server.base}/api/bootstrap?clientId=smoke-binding`,
+    {
+      signal: AbortSignal.timeout(10_000),
+    },
+  );
+  assert.equal(bootstrap.status, 200);
+  databaseIdentities.set(server.base, (await bootstrap.json()).databaseId);
   return server;
 }
 
@@ -111,7 +120,15 @@ function invoke(args, env = {}) {
 }
 
 function fetchBounded(url, options = {}) {
-  return fetch(url, { ...options, signal: AbortSignal.timeout(10_000) });
+  const headers = new Headers(options.headers);
+  const identity = databaseIdentities.get(new URL(url).origin);
+  if (identity && !headers.has('X-AXV-Database-ID'))
+    headers.set('X-AXV-Database-ID', identity);
+  return fetch(url, {
+    ...options,
+    headers,
+    signal: AbortSignal.timeout(10_000),
+  });
 }
 
 async function json(base, path, method = 'GET', body) {
@@ -299,7 +316,12 @@ async function connectTerminal(base, path = '/api/terminal?cols=80&rows=24') {
   const url = new URL(path, base);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   // Node 24's built-in WebSocket accepts handshake headers in WebSocketInit.
-  const socket = new WebSocket(url, { headers: { Origin: base } });
+  const socket = new WebSocket(url, {
+    headers: {
+      Origin: base,
+      'X-AXV-Database-ID': databaseIdentities.get(base),
+    },
+  });
   socket.binaryType = 'arraybuffer';
   const session = {
     socket,
@@ -938,6 +960,43 @@ try {
   assert.equal((await fetchBounded(`${first.base}/api/health`)).status, 200);
   const html = await (await fetchBounded(first.base)).text();
   assert.match(html, /<div id="root">/);
+  assert.match(html, /rel="manifest"[^>]*crossorigin="use-credentials"/);
+  const manifestResponse = await fetchBounded(
+    `${first.base}/manifest.webmanifest`,
+  );
+  assert.equal(manifestResponse.status, 200);
+  assert.match(
+    manifestResponse.headers.get('content-type'),
+    /^application\/manifest\+json/,
+  );
+  assert.equal(manifestResponse.headers.get('cache-control'), 'no-cache');
+  const manifest = await manifestResponse.json();
+  assert.deepEqual(
+    [manifest.id, manifest.start_url, manifest.scope, manifest.display],
+    ['/', '/', '/', 'standalone'],
+  );
+  assert.equal(manifest.name, 'AXV');
+  assert.equal(manifest.short_name, 'AXV');
+  assert.equal(manifest.description, 'A personal cloud workstation.');
+  for (const [path, size] of [
+    ['/icons/axv-192.png', 192],
+    ['/icons/axv-512.png', 512],
+    ['/icons/apple-touch-icon.png', 180],
+  ]) {
+    const icon = await fetchBounded(`${first.base}${path}`);
+    assert.equal(icon.status, 200);
+    assert.match(icon.headers.get('content-type'), /^image\/png/);
+    assert.equal(icon.headers.get('cache-control'), 'no-cache');
+    const bytes = Buffer.from(await icon.arrayBuffer());
+    assert.equal(bytes.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+    assert.equal(bytes.readUInt32BE(16), size);
+    assert.equal(bytes.readUInt32BE(20), size);
+  }
+  const oldClient = await fetch(`${first.base}/api/entries`, {
+    signal: AbortSignal.timeout(10_000),
+  });
+  assert.equal(oldClient.status, 428);
+  assert.equal((await oldClient.json()).code, 'database_identity_required');
   const asset = html.match(/src="([^"]+\.js)"/)?.[1];
   assert.ok(asset, 'Production HTML must reference a bundled script.');
   assert.equal((await fetchBounded(`${first.base}${asset}`)).status, 200);

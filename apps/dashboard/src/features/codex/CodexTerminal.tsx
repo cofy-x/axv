@@ -10,6 +10,7 @@ import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { useWindowCommands } from '../../shared/desktop/WindowCommandsContext';
+import { desktopDatabase } from '../../shared/api/desktop';
 import { useTerminalPaste } from '../../shared/terminal/use-terminal-paste';
 import { canTransferWindowFocus } from '../../shared/desktop/focus-transfer';
 import { isDesktopTerminalKey } from '../terminal/terminal-keys';
@@ -215,6 +216,7 @@ export function CodexTerminal({
     term.loadAddon(fit);
     terminal.current = term;
     const session = new CodexConnection({
+      databaseId: namespace.databaseId,
       sessionId: id,
       runId,
       baseURL: globalThis.location.href,
@@ -385,7 +387,7 @@ export function CodexTerminal({
       terminal.current = null;
       connection.current = null;
     };
-  }, [id, runId, invalidatePaste, recordPasteInput]);
+  }, [id, runId, namespace.databaseId, invalidatePaste, recordPasteInput]);
 
   useEffect(() => {
     const unsubscribe = subscribeSessionMetadata((session) => {
@@ -405,6 +407,7 @@ export function CodexTerminal({
     let pending: AbortController | null = null;
     const refresh = async () => {
       if (
+        desktopDatabase.getSnapshot() ||
         pending ||
         disposed ||
         !visible ||
@@ -601,6 +604,7 @@ export function CodexTerminal({
     setFeedback('');
     try {
       const session = await codexAPI.getRun(source.id, active);
+      desktopDatabase.assertUnchanged();
       if (!mounted.current) return false;
       openCodexSession(desktop, session);
       return true;
@@ -678,6 +682,7 @@ export function CodexTerminal({
       return;
     }
     const { project } = await projectsAPI.register(session.projectPath);
+    desktopDatabase.assertUnchanged();
     desktop.openApp(
       'project-files',
       { projectId: project.id },

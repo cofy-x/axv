@@ -686,6 +686,29 @@ test('a reserved history conflict and desktop store replacement preserve the ori
   const original = state.starts[0];
   const sourceDatabase = state.startDatabases[0];
   expect(sourceDatabase).not.toBe('');
+  const pendingStart = () =>
+    page.evaluate(() =>
+      Object.entries(sessionStorage).filter(([key]) =>
+        key.includes('axv-codex-vm-start'),
+      ),
+    );
+  const originalReceipt = await pendingStart();
+  expect(originalReceipt).toHaveLength(1);
+  expect(JSON.parse(originalReceipt[0][0])).toContain(sourceDatabase);
+  expect(JSON.parse(originalReceipt[0][1])).toEqual({
+    requestId: original.requestId,
+    binding: original.vmProject.binding,
+  });
+  // Save the manager before replacement freezes desktop writers. Reload can
+  // then restore its existing window without requiring a forbidden layout save.
+  await expect
+    .poll(async () =>
+      (await persistedLayout(page, request))?.windows.some(
+        (win: { id: string }) =>
+          win.id === `codex:vm:${project.hostId}:${project.id}`,
+      ),
+    )
+    .toBe(true);
   state.replaceDesktopStore();
   await resolve.click();
   await expect(manager(page).getByRole('alert')).toContainText(
@@ -698,16 +721,16 @@ test('a reserved history conflict and desktop store replacement preserve the ori
       exact: true,
     }),
   ).toBeDisabled();
-  await expect
-    .poll(async () =>
-      (await persistedLayout(page, request))?.windows.some(
-        (win: { id: string }) =>
-          win.id === `codex:vm:${project.hostId}:${project.id}`,
-      ),
-    )
-    .toBe(true);
+  expect(await pendingStart()).toEqual(originalReceipt);
+  await resolve.click();
+  await expect(manager(page).getByRole('alert')).toContainText(
+    'desktop database changed',
+  );
+  expect(state.starts).toEqual([original, original]);
+  expect(await pendingStart()).toEqual(originalReceipt);
   await page.reload();
   await expect(resolve).toBeEnabled();
+  expect(await pendingStart()).toEqual(originalReceipt);
   await resolve.click();
   await expect(manager(page).getByRole('alert')).toContainText(
     'desktop database changed',
@@ -718,6 +741,7 @@ test('a reserved history conflict and desktop store replacement preserve the ori
     sourceDatabase,
     sourceDatabase,
   ]);
+  expect(await pendingStart()).toEqual(originalReceipt);
   expect(state.launches).toBe(1);
 });
 

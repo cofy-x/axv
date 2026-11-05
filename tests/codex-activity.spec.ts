@@ -1,3 +1,4 @@
+import { windowAction } from './helpers';
 import type { Route } from '@playwright/test';
 import {
   choose,
@@ -466,19 +467,13 @@ test('a sole terminal retains retired service observations while shaded', async 
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
     await expect(current.window).toContainText(diagnostic);
     await expect(badge).toHaveAttribute('data-attention-kind', 'warning');
-    await choose(
-      current.window.getByRole('button', { name: /^Shade / }),
-      touch,
-    );
+    await windowAction(page, current.window, 'Shade', touch);
     await expect(current.window).toHaveClass(/is-shaded/);
     await expect(
       current.window.getByLabel('Codex terminal input'),
     ).not.toBeFocused();
     const beforeUnshade = revision;
-    await choose(
-      current.window.getByRole('button', { name: /^Unshade / }),
-      touch,
-    );
+    await windowAction(page, current.window, 'Unshade', touch);
     await expect(current.window).not.toHaveClass(/is-shaded/);
     await expect.poll(() => revision).toBeGreaterThan(beforeUnshade);
     await expect(current.window).toContainText(`Observation ${revision}.`);

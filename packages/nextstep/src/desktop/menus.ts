@@ -3,9 +3,118 @@ import type {
   DesktopAPI,
   DesktopProps,
   DesktopWindow,
+  ClipShortcut,
   MenuGroup,
   MenuItem,
 } from '../types';
+import { resolveApplication } from './applications';
+
+export function showClock(api: DesktopAPI) {
+  void api.dialog({
+    title: 'Clock',
+    message: new Date().toLocaleString(undefined, {
+      dateStyle: 'full',
+      timeStyle: 'short',
+    }),
+    buttons: [{ label: 'OK', value: 'ok', default: true }],
+  });
+}
+
+export function createClipShortcutMenu(
+  props: DesktopProps,
+  api: DesktopAPI,
+  shortcut: ClipShortcut,
+): MenuItem[] {
+  const available =
+    resolveApplication(props.apps, shortcut.appId).unavailable === undefined &&
+    props.isShortcutAvailable?.(shortcut) !== false;
+  return [
+    {
+      label: 'Open',
+      disabled: !available,
+      action: () => {
+        if (!available) return;
+        if (Object.keys(shortcut.params).length)
+          api.openApp(shortcut.appId, shortcut.params);
+        else api.launchApp(shortcut.appId);
+      },
+    },
+    {
+      label: 'Remove Shortcut',
+      action: () => api.removeClipShortcut(shortcut.id),
+    },
+  ];
+}
+
+/** Workspace switching and shortcuts share the Clip menu. */
+export function createClipMenu(
+  props: DesktopProps,
+  api: DesktopAPI,
+): MenuItem[] {
+  const workspace = api.workspaces.find(
+    (item) => item.id === api.currentWorkspaceId,
+  )!;
+  return [
+    ...api.workspaces.map((item, index) => ({
+      label: `${index + 1}  ${item.name}`,
+      checked: item.id === workspace.id,
+      action: () => api.switchWorkspace(item.id),
+    })),
+    { separator: true },
+    ...(workspace.clip.length
+      ? [
+          {
+            label: 'Shortcuts',
+            children: workspace.clip.map((shortcut) => ({
+              label: shortcut.title,
+              children: createClipShortcutMenu(props, api, shortcut),
+            })),
+          },
+        ]
+      : []),
+    {
+      label: 'Rename Workspace',
+      action: () => {
+        void api
+          .dialog({
+            title: 'Rename Workspace',
+            input: { label: 'Workspace name', value: workspace.name },
+          })
+          .then((result) => {
+            if (result?.value.trim())
+              api.renameWorkspace(workspace.id, result.value);
+          });
+      },
+    },
+    {
+      label: 'Add Application Shortcut',
+      children: props.apps
+        .filter((app) => app.launchable !== false)
+        .map((app) => ({
+          label: app.title,
+          action: () =>
+            api.addClipShortcut({
+              appId: app.id,
+              title: app.title,
+              params: {},
+            }),
+        })),
+    },
+    {
+      label: 'Add Active Window',
+      disabled: !api.activeWindowId,
+      action: () => {
+        const win = api.windows.find((item) => item.id === api.activeWindowId);
+        if (win)
+          api.addClipShortcut({
+            appId: win.appId,
+            title: win.title,
+            params: win.params,
+          });
+      },
+    },
+  ];
+}
 
 function openSelectedIcons(
   props: DesktopProps,
@@ -128,6 +237,7 @@ export function createDesktopContextMenu(
     },
     { separator: true },
     { label: 'Arrange Icons', action: api.arrangeIcons },
+    { label: 'Clock', action: () => showClock(api) },
     ...(props.onAppearance
       ? [{ label: 'Preferences', action: props.onAppearance }]
       : []),

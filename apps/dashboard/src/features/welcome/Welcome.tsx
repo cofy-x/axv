@@ -1,78 +1,45 @@
 import { Button, IconButton, PixelIcon } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
-import { useCodexAvailability } from '../codex/CodexContext';
 
 export function Welcome({ desktop, window }: AppWindowProps) {
-  const { info } = useCodexAvailability();
-
   return (
     <div className="welcome-app">
       <div className="welcome-banner">
-        <img src="/favicon.svg" alt="" width={64} height={64} />
+        <img src="/favicon.svg" alt="" width={48} height={48} />
         <div>
           <strong>Welcome to AXV</strong>
           <span>Your personal cloud for VMs and coding agents.</span>
         </div>
       </div>
       <div className="welcome-copy">
-        <p className="fine-print">
-          Open Tailscale for private access, or Cloudflare for browser access.
-          Configure access on the AXV host and in your Cloudflare account.
-        </p>
-        <div className="welcome-links">
+        <h2>Start working</h2>
+        <div className="welcome-links" aria-label="Work applications">
           {[
+            {
+              app: 'codex',
+              icon: 'companion' as const,
+              name: 'Codex',
+              text: 'Resume coding and review sessions that need attention.',
+            },
             {
               app: 'machines',
               icon: 'virtual-machines' as const,
               name: 'Virtual Machines',
-              text: 'Create and manage VMs.',
-            },
-            ...(info?.installed
-              ? [
-                  {
-                    app: 'codex',
-                    icon: 'companion' as const,
-                    name: 'Codex',
-                    text: 'Resume coding and find sessions that need attention.',
-                  },
-                ]
-              : []),
-            {
-              app: 'terminal',
-              icon: 'terminal' as const,
-              name: 'Terminal',
-              text: 'Open a host shell.',
-            },
-            {
-              app: 'files',
-              icon: 'folder' as const,
-              name: 'Documents',
-              text: 'Write notes in AXV.',
-              params: { folderId: 'documents' },
-            },
-            {
-              app: 'applications',
-              icon: 'applications' as const,
-              name: 'Application Manager',
-              text: 'Install and manage small applications.',
+              text: 'Create and manage your development machines.',
             },
             {
               app: 'project-files',
               icon: 'project' as const,
               name: 'Project Files',
-              text: 'Create VM projects, open Codex and preview your work.',
+              text: 'Browse projects, edit files and preview your work.',
             },
           ].map((link) => (
             <button
               key={link.app}
               className="welcome-link"
-              onClick={() =>
-                link.app === 'terminal'
-                  ? desktop.launchApp(link.app)
-                  : desktop.openApp(link.app, link.params)
-              }
+              onClick={() => desktop.openApp(link.app)}
             >
-              <PixelIcon name={link.icon} />
+              <PixelIcon name={link.icon} size={40} />
               <span>
                 <strong>{link.name}</strong>
                 <small>{link.text}</small>
@@ -80,6 +47,50 @@ export function Welcome({ desktop, window }: AppWindowProps) {
             </button>
           ))}
         </div>
+        <div className="welcome-tools" aria-label="Desktop tools">
+          <Button
+            onClick={() => desktop.openApp('files', { folderId: 'documents' })}
+          >
+            Documents
+          </Button>
+          <Button onClick={() => desktop.launchApp('terminal')}>
+            Terminal
+          </Button>
+          <Button onClick={() => desktop.openApp('applications')}>
+            Applications
+          </Button>
+        </div>
+        <details className="welcome-remote">
+          <summary>Connect from another device</summary>
+          <p>
+            Set up private access with Tailscale, or browser access with
+            Cloudflare. Configure access on the AXV host before connecting.
+          </p>
+          <div className="welcome-tools">
+            <Button onClick={() => desktop.openApp('remote-access')}>
+              Tailscale
+            </Button>
+            <Button onClick={() => desktop.openApp('cloudflare')}>
+              Cloudflare
+            </Button>
+          </div>
+        </details>
+        <details className="welcome-remote">
+          <summary>Install AXV</summary>
+          <dl className="welcome-install-steps">
+            <dt>Desktop</dt>
+            <dd>
+              In Chrome or Edge, choose the install option in the browser menu.
+            </dd>
+            <dt>iPhone Safari</dt>
+            <dd>
+              Open AXV’s Tailscale HTTPS address, then choose{' '}
+              <strong>Share → Add to Home Screen</strong>. Keep{' '}
+              <strong>Open as Web App</strong> on if shown.
+            </dd>
+          </dl>
+          <p>AXV must stay online. Unsaved drafts are not transferred.</p>
+        </details>
       </div>
       <div className="app-toolbar welcome-footer">
         <IconButton
@@ -90,6 +101,17 @@ export function Welcome({ desktop, window }: AppWindowProps) {
             const rect = event.currentTarget.getBoundingClientRect();
             desktop.contextMenu(
               [
+                {
+                  label: 'Developer Tools',
+                  children: [
+                    {
+                      label: 'Component Gallery',
+                      action: () => {
+                        desktop.openApp('gallery');
+                      },
+                    },
+                  ],
+                },
                 {
                   label: 'Preferences',
                   action: () => {
@@ -136,14 +158,9 @@ export function About() {
         <dd>cofy-x</dd>
       </dl>
       <p className="fine-print">
-        Documents and desktop layout stay on the AXV host. VM project files stay
-        on retained volumes. Host Codex can use the AXV Skill to edit a selected
-        VM project and run its tasks. Codex activity identifies working
-        sessions, pending requests and turn outcomes. Project Files can clone
-        repositories, open development previews and restore independent volume
-        copies. Private remote access uses Tailscale; optional Cloudflare Access
-        supports an externally managed tunnel. Application Manager adds
-        restricted extensions with their own saved data.
+        Documents and desktop layout live on the AXV host. Project files stay in
+        their host directories or VM volumes. Browser recovery copies stay on
+        this device.
       </p>
     </div>
   );

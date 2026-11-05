@@ -34,7 +34,6 @@ import {
 export function createAppRegistry(
   data: FilesystemData,
   commands: WindowCommands,
-  codexInstalled: boolean,
 ): AppDefinition[] {
   return [
     welcomeApp,
@@ -50,7 +49,7 @@ export function createAppRegistry(
     createMachineApp,
     machineInspectorApp,
     createGuestTerminalApp(commands),
-    createCodexApp(commands, codexInstalled),
+    createCodexApp(commands),
     codexEnvironmentApp,
     tailscaleApp,
     cloudflareApp,

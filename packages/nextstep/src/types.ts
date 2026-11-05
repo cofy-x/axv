@@ -28,6 +28,7 @@ export type IconName =
 export type WindowParams = Record<string, string>;
 export type Point = { x: number; y: number };
 export type Size = { width: number; height: number };
+export type Viewport = Size & { coarsePointer?: boolean };
 export type Bounds = Point & Size;
 
 export interface DesktopWindow extends Bounds {
@@ -189,6 +190,8 @@ export interface AppDefinition {
   defaultDesktop?: boolean;
   launch?: (desktop: DesktopAPI) => void | Promise<void>;
   kind?: 'application' | 'panel';
+  /** Place a newly opened window beside its active source when there is space. */
+  initialPlacement?: 'beside-active';
   defaultSize?: Size;
   minSize?: Size;
   windowKey?: (params: WindowParams) => string;
@@ -219,6 +222,10 @@ export interface DesktopProps {
   icons: DesktopIcon[];
   initialLayout?: DesktopLayout;
   initialLayoutError?: string;
+  /** New-layout defaults only; a saved layout always keeps its visibility choices. */
+  initialDesktopApplications?: Record<string, boolean>;
+  /** Order fresh-layout pinned entries without replacing a saved Dock. */
+  initialDockOrder?: string[];
   initialWindows?: { appId: string; params?: WindowParams; title?: string }[];
   onLayoutChange?: (layout: DesktopLayout) => void;
   onTrashIcons?: (ids: string[]) => void;
@@ -228,6 +235,8 @@ export interface DesktopProps {
   isShortcutAvailable?: (shortcut: ClipShortcut) => boolean;
   iconSnap?: boolean;
   connectionStatus?: 'connected' | 'connecting' | 'offline';
+  /** Host-owned status content, kept clear of the Dock and blocked by transient UI. */
+  statusOverlay?: ReactNode;
   onAppearance?: () => void;
   onAbout?: () => void;
   onHelp?: () => void;

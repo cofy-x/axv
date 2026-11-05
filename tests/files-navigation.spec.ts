@@ -1,5 +1,6 @@
 import {
   actionMenu,
+  bounds,
   createEntry,
   entries,
   expect,
@@ -8,6 +9,164 @@ import {
   persistedLayout,
   test,
 } from './helpers';
+
+test('narrow Files shows one directory and preserves desktop column preferences', async ({
+  page,
+  request,
+}) => {
+  const parent = await createEntry(request, 'E2E Narrow Parent', 'folder');
+  const child = await createEntry(
+    request,
+    'E2E Narrow Child',
+    'folder',
+    parent.id,
+  );
+  const sibling = await createEntry(
+    request,
+    'E2E Narrow Sibling',
+    'folder',
+    parent.id,
+  );
+  const file = await createEntry(request, 'E2E Narrow.txt', 'file', child.id);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.reload();
+  const files = filesWindow(page);
+  await files.getByRole('option', { name: parent.name, exact: true }).click();
+  const separator = files.getByRole('separator', {
+    name: 'Resize Documents column',
+  });
+  await separator.focus();
+  await separator.press('ArrowRight');
+  await expect(separator).toHaveAttribute('aria-valuenow', '230');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(files.getByRole('listbox')).toHaveCount(1);
+  await expect(files.getByLabel('Folder view')).toHaveCount(0);
+  await expect(files.getByLabel('Sort files')).toHaveCount(0);
+  await expect(files.locator('.miller-column-heading:visible')).toHaveCount(0);
+  const current = files.getByRole('listbox', { name: `${parent.name} column` });
+  const browser = await bounds(files.locator('.miller-browser'));
+  expect((await bounds(current)).width).toBeGreaterThanOrEqual(
+    browser.width - 2,
+  );
+  await current.focus();
+  await current.press('Home');
+  await expect(current).toBeFocused();
+  await expect(
+    current.getByRole('option', { name: child.name, exact: true }),
+  ).toHaveAttribute('aria-selected', 'true');
+  await current.press('ArrowDown');
+  await expect(
+    current.getByRole('option', { name: sibling.name, exact: true }),
+  ).toHaveAttribute('aria-selected', 'true');
+  await current.press('ArrowUp');
+  await current.press('Enter');
+  await expect(
+    files.getByRole('listbox', { name: `${child.name} column` }),
+  ).toBeFocused();
+  await files.getByRole('option', { name: file.name, exact: true }).click();
+  await files.getByRole('button', { name: 'Up', exact: true }).click();
+  await expect(
+    current.getByRole('option', { name: child.name, exact: true }),
+  ).toHaveAttribute('aria-selected', 'true');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(
+    files.getByRole('listbox', { name: 'Workspace column', exact: true }),
+  ).toBeVisible();
+  await expect(separator).toHaveAttribute('aria-valuenow', '230');
+  await expect(files.getByLabel('Folder view')).toHaveValue('columns');
+  await expect
+    .poll(
+      async () =>
+        (await persistedLayout(page, request))?.windows.find(
+          (win: { id: string }) => win.id === 'files:documents',
+        )?.viewState.columnWidths,
+    )
+    .toMatchObject({ documents: 230 });
+});
+
+test('narrow Files sorts from its view menu and retains the wide view', async ({
+  page,
+  request,
+}) => {
+  const parent = await createEntry(request, 'E2E Narrow Sort', 'folder');
+  const larger = await createEntry(
+    request,
+    'E2E Larger.txt',
+    'file',
+    parent.id,
+    'Larger document content',
+  );
+  const smaller = await createEntry(
+    request,
+    'E2E Smaller.txt',
+    'file',
+    parent.id,
+    's',
+  );
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.reload();
+  const files = filesWindow(page);
+  await files.getByRole('option', { name: parent.name, exact: true }).click();
+  await files.getByLabel('Folder view').selectOption('list');
+  const list = files.getByRole('listbox', { name: `${parent.name} files` });
+  await expect(list.getByRole('option').first()).toHaveAttribute(
+    'aria-label',
+    larger.name,
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(files.getByLabel('Folder view')).toHaveCount(0);
+  await expect(files.locator('.files-sort')).toHaveCount(0);
+  await expect(files.getByRole('status')).toContainText('2 items');
+  const options = files.getByRole('button', { name: 'File view options' });
+  await options.focus();
+  await options.press('ArrowDown');
+  await expect(menuItem(page, 'Sort by Name')).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  await page.locator('.ns-menu-layer').getByRole('menu').press('Escape');
+  await expect(options).toBeFocused();
+  await options.click();
+  await menuItem(page, 'Sort by Size').click();
+  await expect(list.getByRole('option').first()).toHaveAttribute(
+    'aria-label',
+    smaller.name,
+  );
+  await options.click();
+  await menuItem(page, 'Descending').click();
+  await expect(list.getByRole('option').first()).toHaveAttribute(
+    'aria-label',
+    larger.name,
+  );
+  await options.click();
+  await expect(menuItem(page, 'Sort by Size')).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  await expect(menuItem(page, 'Descending')).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  await page.locator('.ns-menu-layer').getByRole('menu').press('Escape');
+  await expect(options).toBeFocused();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(options).toHaveCount(0);
+  await expect(files.getByLabel('Folder view')).toHaveValue('list');
+  await expect(files.getByLabel('Sort files', { exact: true })).toHaveValue(
+    'size',
+  );
+  await expect(
+    files.getByRole('button', { name: 'Sort ascending', exact: true }),
+  ).toBeVisible();
+  await expect
+    .poll(
+      async () =>
+        (await persistedLayout(page, request))?.windows.find(
+          (win: { id: string }) => win.id === 'files:documents',
+        )?.viewState,
+    )
+    .toMatchObject({ view: 'list', sort: 'size', descending: true });
+});
 
 for (const width of [1440, 390]) {
   test(`metadata refresh preserves new navigation and repairs deleted ancestors at ${width}px`, async ({

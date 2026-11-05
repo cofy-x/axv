@@ -8,6 +8,9 @@
 .files-toolbar {
   flex-wrap: wrap;
 }
+.files-view-options {
+  margin-inline-start: auto;
+}
 .files-secondary-actions {
   display: flex;
   align-items: center;
@@ -47,7 +50,7 @@
   gap: 5px;
   align-items: center;
   padding: 4px 6px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .files-sort > span:not(.ns-select) {
   flex: 1;
@@ -61,7 +64,7 @@
   width: 108px;
 }
 .files-sort select {
-  font-size: 11px;
+  font-size: 12px;
 }
 .files-app > .app-toolbar .ns-select {
   flex: 0 0 108px;
@@ -85,6 +88,18 @@
   height: 100%;
   border-right: 2px solid #444;
   background: #eee;
+}
+.miller-column-wrap[hidden] {
+  display: none;
+}
+.files-app.is-narrow .miller-column-wrap {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  border-right: 0;
+}
+.files-app.is-narrow .finder-meta:last-child {
+  display: none;
 }
 .miller-column-heading {
   flex: 0 0 auto;
@@ -174,7 +189,7 @@
 }
 .finder-meta {
   flex: 0 0 100px;
-  font-size: 11px;
+  font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -8,6 +8,7 @@ import {
 } from 'react';
 import {
   activateLayoutWindow,
+  adjacentWindowBounds,
   arrangeDesktopIconPositions,
   desktopApplicationIcons,
   iconWorkArea,
@@ -21,7 +22,9 @@ import {
   toggleWindowZoom,
   unsupportedLayout,
   validAppId,
+  visibleBounds,
   windowIdentity,
+  windowWorkArea,
 } from '../model';
 import type { MenuRequest } from '../overlays';
 import type {
@@ -73,10 +76,18 @@ function menuOwnerAvailable(menu: MenuRequest, layout: DesktopLayout) {
   );
 }
 
-function initialState(props: DesktopProps): DesktopLayout {
+export function initialDesktopLayout(props: DesktopProps): DesktopLayout {
   let state = sanitizeLayout(props.initialLayout, props.apps);
   if (props.initialLayout && !unsupportedLayout(props.initialLayout))
     return state;
+  state.desktopApplications = { ...props.initialDesktopApplications };
+  const dockOrder = [...new Set(props.initialDockOrder ?? [])];
+  state.dock = [
+    ...dockOrder.flatMap((appId) =>
+      state.dock.filter((entry) => entry.appId === appId),
+    ),
+    ...state.dock.filter((entry) => !dockOrder.includes(entry.appId)),
+  ];
   for (const initial of props.initialWindows ?? []) {
     const app = props.apps.find((candidate) => candidate.id === initial.appId);
     if (!app) continue;
@@ -100,6 +111,8 @@ function initialState(props: DesktopProps): DesktopLayout {
       shaded: false,
       zoomed: false,
     });
+    if (!state.dock.some((entry) => entry.appId === app.id))
+      state.dock.push({ appId: app.id, pinned: false });
     state = activateLayoutWindow(reconcileWorkspaceWindows(state), id);
   }
   return state;
@@ -108,7 +121,7 @@ function initialState(props: DesktopProps): DesktopLayout {
 /** The single owner of persisted desktop state and stable application commands. */
 export function useDesktopController(props: DesktopProps) {
   const [layout, setLayout] = useState<DesktopLayout>(() =>
-    initialState(props),
+    initialDesktopLayout(props),
   );
   const [persistenceBlocked, setPersistenceBlocked] = useState(
     () => !!props.initialLayoutError || unsupportedLayout(props.initialLayout),
@@ -230,6 +243,33 @@ export function useDesktopController(props: DesktopProps) {
               shaded: false,
               zoomed: false,
             };
+        if (!existing && app.initialPlacement === 'beside-active') {
+          const viewport = viewportSize();
+          const source = current.windows.find(
+            (win) =>
+              win.id === current.activeWindowId &&
+              !win.minimized &&
+              inWorkspace(win, current.currentWorkspaceId),
+          );
+          if (source && viewport.width >= 600) {
+            const area = windowWorkArea(
+              viewport,
+              minimizedWindows(current.windows, current.currentWorkspaceId)
+                .length > 0,
+            );
+            const sourceApp = resolveApplication(
+              propsRef.current.apps,
+              source.appId,
+            );
+            const sourceBounds = source.zoomed
+              ? area
+              : visibleBounds(source, area, sourceApp.minSize);
+            Object.assign(
+              next,
+              adjacentWindowBounds(next, sourceBounds, area, app.minSize),
+            );
+          }
+        }
         return activateLayoutWindow(
           reconcileWorkspaceWindows({
             ...current,
@@ -601,7 +641,7 @@ export function useDesktopController(props: DesktopProps) {
     dialogRequest.resolve(result);
   };
   const pinMenu = (point: Point) => {
-    if (!menu?.options?.pin) return;
+    if (!menu?.options?.pin || !menuOwnerAvailable(menu, layout)) return;
     const descriptor: PinnedMenu = {
       ...menu.options.pin,
       ...point,
@@ -621,7 +661,7 @@ export function useDesktopController(props: DesktopProps) {
         descriptor,
       ].slice(-12),
     }));
-    setMenu(null);
+    dismissMenu();
   };
   const resetLayout = async () => {
     const result = await dialog({
@@ -635,7 +675,7 @@ export function useDesktopController(props: DesktopProps) {
     });
     if (result?.button === 'reset') {
       setLayout(
-        initialState({ ...propsRef.current, initialLayout: undefined }),
+        initialDesktopLayout({ ...propsRef.current, initialLayout: undefined }),
       );
       setPersistenceBlocked(false);
     }

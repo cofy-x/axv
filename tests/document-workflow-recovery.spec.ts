@@ -191,15 +191,20 @@ test('a permanently deleted document retains selectable snapshots and project ex
     exact: true,
   });
   await expect(staleMenu).toBeVisible();
-  // Keep the menu open while its original editor is removed.
+  const staleSaveCopy = await staleMenu
+    .getByRole('menuitem', { name: 'Save Copy', exact: true })
+    .elementHandle();
+  expect(staleSaveCopy).not.toBeNull();
+  // Removing the owner dismisses its content menu. A retained DOM reference
+  // must not create a copy or redirect the old action to another editor.
   await copyEditor.locator('.ns-close').evaluate((button) => {
     (button as HTMLButtonElement).click();
   });
   await expect(copyEditor).toHaveCount(0);
-  await staleMenu
-    .getByRole('menuitem', { name: 'Save Copy', exact: true })
-    .click();
   await expect(page.locator('.ns-menu-layer')).toHaveCount(0);
+  await staleSaveCopy!.evaluate((button) =>
+    (button as HTMLButtonElement).click(),
+  );
   await expect(page.getByRole('dialog')).toHaveCount(0);
   expect((await entries(request)).length).toBe(copiesBefore.length + 1);
   await page.reload();

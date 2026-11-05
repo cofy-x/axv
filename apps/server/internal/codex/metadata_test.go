@@ -20,6 +20,7 @@ func metadataRequest(t *testing.T, m *Manager, method, path, body string) *httpt
 	r.RemoteAddr, r.Host = "127.0.0.1:44", "localhost:3001"
 	r.Header.Set("Origin", "http://localhost:3001")
 	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("X-AXV-Database-ID", m.databaseID)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, r)
 	return w

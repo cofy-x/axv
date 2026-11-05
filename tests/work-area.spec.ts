@@ -2,6 +2,7 @@ import type { Locator, Page } from '@playwright/test';
 import {
   activate,
   bounds,
+  createEntry,
   expect,
   filesWindow,
   menuItem,
@@ -23,6 +24,40 @@ async function dragBy(page: Page, window: Locator, dx: number, dy: number) {
   await page.mouse.move(x + dx, y + dy, { steps: 8 });
   await page.mouse.up();
 }
+
+test('Inspector opens beside its source and retains a user position when reopened or restored', async ({
+  page,
+  request,
+}) => {
+  const entry = await createEntry(request, 'E2E Inspector placement.txt');
+  await page.reload();
+  const files = filesWindow(page);
+  await files.getByRole('option', { name: entry.name, exact: true }).click();
+  const source = await bounds(files);
+  await files.getByRole('button', { name: 'Inspect', exact: true }).click();
+  const inspector = page.locator('[data-app-id="inspector"]');
+  await expect(inspector.getByTestId('inspector-name')).toHaveText(entry.name);
+  const first = await bounds(inspector);
+  expect(first.x).toBe(source.x + source.width + 12);
+  expect(first.y).toBe(source.y);
+  await dragBy(page, inspector, -120, 50);
+  const moved = { ...first, x: first.x - 120, y: first.y + 50 };
+  await expectRect(inspector, moved);
+  await activate(page, files);
+  await files.getByRole('button', { name: 'Inspect', exact: true }).click();
+  await expectRect(inspector, moved);
+  await expect
+    .poll(async () => {
+      const saved = (await persistedLayout(page, request)).windows.find(
+        (win: { appId: string }) => win.appId === 'inspector',
+      );
+      return saved && rect(saved);
+    })
+    .toEqual(moved);
+  await page.reload();
+  await expectRect(inspector, moved);
+  await expect(inspector.getByTestId('inspector-name')).toHaveText(entry.name);
+});
 
 test('work area keeps drag, resize and maximize edges consistent without changing saved normal bounds', async ({
   page,

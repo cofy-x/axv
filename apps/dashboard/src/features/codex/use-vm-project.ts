@@ -1,3 +1,4 @@
+import { desktopDatabase } from '../../shared/api/desktop';
 import { useCallback, useRef, useState } from 'react';
 import { useDraftNamespace } from '../../shared/drafts/context';
 import { useResource } from '../../shared/api/useResource';
@@ -80,6 +81,7 @@ export function useVMProject(hostId: string, projectId: string) {
         },
         databaseId,
       );
+      desktopDatabase.assertUnchanged();
       requests.current.complete(attempt.requestId);
       return { session, recovered: saved !== undefined };
     } catch (error) {

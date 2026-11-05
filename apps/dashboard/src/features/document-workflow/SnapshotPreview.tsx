@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { Button } from '@cofy-x/axv-nextstep';
 import { documentsAPI } from '../../filesystem/documents';
-import { useResource } from '../../shared/api/useResource';
+import { useDesktopResource as useResource } from '../../shared/api/useDesktopResource';
 import { MarkdownPreview, isMarkdownFilename } from '../../shared/markdown';
 
 export function SnapshotPreview({ window, desktop }: AppWindowProps) {

@@ -1,3 +1,4 @@
+import { desktopDatabase } from '../../shared/api/desktop';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Button,
@@ -7,7 +8,7 @@ import {
   Tabs,
 } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
-import { useResource } from '../../shared/api/useResource';
+import { useDesktopResource as useResource } from '../../shared/api/useDesktopResource';
 import { projectsAPI } from './api';
 import { projectLabel } from './presentation';
 import { HostFolderChooser } from './HostFolderChooser';
@@ -52,6 +53,7 @@ export function ProjectLauncher(props: AppWindowProps) {
     setError('');
     try {
       const { project } = await projectsAPI.register(root.trim());
+      desktopDatabase.assertUnchanged();
       if (!mounted.current) return;
       const projects = [
         ...(result.data?.projects || []).filter(
@@ -76,8 +78,11 @@ export function ProjectLauncher(props: AppWindowProps) {
   return (
     <div className="project-launcher app-pad" ref={launcher}>
       <div className="panel-heading project-launcher-identity">
-        <PixelIcon name="project" size={24} />
-        <strong>Project Files</strong>
+        <PixelIcon name="project" size={32} />
+        <div>
+          <strong>Project Files</strong>
+          <p>Browse project folders on the host or a VM.</p>
+        </div>
       </div>
       <div className="project-launcher-tabs">
         <Tabs
@@ -158,7 +163,15 @@ export function ProjectLauncher(props: AppWindowProps) {
             {!result.data && !result.error && (
               <p role="status">Loading projects…</p>
             )}
-            {result.data?.projects.length === 0 && <p>No host projects yet.</p>}
+            {result.data?.projects.length === 0 && (
+              <div className="app-empty-state project-launcher-empty">
+                <PixelIcon name="folder" size={32} />
+                <div>
+                  <strong>No host projects yet.</strong>
+                  <p>Open a folder above to keep it in your project list.</p>
+                </div>
+              </div>
+            )}
             {!!result.data?.projects.length && (
               <h2 className="project-list-heading">Projects</h2>
             )}

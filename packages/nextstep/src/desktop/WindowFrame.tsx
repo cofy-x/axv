@@ -9,6 +9,7 @@ import type {
 } from '../types';
 import { createWindowMenu } from './menus';
 import { UnavailableApplication } from './applications';
+import { WindowControlIcon } from '../controls';
 
 interface WindowFrameProps {
   win: DesktopWindow;
@@ -78,7 +79,9 @@ export function WindowFrame({
         left: bounds.x,
         top: bounds.y,
         width: bounds.width,
-        height: shaded ? 27 : bounds.height,
+        height: shaded
+          ? 'calc(var(--ns-titlebar-height) + 2px)'
+          : bounds.height,
         zIndex: (overview ? 400 : 100) + index,
         // Keeping layout boxes alive also preserves native control scroll state
         // in Firefox, which display:none can discard even with stable React keys.
@@ -114,7 +117,7 @@ export function WindowFrame({
           title={`Miniaturize ${win.title}`}
           onClick={() => api.minimizeWindow(win.id)}
         >
-          <span aria-hidden="true">▧</span>
+          <WindowControlIcon icon="minimize" />
         </button>
         <button
           type="button"
@@ -128,7 +131,7 @@ export function WindowFrame({
             menu({ x: rect.left, y: rect.bottom });
           }}
         >
-          ▾
+          <WindowControlIcon icon="menu" />
         </button>
         <span className="ns-window-title">{win.title}</span>
         <button
@@ -138,7 +141,7 @@ export function WindowFrame({
           title={`${win.shaded ? 'Unshade' : 'Shade'} ${win.title}`}
           onClick={() => toggleShade(win.id)}
         >
-          <span aria-hidden="true">{win.shaded ? '▾' : '▴'}</span>
+          <WindowControlIcon icon={win.shaded ? 'unshade' : 'shade'} />
         </button>
         <button
           type="button"
@@ -147,7 +150,7 @@ export function WindowFrame({
           title={`${win.zoomed ? 'Restore' : 'Maximize'} ${win.title}`}
           onClick={() => toggleZoom(win.id)}
         >
-          <span aria-hidden="true">□</span>
+          <WindowControlIcon icon={win.zoomed ? 'restore' : 'maximize'} />
         </button>
         <button
           type="button"
@@ -159,7 +162,7 @@ export function WindowFrame({
             void api.closeWindow(win.id);
           }}
         >
-          <span aria-hidden="true">×</span>
+          <WindowControlIcon icon="close" />
         </button>
       </div>
       <div
@@ -167,10 +170,10 @@ export function WindowFrame({
         inert={shaded || undefined}
         aria-hidden={shaded || undefined}
         style={{
-          // Reserve the unshaded body size (25px titlebar and 2px frame) so
+          // Reserve the unshaded body size at the current control size so
           // shading does not collapse app layout or reset nested scroll areas.
           flex: '0 0 auto',
-          height: Math.max(0, bounds.height - 27),
+          height: `max(0px, calc(${bounds.height}px - var(--ns-titlebar-height) - 2px))`,
           visibility: hidden || shaded ? 'hidden' : undefined,
           pointerEvents: shaded ? 'none' : undefined,
         }}

@@ -1,4 +1,8 @@
 import { APIError } from '../../shared/api/http';
+import type {
+  DraftRemoval,
+  DraftRemovalGuard,
+} from '../../shared/drafts/storage';
 
 export interface NoteSnapshot {
   text: string;
@@ -18,6 +22,8 @@ export interface NoteSnapshot {
 }
 
 interface NoteStorage {
+  assertCurrent?: () => void;
+  subscribeInvalidation?: DraftRemovalGuard['subscribe'];
   read: () => Promise<{ entry: { revision: number }; content?: string }>;
   write: (
     content: string,
@@ -35,7 +41,7 @@ export interface LocalDraft {
 interface DraftStorage {
   read: () => Promise<LocalDraft | undefined>;
   write: (draft: LocalDraft) => Promise<unknown>;
-  remove: () => Promise<unknown>;
+  remove: (guard?: DraftRemovalGuard) => Promise<DraftRemoval | void>;
 }
 
 /** Server saves commit one explicit snapshot; recovery keeps the draft's original revision. */
@@ -67,6 +73,12 @@ export function createNoteDocument(
   let loadGeneration = 0;
   let editGeneration = 0;
   const listeners = new Set<() => void>();
+  const removalGuard = storage.assertCurrent
+    ? {
+        assertCurrent: storage.assertCurrent,
+        subscribe: storage.subscribeInvalidation,
+      }
+    : undefined;
 
   function publish(patch: Partial<NoteSnapshot>) {
     snapshot = { ...snapshot, ...patch };
@@ -81,17 +93,29 @@ export function createNoteDocument(
         while (pendingLocal) {
           const draft = pendingLocal;
           pendingLocal = undefined;
+          let removal: DraftRemoval | void = undefined;
           try {
-            if (draft.text === draft.saved) await drafts.remove();
-            else await drafts.write(draft);
+            if (draft.text === draft.saved) {
+              storage.assertCurrent?.();
+              removal = await drafts.remove(removalGuard);
+              storage.assertCurrent?.();
+            } else await drafts.write(draft);
             if (!pendingLocal)
               publish({ localStatus: 'Local recovery copy up to date' });
           } catch {
+            await removal?.restore().catch(() => {});
+            // Editing may replace the queue while the storage operation waits.
+            const queued = pendingLocal as LocalDraft | undefined;
+            const newerDraft =
+              draft.text === draft.saved &&
+              queued &&
+              queued.text !== queued.saved;
             pendingLocal ??= draft;
             publish({
               localStatus:
                 'Local recovery is unavailable. Keep this window open or save your document.',
             });
+            if (newerDraft) continue;
             break;
           }
         }
@@ -119,18 +143,35 @@ export function createNoteDocument(
     void flushLocal();
   }
 
-  async function removeLocal() {
+  async function removeLocal(requireCurrent = false) {
+    if (requireCurrent) storage.assertCurrent?.();
+    const previousPending = pendingLocal;
+    let removal: DraftRemoval | void = undefined;
     publish({ resolvingRecovery: true });
     pendingLocal = undefined;
     try {
       await localQueue;
+      if (requireCurrent) storage.assertCurrent?.();
       pendingLocal = undefined;
-      if (drafts) await drafts.remove();
+      if (drafts)
+        removal = await drafts.remove(
+          requireCurrent ? removalGuard : undefined,
+        );
+      if (requireCurrent) storage.assertCurrent?.();
       publish({ localStatus: '' });
+      return removal;
     } catch (error) {
+      await removal?.restore().catch(() => {});
+      pendingLocal ??= previousPending;
+      if (snapshot.dirty && !snapshot.recoveryAvailable)
+        pendingLocal ??= {
+          text: snapshot.text,
+          saved: snapshot.saved,
+          baseRevision: snapshot.revision,
+        };
       publish({
         error:
-          'The local recovery copy could not be removed. Your draft remains available. Try again.',
+          'The local recovery copy could not be removed safely. Keep this window open or download your draft before closing.',
         localStatus: 'Local recovery storage is unavailable.',
       });
       throw error;
@@ -157,29 +198,51 @@ export function createNoteDocument(
     const draft = local.status === 'fulfilled' ? local.value : undefined;
     if (remote.status === 'rejected' && (!draft || draft.text === draft.saved))
       throw remote.reason;
-    if (!recover) await removeLocal();
-    if (generation !== loadGeneration || startingEdit !== editGeneration)
+    if (remote.status === 'fulfilled') storage.assertCurrent?.();
+    const removal = !recover ? await removeLocal(true) : undefined;
+    const restoreRemoved = async () => {
+      try {
+        await removal?.restore();
+      } catch (error) {
+        if (snapshot.dirty) persistDraft();
+        publish({
+          localStatus:
+            'Local recovery is unavailable. Keep this window open or download your draft before closing.',
+        });
+        throw error;
+      }
+    };
+    if (generation !== loadGeneration || startingEdit !== editGeneration) {
+      await restoreRemoved();
       return;
-    const text =
-      remote.status === 'fulfilled' ? (remote.value.content ?? '') : '';
-    recovery = draft && draft.text !== draft.saved ? draft : undefined;
-    publish({
-      text,
-      saved: text,
-      revision: remote.status === 'fulfilled' ? remote.value.entry.revision : 0,
-      loaded: remote.status === 'fulfilled',
-      blocked: false,
-      dirty: false,
-      error: '',
-      conflict: false,
-      status: recovery ? 'Local recovery copy available' : 'Saved',
-      recovered: false,
-      recoveryAvailable: Boolean(recovery),
-      localStatus:
-        local.status === 'rejected'
-          ? 'Local recovery is unavailable. Save your document before leaving.'
-          : '',
-    });
+    }
+    try {
+      if (remote.status === 'fulfilled') storage.assertCurrent?.();
+      const text =
+        remote.status === 'fulfilled' ? (remote.value.content ?? '') : '';
+      recovery = draft && draft.text !== draft.saved ? draft : undefined;
+      publish({
+        text,
+        saved: text,
+        revision:
+          remote.status === 'fulfilled' ? remote.value.entry.revision : 0,
+        loaded: remote.status === 'fulfilled',
+        blocked: false,
+        dirty: false,
+        error: '',
+        conflict: false,
+        status: recovery ? 'Local recovery copy available' : 'Saved',
+        recovered: false,
+        recoveryAvailable: Boolean(recovery),
+        localStatus:
+          local.status === 'rejected'
+            ? 'Local recovery is unavailable. Save your document before leaving.'
+            : '',
+      });
+    } catch (error) {
+      await restoreRemoved();
+      throw error;
+    }
   }
 
   async function save(): Promise<boolean> {
@@ -198,6 +261,7 @@ export function createNoteDocument(
     inFlight = (async () => {
       try {
         const result = await storage.write(content, revision);
+        storage.assertCurrent?.();
         publish({
           saved: content,
           revision: result.entry.revision,
@@ -207,6 +271,7 @@ export function createNoteDocument(
         });
         persistDraft();
         await storage.refresh().catch(() => {});
+        storage.assertCurrent?.();
         return snapshot.text === snapshot.saved;
       } catch (error) {
         const conflict =

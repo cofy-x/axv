@@ -42,6 +42,7 @@ const settings = {
   },
 };
 let server;
+let databaseId;
 let browser;
 let session;
 let cleaning;
@@ -110,7 +111,13 @@ async function verifyRuntimeEnded() {
 async function json(path, method = 'GET', body) {
   const response = await fetch(`${server.base}/api${path}`, {
     method,
-    headers: { Origin: server.base, 'Content-Type': 'application/json' },
+    headers: {
+      Origin: server.base,
+      'Content-Type': 'application/json',
+      ...(databaseId && path !== '/host/codex/info'
+        ? { 'X-AXV-Database-ID': databaseId }
+        : {}),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(30_000),
   });
@@ -295,6 +302,9 @@ try {
     'Live Codex acceptance: using the installed CLI and existing login.',
   );
   server = await launchServer(settings);
+  databaseId = (await json('/bootstrap?clientId=codex-live')).databaseId;
+  assert.equal(typeof databaseId, 'string');
+  assert.ok(databaseId);
   const info = await json('/host/codex/info');
   assert.ok(info.ready, info.reason || 'Codex or tmux is not ready.');
   ({ session } = await json('/host/codex/sessions', 'POST', {

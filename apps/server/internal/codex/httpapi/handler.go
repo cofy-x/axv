@@ -71,7 +71,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 }
 
 func (h *Handler) reviewActivity(w http.ResponseWriter, r *http.Request) {
-	if !allowed(w, r, true) {
+	if !h.allowed(w, r, true) {
 		return
 	}
 	var input struct {
@@ -85,7 +85,7 @@ func (h *Handler) reviewActivity(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) contextBatches(w http.ResponseWriter, r *http.Request) {
-	if !allowed(w, r, false) {
+	if !h.allowed(w, r, false) {
 		return
 	}
 	batches, err := h.manager.ContextBatches(r.Context(), r.PathValue("id"), r.PathValue("run"))
@@ -93,7 +93,7 @@ func (h *Handler) contextBatches(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) queueContext(w http.ResponseWriter, r *http.Request) {
-	if !allowed(w, r, true) {
+	if !h.allowed(w, r, true) {
 		return
 	}
 	var input struct {
@@ -108,7 +108,7 @@ func (h *Handler) queueContext(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) cancelContext(w http.ResponseWriter, r *http.Request) {
-	if !allowed(w, r, true) {
+	if !h.allowed(w, r, true) {
 		return
 	}
 	batch, err := h.manager.CancelContext(r.Context(), r.PathValue("id"), r.PathValue("run"), r.PathValue("batch"))
@@ -152,6 +152,10 @@ func (h *Handler) handle(handler http.HandlerFunc) http.HandlerFunc {
 		}()
 		handler(w, r.WithContext(ctx))
 	}
+}
+
+func (h *Handler) allowed(w http.ResponseWriter, r *http.Request, origin bool) bool {
+	return allowed(w, r, origin) && httpaccess.RequireDatabaseIdentity(w, r, h.manager.DatabaseID(), false)
 }
 
 func allowed(w http.ResponseWriter, r *http.Request, origin bool) bool {
@@ -268,7 +272,7 @@ func (h *Handler) info(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) projects(w http.ResponseWriter, r *http.Request) {
-	if !allowed(w, r, false) {
+	if !h.allowed(w, r, false) {
 		return
 	}
 	projects, err := h.manager.Projects(r.Context())
@@ -276,7 +280,7 @@ func (h *Handler) projects(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
-	if !allowed(w, r, false) {
+	if !h.allowed(w, r, false) {
 		return
 	}
 	sessions, err := h.manager.List(r.Context())
@@ -284,7 +288,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
-	if !allowed(w, r, false) {
+	if !h.allowed(w, r, false) {
 		return
 	}
 	session, err := h.manager.Get(r.Context(), r.PathValue("id"))
@@ -292,7 +296,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getRun(w http.ResponseWriter, r *http.Request) {
-	if !allowed(w, r, false) {
+	if !h.allowed(w, r, false) {
 		return
 	}
 	session, err := h.manager.GetRun(r.Context(), r.PathValue("id"), r.PathValue("run"))
@@ -300,7 +304,7 @@ func (h *Handler) getRun(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
-	if !allowed(w, r, true) {
+	if !h.allowed(w, r, true) {
 		return
 	}
 	var input struct {
@@ -318,12 +322,12 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		respond(w, nil, err)
 		return
 	}
-	session, err := h.manager.Create(r.Context(), codex.StartInput{RequestID: input.RequestID, ExpectedDatabaseID: r.Header.Get("X-AXV-Database-ID"), ProjectPath: input.ProjectPath, Cols: input.Cols, Rows: input.Rows, VMProject: vmProject})
+	session, err := h.manager.Create(r.Context(), codex.StartInput{RequestID: input.RequestID, ExpectedDatabaseID: r.Header.Get(httpaccess.DatabaseIdentityHeader), ProjectPath: input.ProjectPath, Cols: input.Cols, Rows: input.Rows, VMProject: vmProject})
 	respond(w, map[string]any{"session": session}, err)
 }
 
 func (h *Handler) resume(w http.ResponseWriter, r *http.Request) {
-	if !allowed(w, r, true) {
+	if !h.allowed(w, r, true) {
 		return
 	}
 	var input struct {
@@ -341,7 +345,7 @@ func (h *Handler) resume(w http.ResponseWriter, r *http.Request) {
 		respond(w, nil, err)
 		return
 	}
-	session, err := h.manager.Resume(r.Context(), r.PathValue("id"), codex.ResumeInput{RequestID: input.RequestID, ExpectedDatabaseID: r.Header.Get("X-AXV-Database-ID"), ExpectedRunID: input.ExpectedRunID, Cols: input.Cols, Rows: input.Rows, VMProject: vmProject})
+	session, err := h.manager.Resume(r.Context(), r.PathValue("id"), codex.ResumeInput{RequestID: input.RequestID, ExpectedDatabaseID: r.Header.Get(httpaccess.DatabaseIdentityHeader), ExpectedRunID: input.ExpectedRunID, Cols: input.Cols, Rows: input.Rows, VMProject: vmProject})
 	respond(w, map[string]any{"session": session}, err)
 }
 
@@ -362,7 +366,7 @@ func vmProjectInput(raw json.RawMessage) (*codex.VMProjectInput, error) {
 }
 
 func (h *Handler) end(w http.ResponseWriter, r *http.Request) {
-	if !allowed(w, r, true) {
+	if !h.allowed(w, r, true) {
 		return
 	}
 	session, err := h.manager.End(r.Context(), r.PathValue("id"), r.PathValue("run"))
@@ -370,7 +374,7 @@ func (h *Handler) end(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) patch(w http.ResponseWriter, r *http.Request) {
-	if !allowed(w, r, true) {
+	if !h.allowed(w, r, true) {
 		return
 	}
 	var input struct {

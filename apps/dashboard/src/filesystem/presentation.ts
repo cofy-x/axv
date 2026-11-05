@@ -1,5 +1,6 @@
 import type { DesktopAPI, IconName } from '@cofy-x/axv-nextstep';
 import { filesystemApi } from './api';
+import { desktopDatabase } from '../shared/api/desktop';
 import type { Entry } from './types';
 
 export function entryIcon(entry: Entry): IconName {
@@ -21,6 +22,7 @@ export function openEntry(entry: Entry, desktop: DesktopAPI) {
 }
 
 export function downloadEntry(entry: Entry) {
+  desktopDatabase.assertActive();
   const anchor = document.createElement('a');
   anchor.href = filesystemApi.contentURL(entry.id, true);
   anchor.download = entry.name;

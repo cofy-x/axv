@@ -1,16 +1,10 @@
 import { useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { usePointerGesture } from './usePointerGesture';
-import { PixelIcon } from '../controls';
+import { PixelIcon, WindowControlIcon } from '../controls';
 import { resolveApplication } from './applications';
-import type {
-  ClipShortcut,
-  DesktopAPI,
-  DesktopLayout,
-  DesktopProps,
-  MenuItem,
-  Point,
-} from '../types';
+import { createClipMenu, createClipShortcutMenu } from './menus';
+import type { DesktopAPI, DesktopLayout, DesktopProps, Point } from '../types';
 
 export function Clip({
   props,
@@ -33,90 +27,11 @@ export function Clip({
     y: Math.max(30, Math.min(stored.y, window.innerHeight - 96)),
   };
   const mobile = window.innerWidth < 600;
-  const shortcutMenu = (shortcut: ClipShortcut): MenuItem[] => {
-    const available =
-      resolveApplication(props.apps, shortcut.appId).unavailable ===
-        undefined && props.isShortcutAvailable?.(shortcut) !== false;
-    return [
-      {
-        label: 'Open',
-        disabled: !available,
-        action: () => {
-          if (Object.keys(shortcut.params).length)
-            api.openApp(shortcut.appId, shortcut.params);
-          else api.launchApp(shortcut.appId);
-        },
-      },
-      {
-        label: 'Remove Shortcut',
-        action: () => api.removeClipShortcut(shortcut.id),
-      },
-    ];
-  };
   const workspace = api.workspaces.find(
     (item) => item.id === api.currentWorkspaceId,
   )!;
   const index = api.workspaces.indexOf(workspace);
-  const menu: MenuItem[] = [
-    ...api.workspaces.map((item, i) => ({
-      label: `${i + 1}  ${item.name}`,
-      checked: item.id === workspace.id,
-      action: () => api.switchWorkspace(item.id),
-    })),
-    { separator: true },
-    ...(workspace.clip.length
-      ? [
-          {
-            label: 'Shortcuts',
-            children: workspace.clip.map((shortcut) => ({
-              label: shortcut.title,
-              children: shortcutMenu(shortcut),
-            })),
-          },
-        ]
-      : []),
-    {
-      label: 'Rename Workspace',
-      action: () => {
-        void api
-          .dialog({
-            title: 'Rename Workspace',
-            input: { label: 'Workspace name', value: workspace.name },
-          })
-          .then((result) => {
-            if (result?.value.trim())
-              api.renameWorkspace(workspace.id, result.value);
-          });
-      },
-    },
-    {
-      label: 'Add Application Shortcut',
-      children: props.apps
-        .filter((app) => app.launchable !== false)
-        .map((app) => ({
-          label: app.title,
-          action: () =>
-            api.addClipShortcut({
-              appId: app.id,
-              title: app.title,
-              params: {},
-            }),
-        })),
-    },
-    {
-      label: 'Add Active Window',
-      disabled: !api.activeWindowId,
-      action: () => {
-        const win = api.windows.find((item) => item.id === api.activeWindowId);
-        if (win)
-          api.addClipShortcut({
-            appId: win.appId,
-            title: win.title,
-            params: win.params,
-          });
-      },
-    },
-  ];
+  const menu = createClipMenu(props, api);
   const point = (element: HTMLElement): Point => {
     const rect = element.getBoundingClientRect();
     return { x: rect.left, y: rect.bottom };
@@ -216,19 +131,8 @@ export function Clip({
           const available =
             app.unavailable === undefined &&
             props.isShortcutAvailable?.(shortcut) !== false;
-          const open = () => {
-            if (!available) return;
-            if (Object.keys(shortcut.params).length)
-              api.openApp(shortcut.appId, shortcut.params);
-            else api.launchApp(shortcut.appId);
-          };
-          const items: MenuItem[] = [
-            { label: 'Open', disabled: !available, action: open },
-            {
-              label: 'Remove Shortcut',
-              action: () => api.removeClipShortcut(shortcut.id),
-            },
-          ];
+          const items = createClipShortcutMenu(props, api, shortcut);
+          const open = items[0].action;
           return (
             <div
               className={`ns-clip-shortcut ${available ? '' : 'is-unavailable'}`}
@@ -257,13 +161,14 @@ export function Clip({
                 aria-label={`Options for Clip shortcut ${shortcut.title}`}
                 title={`Options for Clip shortcut ${shortcut.title}`}
                 aria-haspopup="menu"
-                onClick={(event) =>
+                onClick={(event) => {
+                  event.currentTarget.focus({ preventScroll: true });
                   api.contextMenu(items, point(event.currentTarget), {
                     title: shortcut.title,
-                  })
-                }
+                  });
+                }}
               >
-                ▾
+                <WindowControlIcon icon="menu" />
               </button>
             </div>
           );

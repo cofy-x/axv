@@ -141,15 +141,11 @@ export const codexEnvironmentApp: AppDefinition = {
   minSize: { width: 300, height: 240 },
 };
 
-export function createCodexApp(
-  commands: WindowCommands,
-  installed: boolean,
-): AppDefinition {
+export function createCodexApp(commands: WindowCommands): AppDefinition {
   return {
     id: 'codex',
     title: 'Codex',
     icon: 'companion',
-    launchable: installed,
     component: CodexApp,
     windowKey: (params) =>
       params.sessionId && params.runId

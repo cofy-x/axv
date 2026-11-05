@@ -5,8 +5,9 @@ export const welcomeApp: AppDefinition = {
   id: 'welcome',
   title: 'Welcome',
   icon: 'computer',
+  defaultPinned: false,
   component: Welcome,
-  defaultSize: { width: 510, height: 470 },
+  defaultSize: { width: 550, height: 570 },
   minSize: { width: 330, height: 300 },
 };
 

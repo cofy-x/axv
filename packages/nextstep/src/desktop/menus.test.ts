@@ -9,6 +9,7 @@ import type {
 import {
   createDesktopContextMenu,
   createDesktopMenus,
+  createClipMenu,
   createWindowMenu,
 } from './menus';
 
@@ -67,6 +68,72 @@ function win(id: string): DesktopWindow {
 }
 
 describe('host-independent desktop commands', () => {
+  it('keeps Clip shortcut and workspace commands bound to their original targets', async () => {
+    const api = desktopAPI();
+    const owner = win('source');
+    api.windows = [owner];
+    api.activeWindowId = owner.id;
+    api.workspaces[0].clip = [
+      {
+        id: 'saved',
+        appId: 'editor',
+        title: 'Saved document',
+        params: { entry: 'saved' },
+      },
+      {
+        id: 'missing',
+        appId: 'missing',
+        title: 'Missing application',
+        params: {},
+      },
+    ];
+    const props: DesktopProps = {
+      apps: [app('editor')],
+      icons: [],
+      onAppearance: vi.fn(),
+    };
+    const workspaces = createClipMenu(props, api);
+    workspaces.find((item) => item.label?.startsWith('2  '))!.action?.();
+    expect(api.switchWorkspace).toHaveBeenCalledExactlyOnceWith('workspace-2');
+    const shortcuts = workspaces.find(
+      (item) => item.label === 'Shortcuts',
+    )!.children!;
+    shortcuts[0].children![0].action?.();
+    expect(api.openApp).toHaveBeenCalledExactlyOnceWith('editor', {
+      entry: 'saved',
+    });
+    expect(shortcuts[1].children![0].disabled).toBe(true);
+    shortcuts[1].children![0].action?.();
+    expect(api.launchApp).not.toHaveBeenCalled();
+    shortcuts[0].children![1].action?.();
+    expect(api.removeClipShortcut).toHaveBeenCalledExactlyOnceWith('saved');
+    workspaces.find((item) => item.label === 'Add Active Window')!.action?.();
+    expect(api.addClipShortcut).toHaveBeenCalledWith({
+      appId: owner.appId,
+      title: owner.title,
+      params: owner.params,
+    });
+    workspaces
+      .find((item) => item.label === 'Add Application Shortcut')!
+      .children![0].action?.();
+    expect(api.addClipShortcut).toHaveBeenCalledWith({
+      appId: 'editor',
+      title: 'editor',
+      params: {},
+    });
+    vi.mocked(api.dialog).mockResolvedValueOnce({
+      button: 'ok',
+      value: 'Renamed',
+    });
+    workspaces.find((item) => item.label === 'Rename Workspace')!.action?.();
+    api.currentWorkspaceId = 'workspace-2';
+    await Promise.resolve();
+    expect(api.renameWorkspace).toHaveBeenCalledExactlyOnceWith(
+      'workspace-1',
+      'Renamed',
+    );
+  });
+
   it('launches and removes application shortcuts without invoking file or host desktop actions', () => {
     const api = desktopAPI();
     const custom = vi.fn(() => [{ label: 'Trash' }]);

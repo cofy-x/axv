@@ -12,7 +12,8 @@ import { APIError } from '../../shared/api/http';
 import { CodeEditor } from '../../shared/code-editor';
 import type { CodeEditorHandle } from '../../shared/code-editor';
 import { useDraftNamespace } from '../../shared/drafts/context';
-import { nameDialog } from '../../shared/desktop/dialogs';
+import { downloadDraft } from '../../shared/drafts/download';
+import { nameDialog, runCommand } from '../../shared/desktop/dialogs';
 import { canTransferWindowFocus } from '../../shared/desktop/focus-transfer';
 import { vmProjectsAPI } from './vm-api';
 import type { VMProjectBinding } from './vm-api';
@@ -638,6 +639,23 @@ export function VMProjectFiles({
     );
   }
 
+  function downloadFileDraft(
+    target: VMProjectBinding | null,
+    path: string,
+    generation: number,
+  ) {
+    void runCommand(desktop, async () => {
+      if (
+        !ownsLocation(target, generation, path) ||
+        inputPending() ||
+        latest.current.pendingRecovery ||
+        latest.current.blockedRecovery
+      )
+        throw new Error('This action is no longer available for this file.');
+      downloadDraft(path, latest.current.editor!.text);
+    });
+  }
+
   async function finishEditing() {
     const snapshot = latest.current;
     if (
@@ -801,6 +819,19 @@ export function VMProjectFiles({
         ? 'error'
         : '';
   const menuTitle = `${project?.name || 'VM project'} · ${id.slice(0, 8)}`;
+  const downloadAction = editor &&
+    dirty &&
+    !pendingRecovery &&
+    !blockedRecovery && (
+      <Button
+        disabled={composing || !interactive}
+        onClick={() =>
+          downloadFileDraft(binding, editor.path, navigationGeneration.current)
+        }
+      >
+        Download Draft
+      </Button>
+    );
   return (
     <div className="project-browser vm-project-browser">
       <div className="app-toolbar project-browser-toolbar">
@@ -851,6 +882,17 @@ export function VMProjectFiles({
                     },
                   })),
                   { separator: true },
+                  {
+                    label: 'Download Draft',
+                    description: path ? path : undefined,
+                    disabled:
+                      !interactive ||
+                      !path ||
+                      composing ||
+                      !!pendingRecovery ||
+                      blockedRecovery,
+                    action: () => downloadFileDraft(target, path, generation),
+                  },
                   {
                     label: 'Reload',
                     disabled:
@@ -1020,6 +1062,7 @@ export function VMProjectFiles({
                   ))}
                 </div>
                 <div className="app-actions">
+                  {downloadAction}
                   {error?.operation === 'read' && !needsReconnect(error) && (
                     <Button
                       disabled={reading || !interactive}
@@ -1164,18 +1207,23 @@ export function VMProjectFiles({
                 aria-label="VM file updates"
               >
                 <p>{visibleNotice.message}</p>
-                {visibleNotice.kind === 'binding' && !existingReconnect ? (
-                  <Button
-                    disabled={saving || composing || !interactive}
-                    onClick={() => void reconnectProject()}
-                  >
-                    Reconnect
-                  </Button>
-                ) : visibleNotice.kind === 'error' ? (
-                  <Button disabled={!interactive} onClick={checkFile}>
-                    Retry check
-                  </Button>
-                ) : null}
+                <div className="app-actions">
+                  {visibleNotice.kind !== 'changed' &&
+                    fileErrors.length === 0 &&
+                    downloadAction}
+                  {visibleNotice.kind === 'binding' && !existingReconnect ? (
+                    <Button
+                      disabled={saving || composing || !interactive}
+                      onClick={() => void reconnectProject()}
+                    >
+                      Reconnect
+                    </Button>
+                  ) : visibleNotice.kind === 'error' ? (
+                    <Button disabled={!interactive} onClick={checkFile}>
+                      Retry check
+                    </Button>
+                  ) : null}
+                </div>
               </section>
             )}
             <div className={`project-content${isReading ? ' is-reading' : ''}`}>

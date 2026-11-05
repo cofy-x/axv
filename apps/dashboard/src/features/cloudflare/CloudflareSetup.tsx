@@ -498,7 +498,7 @@ export function CloudflareSetup({
     </>
   );
   return (
-    <div className="cloudflare-setup">
+    <div className={`cloudflare-setup ${wizardOpen ? 'is-wizard-open' : ''}`}>
       <div className="cloudflare-section-heading">
         <h2>Setup</h2>
         <Button disabled={disabled} onClick={() => void reload()}>

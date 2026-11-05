@@ -1,10 +1,11 @@
+import { desktopDatabase } from '../../shared/api/desktop';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, IconButton, PixelIcon, StatusBar } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { useFilesystemData } from '../../filesystem/context';
 import { useDraftNamespace } from '../../shared/drafts/context';
 import { canTransferWindowFocus } from '../../shared/desktop/focus-transfer';
-import { useResource } from '../../shared/api/useResource';
+import { useDesktopResource as useResource } from '../../shared/api/useDesktopResource';
 import { RequestIdentity } from '../../shared/api/request-identity';
 import { MarkdownPreview, isMarkdownFilename } from '../../shared/markdown';
 import { CodeEditor } from '../../shared/code-editor';
@@ -136,6 +137,7 @@ export function HostProjectFiles({
         ...payload,
         requestId,
       });
+      desktopDatabase.assertUnchanged();
       const cleared = transfer.current.complete(requestId);
       if (mounted.current) {
         setFeedback(`Copied ${entry.name} to Documents.`);
@@ -146,6 +148,7 @@ export function HostProjectFiles({
       }
       try {
         await filesystem.refresh();
+        desktopDatabase.assertUnchanged();
         if (mounted.current)
           desktop.openApp(
             'notes',

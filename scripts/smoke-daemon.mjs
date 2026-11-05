@@ -28,6 +28,7 @@ let fixture;
 let environment;
 let foreground;
 let activeSession;
+let databaseId;
 let started = false;
 let cleaning;
 
@@ -112,7 +113,15 @@ async function runtimeState() {
 async function api(base, path, method = 'GET', body) {
   const response = await fetch(base + path, {
     method,
-    headers: { Origin: base, 'Content-Type': 'application/json' },
+    headers: {
+      Origin: base,
+      'Content-Type': 'application/json',
+      ...(databaseId &&
+      path.startsWith('/api/host/codex/') &&
+      !path.endsWith('/info')
+        ? { 'X-AXV-Database-ID': databaseId }
+        : {}),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(10_000),
   });
@@ -217,6 +226,10 @@ try {
   const launches = launchResults.map((result) => result.value);
   const first = await runtimeState();
   assert.ok(first.launchId);
+  databaseId = (await api(first.url, '/api/bootstrap?clientId=daemon-smoke'))
+    .databaseId;
+  assert.equal(typeof databaseId, 'string');
+  assert.ok(databaseId);
   assert.equal((await api(first.url, '/api/runtime')).launchId, first.launchId);
   const logPath = (await api(first.url, '/api/compute/environment')).logPath;
   assert.equal(typeof logPath, 'string');

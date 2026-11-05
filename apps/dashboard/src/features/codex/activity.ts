@@ -1,3 +1,4 @@
+import { desktopDatabase } from '../../shared/api/desktop';
 import { codexAPI } from './api';
 import type { CodexActivity, CodexSessionRecord } from './api';
 import { mergeSessionMetadata } from './metadata';
@@ -109,6 +110,7 @@ interface CachedActivity {
 const observations = new Map<string, CachedActivity>();
 
 export function publishSessionActivity(session: CodexSessionRecord) {
+  desktopDatabase.assertUnchanged();
   if (!listeners.size || !session.activity) return session;
   const key = JSON.stringify([session.id, session.runId]);
   const previous = observations.get(key);

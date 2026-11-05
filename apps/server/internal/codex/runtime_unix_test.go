@@ -20,7 +20,12 @@ import (
 	"github.com/cofy-x/axv/apps/server/internal/storage"
 )
 
-func realManager(t *testing.T) (*Manager, *httptest.Server, string) {
+type managerHTTPServer struct {
+	*httptest.Server
+	databaseID string
+}
+
+func realManager(t *testing.T) (*Manager, *managerHTTPServer, string) {
 	t.Helper()
 	tmuxPath := executable("tmux")
 	if tmuxPath == "" {
@@ -117,16 +122,16 @@ done
 	return m, server, home
 }
 
-func serveManager(t *testing.T, m *Manager) *httptest.Server {
+func serveManager(t *testing.T, m *Manager) *managerHTTPServer {
 	t.Helper()
 	mux := http.NewServeMux()
 	m.Register(mux)
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
-	return server
+	return &managerHTTPServer{Server: server, databaseID: m.databaseID}
 }
 
-func jsonRequest(t *testing.T, server *httptest.Server, method, path string, body any) (int, []byte) {
+func jsonRequest(t *testing.T, server *managerHTTPServer, method, path string, body any) (int, []byte) {
 	t.Helper()
 	var reader io.Reader
 	if body != nil {
@@ -141,6 +146,7 @@ func jsonRequest(t *testing.T, server *httptest.Server, method, path string, bod
 		t.Fatal(err)
 	}
 	req.Header.Set("Origin", server.URL)
+	req.Header.Set("X-AXV-Database-ID", server.databaseID)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -156,7 +162,7 @@ func jsonRequest(t *testing.T, server *httptest.Server, method, path string, bod
 	return response.StatusCode, data
 }
 
-func createSession(t *testing.T, server *httptest.Server, request, project string) storage.CodexSession {
+func createSession(t *testing.T, server *managerHTTPServer, request, project string) storage.CodexSession {
 	t.Helper()
 	status, data := jsonRequest(t, server, "POST", "/api/host/codex/sessions", map[string]any{"requestId": request, "projectPath": project})
 	var result struct {
@@ -181,11 +187,11 @@ func runPath(session storage.CodexSession) string {
 	return "/api/host/codex/sessions/" + session.ID + "/runs/" + session.RunID
 }
 
-func connectSession(t *testing.T, server *httptest.Server, session storage.CodexSession) *websocket.Conn {
+func connectSession(t *testing.T, server *managerHTTPServer, session storage.CodexSession) *websocket.Conn {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	conn, response, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+runPath(session)+"/terminal", &websocket.DialOptions{HTTPHeader: http.Header{"Origin": []string{server.URL}}})
+	conn, response, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+runPath(session)+"/terminal", &websocket.DialOptions{HTTPHeader: http.Header{"Origin": []string{server.URL}, "X-AXV-Database-ID": []string{server.databaseID}}})
 	if err != nil {
 		t.Fatalf("attach: %v response=%+v", err, response)
 	}
@@ -423,7 +429,7 @@ func TestRealCodexResizeProtocolFailuresAndAttachmentLimit(t *testing.T) {
 	url := "ws" + strings.TrimPrefix(server.URL, "http") + runPath(session) + "/terminal"
 	dialCtx, dialCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer dialCancel()
-	extra, response, err := websocket.Dial(dialCtx, url, &websocket.DialOptions{HTTPHeader: http.Header{"Origin": []string{server.URL}}})
+	extra, response, err := websocket.Dial(dialCtx, url, &websocket.DialOptions{HTTPHeader: http.Header{"Origin": []string{server.URL}, "X-AXV-Database-ID": []string{server.databaseID}}})
 	if extra != nil {
 		_ = extra.CloseNow()
 	}

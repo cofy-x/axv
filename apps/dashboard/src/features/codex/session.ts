@@ -35,6 +35,7 @@ export interface CodexConnectionState {
 }
 
 interface Options {
+  databaseId: string;
   sessionId: string;
   runId: string;
   baseURL: string;
@@ -319,6 +320,7 @@ export class CodexConnection {
       url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
       url.searchParams.set('cols', String(this.cols));
       url.searchParams.set('rows', String(this.rows));
+      url.searchParams.set('databaseId', this.options.databaseId);
       this.options.reset();
       const socket = this.options.createSocket(url.href);
       this.socket = socket;

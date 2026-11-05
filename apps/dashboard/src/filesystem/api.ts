@@ -1,4 +1,7 @@
-import { request } from '../shared/api/http';
+import {
+  requestDesktop as request,
+  desktopResourceURL,
+} from '../shared/api/desktop';
 import type { Entry } from './types';
 
 export const filesystemApi = {
@@ -59,5 +62,7 @@ export const filesystemApi = {
     return result.entries;
   },
   contentURL: (id: string, download = false) =>
-    `/api/entries/${encodeURIComponent(id)}/content?${download ? 'download=1' : 'preview=1'}`,
+    desktopResourceURL(
+      `/entries/${encodeURIComponent(id)}/content?${download ? 'download=1' : 'preview=1'}`,
+    ),
 };

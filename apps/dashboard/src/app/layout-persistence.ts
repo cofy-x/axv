@@ -5,6 +5,7 @@ export function createLayoutPersistence(
   write: (layout: DesktopLayout) => Promise<unknown>,
   onSaved: () => void,
   onError: (error: unknown) => void,
+  assertCurrent?: () => void,
 ) {
   let pending: DesktopLayout | null = null;
   let saving = false;
@@ -20,7 +21,9 @@ export function createLayoutPersistence(
           const next = pending;
           pending = null;
           try {
+            assertCurrent?.();
             await write(next);
+            assertCurrent?.();
             onSaved();
           } catch (error) {
             pending ??= next;

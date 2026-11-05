@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { Select } from '@cofy-x/axv-nextstep';
 import { documentsAPI } from '../../filesystem/documents';
-import { useResource } from '../../shared/api/useResource';
+import { useDesktopResource as useResource } from '../../shared/api/useDesktopResource';
 import { MarkdownPreview, isMarkdownFilename } from '../../shared/markdown';
 import { currentSavedVersion, versionInfo } from './useSavedVersion';
 import type {

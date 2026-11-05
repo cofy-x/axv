@@ -1,50 +1,47 @@
-.startup-screen {
-  height: 100dvh;
-  display: grid;
-  place-items: center;
-  background: #52626b;
-  font:
-    12px/1.45 'Helvetica Neue',
-    'Verdana',
-    sans-serif;
-}
-.startup-panel {
+.desktop-warnings {
+  width: fit-content;
+  max-width: 720px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  padding: 28px;
-  width: min(380px, calc(100vw - 32px));
-  background: #ccc;
-  color: #262626;
-  border: 1px solid #262626;
-  box-shadow:
-    inset 1px 1px #fff,
-    inset -1px -1px #999,
-    2px 2px #262626;
-  text-align: center;
+  gap: 8px;
 }
-.startup-panel > strong {
-  margin-top: 15px;
-}
-.startup-panel > p {
-  overflow-wrap: anywhere;
-  max-width: 100%;
-}
+
 .persistence-warning {
-  position: fixed;
-  bottom: 35px;
-  left: 12px;
-  max-width: calc(100vw - 24px);
   padding: 8px 12px;
   display: flex;
   align-items: center;
   gap: 12px;
-  z-index: 9000;
   border: 1px solid #262626;
   box-shadow: 2px 2px #262626;
   background: #fff6d6;
   color: #7a1010;
-  font:
-    11px/1.45 'Helvetica Neue',
-    sans-serif;
+  font: var(--ns-font-size-secondary)/1.5 var(--ns-font);
+}
+
+.persistence-warning > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.persistence-warning > a,
+.persistence-warning > button {
+  flex-shrink: 0;
+}
+
+.persistence-warning a.ns-button {
+  text-decoration: none;
+}
+
+.desktop-warning-actions {
+  display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+@media (max-width: 599px) {
+  .persistence-warning {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
 }

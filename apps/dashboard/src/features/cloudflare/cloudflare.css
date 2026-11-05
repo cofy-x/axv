@@ -218,6 +218,16 @@
 .cloudflare-step {
   font-weight: bold;
 }
+.is-short .cloudflare-setup.is-wizard-open > .cloudflare-section-heading,
+.is-short .cloudflare-setup.is-wizard-open > .cloudflare-setup-areas {
+  display: none;
+}
+.is-short .cloudflare-setup.is-wizard-open > fieldset {
+  margin-top: 0;
+}
+.is-short .cloudflare-setup.is-wizard-open .cloudflare-wizard {
+  margin-top: 0;
+}
 .cloudflare-publication {
   margin-top: 14px;
   padding-top: 12px;

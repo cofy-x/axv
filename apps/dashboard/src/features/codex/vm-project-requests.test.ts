@@ -44,6 +44,9 @@ describe('VM Codex launch recovery', () => {
     ).toBe(true);
   });
   it.each([
+    [409, 'database_changed'],
+    [428, 'database_identity_required'],
+    [401, 'authentication_required'],
     [503, 'server_stopping'],
     [409, 'history_identity_conflict'],
     [409, 'invalid_run_state'],

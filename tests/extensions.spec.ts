@@ -19,6 +19,10 @@ import {
   persistedLayout,
   test,
 } from './helpers';
+import {
+  applicationMenu,
+  showApplicationOnDesktop,
+} from './desktop-application-helpers';
 
 const id = 'local.checklist';
 const extensionHeaders = (storeId: string) => ({
@@ -92,7 +96,7 @@ async function installFixture(request: APIRequestContext) {
 async function openManager(page: Page, touch: boolean) {
   const manager = managerWindow(page);
   if (await manager.count()) {
-    await activate(page, manager);
+    await activate(page, manager, touch);
   } else {
     await choose(
       page.getByRole('button', { name: 'Workspace menu', exact: true }),
@@ -186,7 +190,7 @@ async function addItem(page: Page, text: string, touch: boolean) {
 }
 
 async function reloadChecklist(page: Page, touch: boolean) {
-  await activate(page, checklistWindow(page));
+  await activate(page, checklistWindow(page), touch);
   await choose(
     checklistWindow(page).getByRole('button', { name: 'Reload', exact: true }),
     touch,
@@ -434,7 +438,7 @@ test('a stale application menu rejects a changed installation before prompting t
   await expect(checklistWindow(page).locator('.toolbar-caption')).toHaveText(
     'Unsaved changes',
   );
-  await activate(page, checklistWindow(page));
+  await activate(page, checklistWindow(page), touch);
   const downloadReady = page.waitForEvent('download');
   await choose(
     checklistWindow(page).getByRole('button', {
@@ -501,7 +505,7 @@ test('Applications installs, saves, upgrades and removes an extension while pres
   await applicationAction(page, 'Disable', touch);
   await choose(guard.getByRole('button', { name: 'Save', exact: true }), touch);
   await expect(applicationRow(page)).toContainText('Disabled');
-  await activate(page, checklistWindow(page));
+  await activate(page, checklistWindow(page), touch);
   await expect(checklistWindow(page)).toContainText(
     'This application is disabled',
   );
@@ -607,13 +611,17 @@ test('application icons follow explicit desktop choices across reload, hiding an
   const checklistIcon = page.locator(
     '[data-icon-id="application:extension.local.checklist"]',
   );
-  for (const appId of ['files', 'welcome'])
+  await expect(managerIcon).toHaveCount(0);
+  await showApplicationOnDesktop(page, 'Application Manager', touch);
+  for (const appId of ['files', 'welcome']) {
+    await activate(page, page.locator(`[data-app-id="${appId}"]`), touch);
     await choose(
       page
         .locator(`[data-app-id="${appId}"]`)
         .getByRole('button', { name: /^Close / }),
       touch,
     );
+  }
   await expect(managerIcon).toBeVisible();
   await expect(checklistIcon).toHaveCount(0);
   const openIcon = async (icon: Locator) => {
@@ -658,12 +666,7 @@ test('application icons follow explicit desktop choices across reload, hiding an
     }),
     touch,
   );
-  await choose(
-    page
-      .getByRole('navigation', { name: 'Application menus' })
-      .getByRole('button', { name: 'View', exact: true }),
-    touch,
-  );
+  await applicationMenu(page, 'View', touch);
   await choose(menuItem(page, 'Arrange Icons'), touch);
   const positions = page.viewportSize()!.width < 600 ? 'compactIcons' : 'icons';
   await expect
@@ -1337,7 +1340,7 @@ test('two real tabs isolate drafts for one retained window and recover a stale d
     expect(
       await other.evaluate(() => localStorage.getItem('nextstep-browser-id')),
     ).toBe(clone.clientId);
-    await activate(other, checklistWindow(other));
+    await activate(other, checklistWindow(other), touch);
     await expect(checklistFrame(other).getByLabel('New item')).toBeEnabled();
     await addItem(other, secondText, touch);
     await expect
@@ -1356,7 +1359,7 @@ test('two real tabs isolate drafts for one retained window and recover a stale d
       checklistFrame(page).getByRole('textbox', { name: 'Item text' }),
     ).toHaveValue(firstText);
     await page.bringToFront();
-    await activate(page, checklistWindow(page));
+    await activate(page, checklistWindow(page), touch);
     await choose(
       checklistFrame(page).getByRole('button', { name: 'Save', exact: true }),
       touch,

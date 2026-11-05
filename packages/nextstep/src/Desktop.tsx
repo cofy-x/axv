@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { PixelIcon } from './controls';
 import {
@@ -31,7 +31,57 @@ export function Desktop(props: DesktopProps) {
     controller;
   const desktopProps = { ...props, icons: controller.icons };
   const minimized = minimizedWindows(layout.windows, layout.currentWorkspaceId);
-  const workArea = windowWorkArea(viewport, minimized.length > 0);
+  const baseWorkArea = windowWorkArea(viewport, minimized.length > 0);
+  const statusRef = useRef<HTMLDivElement>(null);
+  const [statusHeight, setStatusHeight] = useState(0);
+  const [noticeFocusRevision, setNoticeFocusRevision] = useState(0);
+  const hasStatus = !!props.statusOverlay;
+  useLayoutEffect(() => {
+    const element = statusRef.current;
+    if (!element) {
+      setStatusHeight(0);
+      return;
+    }
+    const measure = () =>
+      setStatusHeight(Math.ceil(element.getBoundingClientRect().height));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [hasStatus]);
+  useLayoutEffect(() => {
+    const element = statusRef.current;
+    if (!element) return;
+    let focused: HTMLElement | null = null;
+    const focus = (event: FocusEvent) => {
+      focused =
+        event.target instanceof HTMLElement && element.contains(event.target)
+          ? event.target
+          : null;
+    };
+    const pointer = (event: PointerEvent) => {
+      if (!element.contains(event.target as Node)) focused = null;
+    };
+    const observer = new MutationObserver(() => {
+      if (!focused || focused.isConnected) return;
+      focused = null;
+      setNoticeFocusRevision((revision) => revision + 1);
+    });
+    document.addEventListener('focusin', focus);
+    document.addEventListener('pointerdown', pointer, true);
+    observer.observe(element, { childList: true, subtree: true });
+    return () => {
+      document.removeEventListener('focusin', focus);
+      document.removeEventListener('pointerdown', pointer, true);
+      observer.disconnect();
+    };
+  }, [hasStatus]);
+  const reservedStatusHeight = hasStatus ? statusHeight + 16 : 0;
+  const workArea = {
+    ...baseWorkArea,
+    height: Math.max(1, baseWorkArea.height - reservedStatusHeight),
+  };
+  const baseIconArea = iconWorkArea(viewport, minimized.length > 0);
   const desktopItems = (ids: string[]) =>
     createDesktopContextMenu(desktopProps, api, ids);
   const gestures = useDesktopGestures({
@@ -39,7 +89,10 @@ export function Desktop(props: DesktopProps) {
     layout,
     setLayout: controller.setLayout,
     workArea,
-    iconArea: iconWorkArea(viewport, minimized.length > 0),
+    iconArea: {
+      ...baseIconArea,
+      height: Math.max(1, baseIconArea.height - reservedStatusHeight),
+    },
     mobile,
     overview,
     setOverview,
@@ -107,11 +160,17 @@ export function Desktop(props: DesktopProps) {
     )
       saved.focus({ preventScroll: true });
     else frame.focus({ preventScroll: true });
-  }, [layout.activeWindowId, layout.currentWorkspaceId, dialogRequest]);
+  }, [
+    layout.activeWindowId,
+    layout.currentWorkspaceId,
+    dialogRequest,
+    hasStatus,
+    noticeFocusRevision,
+  ]);
   const openWorkspaceMenu = (element: HTMLElement) => {
     const rect = element.getBoundingClientRect();
     api.contextMenu(
-      desktopItems(gestures.selection),
+      desktopItems([]),
       { x: rect.left, y: rect.bottom },
       { title: 'Workspace', pin: { kind: 'desktop', title: 'Workspace' } },
     );
@@ -128,6 +187,7 @@ export function Desktop(props: DesktopProps) {
         {
           '--ns-viewport-height': `${viewport.height}px`,
           '--ns-dock-size': `${DOCK_SIZE}px`,
+          '--ns-dock-width': `${DOCK_SIZE}px`,
           '--ns-icon-width': `${ICON_SIZE.width}px`,
           '--ns-icon-height': `${ICON_SIZE.height}px`,
         } as CSSProperties
@@ -252,7 +312,28 @@ export function Desktop(props: DesktopProps) {
           api={api}
           layout={layout}
           setLayout={controller.setLayout}
+          compact={mobile || short || viewport.coarsePointer === true}
         />
+        {hasStatus && (
+          <div
+            ref={statusRef}
+            className="ns-status-overlay"
+            role="region"
+            aria-label="Desktop notices"
+            tabIndex={0}
+            data-blocked={!!menu || !!dialogRequest || overview || undefined}
+            inert={!!menu || !!dialogRequest || overview || undefined}
+            style={{
+              left: `calc(${baseWorkArea.x + 8}px + env(safe-area-inset-left, 0px))`,
+              right: `calc(${viewport.width - baseWorkArea.x - baseWorkArea.width + 8}px + env(safe-area-inset-right, 0px))`,
+              bottom:
+                viewport.height - baseWorkArea.y - baseWorkArea.height + 8,
+              maxHeight: Math.max(1, Math.floor(baseWorkArea.height / 3)),
+            }}
+          >
+            {props.statusOverlay}
+          </div>
+        )}
         {menu && (
           <MenuOverlay
             key={menu.id}

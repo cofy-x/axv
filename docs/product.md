@@ -21,7 +21,7 @@ This document owns identity, goals and product decisions. The [README](../README
 
 - Build a self-contained personal cloud workstation deployed on a person's Mac or Linux machine. VM management and multiple host coding agents are core capabilities in the long-term direction; Codex is the current implementation focus, and Claude Code remains a core integration goal.
 - Preserve the NEXTSTEP / Window Maker desktop foundation while making content comfortable for reading and coding. [Design](design.md) owns the interaction and visual requirements.
-- Make a progressive web app (PWA) the primary client, with the deployment machine owning services, running work and storage. Returning from another device should recover access to that work. PWA delivery is a product goal, not a current availability claim.
+- Make a progressive web app (PWA) the primary client, with the deployment machine owning services, running work and storage. Returning from another device should recover access to that work. The initial installation is an online entry into the ordinary authenticated desktop, without a service worker, offline writes, Web Push or automatic page replacement. Installation identity must remain independent of service launches, databases and execution targets; [project status](../README.md#project-status) owns platform acceptance.
 - Treat access from different devices and native VM hosting on different platforms as separate deliverables. Browser support does not imply hypervisor support.
 - Manage agents and VMs on the machine where AXV is deployed. Setup follows that machine's operating system; users select projects, sessions and VMs within this deployment. Host selection and scheduling across multiple machines are outside this direction.
 - Make the installed `axv` command the normal workstation entry, composing independent desktop and compute services under one profile. Startup and updates must preserve persistent work; development profiles remain separate from daily use. [Startup](startup.md) owns commands, configuration and service operation.
@@ -114,6 +114,6 @@ Future resource capabilities must pass through their existing feature owners and
 - Automatic session supervision after host boot, external project backup delivery and recovery policy after VM replacement. Offline local restoration creates an explicitly verified new project; persistent task attempts never automatically move between VMs.
 - Development-service discovery and process supervision beyond explicitly registered previews.
 - Provider-specific session integration, including Claude Code and structured agent interfaces.
-- PWA delivery, cross-device browser acceptance and remote reconnection experience.
+- Broader installed-browser acceptance, cross-device recovery and remote reconnection experience beyond the initial online installation.
 
 Resolve these in focused implementation tasks. Record settled rationale here; change architecture and API references when the behavior exists. Keep task plans and review logs in task/PR history rather than adding a parallel roadmap or audit document.

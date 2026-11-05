@@ -1,4 +1,5 @@
-import { request } from '../../shared/api/http';
+import { request as unboundRequest } from '../../shared/api/http';
+import { requestDesktop as request } from '../../shared/api/desktop';
 import type { VMProject, VMProjectBinding } from '../project-files/vm-api';
 
 export interface CodexVMProject {
@@ -97,9 +98,9 @@ function readSignal(signal?: AbortSignal) {
 
 export const codexAPI = {
   info: (signal?: AbortSignal) =>
-    request<CodexInfo>(`${root}/info`, { signal }),
+    unboundRequest<CodexInfo>(`${root}/info`, { signal }),
   directories: (path?: string, signal?: AbortSignal) =>
-    request<HostDirectories>(
+    unboundRequest<HostDirectories>(
       `/host/directories${path ? `?path=${encodeURIComponent(path)}` : ''}`,
       { signal: readSignal(signal) },
     ),

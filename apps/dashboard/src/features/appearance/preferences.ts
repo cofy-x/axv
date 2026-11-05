@@ -14,6 +14,7 @@ export const defaultPreferences: Preferences = {
 export function createPreferenceQueue(
   initial: Preferences,
   write: (preferences: Preferences) => Promise<Preferences>,
+  assertCurrent?: () => void,
 ) {
   let current = initial;
   let queue: Promise<unknown> = Promise.resolve();
@@ -23,7 +24,9 @@ export function createPreferenceQueue(
     },
     save(patch: Partial<Preferences>): Promise<Preferences> {
       const pending = queue.then(async () => {
+        assertCurrent?.();
         const saved = await write({ ...current, ...patch });
+        assertCurrent?.();
         current = saved;
         return saved;
       });

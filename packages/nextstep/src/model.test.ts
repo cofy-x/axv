@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   activateLayoutWindow,
+  adjacentWindowBounds,
   defaultWorkspaces,
   desktopLayoutMode,
   inWorkspace,
@@ -83,6 +84,41 @@ describe('application menus', () => {
 });
 
 describe('window geometry and restoration', () => {
+  it('places a new utility on a free side of its source without changing source geometry', () => {
+    const area = windowWorkArea({ width: 1440, height: 900 }, false);
+    const panel = { x: 216, y: 76, width: 350, height: 510 };
+    const source = { x: 190, y: 52, width: 720, height: 510 };
+    expect(adjacentWindowBounds(panel, source, area)).toEqual({
+      ...panel,
+      x: 922,
+      y: 52,
+    });
+    expect(adjacentWindowBounds(panel, { ...source, x: 600 }, area)).toEqual({
+      ...panel,
+      x: 238,
+      y: 52,
+    });
+    expect(source).toEqual({ x: 190, y: 52, width: 720, height: 510 });
+    expect(panel).toEqual({ x: 216, y: 76, width: 350, height: 510 });
+  });
+  it('clamps a utility when neither side fits while preserving its normal size', () => {
+    const area = windowWorkArea({ width: 800, height: 400 }, false);
+    const panel = { x: 216, y: 76, width: 350, height: 510 };
+    const result = adjacentWindowBounds(
+      panel,
+      { x: 50, y: 150, width: 500, height: 200 },
+      area,
+    );
+    expect(result).toEqual({ ...panel, x: 382, y: 64 });
+    const visible = visibleBounds(result, area);
+    expect(visible.x + visible.width).toBeLessThanOrEqual(area.x + area.width);
+    expect(visible.y + visible.height).toBeLessThanOrEqual(
+      area.y + area.height,
+    );
+    expect(adjacentWindowBounds(panel, area, area).x).toBe(
+      area.x + area.width - panel.width,
+    );
+  });
   it('makes per-folder windows stable and distinct', () => {
     expect(windowIdentity(app)).toBe('files:documents');
     expect(windowIdentity(app, { folder: 'pictures' })).toBe('files:pictures');
@@ -230,6 +266,21 @@ describe('dynamic window work areas', () => {
       width: 382,
       height: 614,
     });
+  });
+
+  it('keeps one Dock width across pointer modes without changing saved geometry', () => {
+    for (const size of [
+      { width: 1024, height: 768 },
+      { width: 568, height: 320 },
+    ]) {
+      const pointer = windowWorkArea(size, false);
+      const touch = windowWorkArea({ ...size, coarsePointer: true }, false);
+      expect(touch).toEqual(pointer);
+    }
+    const portrait = { width: 390, height: 844 };
+    expect(windowWorkArea({ ...portrait, coarsePointer: true }, false)).toEqual(
+      windowWorkArea(portrait, false),
+    );
   });
 
   it('reclaims short landscape space with a side Dock while keeping narrower keyboards full width', () => {

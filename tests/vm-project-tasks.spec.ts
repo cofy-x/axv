@@ -371,15 +371,25 @@ async function openTasks(page: Page) {
 
 async function selectTask(page: Page, command: string | RegExp) {
   const panel = tasksWindow(page);
+  await expect(
+    panel.getByRole('button', { name: 'New Task', exact: true }),
+  ).toBeVisible();
   const back = panel.getByRole('button', {
     name: 'Back to Tasks',
     exact: true,
   });
+  const navigation = panel.getByRole('navigation', {
+    name: 'Project tasks',
+    includeHidden: true,
+  });
+  const item = navigation.getByRole('button', {
+    name: command,
+    includeHidden: true,
+  });
+  await expect(item).toBeAttached();
   if (await back.isVisible()) await back.click();
-  await panel
-    .getByRole('navigation', { name: 'Project tasks' })
-    .getByRole('button', { name: command })
-    .click();
+  await expect(navigation).toBeVisible();
+  await item.click();
 }
 
 async function expectSelectedAttempt(panel: Locator, attemptId: string) {
@@ -1163,7 +1173,6 @@ test('identical commands have distinct history labels and refreshing keeps their
     name: 'Back to Tasks',
     exact: true,
   });
-  if (await back.isVisible()) await back.click();
   const navigation = panel.getByRole('navigation', {
     name: 'Project tasks',
     includeHidden: true,
@@ -1172,6 +1181,10 @@ test('identical commands have distinct history labels and refreshing keeps their
   await expect(rows).toHaveCount(2);
   await expect(rows.nth(0)).toContainText('older001');
   await expect(rows.nth(1)).toContainText('newer002');
+  // Loading the first task list makes the compact Back action available.
+  // Decide which pane to open only after that response has populated the rows.
+  if (await back.isVisible()) await back.click();
+  await expect(navigation).toBeVisible();
   await rows.nth(0).click();
   await expect(panel.getByLabel('Task output')).toHaveText(output);
   older.attempt.status = 'failed';

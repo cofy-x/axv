@@ -16,6 +16,75 @@ import {
 } from './codex-helpers';
 import type { CodexSession } from './codex-helpers';
 
+test('host launch keeps its original request after uncertain refusal and database protection', async ({
+  page,
+}, info) => {
+  const touch = Boolean(info.project.use.hasTouch);
+  const manager = await selectCodexProject(page, touch);
+  const attempts: { requestId: string; projectPath: string }[] = [];
+  await page.route('**/api/host/codex/sessions', (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    attempts.push(route.request().postDataJSON());
+    return route.fulfill({
+      status: 409,
+      json: {
+        code:
+          attempts.length === 1
+            ? 'history_identity_conflict'
+            : 'database_changed',
+        error:
+          attempts.length === 1
+            ? 'The original launch outcome is uncertain.'
+            : 'The desktop database changed.',
+      },
+    });
+  });
+  await page.evaluate(() => {
+    const generated: string[] = [];
+    Object.defineProperty(globalThis, 'hostStartUUIDs', { value: generated });
+    const randomUUID = crypto.randomUUID.bind(crypto);
+    crypto.randomUUID = () => {
+      const id = randomUUID();
+      generated.push(id);
+      return id;
+    };
+  });
+  const startHere = manager.getByRole('button', {
+    name: 'Start Here',
+    exact: true,
+  });
+  await choose(startHere, touch);
+  await expect(
+    manager.getByText('The original launch outcome is uncertain.', {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(startHere).toBeEnabled();
+  await choose(startHere, touch);
+  await expect(
+    manager.getByText('The desktop database changed.', { exact: true }),
+  ).toBeVisible();
+  await expect(startHere).toBeEnabled();
+  expect(attempts).toHaveLength(2);
+  expect(attempts[1]).toEqual(attempts[0]);
+  // Choosing another project after protection must not replace the held key,
+  // even though transport would reject its eventual request locally.
+  const newSession = manager.getByRole('button', {
+    name: 'New Session',
+    exact: true,
+  });
+  await choose(newSession, touch);
+  await expect(newSession).toBeEnabled();
+  expect(attempts).toHaveLength(2);
+  expect(
+    await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { hostStartUUIDs: string[] })
+          .hostStartUUIDs,
+    ),
+  ).toEqual([attempts[0].requestId]);
+});
+
 test('closing and reopening the folder picker preserves an unsubmitted path', async ({
   page,
 }, info) => {
@@ -145,17 +214,8 @@ test('late creation preserves newer workspace and list choices instead of activa
 }, info) => {
   const touch = Boolean(info.project.use.hasTouch);
   const manager = await openCodexManager(page, touch);
-  const changeWorkspace = async (next: boolean) => {
-    if (touch)
-      await choose(
-        page.getByRole('button', {
-          name: next ? 'Next workspace' : 'Previous workspace',
-          exact: true,
-        }),
-        true,
-      );
-    else await switchWorkspace(page, next ? 2 : 1);
-  };
+  const changeWorkspace = (next: boolean) =>
+    switchWorkspace(page, next ? 2 : 1, touch);
   for (const scenario of ['workspace', 'filter']) {
     let result: CodexSession | undefined;
     let release!: () => void;
@@ -261,12 +321,7 @@ test('a late continuation preserves the selected workspace and the previous run 
       touch,
     );
     await expect.poll(() => !!result).toBe(true);
-    if (touch)
-      await choose(
-        page.getByRole('button', { name: 'Next workspace', exact: true }),
-        true,
-      );
-    else await switchWorkspace(page, 2);
+    await switchWorkspace(page, 2, touch);
     await expect(manager).toBeHidden();
     release();
     await expect(manager.getByTestId('codex-start-notice')).toHaveText(
@@ -279,12 +334,7 @@ test('a late continuation preserves the selected workspace and the previous run 
     expect(previous.status).toBe('ended');
     expect(result!.runId).not.toBe(original.runId);
     expect(result!.conversationId).toBe(previous.conversationId);
-    if (touch)
-      await choose(
-        page.getByRole('button', { name: 'Previous workspace', exact: true }),
-        true,
-      );
-    else await switchWorkspace(page, 1);
+    await switchWorkspace(page, 1, touch);
     await openCodexManager(page, touch);
     const continued = manager.locator(
       `[data-session-id="${original.id}"][data-run-id="${result!.runId}"]`,
@@ -335,12 +385,7 @@ test('leaving the manager during continuation preflight prevents a late confirma
     await expect(action).toBeEnabled();
     await choose(action, touch);
     await expect.poll(() => held).toBe(true);
-    if (touch)
-      await choose(
-        page.getByRole('button', { name: 'Next workspace', exact: true }),
-        true,
-      );
-    else await switchWorkspace(page, 2);
+    await switchWorkspace(page, 2, touch);
     await expect(manager).toBeHidden();
     release();
     await expect(

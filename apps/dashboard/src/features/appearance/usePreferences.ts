@@ -1,19 +1,23 @@
 import { useCallback, useMemo, useState } from 'react';
-import { request } from '../../shared/api/http';
+import { requestDesktop, desktopDatabase } from '../../shared/api/desktop';
 import type { ConnectionStatus } from '../../shared/api/connection';
 import type { Preferences } from './preferences';
 import { createPreferenceQueue, defaultPreferences } from './preferences';
 
 export function usePreferences(
   onConnectionChange: (status: ConnectionStatus) => void,
+  initialPreferences: Preferences = defaultPreferences,
 ) {
-  const [preferences, setPreferences] = useState(defaultPreferences);
+  const [preferences, setPreferences] = useState(initialPreferences);
   const [queue] = useState(() =>
-    createPreferenceQueue(defaultPreferences, (value) =>
-      request<Preferences>('/preferences', {
-        method: 'PUT',
-        body: JSON.stringify(value),
-      }),
+    createPreferenceQueue(
+      initialPreferences,
+      (value) =>
+        requestDesktop<Preferences>('/preferences', {
+          method: 'PUT',
+          body: JSON.stringify(value),
+        }),
+      desktopDatabase.assertActive,
     ),
   );
   const resetPreferences = useCallback(
@@ -27,6 +31,7 @@ export function usePreferences(
     async (patch: Partial<Preferences>) => {
       try {
         const saved = await queue.save(patch);
+        desktopDatabase.assertActive();
         setPreferences(saved);
         onConnectionChange('connected');
       } catch (error) {

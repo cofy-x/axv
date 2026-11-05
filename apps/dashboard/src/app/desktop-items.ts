@@ -19,7 +19,6 @@ import { openTerminalWindow } from '../features/terminal/definition';
 export function createDesktopIcons(
   data: FilesystemData,
   getDesktop: () => DesktopAPI | null,
-  codexInstalled = false,
 ): DesktopIcon[] {
   const { entries } = data;
   return [
@@ -76,17 +75,13 @@ export function createDesktopIcons(
       appId: 'appearance',
       applicationLauncher: true,
     },
-    ...(codexInstalled
-      ? [
-          {
-            id: 'system:codex',
-            label: 'Codex',
-            icon: 'companion' as const,
-            appId: 'codex',
-            applicationLauncher: true,
-          },
-        ]
-      : []),
+    {
+      id: 'system:codex',
+      label: 'Codex',
+      icon: 'companion',
+      appId: 'codex',
+      applicationLauncher: true,
+    },
     {
       id: 'system:machines',
       label: 'Virtual Machines',

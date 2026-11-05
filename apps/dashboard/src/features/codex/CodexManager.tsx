@@ -1,3 +1,4 @@
+import { desktopDatabase } from '../../shared/api/desktop';
 import {
   useCallback,
   useEffect,
@@ -22,7 +23,6 @@ import {
   sessionCanEnd,
   sessionCanContinue,
 } from './api';
-import { APIError } from '../../shared/api/http';
 import type { CodexProject, CodexSessionRecord } from './api';
 import { useCodexAvailability } from './CodexContext';
 import { openCodexEnvironment, openCodexSession } from './definition';
@@ -40,6 +40,7 @@ import {
 import { openTerminalWindow } from '../terminal/definition';
 import { CodexResumeRequests, continueConversation } from './continuation';
 import { useVMProject } from './use-vm-project';
+import { launchRejectedBeforeStart } from './vm-project-requests';
 import { useHostFolderPicker } from './use-host-folder-picker';
 import { useDraftNamespace } from '../../shared/drafts/context';
 import { CodexActivity } from './CodexActivity';
@@ -171,6 +172,7 @@ export function CodexManager({
     listing.current = controller;
     try {
       const result = await codexAPI.list(controller.signal);
+      desktopDatabase.assertUnchanged();
       if (!controller.signal.aborted && mounted.current) {
         const snapshots = result.sessions.map((session) =>
           publishSessionActivity(session),
@@ -206,6 +208,7 @@ export function CodexManager({
     listingProjects.current = controller;
     try {
       const result = await codexAPI.projects(controller.signal);
+      desktopDatabase.assertUnchanged();
       if (!controller.signal.aborted && mounted.current) {
         setProjects(result.projects);
         setProjectError('');
@@ -296,7 +299,12 @@ export function CodexManager({
 
   useEffect(() => {
     const poll = () => {
-      if (!visible || document.visibilityState !== 'visible') return;
+      if (
+        desktopDatabase.getSnapshot() ||
+        !visible ||
+        document.visibilityState !== 'visible'
+      )
+        return;
       void refresh();
       if (!listingProjects.current) void refreshProjects();
     };
@@ -339,15 +347,17 @@ export function CodexManager({
     setCreating(project ? 'folder' : 'default');
     setActionError('');
     setStartNotice('');
-    if (!requestKey.current || requestKey.current.path !== project)
-      requestKey.current = { path: project, id: crypto.randomUUID() };
     try {
+      desktopDatabase.assertUnchanged();
+      if (!requestKey.current || requestKey.current.path !== project)
+        requestKey.current = { path: project, id: crypto.randomUUID() };
       const result = vmProjectId
         ? await vm.create()
         : {
             session: await codexAPI.create(requestKey.current.id, project),
             recovered: false,
           };
+      desktopDatabase.assertUnchanged();
       const { session } = result;
       requestKey.current = null;
       if (mounted.current) {
@@ -372,8 +382,7 @@ export function CodexManager({
         void refreshProjects();
       }
     } catch (error) {
-      if (error instanceof APIError && error.status < 500)
-        requestKey.current = null;
+      if (launchRejectedBeforeStart(error)) requestKey.current = null;
       if (mounted.current)
         setActionError(
           error instanceof Error ? error.message : 'Could not start Codex.',
@@ -1098,13 +1107,27 @@ export function CodexManager({
             </p>
           )}
           {sessionsLoaded && !visibleSessions.length && !sessionError && (
-            <p className="codex-empty">
-              {filter === 'attention'
-                ? 'No action needed.'
-                : filter === 'archived'
-                  ? 'No archived sessions.'
-                  : 'No unarchived sessions.'}
-            </p>
+            <div className="app-empty-state codex-empty">
+              <PixelIcon name="companion" size={32} />
+              <div>
+                <strong>
+                  {filter === 'attention'
+                    ? 'No action needed.'
+                    : filter === 'archived'
+                      ? 'No archived sessions.'
+                      : 'No unarchived sessions.'}
+                </strong>
+                <p>
+                  {filter === 'attention'
+                    ? 'Sessions needing a response or review appear here.'
+                    : filter === 'archived'
+                      ? 'Archive a session from its More menu to keep it here.'
+                      : vmProjectId
+                        ? 'Conversations and activity for this VM project appear here.'
+                        : 'New Session uses the default folder. New in Folder starts in another project.'}
+                </p>
+              </div>
+            </div>
           )}
           <ul className="codex-session-list">
             {visibleSessions.map((session) => {

@@ -35,6 +35,34 @@ function deferred() {
 }
 
 describe('desktop layout persistence', () => {
+  it('retains an unacknowledged layout when its database changes before commit', async () => {
+    let changed = false;
+    const write = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        queueMicrotask(() => {
+          changed = true;
+        });
+      })
+      .mockResolvedValue(undefined);
+    const saved = vi.fn();
+    const failed = vi.fn();
+    const persistence = createLayoutPersistence(write, saved, failed, () => {
+      if (changed) throw new Error('Changed');
+    });
+    persistence.enqueue(layout(30));
+    await persistence.flush();
+    expect(saved).not.toHaveBeenCalled();
+    expect(failed).toHaveBeenCalledOnce();
+    await persistence.flush();
+    expect(write).toHaveBeenCalledTimes(1);
+    // The generic queue retains the snapshot; a consumer decides whether retry
+    // is permitted. The production page keeps database replacement sticky.
+    changed = false;
+    await persistence.flush();
+    expect(write.mock.calls).toEqual([[layout(30)], [layout(30)]]);
+  });
+
   it('serializes writes and keeps only the latest movement while saving', async () => {
     const first = deferred();
     const write = vi

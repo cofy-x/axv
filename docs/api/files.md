@@ -2,7 +2,7 @@
 
 [API index](README.md)
 
-Entries, content and metadata changes, imports and deletion groups share one transactional virtual-document model. JSON writes follow the [desktop decoder contract](desktop.md#preferences-and-browser-layout).
+Entries, content and metadata changes, imports and deletion groups share one transactional virtual-document model. JSON writes follow the [desktop decoder contract](desktop.md#preferences-and-browser-layout). Every request also requires the original [desktop database identity](desktop.md#database-identity-and-local-recovery), including reads and multipart imports; database mismatch is distinct from a file revision conflict.
 
 ## Entries
 
@@ -58,7 +58,7 @@ Editable files must be valid UTF-8, contain no binary control characters, and re
 
 `POST /api/import` accepts multipart form data with a `parentId` and one to ten file parts, returning `201 { entries }`. Each file may be at most **10 MiB**. The batch is imported transactionally, preserving file bytes and assigning a numbered name when needed. Omitting `parentId` imports into Documents.
 
-`GET /api/entries/:id/content?download=1` downloads the original bytes. Safe PNG, JPEG, and WebP images can be served inline by omitting `download`; unsupported formats are retained for download. MIME classification is based on stored content rather than trusting a filename or upload MIME declaration.
+`GET /api/entries/:id/content?download=1&databaseId=<captured-id>` downloads the original bytes when used as browser navigation. Image previews also include the captured `databaseId`; fetch clients may use the identity header instead, but must not send both. `HEAD` follows the same binding. Safe PNG, JPEG, and WebP images can be served inline by omitting `download`; unsupported formats are retained for download. MIME classification is based on stored content rather than trusting a filename or upload MIME declaration.
 
 ## Errors and metadata writes
 

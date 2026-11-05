@@ -4,7 +4,7 @@ import type { DesktopAPI } from '@cofy-x/axv-nextstep';
 import { documentsAPI } from '../../filesystem/documents';
 import { useFilesystemData } from '../../filesystem/context';
 import { isInTrash } from '../../filesystem/tree';
-import { useResource } from '../../shared/api/useResource';
+import { useDesktopResource as useResource } from '../../shared/api/useDesktopResource';
 
 export function RelatedDocuments({
   target,

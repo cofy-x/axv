@@ -1,3 +1,4 @@
+import { desktopDatabase } from '../../shared/api/desktop';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Button, IconButton, Select } from '@cofy-x/axv-nextstep';
@@ -6,7 +7,7 @@ import { useFilesystemData } from '../../filesystem/context';
 import { isInTrash } from '../../filesystem/tree';
 import { useDraftNamespace } from '../../shared/drafts/context';
 import { RequestIdentity } from '../../shared/api/request-identity';
-import { useResource } from '../../shared/api/useResource';
+import { useDesktopResource as useResource } from '../../shared/api/useDesktopResource';
 import { codexAPI, projectName, sessionTitle } from '../codex/api';
 import { contextAPI, contextStatusLabel } from '../codex/context-api';
 import type { ContextBatch } from '../codex/context-api';
@@ -57,6 +58,7 @@ function AttachmentComposer({
         requestId,
         snapshotIds,
       );
+      desktopDatabase.assertUnchanged();
       const warning =
         batch.status !== 'unknown' && !identity.current.complete(requestId)
           ? 'The attachment was queued, but its retry identity could not be cleared in this browser.'
@@ -141,12 +143,14 @@ export function ConversationContext({
     readyContextRun(run.data);
   const refresh = useCallback(
     async (replace = true) => {
-      if (request.current && !replace) return;
+      if (desktopDatabase.getSnapshot() || (request.current && !replace))
+        return;
       request.current?.abort();
       const current = new AbortController();
       request.current = current;
       try {
         const result = await contextAPI.list(sessionId, runId, current.signal);
+        desktopDatabase.assertUnchanged();
         if (request.current !== current || current.signal.aborted) return;
         setBatches(result.batches);
         setLoaded(true);
@@ -166,7 +170,8 @@ export function ConversationContext({
 
     async function poll() {
       await refresh(false);
-      if (current) timer = setTimeout(() => void poll(), 2500);
+      if (current && !desktopDatabase.getSnapshot())
+        timer = setTimeout(() => void poll(), 2500);
     }
 
     void poll();

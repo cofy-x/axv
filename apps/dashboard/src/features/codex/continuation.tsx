@@ -1,3 +1,4 @@
+import { desktopDatabase } from '../../shared/api/desktop';
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
 import {
   codexAPI,
@@ -110,6 +111,7 @@ export class CodexResumeRequests {
       : codexAPI.resume(session.id, attempt.requestId, attempt.expectedRunId);
     const request = submission
       .then((result) => {
+        desktopDatabase.assertUnchanged();
         if (
           result.id !== session.id ||
           !result.runId ||

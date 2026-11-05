@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import {
   Button,
   ButtonGroup,
@@ -6,6 +6,7 @@ import {
   Field,
   IconButton,
   PixelIcon,
+  Radio,
   Select,
   StatusBar,
   Tabs,
@@ -13,6 +14,7 @@ import {
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 
 export function Gallery({ desktop }: AppWindowProps) {
+  const radioName = useId();
   const [tab, setTab] = useState('controls');
   const [checked, setChecked] = useState(true);
   const [choice, setChoice] = useState('nextstep');
@@ -64,13 +66,8 @@ export function Gallery({ desktop }: AppWindowProps) {
               <Checkbox label="Unavailable option" disabled />
               <fieldset>
                 <legend>Radio buttons</legend>
-                <label>
-                  <input type="radio" name="gallery-radio" defaultChecked />{' '}
-                  First option
-                </label>
-                <label>
-                  <input type="radio" name="gallery-radio" /> Second option
-                </label>
+                <Radio label="First option" name={radioName} defaultChecked />
+                <Radio label="Second option" name={radioName} />
               </fieldset>
               <div className="app-actions">
                 <Button onClick={() => setStatus('Button pressed.')}>

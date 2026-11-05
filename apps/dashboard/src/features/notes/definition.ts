@@ -4,6 +4,7 @@ import { newEntry } from '../../filesystem/commands';
 import { runCommand } from '../../shared/desktop/dialogs';
 import type { WindowCommands } from '../../shared/desktop/window-commands';
 import { deferWindow } from '../../shared/desktop/defer-window';
+import { desktopDatabase } from '../../shared/api/desktop';
 
 const Notes = deferWindow(() =>
   import('./Notes').then((module) => module.Notes),
@@ -32,10 +33,12 @@ export function createNotesApp(
         items: [
           {
             label: 'New Document',
+            disabled: !!desktopDatabase.getSnapshot(),
             action: () => {
-              void runCommand(desktop, () =>
-                newEntry(data, desktop, 'documents', 'file'),
-              );
+              void runCommand(desktop, async () => {
+                desktopDatabase.assertActive();
+                await newEntry(data, desktop, 'documents', 'file');
+              });
             },
           },
           {

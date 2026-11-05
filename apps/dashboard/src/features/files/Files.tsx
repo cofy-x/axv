@@ -32,7 +32,14 @@ import {
 import type { FileMenuOptions } from './menus';
 import { folderPath, reconcileNavigation } from './navigation';
 
-export function Files({ window, desktop }: AppWindowProps) {
+const sortOptions = [
+  { value: 'name', label: 'Name' },
+  { value: 'modified', label: 'Modified' },
+  { value: 'size', label: 'Size' },
+  { value: 'kind', label: 'Kind' },
+] as const;
+
+export function Files({ window, desktop, interactive }: AppWindowProps) {
   const data = useFilesystemData();
   const state = window.viewState;
   const { updateWindowState, setTitle } = desktop;
@@ -41,6 +48,7 @@ export function Files({ window, desktop }: AppWindowProps) {
   const { folderId } = reconcileNavigation(entries, state, anchorId);
   const path = folderPath(entries, folderId);
   const folder = path.at(-1);
+  const available = Boolean(folder);
   const view: FileMenuOptions['view'] =
     state.view === 'list' ? 'list' : 'columns';
   const sort: FileSort = ['name', 'modified', 'size', 'kind'].includes(
@@ -54,7 +62,10 @@ export function Files({ window, desktop }: AppWindowProps) {
       ? (state.columnWidths as Record<string, number>)
       : {};
   const [busy, setBusy] = useState(false);
+  const [narrow, setNarrow] = useState(false);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const container = useRef<HTMLDivElement>(null);
+  const breadcrumbs = useRef<HTMLElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const browser = useRef<HTMLDivElement>(null);
   const selected =
@@ -68,10 +79,16 @@ export function Files({ window, desktop }: AppWindowProps) {
   const hold = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const entryPointerType = useRef('mouse');
   const lastSelected = useRef<string | undefined>(undefined);
-  const firstRender = useRef(true);
   const mounted = useRef(false);
-  const latest = useRef({ data, desktop, folderId, selected, view });
-  latest.current = { data, desktop, folderId, selected, view };
+  const latest = useRef({
+    data,
+    desktop,
+    folderId,
+    selected,
+    view,
+    interactive,
+  });
+  latest.current = { data, desktop, folderId, selected, view, interactive };
   const command = (action: () => Promise<void>) => {
     void runCommand(desktop, action);
   };
@@ -94,12 +111,23 @@ export function Files({ window, desktop }: AppWindowProps) {
     if (folder) setTitle(window.id, folder.name);
   }, [folder, setTitle, window.id]);
   useEffect(() => {
-    if (firstRender.current && browser.current) {
+    const element = container.current;
+    if (!element) return;
+    const measure = () => setNarrow(element.clientWidth < 520);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [available]);
+  useEffect(() => {
+    if (browser.current)
       browser.current.scrollLeft =
-        typeof state.scrollLeft === 'number' ? state.scrollLeft : 0;
-      firstRender.current = false;
-    }
-  }, [state.scrollLeft]);
+        !narrow && typeof state.scrollLeft === 'number' ? state.scrollLeft : 0;
+  }, [narrow, state.scrollLeft]);
+  useEffect(() => {
+    if (narrow && breadcrumbs.current)
+      breadcrumbs.current.scrollLeft = breadcrumbs.current.scrollWidth;
+  }, [narrow, folderId]);
 
   function update(patch: Record<string, unknown>) {
     updateWindowState(window.id, patch);
@@ -117,9 +145,18 @@ export function Files({ window, desktop }: AppWindowProps) {
 
   function focusColumn(id: string) {
     requestAnimationFrame(() => {
+      const current = latest.current;
+      if (
+        !mounted.current ||
+        !current.interactive ||
+        current.desktop.activeWindowId !== window.id
+      )
+        return;
       const element = browser.current?.querySelector<HTMLElement>(
         `[data-column-id="${CSS.escape(id)}"]`,
       );
+      if (!element?.getClientRects().length || element.closest('[inert]'))
+        return;
       element?.focus();
       element?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     });
@@ -129,6 +166,7 @@ export function Files({ window, desktop }: AppWindowProps) {
     entry: Entry,
     siblings: Entry[],
     event: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean },
+    enterFolder = true,
   ) {
     let ids = [entry.id];
     if (event.shiftKey && lastSelected.current) {
@@ -150,8 +188,12 @@ export function Files({ window, desktop }: AppWindowProps) {
     }
     lastSelected.current = entry.id;
     select(ids);
-    if (!event.shiftKey && !event.metaKey && !event.ctrlKey)
-      navigate(entry.kind === 'folder' ? entry.id : entry.parentId);
+    if (!event.shiftKey && !event.metaKey && !event.ctrlKey) {
+      if (!narrow || enterFolder || entry.kind !== 'folder')
+        navigate(entry.kind === 'folder' ? entry.id : entry.parentId);
+      if (narrow && enterFolder && entry.kind === 'folder')
+        focusColumn(entry.id);
+    }
   }
 
   function menu(entry?: Entry, parentId = folderId): MenuItem[] {
@@ -167,7 +209,28 @@ export function Files({ window, desktop }: AppWindowProps) {
         onImport: () => input.current?.click(),
       },
       entry,
-    );
+    ).filter((item) => !narrow || item.id !== 'view');
+  }
+
+  function viewMenu(): MenuItem[] {
+    return [
+      ...sortOptions.map((option) => ({
+        label: `Sort by ${option.label}`,
+        checked: sort === option.value,
+        action: () => update({ sort: option.value }),
+      })),
+      { separator: true },
+      {
+        label: 'Ascending',
+        checked: !descending,
+        action: () => update({ descending: false }),
+      },
+      {
+        label: 'Descending',
+        checked: descending,
+        action: () => update({ descending: true }),
+      },
+    ];
   }
 
   function toolbarMenu(kind: 'new' | 'actions'): MenuItem[] {
@@ -338,7 +401,7 @@ export function Files({ window, desktop }: AppWindowProps) {
               );
       const next = siblings[index];
       if (next) {
-        pick(next, siblings, event);
+        pick(next, siblings, event, false);
         document
           .getElementById(`file-${window.id}-${parentId}-${next.id}`)
           ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -387,7 +450,7 @@ export function Files({ window, desktop }: AppWindowProps) {
       const target = siblings.find((entry) =>
         entry.name.toLowerCase().startsWith(typeahead.current.value),
       );
-      if (target) pick(target, siblings, event);
+      if (target) pick(target, siblings, event, false);
     }
   }
 
@@ -425,7 +488,10 @@ export function Files({ window, desktop }: AppWindowProps) {
         onClick={(event) => {
           event.stopPropagation();
           pick(entry, siblings, event);
-          event.currentTarget.closest<HTMLElement>('[role="listbox"]')?.focus();
+          if (!narrow || entry.kind !== 'folder')
+            event.currentTarget
+              .closest<HTMLElement>('[role="listbox"]')
+              ?.focus();
         }}
         onDoubleClick={(event) => {
           event.stopPropagation();
@@ -480,8 +546,9 @@ export function Files({ window, desktop }: AppWindowProps) {
     selection.length === 1 && selection[0]!.kind === 'file'
       ? selection[0]
       : undefined;
+  const itemCount = folderEntries(live, folderId, sort, descending).length;
   return (
-    <div className="files-app">
+    <div ref={container} className={`files-app${narrow ? ' is-narrow' : ''}`}>
       <div className="app-toolbar files-toolbar">
         <IconButton
           icon="up"
@@ -508,14 +575,43 @@ export function Files({ window, desktop }: AppWindowProps) {
         <Button disabled={busy} onClick={() => input.current?.click()}>
           {busy ? 'Importing…' : 'Import'}
         </Button>
-        <Select
-          aria-label="Folder view"
-          value={view}
-          onChange={(event) => update({ view: event.target.value })}
-        >
-          <option value="columns">Columns</option>
-          <option value="list">List</option>
-        </Select>
+        {narrow ? (
+          <Button
+            className="files-view-options"
+            aria-label="File view options"
+            aria-haspopup="menu"
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowDown' && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                event.currentTarget.click();
+              }
+            }}
+            onClick={(event) => {
+              event.currentTarget.focus({ preventScroll: true });
+              const rect = event.currentTarget.getBoundingClientRect();
+              desktop.contextMenu(
+                viewMenu(),
+                { x: rect.right, y: rect.bottom },
+                {
+                  title: `${folder.name} View`,
+                  ownerWindowId: window.id,
+                  align: 'end',
+                },
+              );
+            }}
+          >
+            View <span aria-hidden="true">▾</span>
+          </Button>
+        ) : (
+          <Select
+            aria-label="Folder view"
+            value={view}
+            onChange={(event) => update({ view: event.target.value })}
+          >
+            <option value="columns">Columns</option>
+            <option value="list">List</option>
+          </Select>
+        )}
         <input
           ref={input}
           className="visually-hidden"
@@ -529,7 +625,7 @@ export function Files({ window, desktop }: AppWindowProps) {
           }}
         />
       </div>
-      <nav className="files-path" aria-label="Folder path">
+      <nav ref={breadcrumbs} className="files-path" aria-label="Folder path">
         {path.map((item) => (
           <button
             key={item.id}
@@ -547,33 +643,36 @@ export function Files({ window, desktop }: AppWindowProps) {
           </button>
         ))}
       </nav>
-      <div className="files-sort">
-        <span>
-          {folderEntries(live, folderId, sort, descending).length} items
-        </span>
-        <Select
-          aria-label="Sort files"
-          value={sort}
-          onChange={(event) => update({ sort: event.target.value })}
-        >
-          <option value="name">Name</option>
-          <option value="modified">Modified</option>
-          <option value="size">Size</option>
-          <option value="kind">Kind</option>
-        </Select>
-        <IconButton
-          icon={descending ? 'sort-descending' : 'sort-ascending'}
-          label={descending ? 'Sort ascending' : 'Sort descending'}
-          title={descending ? 'Sort ascending' : 'Sort descending'}
-          onClick={() => update({ descending: !descending })}
-        />
-      </div>
+      {!narrow && (
+        <div className="files-sort">
+          <span>
+            {itemCount} {itemCount === 1 ? 'item' : 'items'}
+          </span>
+          <Select
+            aria-label="Sort files"
+            value={sort}
+            onChange={(event) => update({ sort: event.target.value })}
+          >
+            {sortOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+          <IconButton
+            icon={descending ? 'sort-descending' : 'sort-ascending'}
+            label={descending ? 'Sort ascending' : 'Sort descending'}
+            title={descending ? 'Sort ascending' : 'Sort descending'}
+            onClick={() => update({ descending: !descending })}
+          />
+        </div>
+      )}
       <div
         ref={browser}
         className={`miller-browser ${view}`}
-        onScroll={(event) =>
-          update({ scrollLeft: event.currentTarget.scrollLeft })
-        }
+        onScroll={(event) => {
+          if (!narrow) update({ scrollLeft: event.currentTarget.scrollLeft });
+        }}
       >
         {columns.map((parent) => {
           const siblings = folderEntries(live, parent.id, sort, descending);
@@ -585,9 +684,12 @@ export function Files({ window, desktop }: AppWindowProps) {
             <div
               key={parent.id}
               className="miller-column-wrap"
-              style={view === 'columns' ? { width } : undefined}
+              hidden={narrow && parent.id !== folderId}
+              style={view === 'columns' && !narrow ? { width } : undefined}
             >
-              <div className="miller-column-heading">{parent.name}</div>
+              <div className="miller-column-heading" hidden={narrow}>
+                {parent.name}
+              </div>
               <div
                 data-column-id={parent.id}
                 className={`miller-column finder-body ${dropTarget === parent.id ? 'drop-target' : ''}`}
@@ -628,7 +730,7 @@ export function Files({ window, desktop }: AppWindowProps) {
                   <p className="empty-folder">Empty folder</p>
                 )}
               </div>
-              {view === 'columns' && (
+              {view === 'columns' && !narrow && (
                 <ColumnSeparator
                   name={parent.name}
                   width={width}
@@ -640,7 +742,7 @@ export function Files({ window, desktop }: AppWindowProps) {
             </div>
           );
         })}
-        {view === 'columns' && selectedFile && (
+        {view === 'columns' && !narrow && selectedFile && (
           <div className="column-preview">
             <PixelIcon name={entryIcon(selectedFile)} size={48} />
             <strong>{selectedFile.name}</strong>
@@ -692,7 +794,16 @@ export function Files({ window, desktop }: AppWindowProps) {
         </div>
       </div>
       <StatusBar>
-        {selection.length ? `${selection.length} selected` : 'Select an item.'}
+        {narrow && (
+          <span>
+            {itemCount} {itemCount === 1 ? 'item' : 'items'}
+          </span>
+        )}
+        <span>
+          {selection.length
+            ? `${selection.length} selected`
+            : 'Select an item.'}
+        </span>
       </StatusBar>
     </div>
   );

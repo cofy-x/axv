@@ -63,9 +63,4 @@ export async function marker(terminal: Locator, text: string) {
   await expect(output(terminal)).toContainText(text);
 }
 
-export async function applicationMenu(page: Page, group: string) {
-  await page
-    .getByRole('navigation', { name: 'Application menus' })
-    .getByRole('button', { name: group, exact: true })
-    .click();
-}
+export { applicationMenu } from './desktop-application-helpers';

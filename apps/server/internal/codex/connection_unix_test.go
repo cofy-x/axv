@@ -112,6 +112,7 @@ func TestAttachmentInspectionDoesNotHoldManagerLock(t *testing.T) {
 	go func() {
 		request, _ := http.NewRequest("GET", server.URL+runPath(run)+"/terminal", nil)
 		request.Header.Set("Origin", server.URL)
+		request.Header.Set("X-AXV-Database-ID", server.databaseID)
 		response, err := server.Client().Do(request)
 		if response != nil {
 			response.Body.Close()
@@ -120,7 +121,9 @@ func TestAttachmentInspectionDoesNotHoldManagerLock(t *testing.T) {
 	}()
 	<-entered
 	client := &http.Client{Timeout: time.Second}
-	response, err := client.Get(server.URL + "/api/host/codex/projects")
+	request, _ := http.NewRequest("GET", server.URL+"/api/host/codex/projects", nil)
+	request.Header.Set("X-AXV-Database-ID", server.databaseID)
+	response, err := client.Do(request)
 	if response != nil {
 		response.Body.Close()
 	}
@@ -179,7 +182,7 @@ func TestPendingAttachmentsReserveCapacityAndDrainOnShutdown(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	url := "ws" + strings.TrimPrefix(server.URL, "http") + runPath(run) + "/terminal"
-	options := &websocket.DialOptions{HTTPHeader: http.Header{"Origin": []string{server.URL}}}
+	options := &websocket.DialOptions{HTTPHeader: http.Header{"Origin": []string{server.URL}, "X-AXV-Database-ID": []string{server.databaseID}}}
 	for range 8 {
 		conn, response, err := websocket.Dial(ctx, url, options)
 		if err != nil {

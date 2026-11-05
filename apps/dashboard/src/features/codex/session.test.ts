@@ -62,6 +62,7 @@ function harness(
   const sockets: FakeSocket[] = [];
   const writes: { data: Uint8Array; done: () => void }[] = [];
   const options = {
+    databaseId: 'original-database',
     sessionId: record.id,
     runId: record.runId,
     baseURL: 'https://localhost:3001/desktop',
@@ -300,7 +301,7 @@ describe('persistent Codex connections', () => {
     await Promise.all([connection.start(), connection.start()]);
     expect(options.getSession).toHaveBeenCalledOnce();
     expect(options.createSocket).toHaveBeenCalledExactlyOnceWith(
-      'wss://localhost:3001/api/host/codex/sessions/existing%20session/runs/existing%20run/terminal?cols=500&rows=1',
+      'wss://localhost:3001/api/host/codex/sessions/existing%20session/runs/existing%20run/terminal?cols=500&rows=1&databaseId=original-database',
     );
     expect(connection.sendText('early')).toBe(false);
     connection.resize(112.5, 36.9);

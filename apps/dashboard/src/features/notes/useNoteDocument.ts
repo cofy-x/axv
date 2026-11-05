@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
+import { desktopDatabase } from '../../shared/api/desktop';
 import { filesystemApi } from '../../filesystem/api';
 import { useDraftNamespace } from '../../shared/drafts/context';
 import { draftStorage } from '../../shared/drafts/storage';
@@ -18,6 +19,8 @@ export function useNoteDocument(
     const local = draftStorage({ databaseId, clientId }, draftId);
     return createNoteDocument(
       {
+        assertCurrent: desktopDatabase.assertActive,
+        subscribeInvalidation: desktopDatabase.subscribe,
         read: () => filesystemApi.entry(entryId),
         write: (content, revision) =>
           filesystemApi.patch(entryId, { content, revision }),

@@ -3,6 +3,30 @@ import { createPreferenceQueue, defaultPreferences } from './preferences';
 import type { Preferences } from './preferences';
 
 describe('appearance preference writes', () => {
+  it('does not merge a late acknowledgement after the original store becomes unavailable', async () => {
+    let changed = false;
+    const write = vi
+      .fn<(value: Preferences) => Promise<Preferences>>()
+      .mockImplementationOnce(async (value) => {
+        queueMicrotask(() => {
+          changed = true;
+        });
+        return value;
+      })
+      .mockImplementation(async (value) => value);
+    const queue = createPreferenceQueue(defaultPreferences, write, () => {
+      if (changed) throw new Error('Changed');
+    });
+    await expect(queue.save({ iconSnap: false })).rejects.toThrow('Changed');
+    await expect(queue.save({ clock24Hour: false })).rejects.toThrow('Changed');
+    expect(write).toHaveBeenCalledTimes(1);
+    changed = false;
+    await expect(queue.save({ clock24Hour: false })).resolves.toEqual({
+      ...defaultPreferences,
+      clock24Hour: false,
+    });
+  });
+
   it('merges concurrent partial changes with the last committed server value', async () => {
     let finish!: (preferences: Preferences) => void;
     const first = new Promise<Preferences>((resolve) => {
