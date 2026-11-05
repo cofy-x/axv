@@ -214,6 +214,8 @@ Upgrade Go, Node.js and pnpm deliberately in one change, keeping the version fil
 
 ### Dependency patches
 
+The version-scoped `minimatch` override in [pnpm-workspace.yaml](../pnpm-workspace.yaml) replaces versions affected by [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249) with 11.0.1. ESLint, its configuration array and the TypeScript parser still request vulnerable 10.x versions; the override also crosses a major version, so verify frozen installation, lint, types, tests and production builds together. Remove it once the upstream dependency ranges and regenerated lockfile select patched versions without it. It does not override dependencies that already request unaffected versions.
+
 The `patchedDependencies` entry in [pnpm-workspace.yaml](../pnpm-workspace.yaml) applies the checked-in xterm.js 6.0.0 patch during installation. It corrects empty alternate-screen buffer capacity after shrinking, so an in-flight terminal repaint cannot lose the final row after the screen grows again. The patch keeps the upstream source and both published JavaScript entry points consistent; it does not change the pinned version or license. [Third-party notices](../THIRD_PARTY_NOTICES.md#application-distributions) records its upstream source and attribution.
 
 The [public terminal API regression](../apps/dashboard/src/shared/terminal/xterm-buffer.test.ts) covers initial and reused alternate screens, visible output and normal-screen preservation. When adopting an upstream release containing this fix, remove the patch and its workspace entry, regenerate the lockfile, and rerun that regression plus the runtime and browser matrix. Keep the regression after removing the patch.
