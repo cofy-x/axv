@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cofy-x/axv/apps/server/internal/notificationevent"
+	"github.com/cofy-x/axv/apps/server/internal/notifications/webpush"
 )
 
 const maxEvents = 512
@@ -19,6 +20,7 @@ var ErrStore = errors.New("notification_store_unavailable")
 var ErrConflict = errors.New("notification_conflict")
 var ErrInput = errors.New("invalid_notification_request")
 var ErrMissing = errors.New("notification_unavailable")
+var ErrPushService = errors.New("push_service_unsupported")
 
 type Config struct {
 	Enabled         bool     `json:"enabled"`
@@ -30,15 +32,16 @@ type Config struct {
 }
 
 type Notification struct {
-	ID            string                   `json:"id"`
-	CreatedAt     time.Time                `json:"createdAt"`
-	Kind          string                   `json:"kind"`
-	State         string                   `json:"state"`
-	Status        string                   `json:"status"`
-	Attempts      int                      `json:"attempts"`
-	NextAttemptAt *time.Time               `json:"nextAttemptAt,omitempty"`
-	Target        notificationevent.Target `json:"target"`
-	Error         string                   `json:"error,omitempty"`
+	ID             string                   `json:"id"`
+	CreatedAt      time.Time                `json:"createdAt"`
+	Kind           string                   `json:"kind"`
+	State          string                   `json:"state"`
+	Status         string                   `json:"status"`
+	Attempts       int                      `json:"attempts"`
+	NextAttemptAt  *time.Time               `json:"nextAttemptAt,omitempty"`
+	Target         notificationevent.Target `json:"target"`
+	Error          string                   `json:"error,omitempty"`
+	PushDeliveries []PushDelivery           `json:"pushDeliveries,omitempty"`
 }
 
 type Intake struct {
@@ -80,6 +83,7 @@ type Options struct {
 	Resolve       func(context.Context, notificationevent.Target) (notificationevent.Resolution, error)
 	Client        *http.Client
 	DisableWorker bool
+	PushSender    PushSender
 }
 
 type checkpoint struct {
@@ -88,6 +92,8 @@ type checkpoint struct {
 }
 
 type diskState struct {
+	// Admission accounting is transient and never participates in persistence.
+	budgetBytes int
 	Version     int                   `json:"version"`
 	StoreID     string                `json:"storeId"`
 	Revision    uint64                `json:"revision"`
@@ -98,6 +104,12 @@ type diskState struct {
 	Checkpoints map[string]checkpoint `json:"checkpoints"`
 	Events      []Notification        `json:"events"`
 	Intake      Intake                `json:"intake"`
+	WebPush     *pushDiskState        `json:"webPush,omitempty"`
+}
+
+// PushSender is the bounded Web Push transport used by the notification owner.
+type PushSender interface {
+	Send(context.Context, webpush.Subscription, string, string, []byte, time.Duration, string) webpush.Outcome
 }
 
 var eventTitles = map[string]string{

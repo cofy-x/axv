@@ -25,6 +25,16 @@ export interface NotificationTarget {
   attemptId?: string;
 }
 
+export interface PushDelivery {
+  subscriptionId: string;
+  keyId: string;
+  status: string;
+  attempts: number;
+  nextAttemptAt?: string;
+  expiresAt: string;
+  error?: string;
+}
+
 export interface NotificationEvent {
   id: string;
   createdAt: string;
@@ -42,6 +52,7 @@ export interface NotificationEvent {
   nextAttemptAt?: string;
   target: NotificationTarget;
   error?: string;
+  pushDeliveries?: PushDelivery[];
 }
 
 export interface NotificationConfig {

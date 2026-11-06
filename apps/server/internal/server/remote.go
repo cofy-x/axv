@@ -106,6 +106,11 @@ func remoteWriteError(w http.ResponseWriter, status int, code, message string) {
 }
 
 func remoteLocalOnlyRoute(r *http.Request) bool {
+	if pathWithin(r.URL.Path, "/api/notifications") {
+		return r.Method == http.MethodPost && (r.URL.Path == "/api/notifications/config" ||
+			r.URL.Path == "/api/notifications/test" || r.URL.Path == "/api/notifications/disable" ||
+			r.URL.Path == "/api/notifications/push/rotate")
+	}
 	if pathWithin(r.URL.Path, "/api/extensions") {
 		return extensionsLocalOnlyRoute(r)
 	}
@@ -162,6 +167,9 @@ func remoteRoute(r *http.Request) bool {
 		return false
 	}
 	if pathWithin(r.URL.Path, "/api") {
+		if pathWithin(r.URL.Path, "/api/notifications") {
+			return remoteNotificationRoute(r)
+		}
 		if cloudflareSafeRead(r) {
 			return true
 		}
@@ -183,6 +191,33 @@ func remoteRoute(r *http.Request) bool {
 		return false
 	}
 	return r.Method == http.MethodGet || r.Method == http.MethodHead
+}
+
+func remoteNotificationRoute(r *http.Request) bool {
+	path := strings.TrimPrefix(r.URL.Path, "/api/notifications")
+	if r.Method == http.MethodGet {
+		if path == "" || path == "/push" {
+			return true
+		}
+		// Only opaque event IDs are admitted, not future API subfamilies.
+		id := strings.TrimPrefix(path, "/")
+		if len(id) != 32 || path != "/"+id {
+			return false
+		}
+		for _, c := range id {
+			if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+				return false
+			}
+		}
+		return true
+	}
+	if r.Method == http.MethodPost {
+		switch path {
+		case "/push/prepare", "/push/subscribe", "/push/test", "/push/disable", "/push/unsubscribe":
+			return true
+		}
+	}
+	return false
 }
 
 func pathWithin(path, prefix string) bool {

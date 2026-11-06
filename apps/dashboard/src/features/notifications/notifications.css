@@ -126,3 +126,13 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.notification-push-deliveries {
+  margin: 6px 4px;
+  padding-left: 18px;
+}
+.notification-push-deliveries > li {
+  margin-block: 8px;
+}
+.notification-push-deliveries .info-list dd {
+  overflow-wrap: anywhere;
+}

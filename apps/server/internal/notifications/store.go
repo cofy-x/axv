@@ -24,23 +24,26 @@ import (
 	"github.com/cofy-x/axv/apps/server/internal/jsonfile"
 	"github.com/cofy-x/axv/apps/server/internal/jsonunicode"
 	"github.com/cofy-x/axv/apps/server/internal/notificationevent"
+	"github.com/cofy-x/axv/apps/server/internal/notifications/webpush"
 )
 
 type Manager struct {
-	mu          sync.Mutex
-	write       func(string, any, os.FileMode) error
-	completion  *diskState
-	fingerprint [32]byte
-	established bool
-	state       diskState
-	path        string
-	lock        *os.File
-	options     Options
-	failure     string
-	cancel      context.CancelFunc
-	sendCancel  context.CancelFunc
-	done        chan struct{}
-	now         func() time.Time
+	mu             sync.Mutex
+	write          func(string, any, os.FileMode) error
+	completion     *diskState
+	fingerprint    [32]byte
+	established    bool
+	state          diskState
+	path           string
+	lock           *os.File
+	options        Options
+	failure        string
+	cancel         context.CancelFunc
+	sendCancel     context.CancelFunc
+	pushSendCancel context.CancelFunc
+	pushSendingID  string
+	done           chan struct{}
+	now            func() time.Time
 }
 
 func nonce() string {
@@ -118,6 +121,17 @@ func Open(ctx context.Context, options Options) (*Manager, error) {
 					e.NextAttemptAt = &t
 				}
 			}
+			for j := range e.PushDeliveries {
+				d := &e.PushDeliveries[j]
+				if d.Status == "sending" {
+					d.Status = "uncertain"
+					d.Error = "response_uncertain"
+					if d.Attempts < maxAttempts {
+						t := m.now().Add(time.Minute)
+						d.NextAttemptAt = &t
+					}
+				}
+			}
 		}
 		if m.save(m.state) != nil {
 			return nil, ErrStore
@@ -130,6 +144,9 @@ func Open(ctx context.Context, options Options) (*Manager, error) {
 	client.Timeout = 10 * time.Second
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	m.options.Client = &client
+	if m.options.PushSender == nil {
+		m.options.PushSender = webpush.NewSender()
+	}
 	run, cancel := context.WithCancel(ctx)
 	m.cancel = cancel
 	if options.DisableWorker {
@@ -170,6 +187,9 @@ func validState(s diskState) bool {
 	if s.Version != 1 || !opaqueID(s.StoreID) || s.Revision == 0 || s.Checkpoints == nil || len(s.Checkpoints) > maxSources || len(s.Events) > maxEvents || !validConfig(s.Config) || !validText(s.Token, 4096) || s.Config.Enabled && s.Token == "" {
 		return false
 	}
+	if !validPushState(s.WebPush) {
+		return false
+	}
 	for key, c := range s.Checkpoints {
 		if !identifier(key, true, 256) || !identifier(c.StoreID, true, 128) || c.Sequence > 1<<53-1 {
 			return false
@@ -184,6 +204,9 @@ func validState(s diskState) bool {
 			return false
 		}
 		if _, ok := eventTitles[e.Kind]; !ok {
+			return false
+		}
+		if !validPushDeliveries(e.PushDeliveries) {
 			return false
 		}
 		if !slices.Contains([]string{"pending", "sending", "accepted", "uncertain", "failed", "disabled", "superseded"}, e.Status) {
@@ -353,15 +376,107 @@ func (m *Manager) room(s *diskState) bool {
 	if len(s.Events) < maxEvents {
 		return true
 	}
+	if evictCompletedNotification(s) {
+		return true
+	}
+	outboxGap(s)
+	return false
+}
+
+func evictCompletedNotification(s *diskState) bool {
 	for i, e := range s.Events {
-		if e.Status != "pending" && e.Status != "sending" && !(e.Status == "uncertain" && e.NextAttemptAt != nil) {
+		pushPending := false
+		for _, delivery := range e.PushDeliveries {
+			if delivery.Status == "pending" || delivery.Status == "sending" || delivery.Status == "uncertain" && delivery.NextAttemptAt != nil {
+				pushPending = true
+				break
+			}
+		}
+		if !pushPending && e.Status != "pending" && e.Status != "sending" && !(e.Status == "uncertain" && e.NextAttemptAt != nil) {
+			if s.budgetBytes > 0 {
+				// Removing an array member frees its body, indentation and comma.
+				// Keep two extra bytes reserved for the first/last member case.
+				s.budgetBytes -= notificationBudgetRecordBytes(e) - 2
+			}
 			s.Events = append(s.Events[:i], s.Events[i+1:]...)
 			return true
 		}
 	}
+	return false
+}
+
+func outboxGap(s *diskState) {
 	s.Intake.Gap = true
 	s.Intake.Error = "The notification outbox reached its retention limit; some observations were not queued."
-	return false
+}
+
+// Reserve each pending receipt's largest retry fields before admission, so a
+// provider error cannot turn a valid full outbox into an unwritable store.
+func fitsNotificationBudget(s diskState) bool {
+	return notificationBudgetBytes(s) <= (4<<20)-1024
+}
+
+func notificationBudgetRecord(e Notification) Notification {
+	at := time.Date(9999, 12, 31, 23, 59, 59, 999999999, time.UTC)
+	e.PushDeliveries = append([]PushDelivery{}, e.PushDeliveries...)
+	if e.Status == "pending" || e.Status == "sending" || e.Status == "uncertain" && e.NextAttemptAt != nil {
+		e.Status, e.Error, e.NextAttemptAt = "uncertain", "response_uncertain", &at
+	}
+	for j := range e.PushDeliveries {
+		d := &e.PushDeliveries[j]
+		if pushPending(*d) {
+			d.Status, d.Error, d.NextAttemptAt = "uncertain", "subscription_expired", &at
+		}
+	}
+	return e
+}
+
+func notificationBudgetRecordBytes(e Notification) int {
+	data, _ := json.MarshalIndent(notificationBudgetRecord(e), "    ", "  ")
+	return len(data) + 8
+}
+
+func notificationBudgetBytes(s diskState) int {
+	next := s
+	next.Events = append([]Notification{}, s.Events...)
+	at := time.Date(9999, 12, 31, 23, 59, 59, 999999999, time.UTC)
+	for i := range next.Events {
+		next.Events[i] = notificationBudgetRecord(next.Events[i])
+	}
+	if next.WebPush != nil {
+		push := *next.WebPush
+		push.Subscriptions = append([]pushSubscriptionDisk{}, push.Subscriptions...)
+		next.WebPush = &push
+		for i := range next.WebPush.Subscriptions {
+			sub := &next.WebPush.Subscriptions[i]
+			if sub.Enabled {
+				sub.Error, sub.NextSendAt = "subscription_expired", &at
+			}
+		}
+	}
+	data, _ := json.MarshalIndent(next, "", "  ")
+	return len(data)
+}
+
+func (m *Manager) admit(s *diskState, event Notification) bool {
+	recordBytes := notificationBudgetRecordBytes(event)
+	for {
+		if !m.room(s) {
+			return false
+		}
+		if s.budgetBytes == 0 {
+			s.budgetBytes = notificationBudgetBytes(*s)
+		}
+		if s.budgetBytes+recordBytes <= (4<<20)-1024 {
+			s.Events = append(s.Events, event)
+			s.budgetBytes += recordBytes
+			return true
+		}
+		if !evictCompletedNotification(s) {
+			outboxGap(s)
+			return false
+		}
+	}
 }
 
 func (m *Manager) Test(id string, revision uint64) error {
@@ -377,14 +492,13 @@ func (m *Manager) Test(id string, revision uint64) error {
 		return ErrInput
 	}
 	next := clone(m.state)
-	if !m.room(&next) {
-		return ErrStore
-	}
 	eventID := nonce()
 	if eventID == "" {
 		return ErrStore
 	}
-	next.Events = append(next.Events, Notification{ID: eventID, CreatedAt: m.now().UTC(), Kind: "test", State: "test", Status: "pending"})
+	if !m.admit(&next, Notification{ID: eventID, CreatedAt: m.now().UTC(), Kind: "test", State: "test", Status: "pending"}) {
+		return ErrStore
+	}
 	return m.save(next)
 }
 

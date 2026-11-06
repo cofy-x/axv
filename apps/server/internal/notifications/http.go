@@ -20,6 +20,8 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 func failure(w http.ResponseWriter, err error) {
 	status, code, message := 503, "notification_store_unavailable", "Notification storage is unavailable. Existing records were preserved."
 	switch {
+	case errors.Is(err, ErrPushService):
+		status, code, message = 400, "push_service_unsupported", "This browser's push service is not supported. AXV currently accepts Google FCM, Mozilla and Apple push services."
 	case errors.Is(err, ErrConflict):
 		status, code, message = 409, "notification_conflict", "The original notification store or configuration changed. Review it before trying again."
 	case errors.Is(err, ErrInput):
@@ -42,6 +44,10 @@ func (m *Manager) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	local := httpaccess.LocalRequest(r, false)
 	path := strings.TrimPrefix(r.URL.Path, "/api/notifications")
+	if path == "/push" || strings.HasPrefix(path, "/push/") {
+		m.servePush(w, r, strings.TrimPrefix(path, "/push"))
+		return
+	}
 	if r.Method == http.MethodGet && path == "" {
 		if r.URL.RawQuery != "" {
 			failure(w, ErrInput)

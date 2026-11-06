@@ -31,6 +31,8 @@ import { ApplicationCatalogContext } from '../features/extensions/catalog';
 import { createExtensionDefinitions } from '../features/extensions/ExtensionWindow';
 import { extensionStore } from '../features/extensions/store';
 import { composeApplicationDefinitions } from '../features/extensions/registry';
+import { takePendingPushOpen } from '../features/notifications/webpush';
+import { notificationFromPushMessage } from '../features/notifications/webpush-message';
 import {
   notificationLink,
   openNotification,
@@ -121,7 +123,37 @@ function DesktopApp({ bootstrap, clientId }: ReadyDesktop) {
   const { preferences } = appearance;
   const desktopRef = useRef<DesktopAPI | null>(null);
   const notificationOpened = useRef(false);
+  const pendingPushReference = useRef<{
+    storeId: string;
+    notificationId: string;
+  } | null>(null);
   const getDesktop = useCallback(() => desktopRef.current, []);
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    let mounted = true;
+    const open = async (event: MessageEvent) => {
+      try {
+        const reference = await notificationFromPushMessage(event);
+        const desktop = desktopRef.current;
+        if (mounted && reference) {
+          if (desktop) {
+            openNotification(desktop, reference);
+            await takePendingPushOpen(reference);
+          } else pendingPushReference.current = reference;
+        }
+      } catch {
+        // A worker identity that cannot be verified cannot open a target.
+      }
+    };
+    const received = (event: MessageEvent) => {
+      void open(event);
+    };
+    navigator.serviceWorker.addEventListener('message', received);
+    return () => {
+      mounted = false;
+      navigator.serviceWorker.removeEventListener('message', received);
+    };
+  }, []);
   const [commands] = useState(createWindowCommands);
   useSyncExternalStore(commands.subscribe, commands.getSnapshot);
   const compute = useSyncExternalStore(
@@ -284,6 +316,21 @@ function DesktopApp({ bootstrap, clientId }: ReadyDesktop) {
                 }
                 onReady={(desktop) => {
                   desktopRef.current = desktop;
+                  if (pendingPushReference.current) {
+                    openNotification(desktop, pendingPushReference.current);
+                    void takePendingPushOpen(
+                      pendingPushReference.current,
+                    ).catch(() => {});
+                    pendingPushReference.current = null;
+                  }
+                  void takePendingPushOpen()
+                    .then((reference) => {
+                      if (reference && desktopRef.current === desktop)
+                        openNotification(desktop, reference);
+                    })
+                    .catch(() => {
+                      // A retained reference that cannot be verified stays unavailable.
+                    });
                   if (!notificationOpened.current) {
                     notificationOpened.current = true;
                     const reference = notificationLink(

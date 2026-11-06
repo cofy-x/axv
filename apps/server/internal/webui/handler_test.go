@@ -56,6 +56,19 @@ func TestManifestResponse(t *testing.T) {
 	}
 }
 
+func TestPushWorkerHasNarrowScopeAndCannotBeCached(t *testing.T) {
+	h := fromFS(fstest.MapFS{"axv-push/worker.js": {Data: []byte("self.addEventListener('push', () => {}); ")}})
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(method, "/axv-push/worker.js", nil))
+		if w.Code != http.StatusOK || w.Header().Get("Cache-Control") != "no-store" ||
+			w.Header().Get("Service-Worker-Allowed") != "/axv-push/" ||
+			w.Header().Get("Content-Security-Policy") != "default-src 'none'; connect-src 'none'" {
+			t.Fatalf("worker protection changed: HTTP %d %v", w.Code, w.Header())
+		}
+	}
+}
+
 func TestCompressedAssetsPreserveContentAndHTTPMetadata(t *testing.T) {
 	modified := time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
 	for _, name := range []string{"assets/app.js", "assets/app.css"} {

@@ -128,6 +128,38 @@ test('the checked-in public suffix notice covers the pinned server module and ge
   );
 });
 
+test('the checked-in HTMX notices cover the pinned Tailscale module and embedded sources', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'axv-pinned-htmx-notices-'));
+  directories.push(directory);
+  const module = 'tailscale.com';
+  const goMod = await readFile(join(root, 'apps/server/go.mod'), 'utf8');
+  const version = goMod.match(/^\s*tailscale\.com\s+(v\S+)/m)?.[1];
+  expect(version).toBeTruthy();
+  const inventory = await collectSupplementalNotices(
+    join(directory, 'output'),
+    { Deps: [{ Path: module, Version: version }] },
+  );
+  expect(inventory).toHaveLength(2);
+  for (const [name, asset, assetVersion] of [
+    ['htmx.org', 'htmx.min.js.gz', '2.0.4'],
+    ['htmx-ext-ws', 'htmx-websocket.min.js.gz', '2.0.2'],
+  ]) {
+    const entry = inventory.find((candidate) => candidate.name === name);
+    expect(entry).toMatchObject({
+      name,
+      version: assetVersion,
+      license: '0BSD',
+      via: { module, version },
+    });
+    expect(entry.generatedSources).toEqual(
+      ['fetch-htmx.go', `assets/${asset}`].map(
+        (file) =>
+          `https://raw.githubusercontent.com/tailscale/tailscale/${version}/util/eventbus/${file}`,
+      ),
+    );
+  }
+});
+
 test.each(['changed', 'empty', 'missing'])(
   'supplemental notices reject %s license material before retaining it',
   async (failure) => {

@@ -3,6 +3,8 @@ import { Button, Checkbox, Field, StatusBar, Tabs } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { notificationError, notificationsAPI } from './api';
 import { NotificationDetails } from './NotificationDetails';
+import { BrowserPushPanel } from './BrowserPushPanel';
+import { PushDeliveryDetails } from './PushDeliveryDetails';
 import { deliveryExplanation, deliveryLabel, kindLabel } from './presentation';
 import { useNotificationResource } from './useNotificationResource';
 import { notificationKinds } from './types';
@@ -53,9 +55,11 @@ export function NotificationsPanel({
   const operation = useRef<AbortController | null>(null);
   const allowed = snapshot?.canConfigure === true;
   const tab =
-    window.viewState.notificationTab === 'history' || !allowed
-      ? 'history'
-      : 'settings';
+    window.viewState.notificationTab === 'browser'
+      ? 'browser'
+      : window.viewState.notificationTab === 'history' || !allowed
+        ? 'history'
+        : 'settings';
   const reference = referenceValue(window.viewState.notificationReference);
   const dirty =
     !!token ||
@@ -227,6 +231,7 @@ export function NotificationsPanel({
           ...(allowed
             ? [{ id: 'settings', label: 'Settings', disabled: !interactive }]
             : []),
+          { id: 'browser', label: 'This browser', disabled: !interactive },
           { id: 'history', label: 'History', disabled: !interactive },
         ]}
       >
@@ -428,6 +433,13 @@ export function NotificationsPanel({
         )}
         <div
           className="app-pad notifications-content"
+          hidden={tab !== 'browser'}
+          inert={!interactive || tab !== 'browser'}
+        >
+          <BrowserPushPanel active={interactive && tab === 'browser'} />
+        </div>
+        <div
+          className="app-pad notifications-content"
           hidden={tab !== 'history'}
           inert={!interactive || tab !== 'history'}
         >
@@ -485,11 +497,15 @@ export function NotificationsPanel({
                   onClick={() => selectEvent(event.id)}
                 >
                   <strong>{kindLabel(event.kind)}</strong>
-                  <span>{deliveryLabel(event)}</span>
+                  <span>
+                    {event.pushDeliveries?.length ? 'Pocket Alert: ' : ''}
+                    <span>{deliveryLabel(event)}</span>
+                  </span>
                   <time dateTime={event.createdAt}>
                     {new Date(event.createdAt).toLocaleString()}
                   </time>
                 </button>
+                <PushDeliveryDetails deliveries={event.pushDeliveries} />
                 {deliveryExplanation(event) && (
                   <p className="fine-print">{deliveryExplanation(event)}</p>
                 )}
