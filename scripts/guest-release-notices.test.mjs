@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, test } from 'vitest';
 import { captureCommand, root } from './lib.mjs';
 import { validateGuestBuild } from './guest-release-notices.mjs';
+import { applicationJavaScriptSelector } from './release-notices.mjs';
 
 const directories = [];
 const pinnedGo = `go${(await readFile(join(root, '.go-version'), 'utf8')).trim()}`;
@@ -332,7 +333,24 @@ describe.skipIf(process.platform === 'win32')(
       },
     );
 
-    test('the application consumer still includes its JavaScript graph and build-helper notices', async () => {
+    test('the application scope selects dashboard and its production workspace dependencies', async () => {
+      const result = await captureCommand('pnpm', [
+        '--filter-prod',
+        applicationJavaScriptSelector,
+        '--fail-if-no-match',
+        'list',
+        '--recursive',
+        '--depth',
+        '-1',
+        '--json',
+      ]);
+      const selected = JSON.parse(result.stdout).map(({ name }) => name);
+      expect(selected).toContain('@cofy-x/axv-dashboard');
+      expect(selected).toContain('@cofy-x/axv-nextstep');
+      expect(selected).not.toContain('@cofy-x/axv-upstash-recipe');
+    });
+
+    test('the application consumer includes shipped JavaScript and build helpers without optional recipe dependencies', async () => {
       const f = await fixture();
       const output = join(f.directory, 'application');
       await mkdir(output);
@@ -342,7 +360,29 @@ describe.skipIf(process.platform === 'win32')(
         await readFile(join(output, 'manifest.json'), 'utf8'),
       );
       expect(manifest.filter(({ kind }) => kind === 'go')).toHaveLength(1);
-      expect(manifest.some(({ kind }) => kind === 'npm')).toBe(true);
+      const npmNames = manifest
+        .filter(({ kind }) => kind === 'npm')
+        .map(({ name }) => name);
+      expect(npmNames).toEqual(
+        expect.arrayContaining([
+          'react',
+          'react-dom',
+          'scheduler',
+          '@codemirror/view',
+          '@lezer/common',
+        ]),
+      );
+      const nextstep = JSON.parse(
+        await readFile(join(root, 'packages/nextstep/package.json'), 'utf8'),
+      );
+      for (const [name, version] of Object.entries({
+        ...nextstep.dependencies,
+        ...nextstep.peerDependencies,
+      })) {
+        if (!version.startsWith('workspace:')) expect(npmNames).toContain(name);
+      }
+      expect(npmNames.some((name) => name.startsWith('@upstash/'))).toBe(false);
+      expect(npmNames).not.toContain('uncrypto');
       expect(
         manifest
           .filter(({ kind }) => kind === 'build-helper')
