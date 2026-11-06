@@ -13,6 +13,7 @@ import {
   test,
 } from './helpers';
 import type { Entry } from './helpers';
+import { openDocumentTask } from './document-workflow-helpers';
 
 const hostId = 'launcher-host';
 const volumeId = '11111111-1111-4111-8111-111111111111';
@@ -347,6 +348,104 @@ test('closing the host launcher keeps a completed registration without reopening
     await expect(text).toBeFocused();
     await expect(text).toHaveValue(draft);
     expect(await readContent(request, entry.id)).toBe('Initial text');
+  } finally {
+    release();
+    await page.unroute(endpoint);
+  }
+});
+
+test('exporting a new file transfers focus from a hidden source to the mounted preview', async ({
+  page,
+  request,
+  hasTouch,
+}, testInfo) => {
+  const projectPath = process.env.E2E_CODEX_PROJECT || '';
+  test.skip(
+    !projectPath,
+    'Host projects require the isolated POSIX workspace.',
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  const entry = await createEntry(
+    request,
+    'E2E Export focus.md',
+    'file',
+    'documents',
+    '# Export focus\n\nSynthetic preview content.',
+  );
+  const registered = await request.post('/api/projects', {
+    headers: { Origin: process.env.E2E_BASE_URL! },
+    data: { rootPath: projectPath },
+  });
+  expect(registered.ok(), await registered.text()).toBeTruthy();
+  const { project } = (await registered.json()) as { project: { id: string } };
+  await page.reload();
+  const editor = await openDocument(page, entry, hasTouch);
+  const panel = await openDocumentTask(page, editor, 'export', hasTouch);
+  const destination = panel.getByRole('combobox', {
+    name: 'Destination project',
+    exact: true,
+  });
+  await destination.selectOption(project.id);
+  const path = panel.getByLabel('New file path', { exact: true });
+  const exportButton = panel
+    .getByRole('group', { name: 'Saved version actions', exact: true })
+    .getByRole('button', { name: 'Export', exact: true });
+  await path.fill(`focus-initial-${entry.id}.md`);
+  if (hasTouch) await exportButton.tap();
+  else await exportButton.click();
+  const browser = page.locator(
+    `[data-window-id="project-files:${project.id}"]`,
+  );
+  const preview = browser.getByRole('region', { name: 'Project file preview' });
+  await expect(
+    preview.getByRole('heading', { name: 'Export focus' }),
+  ).toBeVisible();
+  // Keep the mounted viewer's saved desktop focus neutral, so only its own
+  // file-opening effect can transfer focus to the next preview.
+  await browser.focus();
+  await expect(browser).toBeFocused();
+  await activate(page, panel, hasTouch);
+  await path.fill(`focus-next-${entry.id}.md`);
+  const source = panel.locator('summary').filter({ hasText: /^Preview$/ });
+  let release = () => {};
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let committed = false;
+  const endpoint = `**/api/projects/${project.id}/export`;
+  await page.route(endpoint, async (route) => {
+    const response = await route.fetch();
+    committed = true;
+    await pending;
+    await route.fulfill({ response });
+  });
+  try {
+    if (hasTouch) await exportButton.tap();
+    else await exportButton.click();
+    await expect.poll(() => committed).toBe(true);
+    // This native control stays enabled while export is pending. Keep focus
+    // there until the outgoing window becomes inert during result activation.
+    await source.focus();
+    await expect(source).toBeFocused();
+    release();
+    await expect(panel).toBeHidden();
+    await expect(browser).toHaveClass(/is-active/);
+    await expect(preview).toContainText(`focus-next-${entry.id}.md`);
+    await expect(preview).toBeFocused();
+    const screenshot = testInfo.outputPath('export-focus-preview.png');
+    await browser.screenshot({ path: screenshot });
+    await testInfo.attach('Exported project preview focus', {
+      path: screenshot,
+      contentType: 'image/png',
+    });
+    await source.evaluate((element) => (element as HTMLElement).focus());
+    await expect(source).not.toBeFocused();
+    await expect(
+      editor.getByRole('textbox', {
+        name: 'Document text',
+        includeHidden: true,
+      }),
+    ).toHaveValue('# Export focus\n\nSynthetic preview content.');
   } finally {
     release();
     await page.unroute(endpoint);
