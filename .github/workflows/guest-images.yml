@@ -22,9 +22,13 @@ concurrency:
 jobs:
   firecracker:
     name: Firecracker amd64 candidate
-    if: github.ref == 'refs/heads/main'
+    if: github.repository == 'cofy-x/axv' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     env:
       VERSION: ${{ inputs.version }}
       BASE_IMAGE: ${{ inputs.base_image }}
@@ -54,6 +58,24 @@ jobs:
           sudo env "PATH=$PATH" "VERSION=$VERSION" GOTOOLCHAIN=local \
             GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory "GIT_CONFIG_VALUE_0=$GITHUB_WORKSPACE" \
             node scripts/package-guest-release.mjs --bundle "$GITHUB_WORKSPACE/dist/guest-bundle"
+      - name: Attest the final Guest distribution files
+        id: provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/guest-release/${{ inputs.version }}/firecracker_amd64/axv_guest_${{ inputs.version }}_firecracker_amd64.tar.gz
+            dist/guest-release/${{ inputs.version }}/firecracker_amd64/axv_guest_${{ inputs.version }}_firecracker_amd64.ext4
+            dist/guest-release/${{ inputs.version }}/firecracker_amd64/candidate.json
+            dist/guest-release/${{ inputs.version }}/firecracker_amd64/SHA256SUMS
+          create-storage-record: false
+      - name: Retain and verify the original build provenance
+        env:
+          ATTESTATION_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sudo install -m 0644 -- "$ATTESTATION_BUNDLE" "dist/guest-release/$VERSION/firecracker_amd64/provenance.json"
+          node scripts/verify-release-provenance.mjs --kind guest --version "$VERSION" \
+            --source "$GITHUB_SHA" --directory "dist/guest-release/$VERSION/firecracker_amd64"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: axv-guest-${{ inputs.version }}-firecracker-amd64-candidate

@@ -14,6 +14,8 @@ AXV runs as the operating-system user that launches it, including root, without 
 
 The first Linux amd64 prerelease is [v0.1.0-rc.5](https://github.com/cofy-x/axv/releases/tag/v0.1.0-rc.5). Read its release notes for the validation scope, prerequisites and data-compatibility limits before updating. Download its [release archive](https://github.com/cofy-x/axv/releases/download/v0.1.0-rc.5/axv_0.1.0-rc.5_linux_amd64.tar.gz) and [SHA256SUMS](https://github.com/cofy-x/axv/releases/download/v0.1.0-rc.5/SHA256SUMS) into a new, empty installation directory. Keep the original downloads and the extracted directory; do not overwrite an earlier installation.
 
+This historical release predates builder-provenance bundles. For a newer release carrying `provenance.json`, complete [build-provenance verification](releasing.md#verify-build-provenance) against its reviewed source SHA before extracting or running its archive; the commands below continue to select `v0.1.0-rc.5`.
+
 Run these commands from the download directory. Extraction and execution only proceed after checksum verification succeeds:
 
 ```bash
@@ -478,6 +480,8 @@ Alternatively, `setup --host-config /etc/axv/host.json` reads a host configurati
 ### Linux Guest bundle installation
 
 [AXV Guest 0.1.0-guest.2](https://github.com/cofy-x/axv/releases/tag/v0.1.0-guest.2) is an experimental **Linux amd64 / Firecracker** prerelease for this manual administrator-configured path. It was accepted with the separately published [AXV v0.1.0-rc.5 application](https://github.com/cofy-x/axv/releases/tag/v0.1.0-rc.5); the Guest uses its own `v0.1.0-guest.2` tag. Installation downloads the complete bundle archive, `candidate.json` and `SHA256SUMS`. The bundle already includes the raw disk, manifest and original distribution materials. The separately published raw disk is optional for this installation path; the release also provides a [matching source companion](https://github.com/cofy-x/axv/releases/download/v0.1.0-guest.2/axv_guest_0.1.0-guest.2_sources.tar.gz) and its [source checksums](https://github.com/cofy-x/axv/releases/download/v0.1.0-guest.2/SOURCE-SHA256SUMS). Kernel and Firecracker/jailer executables are separately administered prerequisites; [native acceptance inputs](development.md#linux-firecracker) describe the pinned combination and checks. Publication does not add automatic Linux provisioning or change the macOS image default.
+
+This historical Guest release has no builder-provenance bundle. For a newer attested Guest, also download `provenance.json` and follow [Guest build-provenance verification](releasing.md#verify-build-provenance) for the archive, `candidate.json` and `SHA256SUMS` before extraction; verify the standalone raw disk too when using it. The installation commands below intentionally retain `v0.1.0-guest.2`.
 
 Use Bash, curl, GNU tar/coreutils and jq on the deployment machine. Choose a new, empty download directory with space for the archive and its extracted raw disk. These commands select the published Guest prerelease:
 
