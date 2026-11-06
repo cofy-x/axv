@@ -19,6 +19,11 @@ function sortedUnique(values) {
   return [...new Set(values)].sort();
 }
 
+function showCommandOutput({ stdout, stderr }) {
+  process.stdout.write(stdout);
+  process.stderr.write(stderr);
+}
+
 export function parsePackages(stdout) {
   // go list emits pretty-printed JSON objects separated by newlines. Only root
   // object delimiters occupy column zero; strings cannot contain raw newlines.
@@ -150,7 +155,7 @@ async function verify(directory, codeql, database) {
     await readFile(join(directory, 'inventory.json'), 'utf8'),
   );
   const bqrs = join(directory, 'extracted-files.bqrs');
-  await captureCommand(
+  const query = await captureCommand(
     codeql,
     [
       'query',
@@ -161,12 +166,14 @@ async function verify(directory, codeql, database) {
     ],
     { timeout: 5 * 60_000 },
   );
-  const { stdout } = await captureCommand(codeql, [
+  showCommandOutput(query);
+  const { stdout, stderr } = await captureCommand(codeql, [
     'bqrs',
     'decode',
     '--format=json',
     bqrs,
   ]);
+  process.stderr.write(stderr);
   const report = coverageReport(inventory, JSON.parse(stdout));
   await save(directory, 'coverage.json', report);
   if (!report.complete)
@@ -192,10 +199,12 @@ async function main(args) {
   if (action === 'verify') return verify(directory, codeql, database);
   const env = await recordInventory(directory);
   if (action === 'build')
-    await captureCommand(
-      go,
-      ['build', '-a', '-tags', productionTags, './apps/server/...'],
-      { env, timeout: 20 * 60_000 },
+    showCommandOutput(
+      await captureCommand(
+        go,
+        ['build', '-a', '-tags', productionTags, './apps/server/...'],
+        { env, timeout: 20 * 60_000 },
+      ),
     );
 }
 

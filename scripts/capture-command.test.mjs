@@ -1,8 +1,8 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { captureCommand } from './lib.mjs';
+import { captureCommand, spawnChild, stop } from './lib.mjs';
 
 const directories = [];
 
@@ -21,6 +21,48 @@ afterEach(async () => {
 });
 
 describe.skipIf(process.platform === 'win32')('captured owned commands', () => {
+  it.each([false, true])(
+    'executes hostile text as literal argv even when shell=%s is requested',
+    async (shell) => {
+      const directory = await fixture();
+      const script = join(directory, 'literal argv.mjs');
+      await writeFile(
+        script,
+        'process.stdout.write(JSON.stringify(process.argv.slice(2)));',
+      );
+      const args = [
+        'space separated',
+        '$(printf unexpected)',
+        '`printf unexpected`',
+        '; printf unexpected',
+        '\'single and "double quotes',
+      ];
+      const child = spawnChild(process.execPath, [script, ...args], {
+        cwd: directory,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        ownProcessGroup: true,
+        shell,
+      });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.setEncoding('utf8');
+      child.stderr.setEncoding('utf8');
+      child.stdout.on('data', (chunk) => (stdout += chunk));
+      child.stderr.on('data', (chunk) => (stderr += chunk));
+      try {
+        const code = await new Promise((resolve, reject) => {
+          child.once('error', reject);
+          child.once('close', resolve);
+        });
+        expect(code).toBe(0);
+        expect(stderr).toBe('');
+        expect(JSON.parse(stdout)).toEqual(args);
+      } finally {
+        await stop(child);
+      }
+    },
+  );
+
   it('waits for inherited output pipes after the parent process exits', async () => {
     const directory = await fixture();
     const descendant = `setTimeout(() => {

@@ -132,7 +132,15 @@ describe('CodeQL extraction coverage', () => {
       const codeql = join(directory, 'codeql');
       await writeFile(
         codeql,
-        `#!${process.execPath}\nif (process.argv[2] === 'bqrs') console.log(${JSON.stringify(JSON.stringify({ '#select': { tuples: [[server]] } }))});\n`,
+        `#!${process.execPath}
+if (process.argv[2] === 'bqrs') {
+  console.error('Synthetic decode warning.');
+  console.log(${JSON.stringify(JSON.stringify({ '#select': { tuples: [[server]] } }))});
+} else {
+  console.error('Synthetic query warning.');
+  console.log('Synthetic query progress.');
+}
+`,
         { mode: 0o700 },
       );
       const result = await captureCommand(
@@ -148,6 +156,9 @@ describe('CodeQL extraction coverage', () => {
       );
       expect(result.code).toBe(1);
       expect(result.stderr).toContain('CodeQL missed 2 selected Go files');
+      expect(result.stderr).toContain('Synthetic query warning.');
+      expect(result.stderr).toContain('Synthetic decode warning.');
+      expect(result.stdout).toContain('Synthetic query progress.');
       const report = JSON.parse(
         await readFile(join(directory, 'coverage.json'), 'utf8'),
       );
