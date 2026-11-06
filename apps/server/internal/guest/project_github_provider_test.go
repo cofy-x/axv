@@ -21,6 +21,7 @@ const (
 	githubProviderLocalSHA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	githubProviderHeadSHA  = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	githubProviderMergeSHA = "cccccccccccccccccccccccccccccccccccccccc"
+	githubProviderToken    = "fixture-dedicated-file-token"
 )
 
 func githubProviderRepository(id, name string) map[string]any {
@@ -98,9 +99,9 @@ func githubProviderFixture(t *testing.T, payload []byte, extra string) string {
 		}
 	}
 	for relative, data := range map[string][]byte{
-		".config/axv/github/hosts.yml": []byte("fixture: no credential\n"),
+		".config/axv/github/hosts.yml": []byte("github.com:\n  user: octocat\n  oauth_token: " + githubProviderToken + "\n  users:\n    octocat:\n      oauth_token: " + githubProviderToken + "\n"),
 		"github-response.json":         payload,
-		".local/bin/gh":                []byte("#!/bin/sh\nset -eu\ncat > \"$HOME/github-input.json\"\nprintf '%s\\n' \"$@\" > \"$HOME/github-args\"\nenv > \"$HOME/github-env\"\n" + extra + "\nprintf 'HTTP/1.1 200 OK\\r\\nContent-Type: application/json\\r\\n\\r\\n'\ncat \"$HOME/github-response.json\"\n"),
+		".local/bin/gh":                []byte("#!/bin/sh\nset -eu\ncat > \"$HOME/github-input.json\"\nprintf '%s\\n' \"$@\" > \"$HOME/github-args\"\nenv > \"$HOME/github-env\"\nprintf '%s\\n' \"$GH_CONFIG_DIR\" > \"$HOME/github-config-dir\"\ntest ! -e \"$GH_CONFIG_DIR/hosts.yml\"\ntest ! -e \"$GH_CONFIG_DIR/config.yml\"\n" + extra + "\nprintf 'HTTP/1.1 200 OK\\r\\nContent-Type: application/json\\r\\n\\r\\n'\ncat \"$HOME/github-response.json\"\n"),
 	} {
 		mode := os.FileMode(0600)
 		if relative == ".local/bin/gh" {
@@ -154,7 +155,7 @@ func TestProjectGitHubProviderFixedExecution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(env), "ambient-secret") || !strings.Contains(string(env), "GH_CONFIG_DIR="+filepath.Join(home, ".config/axv/github")+"\n") || !strings.Contains(string(env), "PWD="+home+"\n") || !strings.Contains(string(env), "GH_PROMPT_DISABLED=1\n") {
+	if strings.Contains(string(env), "ambient-secret") || !strings.Contains(string(env), "GH_CONFIG_DIR="+filepath.Join(home, ".axv-github-read-")) || strings.Contains(string(env), "GH_CONFIG_DIR="+filepath.Join(home, ".config/axv/github")+"\n") || !strings.Contains(string(env), "PWD="+home+"\n") || !strings.Contains(string(env), "GH_PROMPT_DISABLED=1\n") || strings.Count(string(env), "GH_TOKEN="+githubProviderToken+"\n") != 1 {
 		t.Fatalf("unexpected child environment: %s", env)
 	}
 	input, err := os.ReadFile(filepath.Join(home, "github-input.json"))
@@ -170,6 +171,182 @@ func TestProjectGitHubProviderFixedExecution(t *testing.T) {
 	}
 	if request.Query != projectGitHubQuery || !strings.HasPrefix(request.Query, "query ") || strings.Contains(request.Query, "mutation ") || request.Variables["owner"] != "octo" || request.Variables["name"] != "work" || request.Variables["sha"] != githubProviderLocalSHA || request.Variables["byID"] != false || request.Variables["hasCommit"] != false || request.Variables["hasBranch"] != false {
 		t.Fatalf("unexpected fixed query payload: %s", input)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil || bytesContainGitHubCredential(args) || bytesContainGitHubCredential(input) || bytesContainGitHubCredential(encoded) {
+		t.Fatal("the selected credential escaped its child environment")
+	}
+}
+
+func bytesContainGitHubCredential(data []byte) bool {
+	return strings.Contains(string(data), githubProviderToken) || strings.Contains(string(data), "ambient-secret")
+}
+
+func TestProjectGitHubProviderRequiresDedicatedFileCredential(t *testing.T) {
+	for _, test := range []struct {
+		name, profile, code string
+	}{
+		{"host without token", "github.com:\n  user: octocat\n  git_protocol: https\n", "github_auth_required"},
+		{"host without active user", "github.com:\n  oauth_token: " + githubProviderToken + "\n", "github_auth_required"},
+		{"per-user keyring-only profile", "github.com:\n  user: octocat\n  users:\n    octocat: {}\n", "github_auth_required"},
+		{"another host", "other.example:\n  user: octocat\n  oauth_token: " + githubProviderToken + "\n", "github_auth_required"},
+		{"malformed YAML", "github.com: [" + githubProviderToken, "github_profile_invalid"},
+		{"duplicate host", "github.com:\n  user: octocat\n  oauth_token: " + githubProviderToken + "\ngithub.com: {}\n", "github_profile_invalid"},
+		{"duplicate token", "github.com:\n  user: octocat\n  oauth_token: " + githubProviderToken + "\n  oauth_token: another-token\n", "github_profile_invalid"},
+		{"extra document", "github.com:\n  user: octocat\n  oauth_token: " + githubProviderToken + "\n---\nother: data\n", "github_profile_invalid"},
+		{"ambiguous active token", "github.com:\n  user: octocat\n  oauth_token: " + githubProviderToken + "\n  users:\n    octocat:\n      oauth_token: another-token\n", "github_profile_invalid"},
+		{"token with whitespace", "github.com:\n  user: octocat\n  oauth_token: '" + githubProviderToken + " invalid'\n", "github_profile_invalid"},
+		{"oversized token", "github.com:\n  user: octocat\n  oauth_token: " + strings.Repeat("x", 4097) + "\n", "github_profile_invalid"},
+		{"oversized file", "#" + strings.Repeat("x", projectGitHubProfileLimit), "github_profile_invalid"},
+		{"invalid Unicode", "github.com:\n  user: octocat\n  oauth_token: " + githubProviderToken + "\xff\n", "github_profile_invalid"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			payload, _ := githubProviderResponse()
+			home := githubProviderFixture(t, githubProviderJSON(t, payload), "")
+			// Neither ambient tokens nor a default profile may repair missing or
+			// invalid authentication in the selected dedicated file.
+			t.Setenv("GH_TOKEN", "ambient-secret-token")
+			t.Setenv("GITHUB_TOKEN", "ambient-secret-other-token")
+			if err := os.MkdirAll(filepath.Join(home, ".config/gh"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(home, ".config/gh/hosts.yml"), []byte("github.com:\n  user: octocat\n  oauth_token: ambient-secret-default-token\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(home, ".config/axv/github/hosts.yml"), []byte(test.profile), 0600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := githubProviderService().readProjectGitHub(t.Context(), protocol.ProjectGitHubRequest{Repository: "octo/work"}, githubProviderGit())
+			githubProviderErrorCode(t, err, test.code)
+			if bytesContainGitHubCredential([]byte(err.Error())) {
+				t.Fatal("profile diagnostics exposed a credential")
+			}
+			if _, err := os.Stat(filepath.Join(home, "github-input.json")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatal("GitHub CLI ran without a valid dedicated file credential")
+			}
+		})
+	}
+}
+
+func TestProjectGitHubProviderRejectsProfileSymlinks(t *testing.T) {
+	for _, relative := range []string{".config", ".config/axv", ".config/axv/github", ".config/axv/github/hosts.yml"} {
+		t.Run(relative, func(t *testing.T) {
+			payload, _ := githubProviderResponse()
+			home := githubProviderFixture(t, githubProviderJSON(t, payload), "")
+			original := filepath.Join(home, relative)
+			if err := os.Rename(original, original+".original"); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(original+".original", original); err != nil {
+				t.Fatal(err)
+			}
+			_, err := githubProviderService().readProjectGitHub(t.Context(), protocol.ProjectGitHubRequest{Repository: "octo/work"}, githubProviderGit())
+			githubProviderErrorCode(t, err, "github_profile_invalid")
+			if _, err := os.Stat(filepath.Join(home, "github-input.json")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatal("GitHub CLI ran with a symbolic profile path")
+			}
+		})
+	}
+}
+
+func TestProjectGitHubProviderPinsCredentialBeforeLaunchingCLI(t *testing.T) {
+	payload, _ := githubProviderResponse()
+	home := githubProviderFixture(t, githubProviderJSON(t, payload), "")
+	token, err := projectGitHubProfile(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd, err := projectGitHubCommand(t.Context(), home, t.TempDir(), protocol.ProjectGitHubRequest{Repository: "octo/work"}, githubProviderGit(), token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".config/axv/github/hosts.yml"), []byte("github.com:\n  user: someoneelse\n  oauth_token: ambient-secret-replacement-token\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Run(); err != nil {
+		t.Fatal(err)
+	}
+	env, err := os.ReadFile(filepath.Join(home, "github-env"))
+	if err != nil || strings.Count(string(env), "GH_TOKEN="+githubProviderToken+"\n") != 1 || strings.Contains(string(env), "ambient-secret") {
+		t.Fatal("the child selected a replacement credential")
+	}
+	for _, token := range []string{"", "bad\x00token", "bad\ntoken"} {
+		_, err := projectGitHubCommand(t.Context(), home, t.TempDir(), protocol.ProjectGitHubRequest{Repository: "octo/work"}, githubProviderGit(), token)
+		githubProviderErrorCode(t, err, "github_profile_invalid")
+	}
+}
+
+func TestProjectGitHubProviderCredentialNeverAppearsInFailure(t *testing.T) {
+	payload, _ := githubProviderResponse()
+	githubProviderFixture(t, githubProviderJSON(t, payload), "printf '%s gh auth login\\n' \"$GH_TOKEN\" >&2\nexit 1")
+	_, err := githubProviderService().readProjectGitHub(t.Context(), protocol.ProjectGitHubRequest{Repository: "octo/work"}, githubProviderGit())
+	githubProviderErrorCode(t, err, "github_auth_required")
+	if bytesContainGitHubCredential([]byte(err.Error())) {
+		t.Fatal("a subprocess failure exposed its selected credential")
+	}
+}
+
+func TestProjectGitHubProviderUsesAndRemovesEmptyExecutionProfile(t *testing.T) {
+	for _, mode := range []string{"success", "failure", "timeout", "output-limit"} {
+		t.Run(mode, func(t *testing.T) {
+			extra := ""
+			switch mode {
+			case "failure":
+				extra = "printf 'offline\\n' >&2\nexit 1"
+			case "timeout":
+				extra = "sleep 30"
+			case "output-limit":
+				extra = "head -c 2097153 /dev/zero\nexit 0"
+			}
+			payload, _ := githubProviderResponse()
+			home := githubProviderFixture(t, githubProviderJSON(t, payload), extra)
+			profile := filepath.Join(home, ".config/axv/github")
+			if err := os.WriteFile(filepath.Join(profile, "hosts.yml"), []byte("github.com:\n  user: octocat\n  oauth_token: "+githubProviderToken+"\n  api_host: untrusted.example\n  http_unix_socket: /untrusted/host.sock\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(profile, "config.yml"), []byte("http_unix_socket: /untrusted/global.sock\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			ctx := t.Context()
+			if mode == "timeout" {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, 250*time.Millisecond)
+				defer cancel()
+			}
+			_, err := githubProviderService().readProjectGitHub(ctx, protocol.ProjectGitHubRequest{Repository: "octo/work"}, githubProviderGit())
+			if mode == "success" && err != nil || mode != "success" && err == nil {
+				t.Fatalf("read = %v for %s", err, mode)
+			}
+			data, err := os.ReadFile(filepath.Join(home, "github-config-dir"))
+			if err != nil {
+				t.Fatal("the CLI did not receive an empty execution profile")
+			}
+			configDir := strings.TrimSpace(string(data))
+			if filepath.Dir(configDir) != home || !strings.HasPrefix(filepath.Base(configDir), ".axv-github-read-") {
+				t.Fatal("the CLI reused mutable source configuration")
+			}
+			if _, err := os.Stat(configDir); !errors.Is(err, os.ErrNotExist) {
+				t.Fatal("the owned execution profile was retained after the read")
+			}
+		})
+	}
+}
+
+func TestProjectGitHubProviderRejectsWritableHome(t *testing.T) {
+	for _, mode := range []os.FileMode{0720, 0702, 0777} {
+		t.Run(strconv.FormatUint(uint64(mode), 8), func(t *testing.T) {
+			payload, _ := githubProviderResponse()
+			home := githubProviderFixture(t, githubProviderJSON(t, payload), "")
+			if err := os.Chmod(home, mode); err != nil {
+				t.Fatal(err)
+			}
+			defer os.Chmod(home, 0700)
+			_, err := githubProviderService().readProjectGitHub(t.Context(), protocol.ProjectGitHubRequest{Repository: "octo/work"}, githubProviderGit())
+			githubProviderErrorCode(t, err, "github_profile_invalid")
+			if _, err := os.Stat(filepath.Join(home, "github-input.json")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatal("GitHub CLI ran from an unsafe account home")
+			}
+		})
 	}
 }
 
@@ -197,7 +374,7 @@ func TestProjectGitHubProviderReviewNeedsOnlyIdentityForSHA256(t *testing.T) {
 	if json.Unmarshal(input, &request) != nil || request.Variables["hasCommit"] != false || request.Variables["hasBranch"] != false {
 		t.Fatal("review requested check or pull-request fields")
 	}
-	_, err = projectGitHubCommand(t.Context(), home, protocol.ProjectGitHubRequest{RepositoryID: "R_selected", AccountID: "U_selected"}, git)
+	_, err = projectGitHubCommand(t.Context(), home, t.TempDir(), protocol.ProjectGitHubRequest{RepositoryID: "R_selected", AccountID: "U_selected"}, git, githubProviderToken)
 	githubProviderErrorCode(t, err, "github_git_unsupported")
 }
 
@@ -330,16 +507,16 @@ func TestProjectGitHubProviderRequestCannotSupplyCommands(t *testing.T) {
 		{RepositoryID: "R_selected"},
 		{RepositoryID: "R_selected", AccountID: "U_selected\nGH_TOKEN=bad"},
 	} {
-		_, err := projectGitHubCommand(t.Context(), t.TempDir(), request, githubProviderGit())
+		_, err := projectGitHubCommand(t.Context(), t.TempDir(), t.TempDir(), request, githubProviderGit(), githubProviderToken)
 		githubProviderErrorCode(t, err, "invalid_request")
 	}
 	git := githubProviderGit()
 	git.HeadSHA = "HEAD"
-	_, err := projectGitHubCommand(t.Context(), t.TempDir(), protocol.ProjectGitHubRequest{RepositoryID: "R_selected", AccountID: "U_selected"}, git)
+	_, err := projectGitHubCommand(t.Context(), t.TempDir(), t.TempDir(), protocol.ProjectGitHubRequest{RepositoryID: "R_selected", AccountID: "U_selected"}, git, githubProviderToken)
 	githubProviderErrorCode(t, err, "git_metadata_invalid")
 	git = githubProviderGit()
 	git.Branch = `feature/$(touch-should-never-execute)`
-	command, err := projectGitHubCommand(t.Context(), t.TempDir(), protocol.ProjectGitHubRequest{RepositoryID: "R_selected", AccountID: "U_selected"}, git)
+	command, err := projectGitHubCommand(t.Context(), t.TempDir(), t.TempDir(), protocol.ProjectGitHubRequest{RepositoryID: "R_selected", AccountID: "U_selected"}, git, githubProviderToken)
 	if err != nil {
 		t.Fatal(err)
 	}

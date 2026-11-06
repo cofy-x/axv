@@ -200,8 +200,10 @@ export function VMProjectGitHub({
   }, [hostId, projectId, invalidate]);
 
   useEffect(() => {
+    // Binding changes cancel in-flight work. Restart saved-settings reads;
+    // provider observations still require an explicit action.
     if (active) void loadAssociation();
-  }, [active, loadAssociation]);
+  }, [active, context, loadAssociation]);
 
   async function run(
     action: 'git' | 'review' | 'associate' | 'clear' | 'refresh',
@@ -552,8 +554,15 @@ export function VMProjectGitHub({
         <pre>{`umask 077
 mkdir -p "$HOME/.config/axv/github"
 chmod 700 "$HOME/.config/axv/github"
-GH_CONFIG_DIR="$HOME/.config/axv/github" "$HOME/.local/bin/gh" auth login --hostname github.com --git-protocol https --web
+GH_CONFIG_DIR="$HOME/.config/axv/github" "$HOME/.local/bin/gh" auth login --hostname github.com --git-protocol https --web --insecure-storage
 chmod 600 "$HOME/.config/axv/github/hosts.yml"`}</pre>
+        <p>
+          This profile must store its selected account’s token in the private{' '}
+          <code>~/.config/axv/github/hosts.yml</code> file with mode{' '}
+          <code>0600</code>. The login command stores that token as plaintext on
+          this guest’s root disk. AXV requires this file credential and does not
+          use the system credential store.
+        </p>
         <p>
           The credential can have broader authority; this panel runs fixed reads
           only. AXV does not copy host credentials or fall back to the guest’s

@@ -20,6 +20,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/cofy-x/axv/apps/server/internal/guest/protocol"
 	"github.com/cofy-x/axv/apps/server/internal/jsonunicode"
 	"github.com/cofy-x/axv/apps/server/internal/limitedbuffer"
@@ -30,6 +32,7 @@ const (
 	projectGitHubOutputLimit  = 2 << 20
 	projectGitHubPRLimit      = 10
 	projectGitHubContextLimit = 50
+	projectGitHubProfileLimit = 64 << 10
 )
 
 // The query is application-owned. All caller-derived values are JSON variables;
@@ -182,7 +185,8 @@ func (s *service) readProjectGitHub(ctx context.Context, req protocol.ProjectGit
 	if err != nil || !cli.Mode().IsRegular() || cli.Mode().Perm()&0111 == 0 {
 		return empty, projectProblem(503, "github_cli_missing", "Install a reviewed GitHub CLI at ~/.local/bin/gh in this guest account.")
 	}
-	if err := projectGitHubProfile(home); err != nil {
+	token, err := projectGitHubProfile(home)
+	if err != nil {
 		return empty, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, projectGitHubTimeout)
@@ -197,7 +201,12 @@ func (s *service) readProjectGitHub(ctx context.Context, req protocol.ProjectGit
 	default:
 		return empty, projectProblem(503, "github_busy", "Guest read capacity is full. Retry when another read finishes.")
 	}
-	cmd, err := projectGitHubCommand(ctx, home, req, git)
+	configDir, err := projectGitHubConfig(home)
+	if err != nil {
+		return empty, err
+	}
+	defer os.RemoveAll(configDir)
+	cmd, err := projectGitHubCommand(ctx, home, configDir, req, git, token)
 	if err != nil {
 		return empty, err
 	}
@@ -207,6 +216,9 @@ func (s *service) readProjectGitHub(ctx context.Context, req protocol.ProjectGit
 	diagnostic := &projectGitHubOutput{buffer: limitedbuffer.Buffer{Limit: 16 << 10}, cancel: cancel}
 	cmd.Stdout, cmd.Stderr = out, diagnostic
 	runErr := cmd.Run()
+	if err := os.RemoveAll(configDir); err != nil {
+		return empty, projectGitHubProfileInvalid()
+	}
 	if out.buffer.Truncated || diagnostic.buffer.Truncated {
 		return empty, projectProblem(502, "github_response_invalid", "GitHub output exceeded the read limit. No partial result was accepted.")
 	}
@@ -249,27 +261,126 @@ func (w *projectGitHubOutput) Write(data []byte) (int, error) {
 	return n, err
 }
 
-func projectGitHubProfile(home string) error {
-	for _, relative := range []string{".config", ".config/axv", ".config/axv/github"} {
-		info, err := os.Lstat(filepath.Join(home, relative))
-		if errors.Is(err, os.ErrNotExist) {
-			return projectProblem(401, "github_auth_required", "Configure and explicitly select this guest account's dedicated GitHub profile at ~/.config/axv/github.")
-		}
-		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || relative == ".config/axv/github" && info.Mode().Perm() != 0700 {
-			return projectProblem(503, "github_profile_invalid", "The dedicated guest GitHub profile must be a private directory without symbolic links.")
-		}
-	}
-	info, err := os.Lstat(filepath.Join(home, ".config/axv/github/hosts.yml"))
-	if errors.Is(err, os.ErrNotExist) {
-		return projectProblem(401, "github_auth_required", "Authenticate GitHub CLI using the dedicated guest profile before connecting this repository.")
-	}
-	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0600 {
-		return projectProblem(503, "github_profile_invalid", "The dedicated GitHub profile metadata must be a private regular file.")
-	}
-	return nil
+func projectGitHubProfileInvalid() error {
+	return projectProblem(503, "github_profile_invalid", "The dedicated guest GitHub profile must contain bounded, valid private authentication files without symbolic links.")
 }
 
-func projectGitHubCommand(ctx context.Context, home string, req protocol.ProjectGitHubRequest, git protocol.GitHubGitState) (*exec.Cmd, error) {
+// Read one file-backed active credential through pinned directory handles.
+// GH_CONFIG_DIR alone does not isolate gh's OS keyring: its keyring entries are
+// shared by hostname/account across profiles. The captured token is supplied
+// only through the child's environment, so gh cannot fall back to that store or
+// select a replacement credential if the profile changes before launch.
+func projectGitHubProfile(home string) (string, error) {
+	missing := func() error {
+		return projectProblem(401, "github_auth_required", "Sign in using the dedicated AXV GitHub profile with --insecure-storage before connecting this repository.")
+	}
+	root, err := os.OpenRoot(home)
+	if err != nil {
+		return "", projectGitHubProfileInvalid()
+	}
+	defer root.Close()
+	type directory struct {
+		parent *os.Root
+		name   string
+		info   os.FileInfo
+	}
+	var directories []directory
+	for _, name := range []string{".config", "axv", "github"} {
+		next, info, err := projectDirectory(root, name)
+		if errors.Is(err, os.ErrNotExist) {
+			return "", missing()
+		}
+		if err != nil {
+			return "", projectGitHubProfileInvalid()
+		}
+		defer next.Close()
+		if name == "github" && (info.Mode().Perm() != 0700 || !projectGitHubProfileOwner(info)) || info.Mode()&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky) != 0 {
+			return "", projectGitHubProfileInvalid()
+		}
+		directories = append(directories, directory{root, name, info})
+		root = next
+	}
+	file, info, err := projectRegular(root, "hosts.yml")
+	if errors.Is(err, os.ErrNotExist) {
+		return "", missing()
+	}
+	if err != nil {
+		return "", projectGitHubProfileInvalid()
+	}
+	defer file.Close()
+	if info.Mode().Perm() != 0600 || !projectGitHubProfileOwner(info) || info.Mode()&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky) != 0 || info.Size() > projectGitHubProfileLimit {
+		return "", projectGitHubProfileInvalid()
+	}
+	data, err := io.ReadAll(io.LimitReader(file, projectGitHubProfileLimit+1))
+	if err != nil || len(data) > projectGitHubProfileLimit || !projectText(data) {
+		return "", projectGitHubProfileInvalid()
+	}
+	after, err := file.Stat()
+	if err != nil || !os.SameFile(info, after) || !projectGitHubProfileOwner(after) || info.Mode() != after.Mode() || info.Size() != after.Size() || !info.ModTime().Equal(after.ModTime()) {
+		return "", projectGitHubProfileInvalid()
+	}
+	entry, err := root.Lstat("hosts.yml")
+	if err != nil || !entry.Mode().IsRegular() || !projectGitHubProfileOwner(entry) || !os.SameFile(info, entry) || entry.Mode() != info.Mode() {
+		return "", projectGitHubProfileInvalid()
+	}
+	for _, directory := range directories {
+		entry, err := directory.parent.Lstat(directory.name)
+		if err != nil || !entry.IsDir() || directory.name == "github" && !projectGitHubProfileOwner(entry) || !os.SameFile(directory.info, entry) || directory.info.Mode() != entry.Mode() {
+			return "", projectGitHubProfileInvalid()
+		}
+	}
+	var hosts map[string]struct {
+		User  string `yaml:"user"`
+		Token string `yaml:"oauth_token"`
+		Users map[string]struct {
+			Token string `yaml:"oauth_token"`
+		} `yaml:"users"`
+	}
+	d := yaml.NewDecoder(bytes.NewReader(data))
+	if d.Decode(&hosts) != nil || d.Decode(new(any)) != io.EOF {
+		return "", projectGitHubProfileInvalid()
+	}
+	active, ok := hosts["github.com"]
+	if !ok || active.User == "" || active.Token == "" {
+		return "", missing()
+	}
+	if !projectGitHubLogin.MatchString(active.User) || !projectGitHubCredentialValid(active.Token) {
+		return "", projectGitHubProfileInvalid()
+	}
+	if user, ok := active.Users[active.User]; ok && user.Token != "" && user.Token != active.Token {
+		return "", projectGitHubProfileInvalid()
+	}
+	return active.Token, nil
+}
+
+func projectGitHubCredentialValid(token string) bool {
+	return token != "" && projectGitHubText(token, 4096) && strings.IndexFunc(token, unicode.IsSpace) < 0
+}
+
+// gh must not reread the authentication profile: mutable transport options such
+// as api_host/http_unix_socket could redirect the captured token. Use only an
+// invocation-owned empty configuration directory under this account's home.
+func projectGitHubConfig(home string) (string, error) {
+	info, err := os.Lstat(home)
+	if err != nil || !info.IsDir() || info.Mode().Perm()&0022 != 0 || !projectGitHubProfileOwner(info) {
+		return "", projectGitHubProfileInvalid()
+	}
+	configDir, err := os.MkdirTemp(home, ".axv-github-read-")
+	if err != nil {
+		return "", projectGitHubProfileInvalid()
+	}
+	after, err := os.Lstat(home)
+	if err != nil || !after.IsDir() || !os.SameFile(info, after) || after.Mode() != info.Mode() || !projectGitHubProfileOwner(after) {
+		_ = os.RemoveAll(configDir)
+		return "", projectGitHubProfileInvalid()
+	}
+	return configDir, nil
+}
+
+func projectGitHubCommand(ctx context.Context, home, configDir string, req protocol.ProjectGitHubRequest, git protocol.GitHubGitState, token string) (*exec.Cmd, error) {
+	if !projectGitHubCredentialValid(token) {
+		return nil, projectGitHubProfileInvalid()
+	}
 	byID := req.RepositoryID != ""
 	owner, name := "", ""
 	if byID {
@@ -304,8 +415,9 @@ func projectGitHubCommand(ctx context.Context, home string, req protocol.Project
 	cmd.Dir = home
 	cmd.Env = []string{
 		"HOME=" + home, "PATH=/usr/bin:/bin", "LANG=C.UTF-8", "LC_ALL=C.UTF-8", "TZ=UTC", "TERM=dumb",
-		"GH_CONFIG_DIR=" + filepath.Join(home, ".config/axv/github"), "GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1",
+		"GH_CONFIG_DIR=" + configDir, "GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1",
 		"GH_NO_EXTENSION_UPDATE_NOTIFIER=1", "GH_PAGER=cat", "PAGER=cat", "NO_COLOR=1",
+		"GH_TOKEN=" + token,
 	}
 	return cmd, nil
 }

@@ -174,11 +174,11 @@ This requires a rebuilt image and current guest declaring `project-github`; publ
 umask 077
 mkdir -p "$HOME/.config/axv/github"
 chmod 700 "$HOME/.config/axv/github"
-GH_CONFIG_DIR="$HOME/.config/axv/github" "$HOME/.local/bin/gh" auth login --hostname github.com --git-protocol https --web
+GH_CONFIG_DIR="$HOME/.config/axv/github" "$HOME/.local/bin/gh" auth login --hostname github.com --git-protocol https --web --insecure-storage
 chmod 600 "$HOME/.config/axv/github/hosts.yml"
 ```
 
-Review GitHub's account permissions during sign-in. AXV uses this guest-owned profile only after explicit connection review, with no host/default-profile fallback. Its credential can have broader authority even though this panel only issues fixed reads. Protect the profile directory as `0700` and its `hosts.yml` as `0600`; headless login may retain plaintext credentials. Credentials stay on the guest root disk. After VM replacement, reconnect the project and explicitly review/associate the new guest connection before refreshing; the retained repository link does not transfer authentication.
+Review GitHub's account permissions during sign-in. AXV reads the active account's explicit file-backed credential from this dedicated profile; keyring-only or missing credentials are rejected. The command intentionally stores a plaintext token in guest-owned `hosts.yml`: keep it `0600` inside the private `0700` directory. Its authority can exceed this panel's fixed reads. For each read AXV supplies only the captured token to `gh` through its process environment and uses an empty temporary configuration, preventing default-profile, keyring or transport-configuration fallback. Credentials stay on the guest root disk. After VM replacement, reconnect the project and explicitly review/associate the new guest connection before refreshing; the retained repository link does not transfer authentication.
 
 Choose **Refresh GitHub** to read the captured local HEAD, associated/branch-candidate PRs and check observations. There is no polling or webhook. Refresh creates no durable task or task receipt. Inspect each full repository/commit identity: **Local HEAD**, **PR head** and **Merge test checks** can refer to different commits. Branch candidates, detached/unborn HEAD, missing remote commits and unmatched/incomplete checks remain explicit. A successful check is an observation of its own SHA, not proof that local work was tested or that GitHub permits merging. Bounded results can omit additional PRs/checks and are marked incomplete.
 

@@ -294,7 +294,7 @@ func (s *service) projectGitHubGitSnapshot(scope protocol.ProjectFileScope) (git
 			return result, githubGitInvalid()
 		}
 		result.state.Branch = strings.TrimPrefix(ref, "refs/heads/")
-		sha, err := reader.resolveRef(commonDir, ref, config.objectFormat, map[string]bool{})
+		sha, err := reader.resolveRef(gitDir, commonDir, ref, config.objectFormat, map[string]bool{})
 		if errors.Is(err, fs.ErrNotExist) {
 			result.state.Unborn = true
 		} else if err != nil {
@@ -349,15 +349,20 @@ func githubGitRef(value string) bool {
 	return true
 }
 
-func (r *githubGitReader) resolveRef(commonDir, ref, format string, seen map[string]bool) (string, error) {
+func (r *githubGitReader) resolveRef(gitDir, commonDir, ref, format string, seen map[string]bool) (string, error) {
 	if !githubGitRef(ref) || seen[ref] || len(seen) >= 8 {
 		return "", githubGitInvalid()
 	}
 	seen[ref] = true
-	text, err := r.read(path.Join(commonDir, ref), 4096)
+	private := strings.HasPrefix(ref, "refs/bisect/") || strings.HasPrefix(ref, "refs/worktree/") || strings.HasPrefix(ref, "refs/rewritten/")
+	refDir := commonDir
+	if private {
+		refDir = gitDir
+	}
+	text, err := r.read(path.Join(refDir, ref), 4096)
 	if err == nil {
 		if strings.HasPrefix(text, "ref: ") {
-			return r.resolveRef(commonDir, strings.TrimPrefix(text, "ref: "), format, seen)
+			return r.resolveRef(gitDir, commonDir, strings.TrimPrefix(text, "ref: "), format, seen)
 		}
 		if !githubGitSHA(text, format) {
 			return "", githubGitInvalid()
@@ -366,6 +371,11 @@ func (r *githubGitReader) resolveRef(commonDir, ref, format string, seen map[str
 	}
 	if !errors.Is(err, fs.ErrNotExist) {
 		return "", err
+	}
+	// Git never packs worktree-private refs. A missing private target must not
+	// acquire another worktree's value from shared metadata or packed refs.
+	if private {
+		return "", fs.ErrNotExist
 	}
 	text, err = r.read(path.Join(commonDir, "packed-refs"), githubGitRefsLimit)
 	if err != nil {

@@ -115,6 +115,18 @@ function observation(repo = repository()): GitHubObservation {
   };
 }
 
+function deferredRequest() {
+  let received!: () => void;
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    received = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { received, pending, gate, release };
+}
+
 async function fixture(page: Page, associated = true) {
   let binding = { ...originalBinding };
   let state: GitHubAssociationState = {
@@ -144,7 +156,9 @@ async function fixture(page: Page, associated = true) {
   let authentication = true;
   let failure = '';
   let next = observation();
-  let delayed: { received: () => void; gate: Promise<void> } | undefined;
+  let delayed: ReturnType<typeof deferredRequest> | undefined;
+  let delayedBinding: ReturnType<typeof deferredRequest> | undefined;
+  let delayedAssociation: ReturnType<typeof deferredRequest> | undefined;
   await page.route('**/api/compute/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
     const json = (value: unknown, status = 200) =>
@@ -164,6 +178,12 @@ async function fixture(page: Page, associated = true) {
     expect(route.request().headers()['x-axv-host-id']).toBe(project.hostId);
     if (path.endsWith('/binding')) {
       bindingRequests++;
+      if (delayedBinding) {
+        const wait = delayedBinding;
+        delayedBinding = undefined;
+        wait.received();
+        await wait.gate;
+      }
       return json({ project, binding });
     }
     if (path.endsWith('/files/list'))
@@ -200,7 +220,15 @@ async function fixture(page: Page, associated = true) {
         409,
       );
     }
-    if (path.endsWith('/github')) return json(structuredClone(state));
+    if (path.endsWith('/github')) {
+      if (delayedAssociation) {
+        const wait = delayedAssociation;
+        delayedAssociation = undefined;
+        wait.received();
+        await wait.gate;
+      }
+      return json(structuredClone(state));
+    }
     const action = path.split('/').at(-1)!;
     const input = route.request().postDataJSON();
     requests.push({ action, ...input });
@@ -298,17 +326,17 @@ async function fixture(page: Page, associated = true) {
         volumeRevision: 3,
       };
     },
+    delayBinding() {
+      delayedBinding = deferredRequest();
+      return delayedBinding;
+    },
+    delayAssociation() {
+      delayedAssociation = deferredRequest();
+      return delayedAssociation;
+    },
     delayRefresh() {
-      let received!: () => void;
-      let release!: () => void;
-      const pending = new Promise<void>((resolve) => {
-        received = resolve;
-      });
-      const gate = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      delayed = { received, gate };
-      return { pending, release: () => release() };
+      delayed = deferredRequest();
+      return delayed;
     },
   };
 }
@@ -447,6 +475,8 @@ test('GitHub surfaces dedicated-profile authentication and retains stale results
   await expect(github(page)).toContainText(
     'GH_CONFIG_DIR="$HOME/.config/axv/github"',
   );
+  await expect(github(page)).toContainText('--insecure-storage');
+  await expect(github(page)).toContainText('stores that token as plaintext');
   state.setAuthentication(true);
   await associate(page);
   await github(page)
@@ -476,6 +506,56 @@ test('GitHub surfaces dedicated-profile authentication and retains stale results
     }),
   ).toBeVisible();
   expect(state.tasks).toBe(0);
+});
+
+test('a restored GitHub tab reloads its association when binding arrives during the settings read', async ({
+  page,
+  request,
+}) => {
+  const state = await fixture(page);
+  await open(page);
+  await expect
+    .poll(
+      async () =>
+        (await persistedLayout(page, request))?.windows.find(
+          (item: { id: string }) => item.id === windowId,
+        )?.viewState.projectSection,
+    )
+    .toBe('github');
+  const binding = state.delayBinding();
+  const association = state.delayAssociation();
+  try {
+    await page.reload();
+    await Promise.all([binding.pending, association.pending]);
+    binding.release();
+    await expect(browser(page).locator('.project-location')).toContainText(
+      originalBinding.machineId,
+    );
+    association.release();
+    await expect(
+      github(page).getByRole('region', {
+        name: 'Reviewed GitHub association',
+        exact: true,
+      }),
+    ).toContainText('owner/repository');
+    await expect(
+      github(page).getByRole('button', {
+        name: 'Read Git metadata',
+        exact: true,
+      }),
+    ).toBeEnabled();
+    await expect(
+      github(page).getByRole('button', {
+        name: 'Refresh GitHub',
+        exact: true,
+      }),
+    ).toBeEnabled();
+    expect(state.requests).toHaveLength(0);
+    expect(state.tasks).toBe(0);
+  } finally {
+    binding.release();
+    association.release();
+  }
 });
 
 test('a delayed GitHub response cannot replace a newly reviewed repository', async ({

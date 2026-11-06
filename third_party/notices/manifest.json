@@ -43,7 +43,7 @@
     "source": "https://raw.githubusercontent.com/publicsuffix/list/d6c92f1bbb7433e5db7b8405c25d4035fb8ff376/public_suffix_list.dat",
     "via": {
       "module": "golang.org/x/net",
-      "version": "v0.60.0"
+      "version": "v0.62.0"
     },
     "files": [
       {
@@ -53,11 +53,11 @@
       }
     ],
     "generatedSources": [
-      "https://raw.githubusercontent.com/golang/net/v0.60.0/publicsuffix/gen.go",
-      "https://raw.githubusercontent.com/golang/net/v0.60.0/publicsuffix/table.go",
-      "https://raw.githubusercontent.com/golang/net/v0.60.0/publicsuffix/data/children",
-      "https://raw.githubusercontent.com/golang/net/v0.60.0/publicsuffix/data/nodes",
-      "https://raw.githubusercontent.com/golang/net/v0.60.0/publicsuffix/data/text"
+      "https://raw.githubusercontent.com/golang/net/v0.62.0/publicsuffix/gen.go",
+      "https://raw.githubusercontent.com/golang/net/v0.62.0/publicsuffix/table.go",
+      "https://raw.githubusercontent.com/golang/net/v0.62.0/publicsuffix/data/children",
+      "https://raw.githubusercontent.com/golang/net/v0.62.0/publicsuffix/data/nodes",
+      "https://raw.githubusercontent.com/golang/net/v0.62.0/publicsuffix/data/text"
     ]
   }
 ]

@@ -148,6 +148,39 @@ func TestProjectGitHubGitReadsLinkedWorktreePrivateHeadAndSharedRefs(t *testing.
 	assertGitHubMetadataError(t, s, scope, "github_git_invalid")
 }
 
+func TestProjectGitHubGitReadsLinkedWorktreePrivateSymbolicRefs(t *testing.T) {
+	for _, namespace := range []string{"bisect", "worktree", "rewritten"} {
+		t.Run(namespace, func(t *testing.T) {
+			s, _ := githubGitFixture(t)
+			gitDir := "repo/.git/worktrees/feature"
+			privateRef := "refs/" + namespace + "/private"
+			sha := strings.Repeat("b", 40)
+			githubGitWrite(t, s, "feature/.git", "gitdir: ../"+gitDir+"\n")
+			githubGitWrite(t, s, gitDir+"/commondir", "../..\n")
+			githubGitWrite(t, s, gitDir+"/gitdir", filepath.Join(s.config.ProjectRoot, "feature/.git")+"\n")
+			githubGitWrite(t, s, gitDir+"/HEAD", "ref: refs/heads/linked\n")
+			githubGitWrite(t, s, "repo/.git/refs/heads/linked", "ref: "+privateRef+"\n")
+			githubGitWrite(t, s, gitDir+"/"+privateRef, sha+"\n")
+			githubGitWrite(t, s, "repo/.git/"+privateRef, strings.Repeat("c", 40)+"\n")
+			packed := strings.Repeat("d", 40) + " " + privateRef + "\n"
+			githubGitWrite(t, s, "repo/.git/packed-refs", packed)
+			githubGitWrite(t, s, gitDir+"/packed-refs", packed)
+			scope := projectFileScope(t, s, "feature")
+			state := githubGitState(t, s, scope)
+			if state.Branch != "linked" || state.HeadSHA != sha || state.Unborn {
+				t.Fatalf("private symbolic ref acquired another worktree's commit: %+v", state)
+			}
+			if err := os.Remove(filepath.Join(s.config.ProjectRoot, gitDir, privateRef)); err != nil {
+				t.Fatal(err)
+			}
+			state = githubGitState(t, s, scope)
+			if state.Branch != "linked" || state.HeadSHA != "" || !state.Unborn {
+				t.Fatalf("missing private symbolic ref acquired shared or packed metadata: %+v", state)
+			}
+		})
+	}
+}
+
 func TestProjectGitHubGitRejectsUnsafeOrUnsupportedMetadata(t *testing.T) {
 	for _, mode := range []string{"git-symlink", "head-symlink", "ref-directory-symlink", "config-symlink", "outside-gitdir", "outside-commondir", "ref-traversal", "symbolic-cycle", "invalid-sha", "missing-head", "reftable-config", "reftable-directory", "unknown-format", "large-config", "large-packed-refs"} {
 		t.Run(mode, func(t *testing.T) {
