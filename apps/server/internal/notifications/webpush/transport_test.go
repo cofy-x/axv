@@ -104,6 +104,18 @@ func serviceFixture(t *testing.T, handler http.Handler) (*Sender, *atomic.Int32,
 	return sender, &lookups, &dials
 }
 
+func receiveFixtureNotification(t *testing.T, r *http.Request) bool {
+	t.Helper()
+	// The sender closes each connection. Consume the bounded encrypted record
+	// before replying so TLS closure cannot race an unfinished request write.
+	size, err := io.Copy(io.Discard, io.LimitReader(r.Body, 4097))
+	if err != nil || size != 4096 {
+		t.Errorf("Fixture did not receive a complete Web Push record: size=%d, err=%v", size, err)
+		return false
+	}
+	return true
+}
+
 func TestPinnedTLSServiceAndNoRedirectOrProxy(t *testing.T) {
 	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:1")
 	t.Setenv("ALL_PROXY", "http://127.0.0.1:1")
@@ -113,6 +125,9 @@ func TestPinnedTLSServiceAndNoRedirectOrProxy(t *testing.T) {
 		t.Fatal(err)
 	}
 	sender, lookups, dials := serviceFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !receiveFixtureNotification(t, r) {
+			return
+		}
 		if r.TLS.ServerName != "fcm.googleapis.com" || r.Host != "fcm.googleapis.com" {
 			t.Error("TLS hostname/Host did not retain the approved service identity")
 		}

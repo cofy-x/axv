@@ -20,6 +20,7 @@ import (
 	"net/netip"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -196,6 +197,9 @@ func TestProviderOutcomes(t *testing.T) {
 	} {
 		t.Run(http.StatusText(tc.code), func(t *testing.T) {
 			sender, _, _ := serviceFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if !receiveFixtureNotification(t, r) {
+					return
+				}
 				w.Header().Set("Retry-After", "120")
 				w.WriteHeader(tc.code)
 				_, _ = io.WriteString(w, "Private provider body must never escape the adapter.")
@@ -208,6 +212,35 @@ func TestProviderOutcomes(t *testing.T) {
 				t.Fatal("Lost bounded provider retry delay")
 			}
 		})
+	}
+}
+
+func TestLostProviderResponseRemainsUncertainWithoutRetry(t *testing.T) {
+	subscription, _ := testSubscription(t)
+	private, public, err := GenerateVAPIDKeys()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var requests atomic.Int32
+	sender, lookups, dials := serviceFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !receiveFixtureNotification(t, r) {
+			return
+		}
+		requests.Add(1)
+		// The provider received the whole message but its response is lost.
+		// No status may be inferred from an exchange that never returned one.
+		connection, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		_ = connection.Close()
+	}))
+	if outcome := sender.Send(context.Background(), subscription, private, public, []byte("metadata only"), time.Minute, "owner@example.test"); outcome.Status != Uncertain {
+		t.Fatalf("Lost provider response was not uncertain: %v", outcome)
+	}
+	if requests.Load() != 1 || lookups.Load() != 1 || dials.Load() != 1 {
+		t.Fatalf("Lost response retried a POST: %d requests, %d lookups, %d dials", requests.Load(), lookups.Load(), dials.Load())
 	}
 }
 
