@@ -1,0 +1,14 @@
+name: AXV security analysis
+
+queries:
+  - uses: security-extended
+
+# These filters apply to interpreted languages. Go coverage is checked against
+# the files selected by the production build, rather than paths-ignore.
+paths-ignore:
+  - '**/node_modules/**'
+  - '**/dist/**'
+  - '.data/**'
+  - 'coverage/**'
+  - 'test-results/**'
+  - 'playwright-report/**'
