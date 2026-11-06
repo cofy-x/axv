@@ -10,7 +10,7 @@ Prepare releases from a reviewed commit on `main`, with passing required CI chec
 
 ## Build a candidate
 
-The manual [Release candidate workflow](../.github/workflows/release.yml) builds and smoke-tests a native **Linux amd64** executable on Ubuntu, then uploads a candidate archive and its checksum manifest. It has read-only repository permissions and does not create tags, GitHub Releases or VM images. Select **Actions → Release candidate → Run workflow**, choose `main` and supply the intended version, for example `0.1.0-rc.1`. The version input is passed through the environment rather than interpolated into shell code.
+The manual [Release candidate workflow](../.github/workflows/release.yml) builds and smoke-tests a native **Linux amd64** executable on Ubuntu, then attests and uploads the final archive and checksum manifest with their original provenance bundle. It does not create tags, GitHub Releases or VM images. Select **Actions → Release candidate → Run workflow**, choose `main` and supply the intended version, for example `0.1.0-rc.1`. The version input is passed through the environment rather than interpolated into shell code.
 
 For local preparation on native Linux amd64 with the [pinned toolchain](../README.md#install-and-use):
 
@@ -32,10 +32,11 @@ The packager refuses to overwrite an existing candidate directory. After reviewi
 | --- | --- |
 | `axv_<version>_linux_amd64.tar.gz` | Executable with embedded UI, MIT license, third-party policy and original dependency license files, dependency inventory, source/build metadata and startup pointers |
 | `SHA256SUMS` | SHA-256 of the archive as distributed |
+| `provenance.json` | Original GitHub build-provenance bundle added by the candidate workflow after packaging |
 
 The archive keeps executable permissions inside its tar container. No Node runtime, VM base, kernel, Lima/Firecracker executable, Codex installation or account credentials are included. Linux amd64 is the initial automated packaging target; add a platform only after a native build/smoke job and the relevant acceptance checks are available. Source support and existing native-validation claims remain in the README.
 
-Download the artifact from its completed Actions run; GitHub wraps the archive and manifest in an artifact download. Extract that wrapper first, then verify the original archive before extracting or running it:
+Download the artifact from its completed Actions run; GitHub wraps the candidate files in an artifact download. Extract that wrapper first and [verify build provenance](#verify-build-provenance), then check the original archive before extracting or running it:
 
 ```sh
 sha256sum --check SHA256SUMS
@@ -43,7 +44,53 @@ tar -xzf axv_0.1.0-rc.1_linux_amd64.tar.gz
 ./axv_0.1.0-rc.1_linux_amd64/axv version
 ```
 
-On macOS, use `shasum -a 256 -c SHA256SUMS` to inspect the checksum; this Linux executable still needs a Linux amd64 host. Checksums detect changed bytes; obtain the manifest from the same trusted release or workflow run. The candidate workflow does not currently sign or notarize artifacts or generate cryptographic provenance attestations.
+On macOS, use `shasum -a 256 -c SHA256SUMS` to inspect the checksum; this Linux executable still needs a Linux amd64 host. Checksums detect changed bytes; provenance additionally authenticates the producing workflow and reviewed source. Local packaging does not issue an official GitHub attestation. Platform code signing and notarization remain unavailable.
+
+## Verify build provenance
+
+Both candidate workflows use the full-SHA-pinned [`actions/attest` v4.2.2](https://github.com/actions/attest/tree/1e69f48acb82d1966a394da916b4c1698aa569d6) after successful final assembly. Only their candidate job receives `contents: read`, `id-token: write` and `attestations: write`; the workflows require repository `cofy-x/axv` and `refs/heads/main`. Pull-request CI does not receive these issuance permissions. They retain the existing clean-source, dependency-notice and build-stamping checks. [GitHub's current eligibility](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations), checked on 2026-11-06, covers public repositories on current Free, Pro and Team plans; private/internal repositories require Enterprise Cloud.
+
+The subjects are the final distributable files themselves, independent of the Actions wrapper ZIP:
+
+| Producing workflow | Attested subjects |
+| --- | --- |
+| `.github/workflows/release.yml` | `axv_<version>_linux_amd64.tar.gz`, `SHA256SUMS` |
+| `.github/workflows/guest-images.yml` | `axv_guest_<version>_firecracker_amd64.tar.gz`, `axv_guest_<version>_firecracker_amd64.ext4`, `candidate.json`, `SHA256SUMS` |
+
+Additional source companions and their checksum files are outside these subjects; review their licensing and integrity separately rather than claiming this bundle attests them.
+
+Each candidate carries one `provenance.json` Sigstore bundle covering its subjects and their SHA-256 digests. The workflow copies the original bundle after packaging and verifies every subject before uploading the candidate. The bundle is neither its own subject nor an entry in `SHA256SUMS`, avoiding a circular digest relationship. Preserve it unchanged alongside the approved files. Its signatures and subject digests are verified with GitHub's supported tooling; the bundle's presence or readable JSON alone establishes nothing.
+
+Use GitHub CLI **2.102.0**, the version validated for this policy. Set `SOURCE_SHA` independently from the reviewed candidate run's full `head_sha` and release notes; do not obtain the expected value only from the downloaded bundle or substitute the current `main` HEAD. In a fresh inspection directory, set `FILE` to one downloaded application file and `BUNDLE` to its accompanying `provenance.json`, then run:
+
+```sh
+(
+  umask 077
+  gh attestation verify "$FILE" --repo cofy-x/axv \
+    --signer-workflow cofy-x/axv/.github/workflows/release.yml \
+    --signer-digest "$SOURCE_SHA" --source-digest "$SOURCE_SHA" \
+    --source-ref refs/heads/main --predicate-type https://slsa.dev/provenance/v1 \
+    --deny-self-hosted-runners --bundle "$BUNDLE" --format json \
+    > verified-provenance.json
+) &&
+jq -e 'any(.[]; .verificationResult.signature.certificate.sourceRepositoryIdentifier == "1424477361")' \
+  verified-provenance.json
+```
+
+Require both commands to exit `0`. Repeat for `SHA256SUMS` before checking it. For Guest files use `cofy-x/axv/.github/workflows/guest-images.yml` as the signer workflow, repeating for each downloaded file. An archive-only Guest installation can verify its archive, `candidate.json` and `SHA256SUMS`; promotion requires the standalone raw disk as well. The certificate repository-ID check prevents accepting a different repository that later acquires AXV's name, a [limitation of name-only bundle verification](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/verify-attestations-offline).
+
+For complete candidate review and promotion, the [verification helper](../scripts/verify-release-provenance.mjs) checks the original bundle and every expected file using that fixed policy and repository ID. Run it from a reviewed checkout with the pinned Node toolchain and GitHub CLI; dependency installation is unnecessary. Set `VERSION` to the selected version and `DOWNLOAD_DIRECTORY` to the complete candidate directory:
+
+```sh
+node scripts/verify-release-provenance.mjs --kind app --version "$VERSION" \
+  --source "$SOURCE_SHA" --directory "$DOWNLOAD_DIRECTORY"
+```
+
+Use `--kind guest` for the complete Firecracker candidate. Missing, empty or nonregular files and failed verification stop the check. Modified bytes, an unexpected repository or workflow, a different source commit/ref, a different signer revision, missing provenance or a different predicate must fail this policy. A valid attestation from another workflow in `cofy-x/axv` does not establish an official candidate. Verification uses the retained bundle rather than requiring an unexpired Actions artifact or an attestation API lookup; trust-root retrieval may still use the network. Offline verification is not a validated AXV workflow.
+
+Build provenance authenticates build origin and integrity. It does not replace source review, license review, malware analysis, native acceptance, or platform code signing/notarization. GitHub's immutable-release attestation separately binds the published tag, commit and asset inventory. Promotion retains the original build bundle and bytes; downloading and republishing them does not make the promotion operation their builder, and must not generate a replacement builder claim.
+
+The existing application `v0.1.0-rc.5` and Guest `v0.1.0-guest.2` releases predate this issuance path and have no builder-provenance bundle. Their checksum and immutable-release verification remains distinct historical evidence; do not attest them retroactively as builds of a later workflow.
 
 ## License review
 
@@ -55,25 +102,26 @@ The [production tags](development.md#production-build) exclude Tailscale's separ
 
 ## Review and publish
 
-Publication is an explicit maintainer action after candidate review. Use this manual process for Linux amd64 prereleases; no additional release service is required. Guest images, build provenance attestations, CodeQL and Socket are separate work, not prerequisites for publishing this application archive. Required CI and the acceptance for capabilities claimed in the release still apply.
+Publication is an explicit maintainer action after candidate review. Use this manual process for Linux amd64 prereleases; no additional release service is required. Verify and preserve the candidate's original build provenance. Guest images, CodeQL and Socket have their own scope; required CI and the acceptance for capabilities claimed in the release still apply.
 
 ### Preserve and approve the candidate
 
 1. Check GitHub tags, releases (including drafts visible to a maintainer) and candidate runs before selecting an unused version. Check that the local remote addresses the intended repository. Record the candidate run's actual `head_sha`; a later `main` HEAD is not a substitute. Confirm that SHA is reviewed and has passing required CI checks.
-2. Download the successful candidate before its artifact expires. Preserve the original archive and `SHA256SUMS` together, outside directories that later build or cleanup commands overwrite. Inspect and extract copies. Do not rebuild, recompress, regenerate the manifest or edit the approved files during promotion. The Actions wrapper ZIP has its own size and digest; neither describes the inner archive.
+2. Download the successful candidate before its artifact expires. Preserve the original archive, `SHA256SUMS` and `provenance.json` together, outside directories that later build or cleanup commands overwrite. Inspect and extract copies. Do not rebuild, recompress, regenerate the manifest or bundle, re-attest, or edit approved files during promotion. The Actions wrapper ZIP has its own size and digest; neither describes the inner archive.
 3. Record the following in the release PR or release notes, keeping validation history out of this reference:
 
    | Evidence | Required record |
    | --- | --- |
    | Source and build | Version, full source SHA, candidate run URL and attempt, artifact ID, and required CI run/check links for that SHA |
-   | Files | Exact filename, byte count and SHA-256 for **each** original file, including `SHA256SUMS` itself |
+   | Files | Exact filename, byte count and SHA-256 for **each** original file, including `SHA256SUMS` and `provenance.json` themselves |
+   | Provenance | Successful complete-candidate verification against the expected workflow, source SHA/ref, predicate and repository ID |
    | Review | Matching `axv version`, `build-info.json` revision and `vcs.modified=false`; dependency inventory and original-license review |
    | Acceptance | Commands, environment, result and file digest for the downloaded Linux amd64 archive; separately identified native daemon, real-agent and VM evidence used in the notes |
 
-4. Verify `SHA256SUMS`, then follow [release archive installation](startup.md#install-a-release-archive) with a new version directory and isolated `AXV_HOME`. Test the installed original's version and foreground startup. Test the original in a native systemd user session before claiming background-startup acceptance for this release. Fixture smoke, native platform checks and real Agent/VM acceptance establish different evidence. Label historical Agent/VM evidence with its source commit and environment, including any locally built image; do not present it as acceptance of this downloaded archive.
-5. Write notes covering the fixed source link, changes, Linux amd64 target, [installation and runtime prerequisites](startup.md#install-a-release-archive), checksum instructions, experimental or unavailable capabilities, data compatibility and [security policy](../SECURITY.md). State which checks used this archive and which remain pending. Do not claim an official Guest image or live provider deployment without its own evidence.
+4. Run the complete-candidate [provenance check](#verify-build-provenance) and verify `SHA256SUMS`, then follow [release archive installation](startup.md#install-a-release-archive) with a new version directory and isolated `AXV_HOME`. Test the installed original's version and foreground startup. Test the original in a native systemd user session before claiming background-startup acceptance for this release. Fixture smoke, native platform checks and real Agent/VM acceptance establish different evidence. Label historical Agent/VM evidence with its source commit and environment, including any locally built image; do not present it as acceptance of this downloaded archive.
+5. Write notes covering the fixed source link, changes, Linux amd64 target, [installation and runtime prerequisites](startup.md#install-a-release-archive), provenance and checksum instructions, experimental or unavailable capabilities, data compatibility and [security policy](../SECURITY.md). State which checks used this archive and which remain pending. Do not claim an official Guest image or live provider deployment without its own evidence.
 
-[Workflow artifacts](https://docs.github.com/en/actions/concepts/workflows-and-actions/workflow-artifacts) expire. Retain the approved originals through publication and verification; their Actions URLs are not permanent download endpoints. The recorded association establishes review traceability, not cryptographic proof that a workflow built those bytes.
+[Workflow artifacts](https://docs.github.com/en/actions/concepts/workflows-and-actions/workflow-artifacts) expire. Retain the approved originals and provenance bundle through publication and verification; their Actions URLs are not permanent download endpoints. Keep review traceability alongside the cryptographically verified builder claim.
 
 ### Prepare the tag and draft
 
@@ -89,15 +137,15 @@ git ls-remote origin "refs/tags/$TAG" "refs/tags/$TAG^{}"
 
 The remote annotated tag must peel (`^{}`) to `SOURCE_SHA`; stop on a missing or different result. Repeat this remote check immediately before publication. [`gh release create --verify-tag`](https://cli.github.com/manual/gh_release_create) checks that the remote tag exists, not that it points to the reviewed commit. Without that flag, the CLI can create a missing tag from the default branch.
 
-Set `ARCHIVE` and `SUMS` to the preserved original files and `NOTES` to the reviewed notes file. Explicitly retain the draft and prerelease flags:
+Set `ARCHIVE`, `SUMS` and `PROVENANCE` to the preserved original archive, checksum manifest and provenance bundle, and `NOTES` to the reviewed notes file. Explicitly retain the draft and prerelease flags:
 
 ```sh
-gh release create "$TAG" "$ARCHIVE" "$SUMS" \
+gh release create "$TAG" "$ARCHIVE" "$SUMS" "$PROVENANCE" \
   --repo cofy-x/axv --verify-tag --draft --prerelease --latest=false \
   --notes-file "$NOTES"
 ```
 
-The [web interface](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository) is also suitable if the same checks are completed. Preserve filenames and all bundled license materials. An application-only draft needs exactly the archive and `SHA256SUMS`. GitHub's automatically generated source downloads are separate from these uploaded assets. Any additional assets must be explicitly reviewed before publication. [Each asset must be smaller than 2 GiB](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases#storage-and-bandwidth-quotas), meaning fewer than `2147483648` bytes; the limit is per file, not the combined release size.
+The [web interface](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository) is also suitable if the same checks are completed. Preserve filenames and all bundled license materials. An application-only draft needs exactly the archive, `SHA256SUMS` and `provenance.json`. GitHub's automatically generated source downloads are separate from these uploaded assets. Any additional assets must be explicitly reviewed before publication. [Each asset must be smaller than 2 GiB](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases#storage-and-bandwidth-quotas), meaning fewer than `2147483648` bytes; the limit is per file, not the combined release size.
 
 Use an authenticated maintainer identity with push access to [list releases, including drafts](https://docs.github.com/en/rest/releases/releases#list-releases). Select the exact intended tag, record its numeric release ID, then inspect that ID:
 
@@ -121,7 +169,7 @@ gh api --allow-escape-sequences -H 'Accept: application/octet-stream' \
 
 Use the binary-output flag only with a file redirect or a pipe that saves the bytes, never an interactive terminal. The [gh 2.102.0 output guard](https://github.com/cli/cli/blob/v2.102.0/pkg/cmd/api/api.go#L491-L503) can reject valid binary data containing escape sequences even when stdout is redirected or piped.
 
-Require a `gh` exit status of `0` and compare **both** files with the originals using `cmp`; independently check their byte counts and SHA-256 values. Then run `sha256sum --check SHA256SUMS` in the download directory and repeat the installation/version smoke from those files. A matching archive against a modified manifest is insufficient. Re-read the draft inventory after inspection and stop if another writer changed it.
+Require a `gh` exit status of `0` and compare **all three** files with the originals using `cmp`; independently check their byte counts and SHA-256 values. Run the complete-candidate provenance helper against the download directory, then run `sha256sum --check SHA256SUMS` inside that directory and repeat the installation/version smoke from those files. A matching archive against a modified manifest is insufficient. Re-read the draft inventory after inspection and stop if another writer changed it.
 
 ### Publish and verify
 
@@ -140,9 +188,10 @@ Confirm `draft=false` and `immutable=true` through the release API. GitHub [lock
 gh release verify "$TAG" --repo cofy-x/axv
 gh release verify-asset "$TAG" "$ARCHIVE" --repo cofy-x/axv
 gh release verify-asset "$TAG" "$SUMS" --repo cofy-x/axv
+gh release verify-asset "$TAG" "$PROVENANCE" --repo cofy-x/axv
 ```
 
-Download both public assets into a new directory, compare them with the preserved originals, verify the checksum, and repeat installation/version smoke. Update README availability and versioned download links only after these checks pass. GitHub's release attestation binds the published tag, commit and assets; it does not attest which build workflow produced the candidate.
+Download all three public assets into a new directory, compare them with the preserved originals, repeat the complete-candidate provenance and checksum verification, and repeat installation/version smoke. Update README availability and versioned download links only after these checks pass. GitHub's release attestation establishes the publication claim; the retained candidate provenance establishes the original producing-build claim.
 
 If creation, upload or publication times out or fails, query the remote tag, release and asset state before retrying. Keep a failed review as a draft; repair partial or incorrect uploads there and repeat the complete asset checks. If a command actually published the release, use the published-release rules. Never move a published tag or replace its files: issue a new version for corrections, and describe the problem in the notes. Deleting an immutable release does not permit reuse of its tag name. Report failed post-publication verification and keep availability links pending; do not silently treat publication as success.
 
@@ -154,7 +203,7 @@ The first publication path is a complete **Linux amd64 / Firecracker** enhanced 
 
 ### Build and retain the Guest candidate
 
-The manual [Guest image candidate workflow](../.github/workflows/guest-images.yml) builds a native Firecracker amd64 bundle from an explicitly supplied, reviewed Ubuntu 24.04 OCI digest. It uses the pinned Go and Node toolchains, then verifies and packages the disk, manifest, base identity and exported distribution materials. Its repository permission is read-only; it neither starts a VM nor publishes a release. A workflow definition is not a completed candidate: record an actual successful run, attempt, source SHA and artifact ID before review. The uploaded candidate has **14-day retention**; download and preserve its originals before expiry.
+The manual [Guest image candidate workflow](../.github/workflows/guest-images.yml) builds a native Firecracker amd64 bundle from an explicitly supplied, reviewed Ubuntu 24.04 OCI digest. It uses the pinned Go and Node toolchains, then verifies and packages the disk, manifest, base identity and exported distribution materials before [attesting the final subjects](#verify-build-provenance). It neither starts a VM nor publishes a release. A workflow definition is not a completed candidate: record an actual successful run, attempt, source SHA and artifact ID before review. The uploaded candidate has **14-day retention**; download and preserve its originals before expiry.
 
 Choose an independent Guest version and an unused `v<version>` tag after checking remote tags, releases including drafts, and candidate runs. For example, `0.1.0-guest.1` and `v0.1.0-guest.1` are proposed values, not reserved or published names; recheck availability before use. The candidate version must satisfy the package base-version check. Do not reuse the frozen application `v0.1.0-rc.5` tag or append assets to that release.
 
@@ -164,7 +213,7 @@ To package an existing image-builder output locally:
 VERSION=0.1.0-guest.1 node scripts/package-guest-release.mjs --bundle /absolute/new-firecracker-bundle
 ```
 
-This requires a clean checkout and matching clean guest-binary VCS metadata. The output in `dist/guest-release/<version>/<provider>_<arch>/` has four core release assets:
+This requires a clean checkout and matching clean guest-binary VCS metadata. The output in `dist/guest-release/<version>/<provider>_<arch>/` has four core release assets; the official candidate workflow adds the fifth file, its original provenance bundle:
 
 | Asset | Contents |
 | --- | --- |
@@ -172,14 +221,15 @@ This requires a clean checkout and matching clean guest-binary VCS metadata. The
 | `axv_guest_<version>_firecracker_amd64.ext4` | Byte-identical raw rootfs, independently usable only with its image contract and the separate kernel/runtime prerequisites |
 | `candidate.json` | Exact image contract, base identity, archive/disk names and source/build metadata |
 | `SHA256SUMS` | SHA-256 of the other three assets |
+| `provenance.json` | Original build-provenance bundle covering the four core assets |
 
-The packager checks every release asset is a regular file **smaller than 2 GiB** (`2147483648` bytes), including the raw disk before assembly. The Firecracker recipe creates a fresh 2047 MiB disk to satisfy that limit; [image capacity](../images/guest/README.md#firecracker-root-filesystem) explains the rebuild and acceptance obligations. Sparse allocation does not reduce a raw asset's logical upload size. Compression and splitting do not make a raw-disk consumer understand another format. The archive supports the explicit download/extract operator path; the host still consumes its extracted raw disk.
+The packager checks every core release asset is a regular file **smaller than 2 GiB** (`2147483648` bytes), including the raw disk before assembly. The Firecracker recipe creates a fresh 2047 MiB disk to satisfy that limit; [image capacity](../images/guest/README.md#firecracker-root-filesystem) explains the rebuild and acceptance obligations. Sparse allocation does not reduce a raw asset's logical upload size. Compression and splitting do not make a raw-disk consumer understand another format. The archive supports the explicit download/extract operator path; the host still consumes its extracted raw disk.
 
 The packager validates the current guest contract through the same Go owner as image building and importing, then assembles the archive and disk from a private snapshot whose files match the verified input checksums. It rejects unlisted files, symlinks, changed bytes, missing license/OS materials and mismatched guest capabilities or build metadata. It refuses to overwrite an existing candidate. For implementation testing with uncommitted changes, add `--local`; this retains an explicitly `localOnly` candidate beneath this checkout's `.data/test/guest-candidate-*`. Dirty source metadata remains visible, and this result cannot establish official release readiness.
 
 ### Review the exact Guest files
 
-Apply the [candidate preservation and approval](#preserve-and-approve-the-candidate) process to all four Guest assets. Preserve the original archive, raw disk, `candidate.json` and `SHA256SUMS` together; record each original's filename, byte count and SHA-256, including the checksum manifest itself. The Actions wrapper ZIP is separate. Extract inspection copies, verify both checksum manifests and compare the extracted disk with the standalone raw asset. Do not rebuild, recompress, edit materials or regenerate checksums during promotion.
+Apply the [candidate preservation and approval](#preserve-and-approve-the-candidate) process to all five Guest files. Preserve the original archive, raw disk, `candidate.json`, `SHA256SUMS` and `provenance.json` together; record each original's filename, byte count and SHA-256, including both sidecars themselves. The Actions wrapper ZIP is separate. Run the complete-candidate provenance helper with `--kind guest`, extract inspection copies, verify both checksum manifests and compare the extracted disk with the standalone raw asset. Do not rebuild, recompress, edit materials, regenerate checksums or provenance, or re-attest during promotion.
 
 Before approving a draft, complete all of these gates against that exact candidate:
 
@@ -193,10 +243,10 @@ Readiness does not follow from having a manifest capability: runtime health must
 
 ### Draft, publish and verify the Guest
 
-Reuse [tag and draft review](#prepare-the-tag-and-draft) with the approved Guest tag and source SHA, release immutability enabled, and `--draft --prerelease --latest=false`. Upload the four preserved core assets; review any required additional source materials explicitly. Application and Guest candidates each use `SHA256SUMS`, so keep them in their respective releases.
+Reuse [tag and draft review](#prepare-the-tag-and-draft) with the approved Guest tag and source SHA, release immutability enabled, and `--draft --prerelease --latest=false`. Upload the four preserved core assets and their original `provenance.json`; review any required additional source materials explicitly. Application and Guest candidates each use `SHA256SUMS` and `provenance.json`, so keep them in their respective releases.
 
-Select the exact numeric draft release ID and require an exact asset inventory. For **every** asset, record its numeric ID, `state=uploaded`, filename, size and digest; download by asset ID to a fresh directory, compare its bytes and SHA-256 against the original, and verify `SHA256SUMS`. Re-extract the downloaded archive, verify the internal checksums and disk/manifest association, and rehearse the [manual installation](startup.md#linux-guest-bundle-installation) with the reviewed host configuration. Recheck the draft inventory, notes and remote tag's peeled source SHA before deliberate publication.
+Select the exact numeric draft release ID and require an exact asset inventory. For **every** asset, record its numeric ID, `state=uploaded`, filename, size and digest; download by asset ID to a fresh directory, compare its bytes and SHA-256 against the original, run the complete-candidate provenance helper with `--kind guest`, and verify `SHA256SUMS`. Re-extract the downloaded archive, verify the internal checksums and disk/manifest association, and rehearse the [manual installation](startup.md#linux-guest-bundle-installation) with the reviewed host configuration. Recheck the draft inventory, notes and remote tag's peeled source SHA before deliberate publication.
 
-After publication, confirm `draft=false` and `immutable=true`, verify the release and **each** original asset with `gh release verify` and `gh release verify-asset`, then download all public assets into a new directory and repeat byte/checksum/bundle checks. Keep availability pending on any failure. Never replace frozen assets or move a published tag; corrections need a new Guest version.
+After publication, confirm `draft=false` and `immutable=true`, verify the release and **each** original asset with `gh release verify` and `gh release verify-asset`, then download all public assets into a new directory and repeat byte/provenance/checksum/bundle checks against the original reviewed source SHA. Keep availability pending on any failure. Never replace frozen assets or move a published tag; corrections need a new Guest version.
 
-Update availability and versioned download links only after these checks pass. A later reviewed `artifacts.Official` entry must reference actual immutable disk URLs/digests and the full contract, and requires a consumer that supports its provider. Build provenance attestations remain a separate improvement; they do not replace these gates or block this manual first-publication path.
+Update availability and versioned download links only after these checks pass. A later reviewed `artifacts.Official` entry must reference actual immutable disk URLs/digests and the full contract, and requires a consumer that supports its provider. Build provenance remains one gate alongside exact-bundle native acceptance, licensing and publication review.

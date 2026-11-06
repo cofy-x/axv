@@ -18,9 +18,13 @@ concurrency:
 jobs:
   package:
     name: Linux amd64 candidate
-    if: github.ref == 'refs/heads/main'
+    if: github.repository == 'cofy-x/axv' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     env:
       VERSION: ${{ inputs.version }}
       GOTOOLCHAIN: local
@@ -58,6 +62,22 @@ jobs:
           make smoke-production PNPM=pnpm
       - name: Assemble archive and original license texts
         run: node scripts/package-release.mjs
+      - name: Attest the final archive and checksum manifest
+        id: provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/release/${{ inputs.version }}/axv_${{ inputs.version }}_linux_amd64.tar.gz
+            dist/release/${{ inputs.version }}/SHA256SUMS
+          create-storage-record: false
+      - name: Retain and verify the original build provenance
+        env:
+          ATTESTATION_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp -- "$ATTESTATION_BUNDLE" "dist/release/$VERSION/provenance.json"
+          node scripts/verify-release-provenance.mjs --kind app --version "$VERSION" \
+            --source "$GITHUB_SHA" --directory "dist/release/$VERSION"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: axv-${{ inputs.version }}-linux-amd64-candidate
