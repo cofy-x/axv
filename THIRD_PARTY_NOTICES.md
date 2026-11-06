@@ -17,10 +17,12 @@ Release candidate archives include `licenses/manifest.json` and the original lic
 - Go's standard library and bundled libraries;
 - the exact Go module versions recorded in the executable, including inherited notices such as modernc's SQLite and libc notices;
 - separately licensed data and diagnostic assets embedded by those Go modules, with their pinned source locations;
-- the installed production JavaScript dependency graph reported by pnpm, including transitive dependencies and conservatively retained type packages.
+- the dashboard's installed production JavaScript dependency graph reported by pnpm, including its production workspace dependencies such as Nextstep, transitive external dependencies and conservatively retained type packages;
 - Vite and Rolldown, whose generated preload and interoperability helpers become part of the embedded UI.
 
 The collector preserves upstream text and refuses a dependency without a license file. The JavaScript list describes the production dependency graph, rather than claiming every package survives frontend tree shaking. Review both the inventory and original texts when changing dependencies or preparing a distribution. Dependencies can carry additional terms inside source files; the collector supports that review and does not replace it.
+
+Optional project recipes and their separately installed dependencies are outside the embedded dashboard graph and application archive. Their manifests and the workspace lockfile identify the selected packages; each recipe's README owns its installation and upstream-source references. Review and retain the exact packages' original terms when redistributing an application built from a recipe.
 
 Production builds use Tailscale's upstream [`ts_omit_webclient` option](https://github.com/tailscale/tailscale/blob/v1.104.1/ipn/ipnlocal/web_client_stub.go) to exclude its separate node-management Web UI and bundled frontend assets. AXV supplies its own desktop and Tailscale controls over the embedded node. The collector rejects a binary that still links `github.com/tailscale/web-client-prebuilt`; distributing that separate frontend would require review and original notices for its JavaScript, fonts and other assets in addition to the Go module's license.
 

@@ -36,6 +36,7 @@ Choose the row for the behavior being changed. The primary reference owns the me
 | VM development-service previews or their remote access | [Development previews](api/project-previews.md) | [VM architecture](vm-platform.md#development-previews), [access boundaries](api/README.md#access-and-identity-boundaries) |
 | Persistent VM project tasks, logs, cancellation or recovery | [Task ownership](vm-platform.md#persistent-project-tasks) | [Compute task API](api/compute.md#vm-project-tasks), [guest execution](api/guest.md#project-task-protocol), [task CLI](startup.md#vm-project-tasks), [guest-owned credentials](usage.md#credentials-for-project-tasks), [native acceptance](development.md#vm-project-workspace-acceptance) |
 | Optional development-application email recipe | [Resend recipe](../recipes/resend/README.md) | [Guest-owned credentials](usage.md#credentials-for-project-tasks), [task CLI](startup.md#vm-project-tasks), [task acceptance](api/compute.md#vm-project-tasks) |
+| Optional development-application cache or rate-limit recipe | [Upstash recipe](../recipes/upstash/README.md) | [Guest-owned credentials](usage.md#credentials-for-project-tasks), [task CLI](startup.md#vm-project-tasks), [task acceptance](api/compute.md#vm-project-tasks) |
 | Installation, uninstallation, configuration, startup or supervision | [Startup](startup.md) | [Runtime identity API](api/desktop.md) for identity contracts |
 | Work notifications, event intake, browser push or Pocket Alert delivery | [Notifications API and ownership](api/notifications.md) | [Codex producer](codex.md#provider-activity), [task producer](api/compute.md#vm-project-tasks), [notification usage](usage.md#work-notifications), [push acceptance](development.md#web-push-acceptance) |
 | Private remote access, Tailscale enrollment or authorization | [Tailscale API and ownership](api/tailscale.md) | [Remote setup](startup.md#remote-access) for configuration; [shared access boundaries](api/README.md#access-and-identity-boundaries) |
@@ -80,6 +81,7 @@ Each fact has one owner. Another page may state the consequence its reader needs
 | [Startup](startup.md) | Installation, uninstallation, CLI workflows, configuration precedence, paths, environment and service operation |
 | [Usage](usage.md) | Visible user actions, confirmations and their effects |
 | [Resend recipe](../recipes/resend/README.md) | Optional development sender setup, guest-private credentials, reviewed sends and provider-side uncertainty |
+| [Upstash recipe](../recipes/upstash/README.md) | Optional development Redis setup, guest-private credentials, bounded cache/rate-limit checks and remote cleanup |
 | [Development](development.md) | Build/verification commands, CI and security analysis, prerequisites, test isolation and diagnostics |
 | [Releasing](releasing.md) | Version selection, candidate review, promotion and artifact publication |
 | [Third-party notices](../THIRD_PARTY_NOTICES.md) | Distribution boundaries, upstream sources and retained license notices |

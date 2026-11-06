@@ -11,6 +11,8 @@ import { dirname, join, relative } from 'node:path';
 import { createRequire } from 'node:module';
 import { captureCommand, go, root } from './lib.mjs';
 
+// Include the dashboard's production workspace dependencies, including Nextstep.
+export const applicationJavaScriptSelector = '{./apps/dashboard}...';
 const noticeName =
   /^(?:(?:licen[sc]e|copying|copyright|notice|patents)(?:[-_.]|$)|third[-_ ]party[-_ ](?:licen[sc]es?|notices?)(?:[-_. ]|$))/i;
 
@@ -240,6 +242,9 @@ export async function writeReleaseNotices(output, buildInfo) {
   const inventory = await collectGoNotices(output, buildInfo);
   const collect = noticeCollector(output, inventory);
   const packages = await captureJSON('pnpm', [
+    '--filter-prod',
+    applicationJavaScriptSelector,
+    '--fail-if-no-match',
     'licenses',
     'list',
     '--prod',

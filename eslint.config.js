@@ -98,6 +98,7 @@ export default defineConfig(
     files: [
       '**/*.config.{js,mjs,ts}',
       'scripts/**/*.{js,mjs}',
+      'recipes/**/*.{js,mjs}',
       '**/*.test.{ts,tsx}',
       'tests/**/*.{ts,tsx}',
     ],
