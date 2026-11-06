@@ -31,7 +31,7 @@ export function Welcome({ desktop, window }: AppWindowProps) {
               app: 'project-files',
               icon: 'project' as const,
               name: 'Project Files',
-              text: 'Browse projects, edit files and preview your work.',
+              text: 'Browse files, run VM tasks and review GitHub checks.',
             },
           ].map((link) => (
             <button
@@ -165,7 +165,8 @@ export function About() {
       <p className="fine-print">
         Documents, notification history and desktop layout live on the AXV host.
         Project files stay in their host directories or VM volumes. Browser
-        recovery copies stay on this device.
+        recovery copies stay on this device. VM project GitHub review uses
+        explicitly configured guest credentials.
       </p>
     </div>
   );

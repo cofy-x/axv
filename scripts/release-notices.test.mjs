@@ -17,6 +17,7 @@ import {
   collectSupplementalNotices,
   findNoticeFiles,
 } from './release-notices.mjs';
+import { root } from './lib.mjs';
 
 const directories = [];
 
@@ -98,6 +99,33 @@ test('supplemental notices reject a newly linked module version until its assets
     collectSupplementalNotices(f.output, f.build, f.catalog),
   ).rejects.toThrow(/Re-review embedded assets/);
   await expect(stat(f.output)).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+test('the checked-in public suffix notice covers the pinned server module and generated sources', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'axv-pinned-notices-'));
+  directories.push(directory);
+  const module = 'golang.org/x/net';
+  const goMod = await readFile(join(root, 'apps/server/go.mod'), 'utf8');
+  const version = goMod.match(/^\s*golang\.org\/x\/net\s+(v\S+)/m)?.[1];
+  expect(version).toBeTruthy();
+  const inventory = await collectSupplementalNotices(
+    join(directory, 'output'),
+    {
+      Deps: [{ Path: module, Version: version }],
+    },
+  );
+  expect(inventory).toHaveLength(1);
+  expect(inventory[0]).toMatchObject({
+    name: 'publicsuffix/list',
+    license: 'MPL-2.0',
+    via: { module, version },
+  });
+  expect(inventory[0].generatedSources).toEqual(
+    ['gen.go', 'table.go', 'data/children', 'data/nodes', 'data/text'].map(
+      (file) =>
+        `https://raw.githubusercontent.com/golang/net/${version}/publicsuffix/${file}`,
+    ),
+  );
 });
 
 test.each(['changed', 'empty', 'missing'])(

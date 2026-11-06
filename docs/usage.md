@@ -164,6 +164,28 @@ Accepted tasks remain in project history when the window or browser closes. Sele
 
 If submission loses its response, **Recover Submission** queries the original receipt and, if it was not accepted, resubmits the same request and binding. This tab retains the unconfirmed payload across reload; it does not select a replacement VM. **Dismiss Recovery** only removes that recovery prompt, preserving its retry identity and leaving accepted work untouched. Review history before changing the command or VM. **More task actions** contains **Project Files**, **Reconnect VM** and **Task Help**. Reconnecting explicitly captures the current environment for subsequent submissions; historical attempts retain their original bindings. A failed connection also exposes **Reconnect VM** beside its error.
 
+### GitHub project review
+
+Open a VM project's **GitHub** tab in Project Files. **Read Git metadata** reads the selected repository/worktree root without running Git, hooks or project code. Candidate remotes are suggestions only. Enter the intended GitHub `owner/repository`, choose **Review repository and account**, inspect the canonical repository and signed-in account, then explicitly **Associate reviewed repository**. The association belongs to the project, independently of Codex conversations/runs, and changing it preserves file-editor drafts and execution bindings.
+
+This requires a rebuilt image and current guest declaring `project-github`; published Guest 0.1.0-guest.2 does not offer it. Install a reviewed official GitHub CLI at the guest-service user's `~/.local/bin/gh`, following the [guest CLI installation guidance](#github-https). Sign in explicitly from Guest Terminal using the dedicated AXV profile:
+
+```sh
+umask 077
+mkdir -p "$HOME/.config/axv/github"
+chmod 700 "$HOME/.config/axv/github"
+GH_CONFIG_DIR="$HOME/.config/axv/github" "$HOME/.local/bin/gh" auth login --hostname github.com --git-protocol https --web --insecure-storage
+chmod 600 "$HOME/.config/axv/github/hosts.yml"
+```
+
+Review GitHub's account permissions during sign-in. AXV reads the active account's explicit file-backed credential from this dedicated profile; keyring-only or missing credentials are rejected. The command intentionally stores a plaintext token in guest-owned `hosts.yml`: keep it `0600` inside the private `0700` directory. Its authority can exceed this panel's fixed reads. For each read AXV supplies only the captured token to `gh` through its process environment and uses an empty temporary configuration, preventing default-profile, keyring or transport-configuration fallback. Credentials stay on the guest root disk. After VM replacement, reconnect the project and explicitly review/associate the new guest connection before refreshing; the retained repository link does not transfer authentication.
+
+Choose **Refresh GitHub** to read the captured local HEAD, associated/branch-candidate PRs and check observations. There is no polling or webhook. Refresh creates no durable task or task receipt. Inspect each full repository/commit identity: **Local HEAD**, **PR head** and **Merge test checks** can refer to different commits. Branch candidates, detached/unborn HEAD, missing remote commits and unmatched/incomplete checks remain explicit. A successful check is an observation of its own SHA, not proof that local work was tested or that GitHub permits merging. Bounded results can omit additional PRs/checks and are marked incomplete.
+
+Failed refreshes keep the last successful observation visibly stale and show authentication, permission, rate-limit or connectivity errors. A changed repository/account/association or VM binding requires explicit review or project reconnect; it never silently selects a replacement. Reopen/reload retains the association, not a freshly validated check result. **Clear association** removes only this project's reviewed link; it does not revoke credentials or affect GitHub. Remove the dedicated profile and revoke its authorization explicitly through the guest/provider when no longer wanted.
+
+Repository, PR and check links open the precise external objects on GitHub for review. The panel does not push, create or merge PRs, rerun checks or submit agent messages. Those mutations and automatic polling require a separately reviewed phase with exact targets and permissions. Host project review and GitHub Enterprise hosts are outside this initial VM-project workflow.
+
 ### Credentials for project tasks
 
 Review the project and its exact VM environment before configuring development credentials in **Guest Terminal**. The current [task contract](api/compute.md#vm-project-tasks) has no secret-injection field: AXV retains submitted commands and task output, and the desktop retains unconfirmed submissions for recovery. Never put tokens, passwords, secret-bearing URLs or `export TOKEN=value` into task commands, documents or diagnostics. Ordinary task output has no secret-redaction guarantee; avoid environment dumps, shell tracing and verbose provider/application logs.

@@ -169,6 +169,26 @@ File writes and mkdir are synchronous and have no durable request receipt. A tra
 
 [VM architecture](../vm-platform.md#vm-projects) owns durable project and file-publication mechanisms; [VM project CLI](../startup.md#vm-project-files) provides the host-agent workflow. These IDs remain separate from [registered host projects](project-files.md), virtual documents and task/run identities.
 
+### GitHub project review
+
+`GET /projects/:id/github` returns `{ revision, association? }` without observing a VM or contacting GitHub. The optional association contains `{ repository: { id, nameWithOwner, url }, account: { id, login }, machineId, profile: "axv", updatedAt }`. Compute retains it in the project JSON as `github`, with an independent `githubRevision`; ordinary project/file revisions stay unchanged. No credentials or observed checks enter this store.
+
+`POST /projects/:id/github/{git,review,associate,clear,refresh}` requires the original complete `binding` and explicit association `revision`, with an **8 KiB** JSON envelope. All routes retain the shared host/Origin/query/Unicode checks. The selected image and verified current guest must declare `project-github` as well as `project-files`. Calls hold the same lifecycle leases as file reads and never create tasks, attempts or request receipts, including when task-history capacity is exhausted.
+
+| Action | Additional fields | Result |
+| --- | --- | --- |
+| `git` | None | `{ binding, revision, observation }` with local Git metadata only |
+| `review` | `repository`: GitHub `owner/name` | Same envelope with canonical repository and current dedicated guest-profile account |
+| `associate` | `repository`, reviewed `repositoryId`, reviewed `accountId` | `{ revision, association }` after independently rereading and checking those identities |
+| `clear` | None | `{ revision }` after clearing only this project's association |
+| `refresh` | None | Observation of the retained immutable repository/account identities through that association's exact VM/profile |
+
+Association mutations use compare-and-swap and always increment their own revision, including repeated same-value actions. They do not have durable request IDs: after a lost response, read current settings and explicitly review again rather than replaying a mutation. A renamed repository keeps its node identity; a replacement at the old slug does not. A replacement VM requires explicit review/reassociation, even if it mounts the original project. GitHub reads recheck guest/root/Git and association identities after the bounded provider call; they cannot refresh a stale project binding to make a request work.
+
+`observation` includes `git` (`repository`, `headSha?`, `branch?`, `detached`, `unborn`, clean remote candidates and their completeness), the actual account/repository, `observedAt`, optional `localChecks`, PR observations and `pullRequestsComplete`. PRs retain ID, number, base/head repositories, head branch/SHA, head checks and optional synthetic merge-test checks. Every check set records its actual repository, full SHA, provider state, completeness and individual check-run/commit-status results. These are separate identities, not a single PR readiness verdict. Missing/empty/denied/incomplete/unknown results cannot become a successful check of the local commit. The guest [read protocol](guest.md#github-project-reads) owns bounded query coverage and Git metadata limits.
+
+Failures are visible and sanitized: `github_association_changed`, `github_connection_changed`, `github_account_changed`, `github_repository_changed`, `github_setup_required`, Git changes/unsupported metadata and existing binding conflicts use **409**; missing authentication **401**, permission denial **403**, inaccessible/missing repository **404**, rate limits **429**, invalid/provider/network responses **502**, unavailable guest/CLI/profile/capacity **503**, and deadline expiry **504**. No automatic polling, retries, credential/profile switching or GitHub mutations occur. The browser retains a failed refresh's old observation as stale; a new page reads only saved association settings until the next explicit action.
+
 ## VM project initialization
 
 `POST /projects/:id/initialize` accepts `{ requestId, binding, directory, repository?, name? }` for an explicitly opened parent project. It creates one new child directory; `directory` must be a canonical single component of at most **255 UTF-8 bytes**, without a leading `-` or reserved AXV name. `name` follows project display-name rules; when omitted the directory name must itself be a valid display name. An empty or omitted `repository` creates an empty directory. A repository must use HTTPS or SSH, including `user@host:path` SSH syntax. Passwords, HTTPS user information, query parameters, fragments, local paths and other Git transports are rejected. Configure Git authentication and SSH host trust inside the guest; clone is noninteractive and requires existing SSH host trust. Raw Git output is withheld from task logs to avoid retaining remote credential-bearing diagnostics.

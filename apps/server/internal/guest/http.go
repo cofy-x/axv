@@ -44,6 +44,7 @@ func (s *service) handler() http.Handler {
 	mux.HandleFunc("POST /v1/project-files/read", s.readProjectFile)
 	mux.HandleFunc("POST /v1/project-files/write", s.writeProjectFile)
 	mux.HandleFunc("POST /v1/project-files/mkdir", s.mkdirProjectFile)
+	mux.HandleFunc("POST /v1/project-github/{action}", s.projectGitHub)
 	mux.HandleFunc("/v1/project-preview", s.projectPreview)
 	for _, action := range []string{"submit", "inspect", "logs", "cancel"} {
 		mux.HandleFunc("POST /v1/project-tasks/"+action, func(w http.ResponseWriter, r *http.Request) { s.projectTaskRequest(w, r, action) })
@@ -74,6 +75,8 @@ func (s *service) handler() http.Handler {
 			capability = "project-restore"
 		case r.URL.Path == "/v1/project-preview":
 			capability = "project-previews"
+		case strings.HasPrefix(r.URL.Path, "/v1/project-github/"):
+			capability = "project-github"
 		case r.URL.Path == "/v1/exec":
 			capability = "exec"
 		case strings.HasPrefix(r.URL.Path, "/v1/project-files"):

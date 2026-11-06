@@ -180,12 +180,22 @@ func failure(w http.ResponseWriter, err error) {
 		status = 400
 	case "not_found", "task_not_found":
 		status = 404
-	case "binding_changed", "boot_changed", "instance_changed", "project_changed", "file_changed", "file_conflict", "revision_conflict", "operation_conflict", "idempotency_conflict", "volume_conflict", "image_conflict", "configuration_conflict", "name_conflict", "unavailable", "task_conflict":
+	case "binding_changed", "boot_changed", "instance_changed", "project_changed", "file_changed", "file_conflict", "revision_conflict", "operation_conflict", "idempotency_conflict", "volume_conflict", "image_conflict", "configuration_conflict", "name_conflict", "unavailable", "task_conflict", "github_association_changed", "github_connection_changed", "github_setup_required", "github_git_invalid", "github_git_unsupported", "github_git_changed", "github_account_changed", "github_repository_changed", "git_metadata_invalid":
 		status = 409
-	case "capacity_exceeded", "task_limit":
+	case "capacity_exceeded", "task_limit", "github_rate_limited":
 		status = 429
-	case "unsupported", "host_unavailable", "guest_unavailable", "guest_identity_mismatch", "storage_unavailable", "project_unavailable", "file_unavailable", "task_state_unavailable":
+	case "unsupported", "host_unavailable", "guest_unavailable", "guest_identity_mismatch", "storage_unavailable", "project_unavailable", "file_unavailable", "task_state_unavailable", "github_git_unavailable", "github_cli_missing", "github_profile_invalid", "github_busy":
 		status = 503
+	case "github_auth_required":
+		status = 401
+	case "github_forbidden":
+		status = 403
+	case "github_repository_unavailable":
+		status = 404
+	case "github_unavailable", "github_response_invalid":
+		status = 502
+	case "github_timeout":
+		status = 504
 	case "file_too_large":
 		status = 413
 	case "insufficient_storage", "disk_full":

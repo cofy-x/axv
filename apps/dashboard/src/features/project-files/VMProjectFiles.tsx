@@ -20,6 +20,7 @@ import type { VMProjectBinding } from './vm-api';
 import { openVMProjectCodex } from '../codex/definition';
 import { VMProjectPreviews } from './VMProjectPreviews';
 import { VMProjectBackups } from './VMProjectBackups';
+import { VMProjectGitHub } from './VMProjectGitHub';
 import { useVMFileObserver } from './useVMFileObserver';
 import {
   vmFileBindingError,
@@ -88,7 +89,8 @@ export function VMProjectFiles({
   const hostId = window.params.hostId || '';
   const section =
     window.viewState.projectSection === 'previews' ||
-    window.viewState.projectSection === 'backups'
+    window.viewState.projectSection === 'backups' ||
+    window.viewState.projectSection === 'github'
       ? window.viewState.projectSection
       : 'files';
   const interactive = !!windowInteractive && section === 'files';
@@ -102,6 +104,9 @@ export function VMProjectFiles({
   const [backupNotice, setBackupNotice] = useState<
     '' | 'recovery' | 'error' | 'working'
   >('');
+  const [githubNotice, setGitHubNotice] = useState<'' | 'error' | 'working'>(
+    '',
+  );
   const namespace = useDraftNamespace();
   const recoveryKey = JSON.stringify([
     'axv-vm-project-draft',
@@ -341,7 +346,7 @@ export function VMProjectFiles({
     if (
       !windowInteractive ||
       inputPending() ||
-      !['files', 'previews', 'backups'].includes(next)
+      !['files', 'previews', 'backups', 'github'].includes(next)
     )
       return;
     if (next !== section) navigationGeneration.current++;
@@ -1008,11 +1013,17 @@ export function VMProjectFiles({
               label: 'Backups',
               disabled: !windowInteractive || composing,
             },
+            {
+              id: 'github',
+              label: 'GitHub',
+              disabled: !windowInteractive || composing,
+            },
           ]}
         >
           {((section !== 'files' && fileNotice) ||
             (section !== 'previews' && previewNotice) ||
-            (section !== 'backups' && backupNotice)) && (
+            (section !== 'backups' && backupNotice) ||
+            (section !== 'github' && githubNotice)) && (
             <div className="vm-project-notices" aria-label="Project notices">
               {section !== 'files' && fileNotice && (
                 <Button
@@ -1044,6 +1055,14 @@ export function VMProjectFiles({
                     : backupNotice === 'error'
                       ? 'Backup Error'
                       : 'Backup Status'}
+                </Button>
+              )}
+              {section !== 'github' && githubNotice && (
+                <Button
+                  disabled={!windowInteractive}
+                  onClick={() => selectSection('github')}
+                >
+                  {githubNotice === 'error' ? 'GitHub Error' : 'GitHub Status'}
                 </Button>
               )}
             </div>
@@ -1491,6 +1510,21 @@ export function VMProjectFiles({
               interactive={!!windowInteractive && section === 'backups'}
               dirty={dirty || !!pendingRecovery || blockedRecovery || saving}
               onNoticeChange={setBackupNotice}
+            />
+          </section>
+          <section
+            className="vm-project-pane vm-project-tool-pane"
+            aria-label="Project GitHub view"
+            hidden={section !== 'github'}
+            inert={!windowInteractive || section !== 'github'}
+          >
+            <VMProjectGitHub
+              projectId={id}
+              hostId={hostId}
+              binding={binding}
+              active={section === 'github' && windowVisible !== false}
+              interactive={!!windowInteractive && section === 'github'}
+              onNoticeChange={setGitHubNotice}
             />
           </section>
         </Tabs>
