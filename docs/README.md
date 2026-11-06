@@ -77,7 +77,7 @@ Each fact has one owner. Another page may state the consequence its reader needs
 | [API reference](api/README.md) | Routes, fields, protocol limits, errors, access checks and caller retry/lifecycle obligations |
 | [Startup](startup.md) | Installation, uninstallation, CLI workflows, configuration precedence, paths, environment and service operation |
 | [Usage](usage.md) | Visible user actions, confirmations and their effects |
-| [Development](development.md) | Build/verification commands, prerequisites, test isolation and diagnostics |
+| [Development](development.md) | Build/verification commands, CI and security analysis, prerequisites, test isolation and diagnostics |
 | [Releasing](releasing.md) | Version selection, candidate review, promotion and artifact publication |
 | [Third-party notices](../THIRD_PARTY_NOTICES.md) | Distribution boundaries, upstream sources and retained license notices |
 | [Design](design.md) | Visual language, interaction, focus and accessibility |

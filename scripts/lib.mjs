@@ -32,6 +32,7 @@ export function spawnChild(executable, args, options = {}) {
   const grouped = ownProcessGroup && process.platform !== 'win32';
   const child = spawn(executable, args, {
     ...spawnOptions,
+    shell: false,
     ...(grouped ? { detached: true } : {}),
   });
   if (grouped) ownedGroups.set(child, {});

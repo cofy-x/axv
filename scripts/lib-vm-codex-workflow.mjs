@@ -158,7 +158,10 @@ export async function verifyVMCodexWorkflow({
       if (typeof data === 'string') {
         const control = JSON.parse(data);
         ready ||= control.ready === true;
-        if (control.error) failure = new Error(control.error);
+        if (control.error)
+          failure = new Error(
+            'Codex acceptance terminal reported an attachment error.',
+          );
       } else {
         output += decoder.decode(data, { stream: true });
         if (output.length > 4 << 20)
