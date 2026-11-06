@@ -35,6 +35,7 @@ func registerProjects(mux *http.ServeMux, service *control.Service) {
 		}
 	}
 	registerProjectBackups(mux, service, bound)
+	registerProjectGitHub(mux, service, bound)
 	mux.HandleFunc("GET /v1/projects", bound(func(w http.ResponseWriter, r *http.Request) {
 		projects, err := service.Projects(r.Context())
 		reply(w, map[string]any{"projects": projects}, err)

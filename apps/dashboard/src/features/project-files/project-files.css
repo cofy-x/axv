@@ -112,6 +112,46 @@
   border-block-start: 1px solid var(--ns-mid);
   padding-top: 6px;
 }
+.vm-project-github {
+  padding: 8px;
+  overflow-wrap: anywhere;
+}
+.vm-project-github h3,
+.vm-project-github h4 {
+  font-size: inherit;
+  margin-block: 12px 6px;
+}
+.vm-project-github p {
+  margin-block: 6px;
+}
+.vm-project-github .ns-field-label {
+  width: 100%;
+}
+.vm-project-github input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.vm-github-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-block: 8px;
+}
+.vm-github-review,
+.vm-github-prs > li,
+.vm-github-setup {
+  border-block-start: 1px solid var(--ns-mid);
+  padding-block-start: 6px;
+  margin-block-start: 8px;
+}
+.vm-github-prs {
+  list-style: none;
+  padding: 0;
+}
+.vm-github-setup pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .project-launcher {
   container: project-files / inline-size;
   overflow: auto;

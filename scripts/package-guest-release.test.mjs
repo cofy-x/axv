@@ -40,6 +40,7 @@ async function fixture() {
       'project-previews',
       'project-restore',
       'project-initialization',
+      'project-github',
     ],
     binarySHA256: 'b'.repeat(64),
   };

@@ -11,15 +11,17 @@ import (
 
 // Project identifies persistent project data, independently of a machine or run.
 type Project struct {
-	ID           string    `json:"id"`
-	HostID       string    `json:"hostId"`
-	Kind         string    `json:"kind"`
-	Name         string    `json:"name"`
-	VolumeID     string    `json:"volumeId"`
-	Root         string    `json:"root"`
-	RootIdentity string    `json:"rootIdentity"`
-	Revision     int64     `json:"revision"`
-	CreatedAt    time.Time `json:"createdAt"`
+	ID             string                    `json:"id"`
+	HostID         string                    `json:"hostId"`
+	Kind           string                    `json:"kind"`
+	Name           string                    `json:"name"`
+	VolumeID       string                    `json:"volumeId"`
+	Root           string                    `json:"root"`
+	RootIdentity   string                    `json:"rootIdentity"`
+	Revision       int64                     `json:"revision"`
+	CreatedAt      time.Time                 `json:"createdAt"`
+	GitHubRevision int64                     `json:"githubRevision,omitempty"`
+	GitHub         *ProjectGitHubAssociation `json:"github,omitempty"`
 }
 
 type RegisterProjectRequest struct {
