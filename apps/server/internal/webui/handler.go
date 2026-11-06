@@ -22,6 +22,12 @@ func fromFS(files fs.FS) http.Handler {
 	compressed := gzipAssets{files: files, entries: make(map[string][]byte)}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		response := &assetResponseWriter{ResponseWriter: w, cacheControl: "no-cache"}
+		if r.URL.Path == "/axv-push/worker.js" {
+			response.cacheControl = "no-store"
+			w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+			w.Header().Set("Service-Worker-Allowed", "/axv-push/")
+			w.Header().Set("Content-Security-Policy", "default-src 'none'; connect-src 'none'")
+		}
 		if r.Method != "GET" && r.Method != "HEAD" {
 			response.WriteHeader(http.StatusMethodNotAllowed)
 			return

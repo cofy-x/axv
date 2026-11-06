@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { Button } from '@cofy-x/axv-nextstep';
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
 import { notificationsAPI } from './api';
+import { PushDeliveryDetails } from './PushDeliveryDetails';
 import { deliveryExplanation, deliveryLabel, kindLabel } from './presentation';
 import { useNotificationResource } from './useNotificationResource';
 import type { NotificationReference, NotificationTarget } from './types';
@@ -71,8 +72,10 @@ export function NotificationDetails({
         <>
           <p>
             <strong>{kindLabel(detail.event.kind)}</strong> ·{' '}
+            {detail.event.pushDeliveries?.length ? 'Pocket Alert: ' : ''}
             {deliveryLabel(detail.event)}
           </p>
+          <PushDeliveryDetails deliveries={detail.event.pushDeliveries} />
           {deliveryExplanation(detail.event) && (
             <p>{deliveryExplanation(detail.event)}</p>
           )}

@@ -7,7 +7,7 @@
     "source": "https://github.com/bigskysoftware/htmx/tree/b82cf843e47e575dd8c2ad8fee547d8e2c3bb87f",
     "via": {
       "module": "tailscale.com",
-      "version": "v1.104.1"
+      "version": "v1.104.5"
     },
     "files": [
       {
@@ -15,6 +15,10 @@
         "sha256": "d3d2456f76414f2456104660ebd65aff1c04cd7966b942bdabd63f3cdb316a38",
         "source": "https://raw.githubusercontent.com/bigskysoftware/htmx/b82cf843e47e575dd8c2ad8fee547d8e2c3bb87f/LICENSE"
       }
+    ],
+    "generatedSources": [
+      "https://raw.githubusercontent.com/tailscale/tailscale/v1.104.5/util/eventbus/fetch-htmx.go",
+      "https://raw.githubusercontent.com/tailscale/tailscale/v1.104.5/util/eventbus/assets/htmx.min.js.gz"
     ]
   },
   {
@@ -25,7 +29,7 @@
     "source": "https://github.com/bigskysoftware/htmx-extensions/tree/f3bb31edd5e287e2678f312103525e3ea5abdb01/src/ws",
     "via": {
       "module": "tailscale.com",
-      "version": "v1.104.1"
+      "version": "v1.104.5"
     },
     "files": [
       {
@@ -33,6 +37,10 @@
         "sha256": "a17d224ce9afdc21ec9491b76a2f5d036d19aa641ac4f85ca29c21f9f7e54fdf",
         "source": "https://raw.githubusercontent.com/bigskysoftware/htmx-extensions/f3bb31edd5e287e2678f312103525e3ea5abdb01/src/ws/LICENSE"
       }
+    ],
+    "generatedSources": [
+      "https://raw.githubusercontent.com/tailscale/tailscale/v1.104.5/util/eventbus/fetch-htmx.go",
+      "https://raw.githubusercontent.com/tailscale/tailscale/v1.104.5/util/eventbus/assets/htmx-websocket.min.js.gz"
     ]
   },
   {

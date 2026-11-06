@@ -25,6 +25,7 @@ func (m *Manager) run(ctx context.Context) {
 			m.collect(ctx)
 		case <-delivery.C:
 			m.dispatch(ctx)
+			m.dispatchPush(ctx)
 		}
 	}
 }
@@ -58,6 +59,7 @@ func (m *Manager) collect(ctx context.Context) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	next := clone(m.state)
+	expirePushReceipts(&next, m.now())
 	if !next.Intake.Gap {
 		next.Intake.Error = ""
 	}
@@ -116,6 +118,7 @@ func (m *Manager) ingest(s *diskState, b notificationevent.Batch) {
 		return
 	}
 	previous, exists := s.Checkpoints[b.SourceID]
+	originalCheckpoint := previous
 	if !exists && strings.HasPrefix(b.SourceID, "compute:") {
 		for key := range s.Checkpoints {
 			if strings.HasPrefix(key, "compute:") && key != b.SourceID {
@@ -156,16 +159,24 @@ func (m *Manager) ingest(s *diskState, b notificationevent.Batch) {
 		// Any later owner observation obsoletes older waiting messages for that run.
 		for i := range s.Events {
 			old := &s.Events[i]
-			if waiting(old.Kind) && scope(old.Target) == scope(e.Target) && old.Target.EventID != e.Target.EventID && (old.Status == "pending" || old.Status == "uncertain") {
-				old.Status = "superseded"
-				old.NextAttemptAt = nil
+			if waiting(old.Kind) && scope(old.Target) == scope(e.Target) && old.Target.EventID != e.Target.EventID {
+				if old.Status == "pending" || old.Status == "uncertain" {
+					old.Status = "superseded"
+					old.NextAttemptAt = nil
+				}
+				for j := range old.PushDeliveries {
+					d := &old.PushDeliveries[j]
+					if d.Status == "pending" || d.Status == "uncertain" && d.NextAttemptAt != nil {
+						d.Status = "superseded"
+						d.NextAttemptAt = nil
+					}
+				}
 			}
 		}
 		kind := eventKind(e)
-		if kind == "" || !s.Config.Enabled || e.ObservedAt.Before(s.EnabledAt) || !selected(s.Config.EventTypes, kind) {
-			continue
-		}
-		if !m.room(s) {
+		pocket := s.Config.Enabled && !e.ObservedAt.Before(s.EnabledAt) && selected(s.Config.EventTypes, kind)
+		push := pushForEvent(s.WebPush, kind, e.ObservedAt)
+		if kind == "" || !pocket && len(push) == 0 {
 			continue
 		}
 		digest := sha256.Sum256([]byte(b.StoreID + "\x00" + b.SourceID + "\x00" + e.ID))
@@ -178,11 +189,27 @@ func (m *Manager) ingest(s *diskState, b notificationevent.Batch) {
 			}
 		}
 		if !duplicate {
-			s.Events = append(s.Events, Notification{ID: id, CreatedAt: e.ObservedAt.UTC(), Kind: kind, State: e.State, Status: "pending", Target: e.Target})
+			status := "disabled"
+			if pocket {
+				status = "pending"
+			}
+			m.admit(s, Notification{ID: id, CreatedAt: e.ObservedAt.UTC(), Kind: kind, State: e.State, Status: status, Target: e.Target, PushDeliveries: push})
 		}
 	}
 	// Checkpoint and accepted outbox records commit in the same atomic snapshot.
 	s.Checkpoints[b.SourceID] = checkpoint{StoreID: b.StoreID, Sequence: b.Next}
+	s.budgetBytes = 0
+	for !fitsNotificationBudget(*s) {
+		if !evictCompletedNotification(s) {
+			if exists {
+				s.Checkpoints[b.SourceID] = originalCheckpoint
+			} else {
+				delete(s.Checkpoints, b.SourceID)
+			}
+			outboxGap(s)
+			break
+		}
+	}
 }
 
 func (m *Manager) dispatch(ctx context.Context) {
@@ -246,7 +273,11 @@ func (m *Manager) dispatch(ctx context.Context) {
 				recovery := clone(m.state)
 				for i := range recovery.Events {
 					if recovery.Events[i].ID == event.ID {
-						recovery.Events[i] = event
+						// Push configuration can change while the original work
+						// is being resolved. Restore only this adapter's receipt.
+						original := &recovery.Events[i]
+						original.Status, original.Attempts = event.Status, event.Attempts
+						original.NextAttemptAt, original.Error = event.NextAttemptAt, event.Error
 					}
 				}
 				m.completion = &recovery

@@ -65,8 +65,8 @@ export function Welcome({ desktop, window }: AppWindowProps) {
           <p>
             Set up private access with Tailscale, or browser access with
             Cloudflare. Configure access on the AXV host before connecting.
-            Optional Pocket Alert notifications can link back to the original
-            work.
+            Optional browser push or Pocket Alert notifications can link back to
+            the original work.
           </p>
           <div className="welcome-tools">
             <Button onClick={() => desktop.openApp('remote-access')}>
@@ -166,7 +166,8 @@ export function About() {
         Documents, notification history and desktop layout live on the AXV host.
         Project files stay in their host directories or VM volumes. Browser
         recovery copies stay on this device. VM project GitHub review uses
-        explicitly configured guest credentials.
+        explicitly configured guest credentials. Browser push is opt-in and
+        requires this device’s notification permission.
       </p>
     </div>
   );
