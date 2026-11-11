@@ -47,8 +47,9 @@ jobs:
             apps/server/go.sum
       - name: Install host test prerequisites
         run: |
-          # Keep the runner's official HTTPS mirrors; Azure downloads can be very slow.
-          sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
+          # Prefer the official HTTPS mirrors and retain Azure for DNS/download failures.
+          node scripts/ci-ubuntu-mirrors.mjs /etc/apt/apt-mirrors.txt "$RUNNER_TEMP/axv-apt-mirrors.txt"
+          sudo install -m 0644 "$RUNNER_TEMP/axv-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
           sudo apt-get update
           sudo apt-get install --yes tmux
       - name: Install locked dependencies
@@ -195,8 +196,9 @@ jobs:
             apps/server/go.sum
       - name: Install host test prerequisites
         run: |
-          # Keep the runner's official HTTPS mirrors; Azure downloads can be very slow.
-          sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
+          # Prefer the official HTTPS mirrors and retain Azure for DNS/download failures.
+          node scripts/ci-ubuntu-mirrors.mjs /etc/apt/apt-mirrors.txt "$RUNNER_TEMP/axv-apt-mirrors.txt"
+          sudo install -m 0644 "$RUNNER_TEMP/axv-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
           sudo apt-get update
           sudo apt-get install --yes tmux
       - name: Install locked dependencies
