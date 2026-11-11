@@ -85,12 +85,14 @@ test('New Session uses the default workspace immediately and exposes tmux detail
   expect(
     current.tmuxSocket.endsWith(`/${process.env.E2E_CODEX_TMUX_SOCKET}`),
   ).toBeTruthy();
-  await expect(window.getByTestId('codex-project-name')).toHaveText(
-    defaultProjectPath.split('/').filter(Boolean).at(-1)!,
+  await expect(window).toHaveAttribute(
+    'aria-label',
+    `Codex · ${defaultProjectPath.split('/').filter(Boolean).at(-1)}`,
   );
-  await expect(window.getByTestId('codex-run-id')).toHaveText(
-    `Run ${current.runId.slice(0, 8)}`,
+  await expect(window.locator('.codex-primary-toolbar')).not.toContainText(
+    'Host',
   );
+  await expect(window.getByTestId('codex-run-id')).toHaveCount(0);
   await runCodex(window, 'network');
   await expect(codexOutput(window)).toContainText(`NETWORK ${networkDigest}`);
   const more = window.getByRole('button', {
@@ -112,6 +114,13 @@ test('New Session uses the default workspace immediately and exposes tmux detail
   const details = page.getByRole('dialog', { name: 'Codex Session Details' });
   await expect(details).toContainText(current.projectPath);
   await expect(details).toContainText(current.runId);
+  await expect(
+    details.getByText('Terminal size', { exact: true }),
+  ).toBeVisible();
+  await expect(details.getByText(/^\d+ × \d+$/)).toBeVisible();
+  await expect(
+    details.getByText('Terminal connected', { exact: true }),
+  ).toBeVisible();
   await expect(
     details.getByText(current.tmuxSession, { exact: true }),
   ).toBeVisible();

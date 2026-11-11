@@ -217,7 +217,11 @@ export function sessionTitle(session: CodexSessionRecord) {
 }
 
 export function sessionWindowTitle(session: CodexSessionRecord) {
-  const title = `Codex · ${sessionTitle(session)}`;
+  const project =
+    session.vmProject?.project.name || projectName(session.projectPath);
+  const target = session.vmProject ? `VM · ${project}` : project;
+  const name = sessionTitle(session);
+  const title = `Codex · ${name === project ? target : `${name} — ${target}`}`;
   const final = { ended: 'Ended', lost: 'Lost', failed: 'Failed' };
   return session.status in final
     ? `${title} · ${final[session.status as keyof typeof final]} (${session.runId.slice(0, 8)})`

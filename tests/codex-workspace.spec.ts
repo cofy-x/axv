@@ -32,7 +32,10 @@ test('renaming and archiving a running Codex session preserve its identity and w
   await expect(window.getByLabel('Codex terminal input')).not.toBeFocused();
   await dialog.getByRole('button', { name: 'Rename', exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(window).toHaveAttribute('aria-label', `Codex · ${name}`);
+  await expect(window).toHaveAttribute(
+    'aria-label',
+    `Codex · ${name} — ${projectPath.split('/').filter(Boolean).at(-1)}`,
+  );
   await expect(window).toHaveAttribute('data-window-id', windowId!);
   const renamed = await session(request, id);
   expect(renamed.title).toBe(name);
@@ -64,7 +67,10 @@ test('renaming and archiving a running Codex session preserve its identity and w
     .click();
   const restored = codexWindow(page, id, runId);
   await expect(restored).toHaveAttribute('data-window-id', windowId!);
-  await expect(restored).toHaveAttribute('aria-label', `Codex · ${name}`);
+  await expect(restored).toHaveAttribute(
+    'aria-label',
+    `Codex · ${name} — ${projectPath.split('/').filter(Boolean).at(-1)}`,
+  );
   expect(await readState(restored, 'after-reload')).toEqual(process);
   await codexSessionAction(page, restored, 'Unarchive');
   await expect

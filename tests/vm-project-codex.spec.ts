@@ -41,6 +41,17 @@ const manager = (page: Page) =>
 const runWindow = (page: Page, runId = 'vm-run-1') =>
   page.locator(`[data-window-id="codex:vm-session:${runId}"]`);
 
+async function expectRunMachine(page: Page, machineId: string) {
+  await activate(page, runWindow(page));
+  await runWindow(page)
+    .getByRole('button', { name: 'More Codex actions', exact: true })
+    .click();
+  await menuItem(page, 'Details').click();
+  const details = page.getByRole('dialog', { name: 'Codex Session Details' });
+  await expect(details.getByText(machineId, { exact: true })).toBeVisible();
+  await details.getByRole('button', { name: 'Close', exact: true }).click();
+}
+
 async function fixture(page: Page) {
   let binding = { ...originalBinding };
   let latestRun = '';
@@ -485,8 +496,9 @@ test('VM project Codex keeps drafts and routes files and tasks to the captured p
   expect(state.starts[0].vmProject.binding).toEqual(originalBinding);
   expect(state.starts[0].projectPath).toBeUndefined();
   expect(state.startDatabases[0]).not.toBe('');
-  await expect(runWindow(page).getByTestId('codex-project-name')).toHaveText(
-    'VM · VM coding project',
+  await expect(runWindow(page)).toHaveAttribute(
+    'aria-label',
+    'Codex · VM · VM coding project',
   );
   await runWindow(page)
     .getByRole('button', { name: 'Project Files', exact: true })
@@ -590,9 +602,7 @@ test('an unknown VM Codex start reuses its full original request after reload an
   expect(state.starts[1]).toEqual(state.starts[0]);
   expect(state.starts[2]).toEqual(state.starts[0]);
   expect(state.startDatabases[1]).toBe(state.startDatabases[0]);
-  await expect(runWindow(page).locator('.codex-vm-target')).toContainText(
-    'original-vm',
-  );
+  await expectRunMachine(page, 'original-vm');
 });
 
 test('a reopened manager does not turn a stale Resolve Start action into another conversation', async ({
@@ -1087,9 +1097,7 @@ test('VM continuation confirms the replacement explicitly and resolves an unknow
     'data-state',
     'ended',
   );
-  await expect(runWindow(page).locator('.codex-vm-target')).toContainText(
-    'original-vm',
-  );
+  await expectRunMachine(page, 'original-vm');
 });
 
 test.describe('fractional narrow VM project Codex', () => {
@@ -1126,22 +1134,25 @@ test.describe('fractional narrow VM project Codex', () => {
       'data-state',
       'connected',
     );
-    await expect
-      .poll(
-        async () =>
-          (await run.getByTestId('codex-project-name').boundingBox())?.width ||
-          0,
-      )
-      .toBeGreaterThan(80);
+    await expect(run.locator('.ns-window-title')).toHaveText(
+      'Codex · VM · VM coding project',
+    );
     await expect.poll(() => overflow(run)).toBe(false);
-    const details = run.getByRole('button', { name: 'Details', exact: true });
-    await details.focus();
-    await details.press('Enter');
+    const more = run.getByRole('button', {
+      name: 'More Codex actions',
+      exact: true,
+    });
+    await more.focus();
+    await more.press('Enter');
+    await page.keyboard.press('End');
+    await page.keyboard.press('ArrowUp');
+    await expect(menuItem(page, 'Details')).toHaveClass(/is-selected/);
+    await page.keyboard.press('Enter');
     const dialog = page.getByRole('dialog', { name: 'Codex Session Details' });
     await expect(dialog).toContainText('VM coding project');
     await expect(run.getByLabel('Codex terminal input')).not.toBeFocused();
     await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-    await expect(details).toBeFocused();
+    await expect(more).toBeFocused();
     const runScreenshot = testInfo.outputPath(
       'vm-project-codex-run-narrow.png',
     );

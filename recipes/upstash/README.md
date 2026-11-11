@@ -1,6 +1,6 @@
 # Upstash development cache and rate-limit recipe
 
-Use [sample.mjs](sample.mjs) for a bounded, server-side Redis cache and rate-limit check in a registered VM project. The official clients are pinned in [package.json](package.json) and the [workspace lockfile](../../pnpm-lock.yaml): `@upstash/redis` **1.41.0** and `@upstash/ratelimit` **2.2.0**. They belong to this optional recipe, not AXV's desktop runtime or task persistence. This recipe excludes automatic provisioning, QStash, Workflow, Vector and network capabilities for installed HTML applications. A local Redis deployment remains an alternative.
+Use [sample.mjs](sample.mjs) for a bounded, server-side Redis cache and rate-limit check in a registered VM project. The official clients are pinned in [package.json](package.json) and the [workspace lockfile](../../pnpm-lock.yaml). They belong to this optional recipe, not AXV's desktop runtime or task persistence. This recipe excludes automatic provisioning, QStash, Workflow, Vector and network capabilities for installed HTML applications. A local Redis deployment remains an alternative.
 
 The locked third-party dependencies are confined to this recipe workspace and are not embedded in the AXV application distribution:
 
@@ -15,13 +15,13 @@ The installed Redis, rate-limit and uncrypto packages include their MIT license 
 
 ## Review the database and guest
 
-Provider terms were checked on **2026-11-06**; confirm your account's current terms before use. The [Free plan](https://upstash.com/pricing/redis) currently includes one database, 250 MB storage, 500,000 commands per month and 10 GB monthly bandwidth. Choose an account-owned, claimed development database and a region near the guest application. Accountless quick-start databases are deleted after three days unless claimed; this recipe does not create one. [Claimed free databases](https://upstash.com/docs/redis/help/faq) can be archived after at least 30 days of inactivity, with restoration into a new database. Restoration requires a new identity review, not an automatic endpoint substitution.
+Review the [current Redis plans and limits](https://upstash.com/pricing/redis) and your account's database settings before use. Choose an account-owned, claimed development database and a region near the guest application; this recipe does not create accountless resources. Any database restoration or replacement requires a fresh identity review before updating the recorded binding.
 
 Keep billing manual. [Adding the first payment method](https://upstash.com/docs/redis/overall/billing) moves every free account resource to its paid plan; do not add a card or enable auto-upgrade to make a failed test pass. A paid database budget is not an account-wide spending limit. Hosted latency, outages and command quotas remain application constraints.
 
 The cache and limiter need write permission. The default [Standard REST token](https://upstash.com/docs/redis/features/restapi) controls the entire database; Read Only is insufficient. [Redis ACL](https://upstash.com/docs/redis/features/security) is documented for paid databases. Use a dedicated development database when narrower provider permissions are unavailable. Key prefixes avoid collisions; they do not restrict a token's authority.
 
-Use a compatible Linux guest with **Node 24.16.0** and **pnpm 12.11.2**, normal TLS trust and HTTPS access to the reviewed database. Standard AXV guest images do not promise Node/pnpm: prepare a reviewed image or explicit guest-user installation first. Do not silently install tools on VM Start or run the application on the host. Examples below assume `/usr/local/bin/node` and `/usr/local/bin/pnpm` work for the independent guest service, without terminal-only PATH changes.
+Use a compatible Linux guest with the [repository's pinned Node and pnpm toolchain](../../README.md#build-from-source), normal TLS trust and HTTPS access to the reviewed database. Standard AXV guest images do not promise Node/pnpm: prepare a reviewed image or explicit guest-user installation first. Do not silently install tools on VM Start or run the application on the host. Examples below assume `/usr/local/bin/node` and `/usr/local/bin/pnpm` work for the independent guest service, without terminal-only PATH changes.
 
 ## Configure privately and prepare offline
 

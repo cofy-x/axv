@@ -17,8 +17,7 @@
 .codex-vm-project > p {
   margin: 6px 0;
 }
-.codex-vm-project code,
-.codex-vm-target {
+.codex-vm-project code {
   font: var(--ns-font-size-secondary) var(--ns-mono);
   overflow-wrap: anywhere;
 }
@@ -284,21 +283,13 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 5px 8px;
-  padding: 4px 8px;
-  border-bottom: 1px solid var(--ns-shadow);
-  flex-shrink: 0;
+  min-width: 0;
 }
 .codex-terminal-activity .codex-activity {
   align-self: center;
 }
 .codex-terminal-activity .ns-button {
   margin-left: auto;
-}
-.codex-activity-reason {
-  min-width: 0;
-  flex: 1 1 160px;
-  font-size: var(--ns-font-size-secondary);
-  overflow-wrap: anywhere;
 }
 .codex-recent {
   min-width: 0;
@@ -364,50 +355,31 @@
   gap: 5px 12px;
   flex-shrink: 0;
 }
-.codex-terminal .terminal-host-info {
-  flex-shrink: 0;
-}
 .codex-terminal .terminal-toolbar .ns-button:not(.ns-icon-button) {
   min-width: 0;
 }
-.codex-primary-toolbar .codex-more-actions {
-  margin-left: auto;
-}
-.codex-session-context {
-  flex-wrap: nowrap;
-  gap: 3px 8px;
-}
-.codex-session-context.has-vm-project {
+.codex-toolbar-actions {
+  display: flex;
   flex-wrap: wrap;
-}
-.codex-session-context.has-vm-project .codex-terminal-project {
-  flex: 1 1 180px;
-}
-.codex-session-context.has-vm-project .codex-vm-target {
-  flex: 1 1 100px;
+  align-items: center;
+  gap: 7px;
   min-width: 0;
 }
-.codex-session-context code {
-  margin-left: 0;
+.codex-toolbar-actions,
+.codex-toolbar-status {
+  max-width: 100%;
 }
-.codex-session-context .codex-terminal-project {
-  flex: 1;
+.codex-toolbar-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px 7px;
   min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.codex-session-context .codex-run-reference,
-.codex-session-context .codex-context-details,
-.codex-session-context .codex-archived-label {
-  flex-shrink: 0;
-}
-.codex-session-context .codex-run-reference {
-  white-space: nowrap;
-  user-select: text;
-}
-.codex-context-details {
   margin-left: auto;
+}
+.codex-primary-toolbar .codex-more-actions {
+  flex-shrink: 0;
 }
 .codex-archived-label {
   font-weight: bold;
@@ -435,10 +407,26 @@
 .codex-terminal-screen {
   touch-action: none;
 }
-.codex-scroll-controls {
-  flex-wrap: wrap;
-  min-height: 28px;
+.codex-terminal-footer {
+  min-height: var(--ns-control-height);
   padding-block: 3px;
+}
+.codex-scroll-controls {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 7px;
+}
+.codex-terminal .codex-connection-status {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  justify-content: flex-end;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  text-align: right;
 }
 @media (max-width: 599px) {
   .codex-manager-content {
