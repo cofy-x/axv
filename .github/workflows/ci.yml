@@ -47,7 +47,7 @@ jobs:
             apps/server/go.sum
       - name: Install host test prerequisites
         run: |
-          # Prefer the official HTTPS mirrors and retain Azure for DNS/download failures.
+          # Retain HTTPS fallback mirrors for DNS/download failures.
           node scripts/ci-ubuntu-mirrors.mjs /etc/apt/apt-mirrors.txt "$RUNNER_TEMP/axv-apt-mirrors.txt"
           sudo install -m 0644 "$RUNNER_TEMP/axv-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
           sudo apt-get update
@@ -196,7 +196,7 @@ jobs:
             apps/server/go.sum
       - name: Install host test prerequisites
         run: |
-          # Prefer the official HTTPS mirrors and retain Azure for DNS/download failures.
+          # Retain HTTPS fallback mirrors for DNS/download failures.
           node scripts/ci-ubuntu-mirrors.mjs /etc/apt/apt-mirrors.txt "$RUNNER_TEMP/axv-apt-mirrors.txt"
           sudo install -m 0644 "$RUNNER_TEMP/axv-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
           sudo apt-get update

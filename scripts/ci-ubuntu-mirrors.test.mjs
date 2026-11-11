@@ -13,7 +13,8 @@ describe('CI Ubuntu mirror selection', () => {
       '# Runner mirrors\n' +
         'https://azure.archive.ubuntu.com/ubuntu/\tarch:amd64 priority:20\n' +
         'https://archive.ubuntu.com/ubuntu/\ttype:deb priority:10\n' +
-        'https://security.ubuntu.com/ubuntu/\tpriority:10\n',
+        'https://security.ubuntu.com/ubuntu/\tpriority:10\n' +
+        'https://mirrors.edge.kernel.org/ubuntu/\tpriority:30\n',
     );
     expect(prioritizeUbuntuMirrors(result)).toBe(result);
   });
@@ -21,7 +22,20 @@ describe('CI Ubuntu mirror selection', () => {
   it('keeps a runner usable when Azure is its only supplied mirror', () => {
     expect(
       prioritizeUbuntuMirrors('https://azure.archive.ubuntu.com/ubuntu'),
-    ).toBe('https://azure.archive.ubuntu.com/ubuntu\tpriority:20\n');
+    ).toBe(
+      'https://azure.archive.ubuntu.com/ubuntu\tpriority:20\n' +
+        'https://mirrors.edge.kernel.org/ubuntu/\tpriority:30\n',
+    );
+  });
+
+  it('keeps an existing independent fallback and its metadata without duplicating it', () => {
+    const input =
+      'https://mirrors.edge.kernel.org/ubuntu/\tarch:amd64 priority:1\n';
+    const result = prioritizeUbuntuMirrors(input);
+    expect(result).toBe(
+      'https://mirrors.edge.kernel.org/ubuntu/\tarch:amd64 priority:30\n',
+    );
+    expect(prioritizeUbuntuMirrors(result)).toBe(result);
   });
 
   it('rejects an empty list instead of removing every download source', () => {
