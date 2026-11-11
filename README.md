@@ -29,7 +29,7 @@ The executable includes the Web UI and needs neither Go nor Node at runtime. Cod
 
 ### Build from source
 
-Install **Go 1.27.3**, **Node 24.16.0**, and **pnpm 12.11.2**, then:
+Install **Go 1.27.4**, **Node 24.16.0**, and **pnpm 12.11.2**, then:
 
 ```bash
 git clone https://github.com/cofy-x/axv.git
