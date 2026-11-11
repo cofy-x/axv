@@ -20,7 +20,6 @@ import {
   sessionCanEnd,
   sessionCanContinue,
   otherActiveRun,
-  projectName,
 } from './api';
 import { CodexConnection } from './session';
 import type { CodexConnectionState } from './session';
@@ -45,6 +44,20 @@ import {
   reviewSessionActivity,
   subscribeSessionActivity,
 } from './activity';
+
+function terminalConnectionLabel(phase: CodexConnectionState['phase']) {
+  return phase === 'connected'
+    ? 'Terminal connected'
+    : phase === 'connecting'
+      ? 'Connecting…'
+      : phase === 'reconnecting'
+        ? 'Reconnecting…'
+        : phase === 'ended'
+          ? 'Session ended'
+          : phase === 'stopping'
+            ? 'Stopping session'
+            : 'Disconnected';
+}
 
 function mayFocus() {
   return !document.querySelector('.ns-dialog-layer, .ns-menu-layer');
@@ -619,9 +632,14 @@ export function CodexTerminal({
     }
   }, [desktop]);
   const details = useCallback(async () => {
-    const session = connection.current?.getSnapshot().session;
+    const snapshot = connection.current?.getSnapshot();
+    const session = snapshot?.session;
     if (!session) return false;
-    await showSessionDetails(desktop, session);
+    await showSessionDetails(desktop, session, {
+      connection: terminalConnectionLabel(snapshot.phase),
+      cols: terminal.current?.cols ?? 80,
+      rows: terminal.current?.rows ?? 24,
+    });
     return true;
   }, [desktop]);
   const changeMetadata = useCallback(
@@ -802,140 +820,112 @@ export function CodexTerminal({
       }}
     >
       <div className="app-toolbar terminal-toolbar codex-primary-toolbar">
-        <Button onClick={() => desktop.openApp('codex')}>Sessions</Button>
-        <IconButton
-          icon="attachment"
-          label="Attachments"
-          onClick={() =>
-            desktop.openApp('conversation-context', { sessionId: id, runId })
-          }
-        />
-        {state.session?.vmProject && (
-          <>
-            <Button onClick={() => void runCommand(desktop, projectFiles)}>
-              Project Files
-            </Button>
+        <div className="codex-toolbar-actions">
+          <Button onClick={() => desktop.openApp('codex')}>Sessions</Button>
+          <IconButton
+            icon="attachment"
+            label="Attachments"
+            onClick={() =>
+              desktop.openApp('conversation-context', { sessionId: id, runId })
+            }
+          />
+          {state.session?.vmProject && (
+            <>
+              <Button onClick={() => void runCommand(desktop, projectFiles)}>
+                Project Files
+              </Button>
+              <Button
+                onClick={() => {
+                  const project = state.session?.vmProject?.project;
+                  if (project)
+                    desktop.openApp(
+                      'project-files',
+                      { hostId: project.hostId, vmTasksProjectId: project.id },
+                      { title: `Tasks · ${project.name}` },
+                    );
+                }}
+              >
+                Tasks
+              </Button>
+            </>
+          )}
+          <Button
+            disabled={state.phase !== 'connected'}
+            onClick={() => void interrupt()}
+          >
+            Interrupt
+          </Button>
+          {canReconnect && (
+            <Button onClick={() => void reconnect()}>Reconnect</Button>
+          )}
+          {resumePending ? (
             <Button
-              onClick={() => {
-                const project = state.session?.vmProject?.project;
-                if (project)
-                  desktop.openApp(
-                    'project-files',
-                    { hostId: project.hostId, vmTasksProjectId: project.id },
-                    { title: `Tasks · ${project.name}` },
-                  );
-              }}
+              disabled={!canContinue}
+              onClick={() => void continueSession()}
             >
-              Tasks
+              {continuing ? 'Continuing…' : 'Resolve Continue'}
             </Button>
-          </>
-        )}
-        <Button
-          disabled={state.phase !== 'connected'}
-          onClick={() => void interrupt()}
-        >
-          Interrupt
-        </Button>
-        {canReconnect && (
-          <Button onClick={() => void reconnect()}>Reconnect</Button>
-        )}
-        {resumePending ? (
-          <Button
-            disabled={!canContinue}
-            onClick={() => void continueSession()}
-          >
-            {continuing ? 'Continuing…' : 'Resolve Continue'}
-          </Button>
-        ) : activeRun ? (
-          <Button onClick={() => void openRunning()}>
-            Open Running Session
-          </Button>
-        ) : state.session && sessionCanContinue(state.session) ? (
-          <Button
-            disabled={!canContinue}
-            onClick={() => void continueSession()}
-          >
-            {continuing ? 'Continuing…' : 'Continue'}
-          </Button>
-        ) : null}
-        <IconButton
-          icon="more"
-          label="More Codex actions"
-          className="codex-more-actions"
-          aria-haspopup="menu"
-          onClick={(event) => {
-            const rect = event.currentTarget.getBoundingClientRect();
-            desktop.contextMenu(
-              codexMoreMenu(commands, window.id, {
-                attachments: () => {
-                  desktop.openApp('conversation-context', {
-                    sessionId: id,
-                    runId,
-                  });
-                },
-                projectFiles: () => void runCommand(desktop, projectFiles),
-                projectFilesAvailable: !!state.session,
-              }),
-              { x: rect.left, y: rect.bottom },
-              { title: 'Codex' },
-            );
-          }}
-        />
-      </div>
-      <div
-        className={`terminal-host-info codex-session-context${state.session?.vmProject ? ' has-vm-project' : ''}`}
-      >
-        <span>Host</span>
-        {state.session && (
-          <>
-            <code
-              className="codex-terminal-project"
-              data-testid="codex-project-name"
+          ) : activeRun ? (
+            <Button onClick={() => void openRunning()}>
+              Open Running Session
+            </Button>
+          ) : state.session && sessionCanContinue(state.session) ? (
+            <Button
+              disabled={!canContinue}
+              onClick={() => void continueSession()}
             >
-              {state.session.vmProject
-                ? `VM · ${state.session.vmProject.project.name}`
-                : projectName(state.session.projectPath)}
-            </code>
-            {state.session.vmProject && (
-              <span className="codex-vm-target">
-                via AXV · {state.session.vmProject.binding.machineId}
-              </span>
+              {continuing ? 'Continuing…' : 'Continue'}
+            </Button>
+          ) : null}
+        </div>
+        <div className="codex-toolbar-status">
+          {state.session?.archivedAt && (
+            <span className="codex-archived-label">Archived</span>
+          )}
+          <div className="codex-terminal-activity">
+            <CodexActivity
+              activity={state.session?.activity}
+              stale={!!metadataError}
+            />
+            {canReviewActivity(state.session?.activity) && (
+              <Button
+                disabled={reviewing}
+                onClick={(event) => void review(event.currentTarget)}
+              >
+                {reviewing ? 'Dismissing…' : 'Dismiss alert'}
+              </Button>
             )}
-            {state.session.archivedAt && (
-              <span className="codex-archived-label">Archived</span>
-            )}
-          </>
-        )}
-        <code className="codex-run-reference" data-testid="codex-run-id">
-          Run {runId.slice(0, 8)}
-        </code>
-        <Button
-          className="codex-context-details"
-          disabled={!state.session}
-          onClick={() => void details()}
-        >
-          Details
-        </Button>
+          </div>
+          <IconButton
+            icon="more"
+            label="More Codex actions"
+            className="codex-more-actions"
+            aria-haspopup="menu"
+            onClick={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              desktop.contextMenu(
+                codexMoreMenu(commands, window.id, {
+                  attachments: () => {
+                    desktop.openApp('conversation-context', {
+                      sessionId: id,
+                      runId,
+                    });
+                  },
+                  projectFiles: () => void runCommand(desktop, projectFiles),
+                  projectFilesAvailable: !!state.session,
+                }),
+                { x: rect.left, y: rect.bottom },
+                { title: 'Codex' },
+              );
+            }}
+          />
+        </div>
       </div>
-      <div className="codex-terminal-activity">
-        <CodexActivity
-          activity={state.session?.activity}
-          stale={!!metadataError}
-        />
-        {state.session?.activity?.reason && (
-          <span className="codex-activity-reason">
-            {state.session.activity.reason}
-          </span>
-        )}
-        {canReviewActivity(state.session?.activity) && (
-          <Button
-            disabled={reviewing}
-            onClick={(event) => void review(event.currentTarget)}
-          >
-            {reviewing ? 'Dismissing…' : 'Dismiss alert'}
-          </Button>
-        )}
-      </div>
+      {state.session?.activity?.reason && (
+        <div className="terminal-message" role="status">
+          {state.session.activity.reason}
+        </div>
+      )}
       {(state.message || feedback || metadataError || resumeRecoveryError) && (
         <div
           className="terminal-message"
@@ -976,47 +966,37 @@ export function CodexTerminal({
       >
         <div className="terminal-emulator" ref={screen} />
       </div>
-      <div
-        className="app-toolbar bottom-toolbar codex-scroll-controls"
-        aria-label="Codex scrollback"
-      >
-        <IconButton
-          icon="page-up"
-          label="Page Up"
-          disabled={state.phase !== 'connected'}
-          onClick={() => scroll(size.rows - 1)}
-        />
-        <IconButton
-          icon="page-down"
-          label="Page Down"
-          disabled={state.phase !== 'connected'}
-          onClick={() => scroll(1 - size.rows)}
-        />
-        <Button
-          disabled={state.phase !== 'connected'}
-          onClick={() => scroll(0)}
+      <div className="app-toolbar bottom-toolbar codex-terminal-footer">
+        <div
+          className="codex-scroll-controls"
+          role="group"
+          aria-label="Codex scrollback"
         >
-          Live
-        </Button>
+          <IconButton
+            icon="page-up"
+            label="Page Up"
+            disabled={state.phase !== 'connected'}
+            onClick={() => scroll(size.rows - 1)}
+          />
+          <IconButton
+            icon="page-down"
+            label="Page Down"
+            disabled={state.phase !== 'connected'}
+            onClick={() => scroll(1 - size.rows)}
+          />
+          <Button
+            disabled={state.phase !== 'connected'}
+            onClick={() => scroll(0)}
+          >
+            Live
+          </Button>
+        </div>
+        <StatusBar className="codex-connection-status">
+          <span data-testid="codex-status" data-state={state.phase}>
+            {terminalConnectionLabel(state.phase)}
+          </span>
+        </StatusBar>
       </div>
-      <StatusBar>
-        <span data-testid="codex-status" data-state={state.phase}>
-          {state.phase === 'connected'
-            ? 'Terminal connected'
-            : state.phase === 'connecting'
-              ? 'Connecting…'
-              : state.phase === 'reconnecting'
-                ? 'Reconnecting…'
-                : state.phase === 'ended'
-                  ? 'Session ended'
-                  : state.phase === 'stopping'
-                    ? 'Stopping session'
-                    : 'Disconnected'}
-        </span>
-        <span>
-          {size.cols} × {size.rows}
-        </span>
-      </StatusBar>
     </div>
   );
 }

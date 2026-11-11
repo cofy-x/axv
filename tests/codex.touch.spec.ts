@@ -124,7 +124,10 @@ test('touch Codex supports project selection, history, session organization, pro
   ).toBeInViewport();
   await capture('touch-codex-rename');
   await rename.getByRole('button', { name: 'Rename', exact: true }).tap();
-  await expect(resumed).toHaveAttribute('aria-label', `Codex · ${name}`);
+  await expect(resumed).toHaveAttribute(
+    'aria-label',
+    `Codex · ${name} — ${projectPath.split('/').filter(Boolean).at(-1)}`,
+  );
   await openCodexManager(page, true);
   const row = manager.locator(`[data-session-id="${id}"]`);
   const rowAction = async (label: string) => {

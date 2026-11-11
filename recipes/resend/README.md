@@ -4,7 +4,7 @@ Use [send.py](send.py) for one explicitly reviewed, synthetic transactional emai
 
 ## Set up the development sender
 
-Provider facts were checked on **2026-11-06**; review the linked documentation and your account before sending. Resend's [Free transactional plan](https://resend.com/pricing) currently includes 3,000 emails per month, 100 per day and three domains. Domain registration and DNS access are external prerequisites; a free plan does not pay for a domain or guarantee inbox placement.
+Review Resend's [current plans and sending limits](https://resend.com/pricing) and your account's dashboard before configuring the sender. Domain ownership and DNS access are external prerequisites; a sending plan does not supply a domain or guarantee inbox placement.
 
 1. Use a development Resend account/team and a domain you own. Prefer a dedicated development sending subdomain, such as `dev-mail.example.com`, to isolate its reputation. Add it in Resend's Domains dashboard and select its region.
 2. Follow [domain verification](https://resend.com/docs/add-a-domain): copy the exact generated DKIM and SPF records into your DNS provider, including their names, types and values. Depending on the configuration, these use TXT and MX or CNAME records. Leave verification CNAME records unproxied. Preserve unrelated MX/SPF records; do not replace your mailbox's routing. Wait for verified status and review a suitable DMARC policy with your DNS owner. Sending does not require enabling inbound email.

@@ -12,14 +12,14 @@ AXV runs as the operating-system user that launches it, including root, without 
 
 ### Install a release archive
 
-The first Linux amd64 prerelease is [v0.1.0-rc.5](https://github.com/cofy-x/axv/releases/tag/v0.1.0-rc.5). Read its release notes for the validation scope, prerequisites and data-compatibility limits before updating. Download its [release archive](https://github.com/cofy-x/axv/releases/download/v0.1.0-rc.5/axv_0.1.0-rc.5_linux_amd64.tar.gz) and [SHA256SUMS](https://github.com/cofy-x/axv/releases/download/v0.1.0-rc.5/SHA256SUMS) into a new, empty installation directory. Keep the original downloads and the extracted directory; do not overwrite an earlier installation.
+Choose a **Linux amd64 AXV application release** from [Releases](https://github.com/cofy-x/axv/releases). The catalog also contains independently versioned Guest images; select the application archive named `axv_<version>_linux_amd64.tar.gz`. Read the selected release's notes for its features, validation scope, prerequisites and data-compatibility limits.
 
-This historical release predates builder-provenance bundles. For a newer release carrying `provenance.json`, complete [build-provenance verification](releasing.md#verify-build-provenance) against its reviewed source SHA before extracting or running its archive; the commands below continue to select `v0.1.0-rc.5`.
+Download that archive and `SHA256SUMS` from the same release into a new, empty installation directory. Releases covered by the [current build-provenance policy](releasing.md#verify-build-provenance) also require their original `provenance.json`; verify it against the release's reviewed source SHA before extracting or running the archive. A missing required bundle is a verification failure. That reference identifies historical releases issued without a bundle; follow their release notes for the applicable verification limits. Keep the original downloads and extracted directory; do not overwrite an earlier installation.
 
-Run these commands from the download directory. Extraction and execution only proceed after checksum verification succeeds:
+Replace `<version>` below with the selected application version, without the tag's leading `v`, and confirm that the resulting archive name matches the downloaded asset. Run these commands from the download directory; extraction and execution only proceed after checksum verification succeeds:
 
 ```bash
-axv_release_version='0.1.0-rc.5'
+axv_release_version='<version>'
 axv_release_bundle="axv_${axv_release_version}_linux_amd64"
 sha256sum --check --strict SHA256SUMS &&
   tar -xzf "${axv_release_bundle}.tar.gz" &&
@@ -479,9 +479,11 @@ Alternatively, `setup --host-config /etc/axv/host.json` reads a host configurati
 
 ### Linux Guest bundle installation
 
-[AXV Guest 0.1.0-guest.2](https://github.com/cofy-x/axv/releases/tag/v0.1.0-guest.2) is an experimental **Linux amd64 / Firecracker** prerelease for this manual administrator-configured path. It was accepted with the separately published [AXV v0.1.0-rc.5 application](https://github.com/cofy-x/axv/releases/tag/v0.1.0-rc.5); the Guest uses its own `v0.1.0-guest.2` tag. Installation downloads the complete bundle archive, `candidate.json` and `SHA256SUMS`. The bundle already includes the raw disk, manifest and original distribution materials. The separately published raw disk is optional for this installation path; the release also provides a [matching source companion](https://github.com/cofy-x/axv/releases/download/v0.1.0-guest.2/axv_guest_0.1.0-guest.2_sources.tar.gz) and its [source checksums](https://github.com/cofy-x/axv/releases/download/v0.1.0-guest.2/SOURCE-SHA256SUMS). Kernel and Firecracker/jailer executables are separately administered prerequisites; [native acceptance inputs](development.md#linux-firecracker) describe the pinned combination and checks. Publication does not add automatic Linux provisioning or change the macOS image default.
+Choose Guest bundles from [Releases](https://github.com/cofy-x/axv/releases) by provider, architecture and required capabilities. Application and Guest releases have independent versions; use the Guest's release notes for its tested application, kernel and runtime combination. The recipe below retains a known accepted baseline so its exact files and compatibility remain reproducible.
 
-This historical Guest release has no builder-provenance bundle. For a newer attested Guest, also download `provenance.json` and follow [Guest build-provenance verification](releasing.md#verify-build-provenance) for the archive, `candidate.json` and `SHA256SUMS` before extraction; verify the standalone raw disk too when using it. The installation commands below intentionally retain `v0.1.0-guest.2`.
+The baseline uses [AXV Guest 0.1.0-guest.2](https://github.com/cofy-x/axv/releases/tag/v0.1.0-guest.2), a **Linux amd64 / Firecracker** prerelease for this manual administrator-configured path. It was accepted with the separately published [AXV v0.1.0-rc.5 application](https://github.com/cofy-x/axv/releases/tag/v0.1.0-rc.5); the Guest uses its own `v0.1.0-guest.2` tag. Installation downloads the complete bundle archive, `candidate.json` and `SHA256SUMS`. The bundle already includes the raw disk, manifest and original distribution materials. The separately published raw disk is optional for this installation path; the release also provides a [matching source companion](https://github.com/cofy-x/axv/releases/download/v0.1.0-guest.2/axv_guest_0.1.0-guest.2_sources.tar.gz) and its [source checksums](https://github.com/cofy-x/axv/releases/download/v0.1.0-guest.2/SOURCE-SHA256SUMS). Kernel and Firecracker/jailer executables are separately administered prerequisites; [native acceptance inputs](development.md#linux-firecracker) describe the pinned combination and checks. Publication does not add automatic Linux provisioning or change the macOS image default.
+
+Review the selected release's [build-provenance requirements and historical limits](releasing.md#verify-build-provenance). For an attested Guest, download its original `provenance.json` and verify the archive, `candidate.json` and `SHA256SUMS` before extraction; verify the standalone raw disk too when using it. The commands below reproduce the pinned baseline.
 
 Use Bash, curl, GNU tar/coreutils and jq on the deployment machine. Choose a new, empty download directory with space for the archive and its extracted raw disk. These commands select the published Guest prerelease:
 

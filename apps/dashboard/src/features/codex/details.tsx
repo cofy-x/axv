@@ -6,7 +6,19 @@ import { sessionTitle } from './api';
 import { activityLabel } from './activity';
 import { openTerminalWindow } from '../terminal/definition';
 
-function SessionDetails({ session }: { session: CodexSessionRecord }) {
+interface TerminalDetails {
+  connection: string;
+  cols: number;
+  rows: number;
+}
+
+function SessionDetails({
+  session,
+  terminal,
+}: {
+  session: CodexSessionRecord;
+  terminal?: TerminalDetails;
+}) {
   const [feedback, setFeedback] = useState('');
   const [copyFailed, setCopyFailed] = useState(false);
   const copy = async () => {
@@ -28,6 +40,16 @@ function SessionDetails({ session }: { session: CodexSessionRecord }) {
         <dd>{session.archivedAt ? 'Archived' : 'Unarchived'}</dd>
         <dt>Activity</dt>
         <dd>{activityLabel(session.activity)}</dd>
+        {terminal && (
+          <>
+            <dt>Terminal</dt>
+            <dd>{terminal.connection}</dd>
+            <dt>Terminal size</dt>
+            <dd>
+              {terminal.cols} × {terminal.rows}
+            </dd>
+          </>
+        )}
         {session.activity?.updatedAt && (
           <>
             <dt>Last activity</dt>
@@ -147,10 +169,11 @@ function SessionDetails({ session }: { session: CodexSessionRecord }) {
 export async function showSessionDetails(
   desktop: DesktopAPI,
   session: CodexSessionRecord,
+  terminal?: TerminalDetails,
 ) {
   const answer = await desktop.dialog({
     title: 'Codex Session Details',
-    message: <SessionDetails session={session} />,
+    message: <SessionDetails session={session} terminal={terminal} />,
     buttons: [
       { label: 'Host Terminal', value: 'terminal' },
       { label: 'Close', value: 'close', default: true, cancel: true },

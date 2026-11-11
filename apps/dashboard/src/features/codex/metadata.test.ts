@@ -26,17 +26,21 @@ afterEach(() => vi.restoreAllMocks());
 
 describe('Codex session metadata', () => {
   it('distinguishes final runs in the Dock while retaining the active conversation title', () => {
+    expect(sessionWindowTitle(session)).toBe('Codex · project');
+    expect(sessionWindowTitle({ ...session, title: 'project' })).toBe(
+      'Codex · project',
+    );
     const named = { ...session, title: 'Saved work', runId: 'abcdefgh-1234' };
-    expect(sessionWindowTitle(named)).toBe('Codex · Saved work');
+    expect(sessionWindowTitle(named)).toBe('Codex · Saved work — project');
     for (const status of ['ended', 'lost', 'failed'] as const) {
       const label = status[0].toUpperCase() + status.slice(1);
       expect(sessionWindowTitle({ ...named, status })).toBe(
-        `Codex · Saved work · ${label} (abcdefgh)`,
+        `Codex · Saved work — project · ${label} (abcdefgh)`,
       );
     }
     expect(
       sessionWindowTitle({ ...named, status: 'ended', runId: 'ijklmnop-5678' }),
-    ).toBe('Codex · Saved work · Ended (ijklmnop)');
+    ).toBe('Codex · Saved work — project · Ended (ijklmnop)');
   });
 
   it('applies newer metadata without replacing process state or accepting stale responses', () => {

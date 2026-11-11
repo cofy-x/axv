@@ -64,7 +64,7 @@ Each fact has one owner. Another page may state the consequence its reader needs
 
 | Owner | Keep here |
 | --- | --- |
-| [Project README](../README.md) | Current capability and native-validation status, pinned toolchain summary and quickstart |
+| [Project README](../README.md) | Product overview and desktop preview, current capability and native-validation status, pinned toolchain summary and quickstart |
 | [AGENTS.md](../AGENTS.md) | Repository-wide working rules and brief high-risk guardrails |
 | [Contributing](../CONTRIBUTING.md) | AXV contribution workflow and links to organization expectations |
 | [Support](../SUPPORT.md) | Public support channels, report context and diagnostic redaction |
@@ -104,4 +104,7 @@ Keep the structure small:
 - Keep `AGENTS.md` short and applicable across the repository. Keep context selection here and dependency direction in the architecture overview; put feature mechanisms in their owner. Add scoped rules only for a real directory-specific requirement.
 - Link to a few stable implementation entry points and nearby tests. Avoid exhaustive file inventories, line-number links and copied source declarations. Keep exact values where callers/operators need them, with a source link for review.
 - Use descriptive headings, relative links, tables for comparable values and Mermaid for relationships. Examples must match current interfaces.
+- Use the repository's Releases page for download navigation and relative documentation links for setup. Keep exact tags and asset URLs in reproducible recipes, compatibility constraints and release evidence. Select application and Guest assets explicitly from their shared catalog; required toolchain and runtime pins remain intentional.
+- Link provider pricing, quotas and account eligibility to authoritative pages. Keep limits required by a workflow and configured or tested versions exact; record dated observations in task/PR evidence.
+- Keep the README preview focused on a representative desktop scene with Welcome and a real Codex introduction, with space for desktop icon labels. Keep provider update notices, startup tips and version/model banners outside the capture using settings scoped to the demo. Refresh the image when AXV's main layout or workflow changes; provider patch releases alone do not require a new screenshot.
 - Keep plans, audit findings, historical counts and validation diaries in task/PR history. References describe current behavior; product owns intent, and the README owns status. Seeded samples are user documents, not release notes.

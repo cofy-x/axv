@@ -417,13 +417,13 @@ Use a Linux KVM host as root, with the [host prerequisites and delegated cgroup 
 ```sh
 node scripts/verify-vm-firecracker.mjs --yes \
   --image-bundle /absolute/bundle/manifest.json \
-  --executable /absolute/axv_0.1.0-rc.5_linux_amd64/axv \
+  --executable /absolute/verified-application/axv \
   --kernel /absolute/vmlinux --kernel-sha256 <reviewed-sha256> \
   --firecracker /absolute/firecracker --jailer /absolute/jailer \
   --version 1.17.0 --subnet <unused-private-/22>
 ```
 
-For the first Guest release acceptance, `--executable` must select the independently downloaded and verified **v0.1.0-rc.5 application executable** above, proving the exact Guest candidate works with the published consumer. Later Guest releases must explicitly select their reviewed published application version and record that exact combination; do not substitute an unreviewed newer executable. Record its digest and version together with the downloaded candidate's archive, raw disk, manifest and `candidate.json` identities. For application-source development, omit that option to build an isolated current-source executable; label that result separately. Historical local images and fixture tests do not establish acceptance of a new downloadable candidate.
+For [Guest candidate acceptance](releasing.md#review-the-exact-guest-files), `--executable` must select the independently downloaded and verified application executable approved for that candidate. Record its exact version and digest together with the downloaded Guest archive, raw disk, manifest and `candidate.json` identities; do not substitute an unreviewed newer executable. For application-source development, omit that option to build an isolated current-source executable and label the result separately. Historical local images and fixture tests do not establish acceptance of a new downloadable candidate.
 
 Use this fixed Linux amd64 input set for candidate acceptance, independently fetched and verified before invoking the launcher:
 

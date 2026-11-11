@@ -4,74 +4,96 @@
 
 **Your personal cloud for VMs and coding agents.**
 
-AXV is a personal cloud workstation for virtual machines and coding-agent sessions: **Agents × Virtualization**. A Window Maker-inspired browser desktop brings documents, host shells, Codex and VM management together. See [architecture](docs/architecture.md) for service and package boundaries.
+AXV brings coding-agent sessions, development VMs, files and terminals together in a Window Maker-inspired browser desktop. Run your workstation on your own Mac or Linux machine.
 
-## Project status
+[Get started](#install-and-use) · [User guide](docs/usage.md) · [Documentation](docs/README.md) · [Contribute](CONTRIBUTING.md)
 
-AXV is experimental, with a [Linux amd64 prerelease](https://github.com/cofy-x/axv/releases/tag/v0.1.0-rc.5) and no stable release. Interfaces and AXV-owned development data may change; review the [storage baseline policy](docs/storage.md#desktop-database-baseline) before updating an existing profile. [Product direction](docs/product.md) describes the goals and open decisions; propose and discuss feature work in [Issues](https://github.com/cofy-x/axv/issues).
+![AXV browser desktop with Welcome and a real Codex conversation](docs/assets/axv-desktop.png)
 
-- **Desktop:** Working windows, four desktop workspaces, Dock, menus, Inspector, and responsive layouts; [online browser installation](docs/startup.md#browser-installation) with original icons targets desktop Chrome/Edge and iPhone Safari through Tailscale HTTPS. Basic installation and online use are user-verified on macOS Chrome and physical iPhone Safari over Tailscale HTTPS, with reported checks for installed-icon reopening, lock-screen return and disconnected draft retention/downloads. Reported environments are Apple M4 Pro with macOS 26.5.2 (25F84) and Chrome 154.0.8037.59, and iPhone 15 Pro Max with iOS 26.6. Edge installation and remaining native authorization/storage/lifecycle acceptance are pending
-- **Applications (experimental):** Application Manager, explicitly installed self-contained HTML extensions, sandboxed windows, private revision-checked data and browser draft recovery; the included Checklist example covers installation, saves, replacement and removal. Extensions have no document, host-command, agent or VM access
-- **Documents:** Local virtual filesystem, Markdown editing/preview, explicit saves, revision checks and draft recovery; project/VM/conversation links, immutable saved snapshots and explicit exchange with registered host projects. Project Files browses host directories on macOS/Linux and retained VM projects; visible VM source previews follow external changes while preserving unsaved drafts. VM text editing uses reviewed file hashes and explicit environment bindings
-- **Terminal:** Local host shells; disconnecting ends the shell, with no persistent session recovery
-- **VM management (experimental):** Desktop and CLI lifecycle, configuration, images, volumes and task TTL; shared verified download cache with independent profiles. The macOS default pinned Ubuntu base supports basic VM management; official AXV Lima image publication remains pending. Shared-cache preparation and basic VM lifecycle are validated on macOS ARM64 with independent profiles. Native Linux amd64 Firecracker lifecycle, controller recovery, project retention, task TTL and network isolation are validated with published [AXV Guest 0.1.0-guest.2](https://github.com/cofy-x/axv/releases/tag/v0.1.0-guest.2) through [manual host configuration](docs/startup.md#linux-guest-bundle-installation); scale remains unvalidated. A separate temporary non-root, non-login operator check covers CLI socket permissions and lifecycle; VM desktop access from a login account remains unvalidated
-- **Guest enhancements (experimental):** Protocol- and capability-gated execution, Guest Terminal, local SSH, SCP/SFTP, PTY, TCP forwarding, retained-volume project files and persistent project tasks. Tasks have durable receipts, independent attempts, logs, exact cancellation and recovery; capable Linux guests enforce CPU, memory, process, timeout and output limits. VM projects survive VM replacement on the same volume; stale bindings are rejected. Native enhanced-guest, project-file and persistent-task acceptance, including real repository installation/build/tests, resource failures, Git/worktree retention and VM replacement, is validated on Linux amd64 with that published Firecracker Guest; macOS enhanced-guest acceptance remains pending
-- **VM project workflows (experimental):** Create empty projects or clone credential-free Git URLs through durable initialization tasks, with [guest-owned private repository setup](docs/usage.md#private-repository-authentication); explicitly register HTTP/WebSocket development previews on separate local browser origins; make offline whole-volume backups and restore into new volumes, VMs and verified project identities. Linux amd64 creation/clone, browser HTTP/WebSocket preview, controller/copy recovery and restored Git/worktree state are validated with that published Firecracker Guest. Local preview registrations remain local-only; remote owners can inspect or stop them. Separate [Cloudflare publications](docs/api/cloudflare.md#published-project-services) expose explicitly reviewed project services on independent HTTPS hostnames. Stop revokes preview access while independently started services keep running; application sessions and bearer credentials remain confined to the preview.
-- **Startup:** Installable `axv` command, configuration-only `init`, background launch/reopen, one profile for persistent data, isolated development profiles, foreground `serve` and independent VM host activation; native Linux amd64 desktop supervision validated in a systemd user session
-- **Work notifications (experimental):** Durable Codex and VM task event journals, delivery history and independent optional browser Web Push/Pocket Alert delivery, disabled by default. Browser subscription requires explicit permission and a dedicated minimal worker; sender credentials stay on the AXV host while the browser owns its permission and subscription. Authenticated return links inspect the exact original run or attempt without controlling it. Recovery, encryption/transport and browser flows are validated with controlled fixtures; live Web Push/Pocket Alert device delivery, including installed iPhone/iPad background receipt and disconnected-tailnet behavior, remains unvalidated. See [notification usage](docs/usage.md#work-notifications)
-- **Coding agents:** Host Codex conversation recovery, names, archives and recent host projects on macOS/Linux; real-model continuity and saved-history recovery validated on Linux amd64. Structured per-run activity distinguishes working, pending approvals/input and turn outcomes; Action needed surfaces pending requests and exceptional outcomes, including archived sessions, with exact-event dismissals retained across desktop restart. Real-provider approvals/input, quiet completion, interruption and exact-event restart recovery are validated on Linux amd64; failed-turn handling is validated with the official CLI under a controlled transport fault. VM projects can open scoped Codex sessions with an AXV Skill and immutable per-run file/task tools; explicit continuation reviews the environment while preserving the conversation. Real-model VM file edits, builds and tests are validated on Linux amd64 with a locally built Firecracker image. Saved document snapshots can accompany the next submitted message in an exact run, with delivery receipts. Host-agent permissions remain separate. Claude Code remains unimplemented
-- **Remote access (experimental):** Optional private HTTPS desktop through embedded Tailscale, with persistent node identity and owner authorization; disabled by default. The Tailscale utility enables, authorizes and stops the embedded node without restarting the workstation. [Remote setup](docs/startup.md#remote-access) keeps the system Tailscale service independent. Linux production HTTPS, owner access and terminal continuity are validated through an independently authenticated userspace client and physical iPhone Safari; physical tablet acceptance remains pending. Optional Cloudflare Access adds a dedicated authenticated desktop origin and local configuration controls. Its account wizard connects an existing tunnel, checks cloud health and reads zone traffic; explicit VM project service publications use fresh, permanently reserved browser sites, reviewed owner/public visibility, durable cleanup and explicit resume after restart. Owner JWTs have a maximum 15-minute signed lifetime. The external connector and Access policies remain administrator-owned. [Cloudflare setup](docs/startup.md#cloudflare-access) covers deployment; live Cloudflare acceptance remains pending
-- **Cross-platform:** Browser and host-terminal adapters exist; VM adapters are implemented for Linux/macOS; Windows VM hosting unavailable
-- **Project review (experimental):** Read-only [GitHub repository associations, PRs and exact-commit checks](docs/usage.md#github-project-review) for VM projects, with explicit guest-owned authentication and manual refresh. Requires a rebuilt `project-github` guest; published Guest 0.1.0-guest.2 lacks this capability. Controlled API/browser coverage and real GitHub reads through a current-source Linux amd64 guest and browser are validated.
+_A representative AXV desktop with Welcome and a real Codex conversation, captured in an isolated demo profile._
+
+## Why AXV
+
+- **Keep coding work together.** Start and reopen Codex conversations for host or registered VM projects, with activity and requests for input in the same desktop.
+- **Give projects a VM workspace.** Manage development machines, retain project volumes, and run persistent build and test tasks with logs and cancellation.
+- **Work across windows.** Organize files, edit Markdown and use host shells across four desktop workspaces.
+- **Reach your own workstation.** Connect through optional Tailscale HTTPS or Cloudflare Access while work and storage stay on your deployment machine.
 
 ## Install and use
 
-For the Linux amd64 prerelease, follow [release archive installation](docs/startup.md#install-a-release-archive) to download, verify and install the published files. Read its release notes for the exact validation scope, runtime prerequisites and experimental data policy.
+### Download for Linux amd64
 
-Build from source with **Go 1.27.3**, **Node 24.16.0**, and **pnpm 12.11.2**. Background startup needs a macOS GUI login or a Linux systemd user manager (254 or newer); see [startup requirements](docs/startup.md#daily-commands). Otherwise, use `axv serve` after installation:
+Choose a Linux amd64 application archive from [Releases](https://github.com/cofy-x/axv/releases), then follow [archive installation](docs/startup.md#install-a-release-archive) to verify and install it. Check [platform support](#project-status); the selected release's notes describe that archive's features, prerequisites and upgrade limits.
+
+The executable includes the Web UI and needs neither Go nor Node at runtime. Codex, tmux and VM providers are separate prerequisites; see [startup requirements](docs/startup.md#daily-commands).
+
+### Build from source
+
+Install **Go 1.27.3**, **Node 24.16.0**, and **pnpm 12.11.2**, then:
 
 ```bash
+git clone https://github.com/cofy-x/axv.git
+cd axv
 make install
 axv
 ```
 
-Installation builds the complete production executable and puts it in Go's binary directory (`GOBIN`, otherwise the first `GOPATH` entry's `bin`). Follow the printed PATH guidance if needed. The installed command works outside the repository without Node: `axv` starts or reopens the background workstation and opens its verified browser address. Configuration and AXV-managed data default to `~/.axv`.
+`make install` builds and installs `axv` into Go's binary directory; follow its printed PATH guidance if needed. Run `axv` from any directory to start or reopen the workstation in your browser. Configuration and AXV-managed data default to `~/.axv`.
 
-[Startup and background services](docs/startup.md) covers installation, updates, [uninstallation](docs/startup.md#uninstallation), VM preparation, VM CLI and SSH usage, storage and service commands. [Using AXV](docs/usage.md) covers desktop applications and their session lifecycles.
+Background mode requires a macOS GUI login or a Linux systemd user manager (254 or newer). Otherwise, run `axv serve` and open the printed address. See [Startup](docs/startup.md) for updates, uninstallation and VM preparation.
+
+## Project status
+
+The current source runs on macOS and Linux, with Codex as the coding-agent integration.
+
+| Host | Installation | VM support |
+| --- | --- | --- |
+| Linux amd64 | [Releases](https://github.com/cofy-x/axv/releases) or [source build](#build-from-source) | Firecracker/KVM; [Guest bundle and host setup](docs/startup.md#linux-guest-bundle-installation) |
+| macOS | [Source build](#build-from-source) | Lima; basic VM lifecycle validated on ARM64. Enhanced Guest acceptance and official AXV image publication pending |
+
+Windows VM hosting is unavailable. Before upgrading an existing profile, review the [storage baseline policy](docs/storage.md#desktop-database-baseline) and release notes; automatic profile migration is not guaranteed.
+
+<details>
+<summary>Feature availability and validation details</summary>
+
+- **Desktop applications:** Multiple windows, four workspaces, Dock, menus, Inspector, Markdown documents, host and VM Project Files, host terminals and sandboxed HTML extensions are implemented. Extensions have private app data and no document, host-command, agent or VM access. Host shells end on disconnect. See the [user guide](docs/usage.md) for application behavior and persistence boundaries.
+- **Browser installation:** Basic installation and online use, installed-icon reopening, lock-screen return and disconnected draft retention/downloads are user-verified on macOS Chrome and physical iPhone Safari over Tailscale HTTPS. Edge installation and remaining native authorization/storage/lifecycle checks are pending. See [browser installation](docs/startup.md#browser-installation) for the supported workflow.
+- **VM workflows:** Native Linux amd64 Firecracker lifecycle, controller recovery, network isolation, enhanced Guest access, retained projects and persistent task/resource-failure handling are validated with the published Firecracker Guest baseline documented in [Linux Guest setup](docs/startup.md#linux-guest-bundle-installation). Project creation/cloning, local browser previews and offline backup/restoration workflows are validated on Linux amd64. Shared-cache preparation and basic VM lifecycle are also validated on macOS ARM64 with independent profiles. Scale remains unvalidated. A separate non-root, non-login operator check covers CLI permissions and lifecycle; VM desktop access from a login account remains unvalidated. See [VM workflows](docs/usage.md#virtual-machines).
+- **Codex:** Conversation recovery, names, archives, run activity, approvals/input, saved-document attachments and scoped VM-project tools are implemented. Real-provider continuity, saved-history recovery, approvals/input, completion, interruption and exact-event recovery across restarts are validated on Linux amd64. Failed-turn handling is validated under a controlled transport fault; real-model VM edits, builds and tests are validated with a locally built Firecracker image. Claude Code remains unimplemented. See [Codex usage](docs/usage.md#codex).
+- **Remote access:** Tailscale production HTTPS, owner authorization and terminal continuity are validated on Linux through an independent authenticated client and physical iPhone Safari; physical tablet acceptance is pending. Cloudflare desktop Access and explicit project-service publications have controlled coverage; live Cloudflare acceptance remains pending. See [remote setup](docs/startup.md#remote-access) and [Cloudflare setup](docs/startup.md#cloudflare-access).
+- **Work notifications:** Optional Web Push and Pocket Alert delivery are implemented and disabled by default. Recovery, encryption/transport and browser flows have controlled coverage; live device delivery, installed iPhone/iPad background receipt and disconnected-tailnet behavior remain unvalidated. See [work notifications](docs/usage.md#work-notifications).
+- **GitHub project review:** Read-only repository associations, PRs and exact-commit checks are validated through controlled coverage and real GitHub reads with a current-source Linux amd64 Guest and browser. A Guest declaring the `project-github` capability is required; see [GitHub project review](docs/usage.md#github-project-review) for image requirements.
+
+</details>
 
 ## Start developing
 
-Use the same pinned toolchain from a writable checkout:
+Use the [pinned toolchain](#build-from-source) from a writable checkout:
 
 ```bash
 make deps
 make dev
 ```
 
-Open the Vite URL printed by the launcher. Development allocates independent loopback ports and uses a separate profile at `~/.axv/dev/<checkout-id>`. See the [development guide](docs/development.md#local-development) for prerequisites, `AXV_DEV_HOME`, builds and verification.
+Open the printed Vite URL. Development uses independent loopback ports and a separate profile at `~/.axv/dev/<checkout-id>`.
 
-## Build and run
-
-```bash
-make build
-./dist/axv serve
-```
-
-`make build` writes the production bundle to `dist/axv` without installing it. It embeds the UI. Guest services are built into VM images separately. `serve` runs the desktop in the foreground.
+Follow [AGENTS.md](AGENTS.md) and the [development guide](docs/development.md) for local configuration, [production builds](docs/development.md#production-build) and [required checks](docs/development.md#verification).
 
 ## Documentation
 
-Contributors and coding agents follow [AGENTS.md](AGENTS.md). The [context workflow](docs/README.md#choose-context) provides separate paths for understanding AXV and changing a specific feature; the [task map](docs/README.md#read-by-task) leads to the owning reference, implementation entry points and tests.
-
-## Verify changes
-
-Follow [verification](docs/development.md#verification) for required commands, documentation-only checks, browser coverage and isolated test operation. The guide also covers native-daemon and explicit real-Codex acceptance.
+| I want to… | Read |
+| --- | --- |
+| Install, update or configure AXV | [Startup](docs/startup.md) |
+| Use the desktop, Codex or VM projects | [User guide](docs/usage.md) |
+| Understand the product and its boundaries | [Product direction](docs/product.md) and [architecture](docs/architecture.md) |
+| Develop and verify a change | [Development guide](docs/development.md) |
+| Find an implementation or API | [Documentation map](docs/README.md) and [API reference](docs/api/README.md) |
 
 ## Contributing and support
 
-Read [Contributing](CONTRIBUTING.md) for the contribution workflow and the [Support guide](SUPPORT.md) for bug reports, feature requests and usage questions. Report vulnerabilities privately through the [Security policy](SECURITY.md). The [Code of Conduct](CODE_OF_CONDUCT.md) applies the organization's community rules and supplies AXV's incident-reporting channels.
+Read the [contribution guide](CONTRIBUTING.md) for development and pull requests, and follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
-[Release preparation](docs/releasing.md) covers release checks, artifacts and third-party notices.
+[Report an issue](https://github.com/cofy-x/axv/issues) or use the [support guide](SUPPORT.md) for questions and bug reports. Report vulnerabilities privately through the [security policy](SECURITY.md).
 
 ## License
 

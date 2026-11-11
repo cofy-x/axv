@@ -4,22 +4,25 @@ This page owns release preparation, version selection, candidate artifacts and p
 
 ## Version and source
 
-Use `major.minor.patch`, with an optional prerelease suffix such as `0.1.0-rc.1`. The three private JavaScript manifests share the base version; update them together when selecting a new release series. Their `private` fields stay enabled: these packages compose the application and are not published to npm. `VERSION` supplies the full version to the production build and must be repeated for smoke, browser tests and packaging. An ordinary source build still reports `dev`.
+Use `major.minor.patch`, with an optional prerelease suffix such as `-rc.<number>` or `-guest.<number>`. Choose an unused `v<version>` tag after checking [Releases](https://github.com/cofy-x/axv/releases), remote tags, maintainer-visible drafts and candidate runs. Application and Guest releases have independent versions and assets; never reuse a published tag or append Guest assets to an application release.
+
+The three private JavaScript manifests share the base version; update them together when selecting a new release series. Their `private` fields stay enabled: these packages compose the application and are not published to npm. Each candidate version must match that base. `VERSION` supplies the full version to the production build and must be repeated for smoke, browser tests and packaging. An ordinary source build still reports `dev`.
 
 Prepare releases from a reviewed commit on `main`, with passing required CI checks and no uncommitted changes. Merge release-preparation changes before selecting that commit. Confirm the current README's availability claims and document any user-visible changes, known limitations and [AXV-store compatibility policy](storage.md#desktop-database-baseline) in the release notes. Never describe a hosted desktop smoke as native VM or real-model acceptance.
 
 ## Build a candidate
 
-The manual [Release candidate workflow](../.github/workflows/release.yml) builds and smoke-tests a native **Linux amd64** executable on Ubuntu, then attests and uploads the final archive and checksum manifest with their original provenance bundle. It does not create tags, GitHub Releases or VM images. Select **Actions → Release candidate → Run workflow**, choose `main` and supply the intended version, for example `0.1.0-rc.1`. The version input is passed through the environment rather than interpolated into shell code.
+The manual [Release candidate workflow](../.github/workflows/release.yml) builds and smoke-tests a native **Linux amd64** executable on Ubuntu, then attests and uploads the final archive and checksum manifest with their original provenance bundle. It does not create tags, GitHub Releases or VM images. Select **Actions → Release candidate → Run workflow**, choose `main` and supply the [selected application version](#version-and-source). The version input is passed through the environment rather than interpolated into shell code.
 
-For local preparation on native Linux amd64 with the [pinned toolchain](../README.md#install-and-use):
+For local preparation on native Linux amd64 with the [pinned toolchain](../README.md#install-and-use), replace `<unused-application-version>` with that selected version:
 
 ```sh
+axv_candidate_version='<unused-application-version>'
 make deps
-VERSION=0.1.0-rc.1 node scripts/package-release.mjs --check-version
-VERSION=0.1.0-rc.1 make build
-VERSION=0.1.0-rc.1 make smoke-production
-VERSION=0.1.0-rc.1 node scripts/package-release.mjs
+VERSION="$axv_candidate_version" node scripts/package-release.mjs --check-version
+VERSION="$axv_candidate_version" make build
+VERSION="$axv_candidate_version" make smoke-production
+VERSION="$axv_candidate_version" node scripts/package-release.mjs
 ```
 
 Run all required [verification](development.md#verification) for the selected commit before approving a release. The candidate workflow covers build and smoke, while normal CI covers unit, static and browser checks. Explicit native daemon, VM and real-Codex checks remain separate and apply to the capabilities claimed in that release.
@@ -36,19 +39,13 @@ The packager refuses to overwrite an existing candidate directory. After reviewi
 
 The archive keeps executable permissions inside its tar container. No Node runtime, VM base, kernel, Lima/Firecracker executable, Codex installation or account credentials are included. Linux amd64 is the initial automated packaging target; add a platform only after a native build/smoke job and the relevant acceptance checks are available. Source support and existing native-validation claims remain in the README.
 
-Download the artifact from its completed Actions run; GitHub wraps the candidate files in an artifact download. Extract that wrapper first and [verify build provenance](#verify-build-provenance), then check the original archive before extracting or running it:
-
-```sh
-sha256sum --check SHA256SUMS
-tar -xzf axv_0.1.0-rc.1_linux_amd64.tar.gz
-./axv_0.1.0-rc.1_linux_amd64/axv version
-```
+Download the artifact from its completed Actions run; GitHub wraps the candidate files in an artifact download. Extract that wrapper first and [verify build provenance](#verify-build-provenance), then follow [archive verification and installation](startup.md#install-a-release-archive) with the selected candidate version and a new installation directory.
 
 On macOS, use `shasum -a 256 -c SHA256SUMS` to inspect the checksum; this Linux executable still needs a Linux amd64 host. Checksums detect changed bytes; provenance additionally authenticates the producing workflow and reviewed source. Local packaging does not issue an official GitHub attestation. Platform code signing and notarization remain unavailable.
 
 ## Verify build provenance
 
-Both candidate workflows use the full-SHA-pinned [`actions/attest` v4.2.2](https://github.com/actions/attest/tree/1e69f48acb82d1966a394da916b4c1698aa569d6) after successful final assembly. Only their candidate job receives `contents: read`, `id-token: write` and `attestations: write`; the workflows require repository `cofy-x/axv` and `refs/heads/main`. Pull-request CI does not receive these issuance permissions. They retain the existing clean-source, dependency-notice and build-stamping checks. [GitHub's current eligibility](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations), checked on 2026-11-06, covers public repositories on current Free, Pro and Team plans; private/internal repositories require Enterprise Cloud.
+Both candidate workflows use the full-SHA-pinned [`actions/attest` v4.2.2](https://github.com/actions/attest/tree/1e69f48acb82d1966a394da916b4c1698aa569d6) after successful final assembly. Only their candidate job receives `contents: read`, `id-token: write` and `attestations: write`; the workflows require repository `cofy-x/axv` and `refs/heads/main`. Pull-request CI does not receive these issuance permissions. They retain the existing clean-source, dependency-notice and build-stamping checks. Confirm [GitHub's artifact-attestation eligibility](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations) for the repository's visibility and account plan before running the candidate workflow.
 
 The subjects are the final distributable files themselves, independent of the Actions wrapper ZIP:
 
@@ -106,7 +103,7 @@ Publication is an explicit maintainer action after candidate review. Use this ma
 
 ### Preserve and approve the candidate
 
-1. Check GitHub tags, releases (including drafts visible to a maintainer) and candidate runs before selecting an unused version. Check that the local remote addresses the intended repository. Record the candidate run's actual `head_sha`; a later `main` HEAD is not a substitute. Confirm that SHA is reviewed and has passing required CI checks.
+1. Recheck that the [selected version and tag](#version-and-source) are unused, including drafts visible to a maintainer, and that the local remote addresses the intended repository. Record the candidate run's actual `head_sha`; a later `main` HEAD is not a substitute. Confirm that SHA is reviewed and has passing required CI checks.
 2. Download the successful candidate before its artifact expires. Preserve the original archive, `SHA256SUMS` and `provenance.json` together, outside directories that later build or cleanup commands overwrite. Inspect and extract copies. Do not rebuild, recompress, regenerate the manifest or bundle, re-attest, or edit approved files during promotion. The Actions wrapper ZIP has its own size and digest; neither describes the inner archive.
 3. Record the following in the release PR or release notes, keeping validation history out of this reference:
 
@@ -199,18 +196,19 @@ If creation, upload or publication times out or fails, query the remote tag, rel
 
 Application packaging does not publish VM images or promote upstream bases to AXV releases. The [image recipes](../images/guest/README.md#per-machine-initialization-and-release-work) own generated guest notices, OS package inventories, source review and identity cleanup. Keep their exported `distribution/` materials with each exact provider/architecture bundle; guest and OS components retain their own terms. A completed builder run does not approve an image for publication.
 
-The first publication path is a complete **Linux amd64 / Firecracker** enhanced Guest bundle consumed through [administrator configuration](startup.md#linux-guest-bundle-installation). Its kernel and Firecracker/jailer runtime remain separately supplied, with a fixed reviewed [acceptance input set](development.md#linux-firecracker). The candidate does not include an application executable, kernel or runtime. Automatic Linux deployment, additional platforms and a new default image policy are outside this path. The current automatic catalog consumer serves Lima; adding a Firecracker entry does not install an image on Linux, and such an entry is not a first-publication prerequisite.
+The **Linux amd64 / Firecracker** publication path produces an enhanced Guest bundle consumed through [administrator configuration](startup.md#linux-guest-bundle-installation). Its kernel and Firecracker/jailer runtime remain separately supplied, with a fixed reviewed [acceptance input set](development.md#linux-firecracker). The candidate does not include an application executable, kernel or runtime. Automatic Linux deployment, additional platforms and a new default image policy are outside this path. The current automatic catalog consumer serves Lima; adding a Firecracker entry does not install an image on Linux and is not a publication prerequisite.
 
 ### Build and retain the Guest candidate
 
 The manual [Guest image candidate workflow](../.github/workflows/guest-images.yml) builds a native Firecracker amd64 bundle from an explicitly supplied, reviewed Ubuntu 24.04 OCI digest. It uses the pinned Go and Node toolchains, then verifies and packages the disk, manifest, base identity and exported distribution materials before [attesting the final subjects](#verify-build-provenance). It neither starts a VM nor publishes a release. A workflow definition is not a completed candidate: record an actual successful run, attempt, source SHA and artifact ID before review. The uploaded candidate has **14-day retention**; download and preserve its originals before expiry.
 
-Choose an independent Guest version and an unused `v<version>` tag after checking remote tags, releases including drafts, and candidate runs. For example, `0.1.0-guest.1` and `v0.1.0-guest.1` are proposed values, not reserved or published names; recheck availability before use. The candidate version must satisfy the package base-version check. Do not reuse the frozen application `v0.1.0-rc.5` tag or append assets to that release.
+Select an unused Guest version under [version and source](#version-and-source), independently of the application release. The candidate must satisfy the same package base-version check.
 
-To package an existing image-builder output locally:
+To package an existing image-builder output locally, replace `<unused-guest-version>` with that selected version:
 
 ```sh
-VERSION=0.1.0-guest.1 node scripts/package-guest-release.mjs --bundle /absolute/new-firecracker-bundle
+axv_guest_release_version='<unused-guest-version>'
+VERSION="$axv_guest_release_version" node scripts/package-guest-release.mjs --bundle /absolute/new-firecracker-bundle
 ```
 
 This requires a clean checkout and matching clean guest-binary VCS metadata. The output in `dist/guest-release/<version>/<provider>_<arch>/` has four core release assets; the official candidate workflow adds the fifth file, its original provenance bundle:
@@ -237,7 +235,7 @@ Before approving a draft, complete all of these gates against that exact candida
 2. Review the Guest executable's original notices and the separate OS materials under `distribution/axv-guest/os-distribution/`. Resolve every source-package/version entry's license and source retrieval obligations, including base-image terms. APT index identities and a `reviewRequired` inventory are inputs to that review, not corresponding source or approval. Retain completed review and source-access evidence in the release PR/notes; provide any legally required source materials before approving publication. The application archive's review does not cover this disk.
 3. Inspect the raw filesystem itself for generic identity: cleared machine IDs and global SSH host keys; no AXV machine configuration/token, dedicated SSH identity/client authorizations, initialized task owner or used task journal. Compare on-disk guest executable/manifest and retained notices with the declared distribution materials. Sidecar checksums alone do not prove the disk was sanitized.
 4. Verify the independent kernel/runtime prerequisites, including exact source/configuration retrieval and notices. Host device/configuration inspection does not establish delegated cgroups or guest task enforcement.
-5. Run [Linux native acceptance](development.md#linux-firecracker) using this downloaded bundle and an explicitly selected, verified published application executable. For the first Guest release, use **`--executable /absolute/axv_0.1.0-rc.5_linux_amd64/axv`**; later releases must record their own reviewed application/Guest combination. Cover lifecycle, enhanced Guest/SSH, project files, persistent tasks and controller/guest/VM recovery, plus initialization, preview and backup/restore for the declared capabilities. Include real in-guest repository dependency installation/build/tests and resource/space failure checks. Record all input digests, command, environment, results and cleanup. Fixture tests and historical locally built images remain separately identified evidence.
+5. Run [Linux native acceptance](development.md#linux-firecracker) using this downloaded bundle and the explicitly selected, verified published application executable approved for this candidate. Record the reviewed application/Guest combination. Cover lifecycle, enhanced Guest/SSH, project files, persistent tasks and controller/guest/VM recovery, plus initialization, preview and backup/restore for the declared capabilities. Include real in-guest repository dependency installation/build/tests and resource/space failure checks. Record all input digests, command, environment, results and cleanup. Fixture tests and historical locally built images remain separately identified evidence.
 
 Readiness does not follow from having a manifest capability: runtime health must confirm it. State experimental limits in the notes, including unvalidated scale and other platforms, local-only development previews and unsupported per-task disk/I/O/network throttling. Do not imply that publishing a Guest also provisions a Linux host or changes macOS defaults.
 

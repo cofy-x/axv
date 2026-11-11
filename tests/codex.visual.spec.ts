@@ -80,7 +80,10 @@ for (const viewport of [
     ).toBeInViewport();
     await capture('codex-rename-dialog');
     await rename.getByRole('button', { name: 'Rename', exact: true }).click();
-    await expect(window).toHaveAttribute('aria-label', `Codex · ${name}`);
+    await expect(window).toHaveAttribute(
+      'aria-label',
+      `Codex · ${name} — ${defaultProjectPath.split('/').filter(Boolean).at(-1)}`,
+    );
     await runCodex(window, 'inspect visual');
     await expect(codexOutput(window)).toContainText('STATE visual');
     await expect(
@@ -93,6 +96,31 @@ for (const viewport of [
       await expect(
         window.getByRole('button', { name: label, exact: true }),
       ).toBeInViewport();
+    const screen = (await window.getByTestId('codex-screen').boundingBox())!;
+    const frame = (await window.boundingBox())!;
+    expect(screen.height / frame.height).toBeGreaterThan(0.73);
+    const pageUp = (await window
+      .getByRole('button', { name: 'Page Up', exact: true })
+      .boundingBox())!;
+    const connected = (await window.getByTestId('codex-status').boundingBox())!;
+    expect(
+      Math.abs(
+        pageUp.y + pageUp.height / 2 - connected.y - connected.height / 2,
+      ),
+    ).toBeLessThanOrEqual(1);
+    if (viewport.width >= 1024) {
+      const sessions = (await window
+        .getByRole('button', { name: 'Sessions', exact: true })
+        .boundingBox())!;
+      const activity = (await window
+        .getByTestId('codex-activity')
+        .boundingBox())!;
+      expect(
+        Math.abs(
+          sessions.y + sessions.height / 2 - activity.y - activity.height / 2,
+        ),
+      ).toBeLessThanOrEqual(1);
+    }
     await expect
       .poll(async () => {
         const host = (await window.getByTestId('codex-screen').boundingBox())!;
