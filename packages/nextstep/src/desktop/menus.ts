@@ -241,6 +241,9 @@ export function createDesktopContextMenu(
     ...(props.onAppearance
       ? [{ label: 'Preferences', action: props.onAppearance }]
       : []),
+    ...(props.onHelp
+      ? [{ label: props.helpLabel ?? 'Help', action: props.onHelp }]
+      : []),
     ...(props.onAbout
       ? [{ label: 'About This Desktop', action: props.onAbout }]
       : []),
@@ -277,43 +280,45 @@ export function createDesktopMenus(
       label: 'Workspace',
       items: createDesktopContextMenu(props, api, selection),
     },
-    {
-      id: 'file',
-      label: 'File',
-      items: [
-        {
-          label: 'Open',
-          disabled: !selection.length,
-          action: () => openSelectedIcons(props, api, selection),
-        },
-        {
-          label: 'Close Window',
-          disabled: !activeWindow,
-          shortcut: 'Ctrl/⌘ W',
-          action: () => {
-            if (activeWindow) void api.closeWindow(activeWindow.id);
+    ...(!activeWindow
+      ? [
+          {
+            id: 'file',
+            label: 'File',
+            items: [
+              {
+                label: 'Open',
+                disabled: !selection.length,
+                action: () => openSelectedIcons(props, api, selection),
+              },
+            ],
           },
-        },
-      ],
-    },
+          {
+            id: 'view',
+            label: 'View',
+            items: [
+              { label: 'Arrange Icons', action: api.arrangeIcons },
+              {
+                label: 'Show All Windows',
+                disabled: !api.windows.length,
+                action: api.showAllWindows,
+              },
+            ],
+          },
+        ]
+      : []),
     {
-      id: 'view',
-      label: 'View',
-      items: [
-        { label: 'Arrange Icons', action: api.arrangeIcons },
-        {
-          label: 'Show All Windows',
-          disabled: !api.windows.length,
-          action: api.showAllWindows,
-        },
-      ],
+      id: 'window',
+      label: 'Window',
+      items: windowItems,
+      applicationMenu: false,
     },
-    { id: 'window', label: 'Window', items: windowItems },
     ...(props.onHelp
       ? [
           {
             id: 'help',
             label: 'Help',
+            applicationMenu: false,
             items: [{ label: props.helpLabel ?? 'Help', action: props.onHelp }],
           },
         ]
@@ -325,7 +330,7 @@ export function createDesktopMenus(
       activeWindow && activeApp?.unavailable === undefined && activeApp?.menu
         ? activeApp.menu(activeWindow, api)
         : [],
-    ),
+    ).filter((group) => group.items.length > 0),
     windowItems,
   };
 }

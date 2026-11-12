@@ -16,6 +16,7 @@ import {
   test,
 } from './helpers';
 import { output } from './terminal-helpers';
+import { applicationMenu } from './desktop-application-helpers';
 
 async function capture(page: Page, info: TestInfo, name: string) {
   const path = info.outputPath(`${name}.png`);
@@ -157,6 +158,59 @@ async function host(page: Page, state: ReturnType<typeof fixture>) {
     .click();
   return manager;
 }
+
+test('application menus follow VM selection and retain the owning view', async ({
+  page,
+  hasTouch,
+}, info) => {
+  const state = fixture();
+  const manager = await host(page, state);
+  const menus = page.getByRole('navigation', { name: 'Application menus' });
+  await expect(
+    menus.getByRole('button', { name: 'Machines', exact: true }),
+  ).toBeVisible();
+  await expect(
+    menus.getByRole('button', { name: 'File', exact: true }),
+  ).toHaveCount(0);
+  await applicationMenu(page, 'Selected VM', hasTouch);
+  await expect(menuItem(page, 'Start')).toBeEnabled();
+  await expect(menuItem(page, 'Stop')).toBeDisabled();
+  await capture(page, info, 'selected-vm-application-menu');
+  await menus.screenshot({ path: info.outputPath('vm-application-panel.png') });
+  await page
+    .getByRole('button', { name: 'Pin Selected VM menu', exact: true })
+    .click();
+  const pinned = page.locator(
+    '.ns-pinned-menu[data-owner-window-id="machines:main"]',
+  );
+  await expect(pinned).toBeVisible();
+  await menuItem(pinned, 'Inspect').click();
+  const inspector = page.locator('[data-app-id="machine-inspector"]');
+  await expect(inspector).toBeVisible();
+  await expect(menuItem(pinned, 'Start')).toBeEnabled();
+  await expect(
+    menus.getByRole('button', { name: 'Selected VM', exact: true }),
+  ).toHaveCount(0);
+  await pinned
+    .getByRole('button', { name: 'Close Selected VM menu', exact: true })
+    .click();
+  await activate(page, manager);
+  await applicationMenu(page, 'View', hasTouch);
+  await menuItem(page, 'Environment').click();
+  await expect(manager.locator('.machines-environment')).toBeVisible();
+  await applicationMenu(page, 'View', hasTouch);
+  await expect(menuItem(page, 'Environment')).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  await menuItem(page, 'VMs').click();
+  await expect(
+    manager.getByRole('button', { name: 'Review VM lima', exact: true }),
+  ).toBeVisible();
+  await expect(
+    manager.getByRole('button', { name: 'Inspect', exact: true }),
+  ).toBeEnabled();
+});
 
 test('VM and volume controls respect cross-resource operation ownership', async ({
   page,

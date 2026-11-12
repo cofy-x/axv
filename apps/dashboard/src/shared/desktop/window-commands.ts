@@ -22,6 +22,16 @@ export type WindowCommand =
   | 'codex:archive'
   | 'codex:unarchive'
   | 'codex:terminal'
+  | 'codex:attachments'
+  | 'codex:project-files'
+  | 'codex:tasks'
+  | 'codex:new-session'
+  | 'codex:new-in-folder'
+  | 'codex:refresh'
+  | 'machines:new'
+  | 'machines:refresh'
+  | `machines:view:${'machines' | 'volumes' | 'images' | 'operations'}`
+  | `machines:${'start' | 'stop' | 'restart' | 'force-stop' | 'delete' | 'terminal' | 'inspect'}:${string}`
   | 'codex:end';
 
 export type WindowCommandHandler = () => Promise<boolean>;

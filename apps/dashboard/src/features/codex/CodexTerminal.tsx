@@ -689,7 +689,7 @@ export function CodexTerminal({
   }, [desktop]);
   const projectFiles = useCallback(async () => {
     const session = connection.current?.getSnapshot().session;
-    if (!session) return;
+    if (!session) return false;
     if (session.vmProject) {
       const project = session.vmProject.project;
       desktop.openApp(
@@ -697,7 +697,7 @@ export function CodexTerminal({
         { vmProjectId: project.id, hostId: project.hostId },
         { title: `VM · ${project.name}` },
       );
-      return;
+      return true;
     }
     const { project } = await projectsAPI.register(session.projectPath);
     desktopDatabase.assertUnchanged();
@@ -706,6 +706,22 @@ export function CodexTerminal({
       { projectId: project.id },
       { title: project.name },
     );
+    return true;
+  }, [desktop]);
+  const attachments = useCallback(async () => {
+    desktop.openApp('conversation-context', { sessionId: id, runId });
+    return true;
+  }, [desktop, id, runId]);
+  const projectTasks = useCallback(async () => {
+    const project =
+      connection.current?.getSnapshot().session?.vmProject?.project;
+    if (!project) return false;
+    desktop.openApp(
+      'project-files',
+      { hostId: project.hostId, vmTasksProjectId: project.id },
+      { title: `Tasks · ${project.name}` },
+    );
+    return true;
   }, [desktop]);
   useEffect(() => {
     const unregister = [
@@ -743,6 +759,19 @@ export function CodexTerminal({
         !!activeRun,
       ),
       commands.register(window.id, 'codex:details', details, !!state.session),
+      commands.register(window.id, 'codex:attachments', attachments),
+      commands.register(
+        window.id,
+        'codex:project-files',
+        projectFiles,
+        !!state.session,
+      ),
+      commands.register(
+        window.id,
+        'codex:tasks',
+        projectTasks,
+        !!state.session?.vmProject,
+      ),
       commands.register(
         window.id,
         'codex:rename',
@@ -789,6 +818,9 @@ export function CodexTerminal({
     rename,
     archive,
     projectTerminal,
+    attachments,
+    projectFiles,
+    projectTasks,
     changingMetadata,
     end,
     hasSelection,
@@ -829,26 +861,6 @@ export function CodexTerminal({
               desktop.openApp('conversation-context', { sessionId: id, runId })
             }
           />
-          {state.session?.vmProject && (
-            <>
-              <Button onClick={() => void runCommand(desktop, projectFiles)}>
-                Project Files
-              </Button>
-              <Button
-                onClick={() => {
-                  const project = state.session?.vmProject?.project;
-                  if (project)
-                    desktop.openApp(
-                      'project-files',
-                      { hostId: project.hostId, vmTasksProjectId: project.id },
-                      { title: `Tasks · ${project.name}` },
-                    );
-                }}
-              >
-                Tasks
-              </Button>
-            </>
-          )}
           <Button
             disabled={state.phase !== 'connected'}
             onClick={() => void interrupt()}
@@ -911,7 +923,10 @@ export function CodexTerminal({
                       runId,
                     });
                   },
-                  projectFiles: () => void runCommand(desktop, projectFiles),
+                  projectFiles: () =>
+                    void runCommand(desktop, async () => {
+                      await projectFiles();
+                    }),
                   projectFilesAvailable: !!state.session,
                 }),
                 { x: rect.left, y: rect.bottom },

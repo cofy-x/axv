@@ -47,6 +47,14 @@ test('compact Workspace commands remain reachable with selected desktop icons', 
     await expect(workspaceMenu).toBeFocused();
     await expect(icon).toHaveAttribute('aria-pressed', 'true');
   }
+  await choose(workspaceMenu);
+  await choose(menuItem(page, 'Welcome'));
+  await expect(page.locator('[data-app-id="welcome"]')).toHaveClass(
+    /is-active/,
+  );
+  await expect(
+    page.getByRole('navigation', { name: 'Application menus' }),
+  ).toHaveCount(0);
 });
 
 test('mobile shell keeps long workspace names and connection states within 320 pixels', async ({
@@ -108,10 +116,14 @@ test('mobile shell keeps long workspace names and connection states within 320 p
     for (const box of [clipBox, menuBox])
       expect(box.y + box.height).toBeLessThanOrEqual(frame.y);
     await expect(menus.locator('.ns-menu-title')).toHaveText('Files');
-    for (const group of ['File', 'Edit', 'View', 'Window', 'Help'])
+    for (const group of ['File', 'Edit', 'View'])
       await expect(
         menus.getByRole('button', { name: group, exact: true }),
       ).toBeInViewport();
+    for (const group of ['Window', 'Help'])
+      await expect(
+        menus.getByRole('button', { name: group, exact: true }),
+      ).toHaveCount(0);
   };
   await expectShellFits('Connected');
   await page.route('**/api/entries', async (route) => {
@@ -201,9 +213,15 @@ test('compact application menus keep keyboard focus and pinned commands with the
   await expect(
     menuItem(
       page.getByRole('menu', { name: 'View', exact: true }),
-      'Arrange Icons',
+      'Sort by Name',
     ),
   ).toBeVisible();
+  await expect(
+    menuItem(
+      page.getByRole('menu', { name: 'View', exact: true }),
+      'Arrange Icons',
+    ),
+  ).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(
     menus.getByRole('button', { name: 'View', exact: true }),
@@ -269,7 +287,7 @@ test('short desktops preserve application space, shell commands and saved geomet
   }
   for (const control of [
     clip.getByRole('button', { name: /^Workspace 1:/ }),
-    menus.getByRole('button', { name: 'Window', exact: true }),
+    menus.getByRole('button', { name: 'File', exact: true }),
   ])
     expect((await bounds(control)).height).toBeGreaterThanOrEqual(32);
   const windowCount = await page.locator('[data-window-id]').count();
@@ -346,7 +364,7 @@ test('short desktops preserve application space, shell commands and saved geomet
   await expect(clockDialog).toBeVisible();
   await choose(clockDialog.getByRole('button', { name: 'OK', exact: true }));
   expect(await page.locator('[data-window-id]').count()).toBe(windowCount);
-  await applicationMenu(page, 'Window', touch);
+  await choose(note.getByRole('button', { name: /^Window menu for / }));
   await expect(menuItem(page, 'Miniaturize')).toBeInViewport();
   await page.keyboard.press('Escape');
   await switchWorkspace(page, 2, touch);
@@ -403,7 +421,7 @@ test('short desktops preserve application space, shell commands and saved geomet
     await expect(
       note.getByRole('button', { name: /^Close / }),
     ).toBeInViewport();
-    await applicationMenu(page, 'Window', touch);
+    await choose(note.getByRole('button', { name: /^Window menu for / }));
     await expect(menuItem(page, 'Miniaturize')).toBeInViewport();
     await page.keyboard.press('Escape');
   }

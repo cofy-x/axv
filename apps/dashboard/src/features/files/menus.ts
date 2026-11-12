@@ -12,6 +12,41 @@ import {
 } from '../../filesystem/commands';
 import { runCommand } from '../../shared/desktop/dialogs';
 
+export const fileSortOptions = [
+  { value: 'name', label: 'Name' },
+  { value: 'modified', label: 'Modified' },
+  { value: 'size', label: 'Size' },
+  { value: 'kind', label: 'Kind' },
+] as const;
+
+export function createFilesSortMenu(
+  state: Record<string, unknown>,
+  update: (state: Record<string, unknown>) => void,
+): MenuItem[] {
+  const sort = fileSortOptions.some((option) => option.value === state.sort)
+    ? state.sort
+    : 'name';
+  const descending = state.descending === true;
+  return [
+    ...fileSortOptions.map((option) => ({
+      label: `Sort by ${option.label}`,
+      checked: sort === option.value,
+      action: () => update({ sort: option.value }),
+    })),
+    { separator: true },
+    {
+      label: 'Ascending',
+      checked: !descending,
+      action: () => update({ descending: false }),
+    },
+    {
+      label: 'Descending',
+      checked: descending,
+      action: () => update({ descending: true }),
+    },
+  ];
+}
+
 export function createFilesMenu(
   data: FilesystemData,
   window: DesktopWindow,
@@ -119,6 +154,17 @@ export function createFilesMenu(
           disabled: !ids.length || selected.some((entry) => entry.system),
           action: command(() => trashEntries(data, desktop, ids)),
         },
+      ],
+    },
+    {
+      id: 'view',
+      label: 'View',
+      items: [
+        ...createFilesSortMenu(window.viewState, (update) =>
+          desktop.updateWindowState(window.id, update),
+        ),
+        { separator: true },
+        { label: 'Refresh Folder', action: command(data.refresh) },
       ],
     },
   ];

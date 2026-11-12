@@ -1,5 +1,6 @@
 import type { APIRequestContext, Locator, Page } from '@playwright/test';
 import { activate, expect, menuItem, test as desktopTest } from './helpers';
+import { applicationMenu } from './desktop-application-helpers';
 
 export interface CodexSession {
   id: string;
@@ -162,13 +163,8 @@ export async function resumeCodex(page: Page, id: string, runId: string) {
 }
 
 export async function openCodexEnvironment(page: Page, touch = false) {
-  const manager = await openCodexManager(page, touch);
-  await choose(
-    manager
-      .locator('.codex-manager-tools')
-      .getByRole('button', { name: 'More Codex manager actions', exact: true }),
-    touch,
-  );
+  await openCodexManager(page, touch);
+  await applicationMenu(page, 'Sessions', touch);
   await choose(
     page
       .locator('.ns-menu-layer')
@@ -213,9 +209,9 @@ export async function selectCodexProject(page: Page, touch = false) {
   return manager;
 }
 
-export async function startCodex(page: Page, touch = false) {
+export async function startCodex(page: Page, touch = false, fromMenu = false) {
   const manager = await openCodexManager(page, touch);
-  return createCodex(page, manager, 'New Session', touch);
+  return createCodex(page, manager, 'New Session', touch, fromMenu);
 }
 
 export async function startCodexInFolder(page: Page, touch = false) {
@@ -228,16 +224,21 @@ async function createCodex(
   manager: Locator,
   label: string,
   touch: boolean,
+  fromMenu = false,
 ) {
   const created = page.waitForResponse(
     (response) =>
       response.url().endsWith('/api/host/codex/sessions') &&
       response.request().method() === 'POST',
   );
-  await choose(
-    manager.getByRole('button', { name: label, exact: true }),
-    touch,
-  );
+  if (fromMenu) {
+    await applicationMenu(page, 'Sessions', touch);
+    await choose(menuItem(page, label), touch);
+  } else
+    await choose(
+      manager.getByRole('button', { name: label, exact: true }),
+      touch,
+    );
   const response = await created;
   expect(response.ok()).toBeTruthy();
   const { session: current } = (await response.json()) as {

@@ -5,6 +5,7 @@ import {
 } from './code-editor-helpers';
 import type { APIRequestContext, Locator, Page } from '@playwright/test';
 import { activate, expect, menuItem, persistedLayout, test } from './helpers';
+import { applicationMenu } from './desktop-application-helpers';
 import type { CodexSessionRecord } from '../apps/dashboard/src/features/codex/api';
 import type {
   VMProject,
@@ -479,10 +480,8 @@ test('VM project Codex keeps drafts and routes files and tasks to the captured p
     manager(page).getByRole('button', { name: 'New in Folder', exact: true }),
   ).toHaveCount(0);
   expect(state.starts).toHaveLength(0);
-  const start = manager(page).getByRole('button', {
-    name: 'New Session',
-    exact: true,
-  });
+  await applicationMenu(page, 'Sessions', touch);
+  const start = menuItem(page, 'New Session');
   if (touch) await start.tap();
   else {
     await start.focus();
@@ -500,15 +499,13 @@ test('VM project Codex keeps drafts and routes files and tasks to the captured p
     'aria-label',
     'Codex · VM · VM coding project',
   );
-  await runWindow(page)
-    .getByRole('button', { name: 'Project Files', exact: true })
-    .click();
+  await applicationMenu(page, 'Project', touch);
+  await menuItem(page, 'Project Files').click();
   await expectEditorText(text, 'Unsaved VM draft');
   expect(state.writes).toBe(0);
   await activate(page, runWindow(page));
-  await runWindow(page)
-    .getByRole('button', { name: 'Tasks', exact: true })
-    .click();
+  await applicationMenu(page, 'Project', touch);
+  await menuItem(page, 'Tasks').click();
   await expect(
     page.locator(
       `[data-window-id="project-files:vm-tasks:${project.hostId}:${project.id}"]`,
@@ -517,6 +514,9 @@ test('VM project Codex keeps drafts and routes files and tasks to the captured p
   await activate(page, runWindow(page));
   const screenshot = testInfo.outputPath('vm-project-codex.png');
   await page.screenshot({ path: screenshot });
+  await page
+    .getByRole('navigation', { name: 'Application menus' })
+    .screenshot({ path: testInfo.outputPath('codex-application-panel.png') });
   await testInfo.attach('VM project Codex', {
     path: screenshot,
     contentType: 'image/png',
@@ -540,9 +540,8 @@ test('VM project Codex keeps drafts and routes files and tasks to the captured p
     'connected',
   );
   expect(state.starts).toHaveLength(1);
-  await runWindow(page)
-    .getByRole('button', { name: 'Project Files', exact: true })
-    .click();
+  await applicationMenu(page, 'Project', touch);
+  await menuItem(page, 'Project Files').click();
   await files(page)
     .getByRole('button', { name: 'Restore Draft', exact: true })
     .click();

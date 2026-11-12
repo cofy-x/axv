@@ -41,6 +41,18 @@ test('New Session uses the default workspace immediately and exposes tmux detail
       directoryRequests.push(request.url());
   });
   const manager = await openCodexManager(page);
+  const applicationMenus = page.getByRole('navigation', {
+    name: 'Application menus',
+  });
+  await expect(
+    applicationMenus.getByRole('button', { name: 'Sessions', exact: true }),
+  ).toBeVisible();
+  await expect(
+    applicationMenus.getByRole('button', { name: 'File', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    applicationMenus.getByRole('button', { name: 'View', exact: true }),
+  ).toHaveCount(0);
   await expect(manager.getByTestId('codex-default-project')).toHaveText(
     defaultProjectPath,
   );
@@ -71,12 +83,15 @@ test('New Session uses the default workspace immediately and exposes tmux detail
     page,
     page.locator('.ns-window:has([data-testid="codex-manager"])'),
   );
-  await applicationMenu(page, 'File');
+  await applicationMenu(page, 'Sessions');
   await menuItem(page, 'Environment').click();
   await expect(environment).toHaveCount(1);
   await expect(environment).toHaveAttribute('data-window-id', environmentId!);
   await environment.getByRole('button', { name: /^Close / }).click();
-  const { window, id } = await startCodex(page);
+  const { window, id } = await startCodex(page, false, true);
+  await expect(
+    applicationMenus.getByRole('button', { name: 'Project', exact: true }),
+  ).toBeVisible();
   expect(directoryRequests).toEqual([]);
   const current = await session(request, id);
   expect(current.projectPath).toBe(defaultProjectPath);

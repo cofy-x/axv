@@ -29,7 +29,7 @@ import {
 } from '../features/codex/definition';
 
 import {
-  machinesApp,
+  createMachinesApp,
   createMachineApp,
   machineInspectorApp,
   createGuestTerminalApp,
@@ -49,7 +49,7 @@ export function createAppRegistry(
     conversationContextApp,
     snapshotPreviewApp,
     createTerminalApp(commands),
-    machinesApp,
+    createMachinesApp(commands),
     createMachineApp,
     machineInspectorApp,
     createGuestTerminalApp(commands),

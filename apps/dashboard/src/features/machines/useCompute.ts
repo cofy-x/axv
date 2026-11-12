@@ -2,6 +2,11 @@ import { useEffect, useSyncExternalStore } from 'react';
 import { computeStore } from './compute-store';
 import { preparationStore } from './preparation-store';
 
+function refresh() {
+  computeStore.refresh();
+  preparationStore.refresh();
+}
+
 export type { ComputeSnapshot } from './compute-store';
 
 export function useCompute() {
@@ -20,9 +25,6 @@ export function useCompute() {
     ...snapshot,
     preparation,
     prepare: preparationStore,
-    refresh: () => {
-      computeStore.refresh();
-      preparationStore.refresh();
-    },
+    refresh,
   };
 }

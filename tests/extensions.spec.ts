@@ -19,10 +19,7 @@ import {
   persistedLayout,
   test,
 } from './helpers';
-import {
-  applicationMenu,
-  showApplicationOnDesktop,
-} from './desktop-application-helpers';
+import { showApplicationOnDesktop } from './desktop-application-helpers';
 
 const id = 'local.checklist';
 const extensionHeaders = (storeId: string) => ({
@@ -666,7 +663,10 @@ test('application icons follow explicit desktop choices across reload, hiding an
     }),
     touch,
   );
-  await applicationMenu(page, 'View', touch);
+  await choose(
+    page.getByRole('button', { name: 'Workspace menu', exact: true }),
+    touch,
+  );
   await choose(menuItem(page, 'Arrange Icons'), touch);
   const positions = page.viewportSize()!.width < 600 ? 'compactIcons' : 'icons';
   await expect

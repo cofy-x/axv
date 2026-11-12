@@ -110,6 +110,8 @@ export interface MenuGroup {
   id: string;
   label: string;
   items: MenuItem[];
+  /** Show in the application panel; false keeps shared commands available to other menu surfaces. */
+  applicationMenu?: boolean;
 }
 
 export interface DialogOptions {
