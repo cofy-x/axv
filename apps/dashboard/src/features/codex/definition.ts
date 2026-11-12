@@ -5,6 +5,7 @@ import type {
 } from '../../shared/desktop/window-commands';
 import { CodexApp } from './CodexApp';
 import { deferWindow } from '../../shared/desktop/defer-window';
+import { runCommand } from '../../shared/desktop/dialogs';
 import { sessionWindowTitle } from './api';
 import type { CodexSessionRecord } from './api';
 
@@ -159,13 +160,33 @@ export function createCodexApp(commands: WindowCommands): AppDefinition {
     defaultSize: { width: 820, height: 580 },
     minSize: { width: 360, height: 320 },
     menu: (window, desktop) => {
+      const isRun = !!(window.params.sessionId && window.params.runId);
+      const command = (label: string, id: WindowCommand): MenuItem => ({
+        id,
+        label,
+        disabled: !commands.canExecute(window.id, id),
+        action: () => {
+          void commands.execute(window.id, id);
+        },
+      });
       return [
         {
           id: 'file',
-          label: 'File',
+          label: 'Sessions',
           items: [
+            ...(!isRun
+              ? [
+                  command('New Session', 'codex:new-session'),
+                  ...(!window.params.vmProjectId
+                    ? [command('New in Folder', 'codex:new-in-folder')]
+                    : []),
+                  command('Refresh', 'codex:refresh'),
+                  { separator: true },
+                ]
+              : []),
             {
-              label: 'Codex Sessions',
+              label: 'All Sessions',
+              checked: !isRun && !window.params.vmProjectId,
               action: () => {
                 desktop.openApp('codex');
               },
@@ -176,27 +197,40 @@ export function createCodexApp(commands: WindowCommands): AppDefinition {
                 openCodexEnvironment(desktop);
               },
             },
-            { separator: true },
-            {
-              label: 'Close Window',
-              shortcut: '⌘W',
-              action: () => {
-                void desktop.closeWindow(window.id);
-              },
-            },
           ],
         },
-        ...(window.params.sessionId && window.params.runId
+        ...(isRun
           ? [
               {
                 id: 'edit',
-                label: 'Edit',
+                label: 'Terminal',
                 items: codexEditMenu(commands, window.id),
               },
               {
                 id: 'session',
                 label: 'Session',
                 items: codexSessionMenu(commands, window.id),
+              },
+              {
+                id: 'project',
+                label: 'Project',
+                items: (
+                  [
+                    ['Attachments', 'codex:attachments'],
+                    ['Project Files', 'codex:project-files'],
+                    ['Tasks', 'codex:tasks'],
+                    ['Host Terminal', 'codex:terminal'],
+                  ] as const
+                ).map(([label, id]) => ({
+                  id,
+                  label,
+                  disabled: !commands.canExecute(window.id, id),
+                  action: () => {
+                    void runCommand(desktop, async () => {
+                      await commands.execute(window.id, id);
+                    });
+                  },
+                })),
               },
             ]
           : []),

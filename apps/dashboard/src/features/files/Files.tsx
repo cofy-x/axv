@@ -28,16 +28,11 @@ import {
   createFilesActionMenu,
   createFilesContextMenu,
   createFilesNewMenu,
+  createFilesSortMenu,
+  fileSortOptions as sortOptions,
 } from './menus';
 import type { FileMenuOptions } from './menus';
 import { folderPath, reconcileNavigation } from './navigation';
-
-const sortOptions = [
-  { value: 'name', label: 'Name' },
-  { value: 'modified', label: 'Modified' },
-  { value: 'size', label: 'Size' },
-  { value: 'kind', label: 'Kind' },
-] as const;
 
 export function Files({ window, desktop, interactive }: AppWindowProps) {
   const data = useFilesystemData();
@@ -210,27 +205,6 @@ export function Files({ window, desktop, interactive }: AppWindowProps) {
       },
       entry,
     ).filter((item) => !narrow || item.id !== 'view');
-  }
-
-  function viewMenu(): MenuItem[] {
-    return [
-      ...sortOptions.map((option) => ({
-        label: `Sort by ${option.label}`,
-        checked: sort === option.value,
-        action: () => update({ sort: option.value }),
-      })),
-      { separator: true },
-      {
-        label: 'Ascending',
-        checked: !descending,
-        action: () => update({ descending: false }),
-      },
-      {
-        label: 'Descending',
-        checked: descending,
-        action: () => update({ descending: true }),
-      },
-    ];
   }
 
   function toolbarMenu(kind: 'new' | 'actions'): MenuItem[] {
@@ -590,7 +564,7 @@ export function Files({ window, desktop, interactive }: AppWindowProps) {
               event.currentTarget.focus({ preventScroll: true });
               const rect = event.currentTarget.getBoundingClientRect();
               desktop.contextMenu(
-                viewMenu(),
+                createFilesSortMenu(state, update),
                 { x: rect.right, y: rect.bottom },
                 {
                   title: `${folder.name} View`,

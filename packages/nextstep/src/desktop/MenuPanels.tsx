@@ -28,42 +28,43 @@ export function ApplicationMenu({
 }) {
   const win = api.windows.find((item) => item.id === api.activeWindowId);
   const app = win ? resolveApplication(props.apps, win.appId) : undefined;
+  const applicationGroups = groups.filter(
+    (group) => group.id !== 'desktop' && group.applicationMenu !== false,
+  );
+  if (!applicationGroups.length) return null;
   return (
     <nav className="ns-application-menu" aria-label="Application menus">
       <div className="ns-menu-title">
         <span>{app?.title ?? 'Workspace'}</span>
       </div>
-      {groups
-        .filter((group) => group.id !== 'desktop')
-        .map((group) => (
-          <button
-            type="button"
-            className="ns-application-menu-item"
-            key={group.id}
-            aria-haspopup="menu"
-            onClick={(event) => {
-              event.currentTarget.focus();
-              const rect = event.currentTarget.getBoundingClientRect();
-              api.contextMenu(
-                group.items,
-                { x: rect.right + 2, y: rect.top },
-                {
+      {applicationGroups.map((group) => (
+        <button
+          type="button"
+          className="ns-application-menu-item"
+          key={group.id}
+          aria-haspopup="menu"
+          onClick={(event) => {
+            event.currentTarget.focus();
+            const rect = event.currentTarget.getBoundingClientRect();
+            api.contextMenu(
+              group.items,
+              { x: rect.right + 2, y: rect.top },
+              {
+                title: group.label,
+                pin: {
+                  kind: win ? 'application' : 'desktop',
+                  ownerWindowId: win?.id,
+                  groupId: group.id,
                   title: group.label,
-                  pin: {
-                    kind: win ? 'application' : 'desktop',
-                    ownerWindowId: win?.id,
-                    groupId: group.id,
-                    title: group.label,
-                  },
                 },
-              );
-            }}
-          >
-            {group.label}
-            <span aria-hidden="true">▸</span>
-          </button>
-        ))}
-      <div className="ns-menu-owner">{win?.title ?? 'Desktop commands'}</div>
+              },
+            );
+          }}
+        >
+          {group.label}
+          <span aria-hidden="true">▸</span>
+        </button>
+      ))}
     </nav>
   );
 }

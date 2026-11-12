@@ -44,6 +44,7 @@ import { launchRejectedBeforeStart } from './vm-project-requests';
 import { useHostFolderPicker } from './use-host-folder-picker';
 import { useDraftNamespace } from '../../shared/drafts/context';
 import { CodexActivity } from './CodexActivity';
+import { useWindowCommands } from '../../shared/desktop/WindowCommandsContext';
 import {
   canReviewActivity,
   hasActivityAction,
@@ -65,6 +66,7 @@ export function CodexManager({
   visible = true,
   interactive = true,
 }: AppWindowProps) {
+  const commands = useWindowCommands();
   const vmProjectId = window.params.vmProjectId || '';
   const vmHostId = window.params.hostId || '';
   const vm = useVMProject(vmHostId, vmProjectId);
@@ -615,6 +617,73 @@ export function CodexManager({
   const recentProjects = projects.filter(
     (project) => project.path !== defaultProjectPath,
   );
+  const canCreateSession =
+    creating === null &&
+    !(vmProjectId
+      ? !!vm.recoveryError || (!vm.pending && (!canStart || !vm.data))
+      : !canStart);
+  const canChooseFolder =
+    !vmProjectId && creating === null && (choosingFolder || canStart);
+  const [menuAction, setMenuAction] = useState<'create' | 'folder' | null>(
+    null,
+  );
+  const menuActions = useRef({
+    create: async () => {},
+    folder: () => {},
+    refresh: async () => {},
+  });
+  useLayoutEffect(() => {
+    menuActions.current = {
+      create: () => create(),
+      folder: () => {
+        if (choosingFolder) closePicker(true);
+        else showFolderPicker();
+      },
+      refresh: async () => {
+        await Promise.all([refresh(), refreshProjects()]);
+      },
+    };
+  });
+  useEffect(() => {
+    if (
+      !menuAction ||
+      (visible && desktop.activeWindowId === window.id && !interactive)
+    )
+      return;
+    setMenuAction(null);
+    // Run after the menu closes so its focus suspension cannot cancel this intent.
+    if (menuAction === 'create') void menuActions.current.create();
+    else menuActions.current.folder();
+  }, [menuAction, visible, interactive, desktop.activeWindowId, window.id]);
+  useEffect(() => {
+    const unregister = [
+      commands.register(
+        window.id,
+        'codex:new-session',
+        async () => {
+          setMenuAction('create');
+          return true;
+        },
+        canCreateSession,
+      ),
+      commands.register(
+        window.id,
+        'codex:new-in-folder',
+        async () => {
+          setMenuAction('folder');
+          return true;
+        },
+        canChooseFolder,
+      ),
+      commands.register(window.id, 'codex:refresh', async () => {
+        await menuActions.current.refresh();
+        return true;
+      }),
+    ];
+    return () => {
+      for (const cleanup of unregister) cleanup();
+    };
+  }, [commands, window.id, canCreateSession, canChooseFolder]);
 
   return (
     <div
@@ -651,12 +720,7 @@ export function CodexManager({
         <PixelIcon name="companion" size={16} />
         <Button
           primary
-          disabled={
-            creating !== null ||
-            (vmProjectId
-              ? !!vm.recoveryError || (!vm.pending && (!canStart || !vm.data))
-              : !canStart)
-          }
+          disabled={!canCreateSession}
           onClick={() => void create()}
         >
           {creating === 'default'
@@ -667,7 +731,7 @@ export function CodexManager({
         </Button>
         {!vmProjectId && (
           <Button
-            disabled={creating !== null || (!choosingFolder && !canStart)}
+            disabled={!canChooseFolder}
             aria-expanded={choosingFolder}
             aria-controls="codex-folder-picker"
             onClick={() => {
@@ -718,24 +782,6 @@ export function CodexManager({
             onClick={() => {
               void refresh();
               void refreshProjects();
-            }}
-          />
-          <IconButton
-            icon="more"
-            label="More Codex manager actions"
-            aria-haspopup="menu"
-            onClick={(event) => {
-              const rect = event.currentTarget.getBoundingClientRect();
-              desktop.contextMenu(
-                [
-                  {
-                    label: 'Environment',
-                    action: () => openCodexEnvironment(desktop),
-                  },
-                ],
-                { x: rect.left, y: rect.bottom },
-                { title: 'Codex' },
-              );
             }}
           />
         </div>

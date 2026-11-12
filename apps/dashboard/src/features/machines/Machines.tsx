@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import {
   Button,
   ButtonGroup,
@@ -9,6 +15,8 @@ import {
   StatusBar,
 } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
+import { useWindowCommands } from '../../shared/desktop/WindowCommandsContext';
+import { machineMenuCommand } from './menus';
 import { useCompute } from './useCompute';
 import { RequestDetails } from './OperationFeedback';
 import { guestTerminalRequests, openGuestTerminal } from './open-terminal';
@@ -33,8 +41,10 @@ import {
 } from './presentation';
 
 export function Machines({ window, desktop }: AppWindowProps) {
-  const { setTitle } = desktop;
+  const { setTitle, updateWindowState } = desktop;
+  const commands = useWindowCommands();
   const data = useCompute();
+  const refreshData = data.refresh;
   const tab =
     (window.viewState.vmTab as
       'machines' | 'volumes' | 'images' | 'operations') || 'machines';
@@ -45,7 +55,13 @@ export function Machines({ window, desktop }: AppWindowProps) {
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [stateFilter, setStateFilter] = useState('all');
-  const [showHost, setShowHost] = useState(false);
+  const showHost = window.viewState.vmEnvironment === true;
+  const setShowHost = useCallback(
+    (value: boolean) => {
+      updateWindowState(window.id, { vmEnvironment: value });
+    },
+    [updateWindowState, window.id],
+  );
   const viewNav = useRef<HTMLDivElement>(null);
 
   useEffect(
@@ -97,24 +113,35 @@ export function Machines({ window, desktop }: AppWindowProps) {
 
   useEffect(() => {
     if (preparing) setShowHost(true);
-  }, [preparing]);
+  }, [preparing, setShowHost]);
 
-  const actionReason = (action: VMAction) =>
-    !selected
-      ? 'Select a VM first.'
-      : busy
-        ? 'Waiting for the current request.'
-        : pending
-          ? 'Resolve the original request before changing this VM.'
-          : data.error
-            ? 'Refresh the host connection before changing a VM.'
-            : machineActionReason(
-                selected,
-                action,
-                data.operations,
-                data.volumes,
-                provider,
-              );
+  const actionReason = useCallback(
+    (action: VMAction) =>
+      !selected
+        ? 'Select a VM first.'
+        : busy
+          ? 'Waiting for the current request.'
+          : pending
+            ? 'Resolve the original request before changing this VM.'
+            : data.error
+              ? 'Refresh the host connection before changing a VM.'
+              : machineActionReason(
+                  selected,
+                  action,
+                  data.operations,
+                  data.volumes,
+                  provider,
+                ),
+    [
+      selected,
+      busy,
+      pending,
+      data.error,
+      data.operations,
+      data.volumes,
+      provider,
+    ],
+  );
   const terminalReason = !selected
     ? 'Select a VM first.'
     : busy || data.error || pending
@@ -146,42 +173,56 @@ export function Machines({ window, desktop }: AppWindowProps) {
         ?.focus({ preventScroll: true });
   }
 
-  function inspect() {
+  const inspect = useCallback(() => {
     if (selected) openMachineInspector(desktop, selected);
-  }
+  }, [desktop, selected]);
 
-  async function run(action: () => Promise<void>) {
-    setBusy(true);
-    setError('');
-    try {
-      await action();
-      data.refresh();
-    } catch (error) {
-      setError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(false);
-    }
-  }
+  const run = useCallback(
+    async (action: () => Promise<void>) => {
+      setBusy(true);
+      setError('');
+      try {
+        await action();
+        refreshData();
+      } catch (error) {
+        setError(error instanceof Error ? error.message : String(error));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [refreshData],
+  );
 
-  async function lifecycle(action: VMAction, retry = false) {
-    const target = retry ? pending?.machine : selected;
-    if (
-      !target ||
-      data.error ||
-      data.info?.hostId !== target.hostId ||
-      (!retry && actionReason(action))
-    )
-      return;
-    if (!retry && !(await confirmVMAction(desktop, target, action))) return;
-    const latest = computeStore.getSnapshot();
-    if (latest.error || latest.info?.hostId !== target.hostId) return;
-    await run(async () => {
-      const result = await machineActionRequests.execute(target, action);
-      setOperationId(result.operation.id);
-    });
-  }
+  const lifecycle = useCallback(
+    async (action: VMAction, retry = false) => {
+      const target = retry ? pending?.machine : selected;
+      if (
+        !target ||
+        data.error ||
+        data.info?.hostId !== target.hostId ||
+        (!retry && actionReason(action))
+      )
+        return;
+      if (!retry && !(await confirmVMAction(desktop, target, action))) return;
+      const latest = computeStore.getSnapshot();
+      if (latest.error || latest.info?.hostId !== target.hostId) return;
+      await run(async () => {
+        const result = await machineActionRequests.execute(target, action);
+        setOperationId(result.operation.id);
+      });
+    },
+    [
+      pending,
+      selected,
+      data.error,
+      data.info?.hostId,
+      actionReason,
+      desktop,
+      run,
+    ],
+  );
 
-  async function terminal() {
+  const terminal = useCallback(async () => {
     if (!selected || terminalReason) return;
     await run(async () => {
       const session = await guestTerminalRequests.execute(
@@ -190,7 +231,107 @@ export function Machines({ window, desktop }: AppWindowProps) {
       );
       openGuestTerminal(desktop, selected, session);
     });
-  }
+  }, [selected, terminalReason, run, desktop]);
+
+  useEffect(() => {
+    const unregister = [
+      commands.register(
+        window.id,
+        'machines:new',
+        async () => {
+          desktop.openApp('machine-create');
+          return true;
+        },
+        canCreate && !busy,
+      ),
+      commands.register(
+        window.id,
+        'machines:refresh',
+        async () => {
+          refreshData();
+          return true;
+        },
+        !data.refreshing,
+      ),
+    ];
+    for (const view of [
+      'machines',
+      'volumes',
+      'images',
+      'operations',
+    ] as const) {
+      unregister.push(
+        commands.register(
+          window.id,
+          `machines:view:${view}`,
+          async () => {
+            updateWindowState(window.id, { vmTab: view, vmEnvironment: false });
+            return true;
+          },
+          configured,
+        ),
+      );
+    }
+    if (selected) {
+      for (const action of [
+        'start',
+        'stop',
+        'restart',
+        'force-stop',
+        'delete',
+      ] as const) {
+        unregister.push(
+          commands.register(
+            window.id,
+            machineMenuCommand(action, selected.hostId, selected.id),
+            async () => {
+              await lifecycle(action);
+              return true;
+            },
+            !actionReason(action),
+          ),
+        );
+      }
+      unregister.push(
+        commands.register(
+          window.id,
+          machineMenuCommand('inspect', selected.hostId, selected.id),
+          async () => {
+            inspect();
+            return true;
+          },
+        ),
+        commands.register(
+          window.id,
+          machineMenuCommand('terminal', selected.hostId, selected.id),
+          async () => {
+            await terminal();
+            return true;
+          },
+          !terminalReason,
+        ),
+      );
+    }
+    return () => {
+      for (const cleanup of unregister) cleanup();
+    };
+  }, [
+    commands,
+    window.id,
+    desktop,
+    canCreate,
+    busy,
+    data.refreshing,
+    refreshData,
+    selected,
+    lifecycle,
+    actionReason,
+    inspect,
+    terminal,
+    terminalReason,
+    configured,
+    updateWindowState,
+  ]);
 
   return (
     <div className="machines-app">

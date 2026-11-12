@@ -8,9 +8,9 @@ AXV brings coding-agent sessions, development VMs, files and terminals together 
 
 [Get started](#install-and-use) · [User guide](docs/usage.md) · [Documentation](docs/README.md) · [Contribute](CONTRIBUTING.md)
 
-![AXV browser desktop with Welcome and a real Codex conversation](docs/assets/axv-desktop.png)
+![AXV desktop with Welcome, a real Codex conversation and the Codex application menu](docs/assets/axv-desktop.png)
 
-_A representative AXV desktop with Welcome and a real Codex conversation, captured in an isolated demo profile._
+_Welcome and a real Codex conversation, with the active app's commands in the desktop menu._
 
 ## Why AXV
 

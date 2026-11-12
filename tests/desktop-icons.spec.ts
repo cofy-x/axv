@@ -10,10 +10,7 @@ import {
   persistedLayout,
   test,
 } from './helpers';
-import {
-  applicationMenu,
-  showApplicationOnDesktop,
-} from './desktop-application-helpers';
+import { showApplicationOnDesktop } from './desktop-application-helpers';
 import { captureWorkArea } from './work-area-helpers';
 import { preparationCheckFixture } from './machines-preparation-fixture';
 import type { Machine } from '../apps/dashboard/src/features/machines/api';
@@ -127,7 +124,9 @@ async function desktopVMHost(page: Page) {
 }
 
 async function cleanUp(page: Page) {
-  await applicationMenu(page, 'View');
+  await page
+    .getByRole('button', { name: 'Workspace menu', exact: true })
+    .click();
   await menuItem(page, 'Arrange Icons').click();
 }
 

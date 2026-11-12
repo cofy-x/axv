@@ -4,6 +4,7 @@ import type {
   WindowCommands,
 } from '../../shared/desktop/window-commands';
 import { deferWindow } from '../../shared/desktop/defer-window';
+import { createMachinesMenu } from './menus';
 
 const Machines = deferWindow(() =>
   import('./Machines').then((module) => module.Machines),
@@ -18,15 +19,18 @@ const GuestTerminalApp = deferWindow(() =>
   import('./GuestTerminalApp').then((module) => module.GuestTerminalApp),
 );
 
-export const machinesApp: AppDefinition = {
-  id: 'machines',
-  title: 'Virtual Machines',
-  icon: 'virtual-machines',
-  component: Machines,
-  windowKey: () => 'main',
-  defaultSize: { width: 800, height: 620 },
-  minSize: { width: 320, height: 300 },
-};
+export function createMachinesApp(commands: WindowCommands): AppDefinition {
+  return {
+    id: 'machines',
+    title: 'Virtual Machines',
+    icon: 'virtual-machines',
+    component: Machines,
+    windowKey: () => 'main',
+    defaultSize: { width: 800, height: 620 },
+    minSize: { width: 320, height: 300 },
+    menu: (window, desktop) => createMachinesMenu(commands, window, desktop),
+  };
+}
 
 export const createMachineApp: AppDefinition = {
   id: 'machine-create',

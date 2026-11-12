@@ -311,11 +311,79 @@ describe('host-independent desktop commands', () => {
         original.id,
       ).groups;
       groups
-        .find((group) => group.id === 'file')!
+        .find((group) => group.id === 'window')!
         .items.find((item) => item.label === 'Close Window')!
         .action?.();
       expect(api.closeWindow).toHaveBeenLastCalledWith(original.id);
     }
     expect(menu).not.toHaveBeenCalled();
+  });
+  it('lets the active application own its menus without desktop File or View commands', () => {
+    const api = desktopAPI();
+    const owner = win('a');
+    api.windows = [owner];
+    api.activeWindowId = owner.id;
+    const editor = {
+      ...app('editor'),
+      menu: () => [
+        { id: 'session', label: 'Session', items: [{ label: 'Reconnect' }] },
+        { id: 'unused', label: 'Unused', items: [] },
+      ],
+    };
+    const groups = createDesktopMenus(
+      { apps: [editor], icons: [] },
+      api,
+      [],
+    ).groups;
+    expect(groups.map((group) => group.id)).toEqual([
+      'desktop',
+      'session',
+      'window',
+    ]);
+    expect(groups.find((group) => group.id === 'window')?.applicationMenu).toBe(
+      false,
+    );
+    const workspace = createDesktopMenus(
+      { apps: [editor], icons: [] },
+      api,
+      [],
+      null,
+    ).groups;
+    expect(workspace.find((group) => group.id === 'view')?.items[0].label).toBe(
+      'Arrange Icons',
+    );
+  });
+  it('keeps shared help in the workspace while allowing an application-specific guide', () => {
+    const api = desktopAPI();
+    const owner = win('a');
+    api.windows = [owner];
+    api.activeWindowId = owner.id;
+    const onHelp = vi.fn();
+    const props: DesktopProps = {
+      apps: [app('editor')],
+      icons: [],
+      onHelp,
+      helpLabel: 'Welcome',
+    };
+    createDesktopContextMenu(props, api, []).find(
+      (item) => item.label === 'Welcome',
+    )!.action!();
+    expect(onHelp).toHaveBeenCalledOnce();
+    expect(
+      createDesktopMenus(props, api, []).groups.find(
+        (group) => group.id === 'help',
+      )!.applicationMenu,
+    ).toBe(false);
+    const guide = {
+      id: 'help',
+      label: 'Editor Guide',
+      items: [{ label: 'Editing help' }],
+    };
+    const groups = createDesktopMenus(
+      { ...props, apps: [{ ...app('editor'), menu: () => [guide] }] },
+      api,
+      [],
+    ).groups;
+    expect(groups.find((group) => group.id === 'help')).toEqual(guide);
   });
 });

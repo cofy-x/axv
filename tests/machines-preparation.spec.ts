@@ -7,7 +7,8 @@ import type {
   PreparationPlan,
   PreparationRequest,
 } from '../apps/dashboard/src/features/machines/api';
-import { expect, launch, test } from './helpers';
+import { expect, launch, menuItem, test } from './helpers';
+import { applicationMenu } from './desktop-application-helpers';
 import { preparationCheckFixture } from './machines-preparation-fixture';
 
 interface PreparationFixture {
@@ -332,6 +333,32 @@ async function reviewMac(manager: Locator) {
     manager.getByRole('heading', { name: 'Review VM preparation' }),
   ).toBeVisible();
 }
+
+test('unconfigured VM menus keep setup visible and unavailable views disabled', async ({
+  page,
+  hasTouch,
+}) => {
+  const manager = await host(page, fixture());
+  await expect(
+    manager.getByRole('heading', { name: 'Enable virtual machines' }),
+  ).toBeVisible();
+  await applicationMenu(page, 'View', hasTouch);
+  await expect(menuItem(page, 'Environment')).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  for (const label of ['VMs', 'Volumes', 'Images', 'Activity']) {
+    await expect(menuItem(page, label)).toBeDisabled();
+    await expect(menuItem(page, label)).toHaveAttribute(
+      'aria-checked',
+      'false',
+    );
+  }
+  await menuItem(page, 'Environment').click();
+  await expect(
+    manager.getByRole('heading', { name: 'Enable virtual machines' }),
+  ).toBeVisible();
+});
 
 test('macOS preparation reviews before changes, preserves drafts and resumes one background job', async ({
   page,

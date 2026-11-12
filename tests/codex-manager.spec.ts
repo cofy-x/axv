@@ -1,4 +1,5 @@
-import { switchWorkspace } from './helpers';
+import { menuItem, switchWorkspace } from './helpers';
+import { applicationMenu } from './desktop-application-helpers';
 import {
   choose,
   codexWindow,
@@ -231,10 +232,8 @@ test('late creation preserves newer workspace and list choices instead of activa
       await route.fulfill({ response });
     });
     try {
-      await choose(
-        manager.getByRole('button', { name: 'New Session', exact: true }),
-        touch,
-      );
+      await applicationMenu(page, 'Sessions', touch);
+      await choose(menuItem(page, 'New Session'), touch);
       await expect.poll(() => !!result).toBe(true);
       if (scenario === 'workspace') {
         await changeWorkspace(true);

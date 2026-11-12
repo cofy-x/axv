@@ -1368,9 +1368,6 @@ select:disabled {
 .is-mobile .ns-application-menu-item span {
   display: none;
 }
-.is-mobile .ns-application-menu > .ns-menu-owner {
-  display: none;
-}
 .is-mobile .ns-dock {
   top: auto;
   bottom: 0;
@@ -1478,8 +1475,7 @@ select:disabled {
   min-height: 32px;
   padding: 3px 7px;
 }
-.is-short .ns-application-menu-item > span,
-.is-short .ns-application-menu > .ns-menu-owner {
+.is-short .ns-application-menu-item > span {
   display: none;
 }
 .is-short.has-side-dock .ns-application-menu {

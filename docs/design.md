@@ -18,6 +18,10 @@ State shared failures once at the desktop level. An affected editor shows its av
 
 Keep frequent actions visible and group secondary commands in one accessible menu. Name action menus for their view or selected target, including a short identifier when names can repeat. Use the shared icon button for familiar actions such as copy, paste and paging; keep lifecycle and destructive actions clearly named. Icon buttons retain accessible names, tooltips, focus feedback and touch hit areas.
 
+Use the desktop application menu for the active application's navigation and secondary tools, with groups named for its work. Keep desktop arrangement and general welcome/help commands in the workspace menu. Window management belongs in title-bar menus and the shared window overview. Add an application-specific guide when it helps that workflow rather than repeating generic Window/Help groups. Preserve direct access to frequent actions, live status and error recovery in the content window; avoid extra overflow buttons that repeat a single application-menu command. Menu actions must retain their original window and resource target, including when fixed as a panel.
+
+The main application panel shows its application title and commands. Reserve the window-owner caption for fixed menus, which can remain open while another window is active.
+
 Use short action labels without trailing ellipses, including commands that open a picker, panel or confirmation. Reserve ellipses for loading or in-progress text and actual truncation. The standalone More icon remains a menu affordance.
 
 ## Design sources and goals
