@@ -25,7 +25,7 @@ describe('VM lifecycle request ownership', () => {
     const original = requests.getPending(machine.hostId, machine.id);
     expect(requests.getPending(other.hostId, other.id)).toBeUndefined();
     await requests.execute(other, 'stop');
-    expect(action.mock.calls[1][0]).toBe(other);
+    expect(action.mock.calls[1][0]).toEqual(other);
     expect(requests.getPending(machine.hostId, machine.id)).toBe(original);
     await requests.execute({ ...machine, revision: 2 }, 'restart');
     expect(action.mock.calls[2]).toEqual(action.mock.calls[0]);
@@ -153,6 +153,85 @@ describe('VM lifecycle request ownership', () => {
 });
 
 describe('VM lifecycle subscriptions', () => {
+  it('registers the shared request before a subscriber can repeat a destructive action', async () => {
+    const result = {
+      machine,
+      operation: { id: 'original-restart' },
+    } as Awaited<ReturnType<typeof machinesApi.action>>;
+    const action = vi.spyOn(machinesApi, 'action').mockResolvedValue(result);
+    const requests = new MachineActionRequests();
+    let repeated: Promise<typeof result> | undefined;
+    let requested = false;
+    requests.subscribe(() => {
+      if (!requested && requests.getPending(machine.hostId, machine.id)) {
+        requested = true;
+        repeated = requests.execute(machine, 'restart');
+      }
+    });
+    const first = requests.execute(machine, 'restart');
+    expect(repeated).toBe(first);
+    await first;
+    expect(action).toHaveBeenCalledOnce();
+  });
+
+  it('allows a confirmed next action from a completion subscriber without retiring its request', async () => {
+    const updated = { ...machine, revision: 2 };
+    const firstResult = {
+      machine: updated,
+      operation: { id: 'restart' },
+    } as Awaited<ReturnType<typeof machinesApi.action>>;
+    let finish!: (value: typeof firstResult) => void;
+    const action = vi
+      .spyOn(machinesApi, 'action')
+      .mockResolvedValueOnce(firstResult)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+    const requests = new MachineActionRequests();
+    let next: Promise<typeof firstResult> | undefined;
+    let requested = false;
+    requests.subscribe(() => {
+      if (!requested && !requests.getPending(machine.hostId, machine.id)) {
+        requested = true;
+        next = requests.execute(updated, 'stop');
+      }
+    });
+    await requests.execute(machine, 'restart');
+    expect(action).toHaveBeenCalledTimes(2);
+    expect(requests.execute(updated, 'stop')).toBe(next);
+    expect(requests.getPending(machine.hostId, machine.id)?.action).toBe(
+      'stop',
+    );
+    finish({
+      machine: updated,
+      operation: { id: 'stop' },
+    } as typeof firstResult);
+    await next;
+    expect(requests.getPending(machine.hostId, machine.id)).toBeUndefined();
+  });
+
+  it('retains the captured VM revision when the caller mutates its original object', async () => {
+    const original = { ...machine };
+    const action = vi
+      .spyOn(machinesApi, 'action')
+      .mockRejectedValueOnce(new TypeError('Response lost'))
+      .mockResolvedValue({
+        machine,
+        operation: { id: 'original-stop' },
+      } as Awaited<ReturnType<typeof machinesApi.action>>);
+    const requests = new MachineActionRequests();
+    await expect(requests.execute(original, 'stop')).rejects.toThrow(
+      'Response lost',
+    );
+    original.revision = 10;
+    await requests.execute(original, 'stop');
+    expect(action.mock.calls[1][0].revision).toBe(1);
+    expect(action.mock.calls[1][2]).toBe(action.mock.calls[0][2]);
+  });
+
   it('publishes stable pending snapshots to every window until request state changes', async () => {
     const result = { machine, operation: { id: 'original-action' } } as Awaited<
       ReturnType<typeof machinesApi.action>

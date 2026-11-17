@@ -15,6 +15,39 @@ const terminal: GuestTerminal = {
 afterEach(() => vi.restoreAllMocks());
 
 describe('guest terminal creation ownership', () => {
+  it('shares a request even if transport setup immediately reenters creation', async () => {
+    const requests = new GuestTerminalRequests();
+    let repeated: Promise<GuestTerminal> | undefined;
+    const create = vi
+      .spyOn(machinesApi, 'createTerminal')
+      .mockImplementationOnce(() => {
+        repeated = requests.execute('vm-one', 'host-original');
+        return Promise.resolve(terminal);
+      })
+      .mockResolvedValue(terminal);
+    const first = requests.execute('vm-one', 'host-original');
+    expect(repeated).toBe(first);
+    await first;
+    expect(create).toHaveBeenCalledOnce();
+  });
+
+  it('keeps an uncertain creation retryable after synchronous transport failure', async () => {
+    const create = vi
+      .spyOn(machinesApi, 'createTerminal')
+      .mockImplementationOnce(() => {
+        throw new TypeError('Transport setup failed');
+      })
+      .mockResolvedValue(terminal);
+    const requests = new GuestTerminalRequests();
+    await expect(requests.execute('vm-one', 'host-original')).rejects.toThrow(
+      'Transport setup failed',
+    );
+    await expect(requests.execute('vm-one', 'host-original')).resolves.toBe(
+      terminal,
+    );
+    expect(create.mock.calls[1]).toEqual(create.mock.calls[0]);
+  });
+
   it('coalesces a repeated click and preserves the request after an uncertain response', async () => {
     let reject!: (error: Error) => void;
     const create = vi

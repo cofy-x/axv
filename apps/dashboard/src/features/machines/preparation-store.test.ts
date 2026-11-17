@@ -145,6 +145,30 @@ describe('shared preparation jobs', () => {
     expect(store.getSnapshot().pending).toBeUndefined();
   });
 
+  it('shares a submission even when a subscriber immediately requests another plan', async () => {
+    const { api, store, subscribe } = harness();
+    subscribe();
+    await vi.advanceTimersByTimeAsync(0);
+    let requested = false;
+    let repeated: Promise<void> | undefined;
+    subscriptions.push(
+      store.subscribe(() => {
+        if (!requested && store.getSnapshot().mutation === 'start') {
+          requested = true;
+          repeated = store.start({ ...plan, id: 'another-plan' });
+        }
+      }),
+    );
+    const first = store.start(plan);
+    expect(repeated).toBe(first);
+    await first;
+    expect(api.startPreparation).toHaveBeenCalledExactlyOnceWith(
+      plan.id,
+      expect.any(String),
+      check.instanceId,
+    );
+  });
+
   it('retries the exact failed job revision while later polls advance the visible job', async () => {
     const { api, store, subscribe } = harness();
     const failed = {
@@ -196,6 +220,50 @@ describe('shared preparation jobs', () => {
     await submit;
     expect(store.getSnapshot().job?.id).toBe(job.id);
     expect(api.preparationAction).not.toHaveBeenCalled();
+  });
+
+  it('pauses observation during a mutation, including refreshes and reopened views', async () => {
+    const { api, store, subscribe } = harness();
+    const detach = subscribe();
+    await vi.advanceTimersByTimeAsync(0);
+    let oldReply!: (value: PreparationCheck) => void;
+    api.preparationCheck.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          oldReply = resolve;
+        }),
+    );
+    store.refresh();
+    const oldSignal = api.preparationCheck.mock.calls[1][0]!;
+    let accept!: (value: PreparationJob) => void;
+    api.startPreparation.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          accept = resolve;
+        }),
+    );
+    const submitting = store.start(plan);
+    await Promise.resolve();
+    expect(oldSignal.aborted).toBe(true);
+    store.refresh();
+    detach();
+    subscribe();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(api.preparationCheck).toHaveBeenCalledTimes(2);
+    oldReply({ ...check, instanceId: 'stale-server' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.getSnapshot().check?.instanceId).toBe('server-one');
+    api.preparationCheck.mockResolvedValue({ ...check, activeJob: job });
+    accept(job);
+    await submitting;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(api.preparationCheck).toHaveBeenCalledTimes(3);
+    expect(store.getSnapshot()).toMatchObject({
+      job,
+      mutation: undefined,
+      loading: false,
+      refreshing: false,
+    });
   });
 
   it('retains the accepted job through connection loss and refreshes inventory on completion', async () => {

@@ -15,62 +15,74 @@ export interface OperationAttempt<Input> {
   label: string;
 }
 
+type OperationState<Input, Result> =
+  | { phase: 'idle' }
+  | {
+      phase: 'sending';
+      attempt: OperationAttempt<Input>;
+      promise: Promise<Result>;
+    }
+  | { phase: 'uncertain'; attempt: OperationAttempt<Input> };
+
 /** Keep the exact payload until an uncertain response has been resolved. */
 export class OperationRequest<Input, Result> {
-  private attempt: OperationAttempt<Input> | null = null;
-  private inFlight: Promise<Result> | null = null;
+  private state: OperationState<Input, Result> = { phase: 'idle' };
 
   constructor(
     private readonly send: (input: Input, requestId: string) => Promise<Result>,
   ) {}
 
   get pending() {
-    return this.attempt;
+    return this.state.phase === 'idle' ? null : this.state.attempt;
+  }
+
+  get phase() {
+    return this.state.phase;
   }
 
   submit(input: Input, label: string): Promise<Result> {
-    if (this.inFlight) return this.inFlight;
-    if (this.attempt)
+    if (this.state.phase === 'sending') return this.state.promise;
+    if (this.state.phase === 'uncertain')
       return Promise.reject(
         new Error(
           'Resolve the previous request before submitting another change.',
         ),
       );
-    this.attempt = {
+    return this.sendAttempt({
       input: structuredClone(input),
       requestId: crypto.randomUUID(),
       label,
-    };
-    return this.sendAttempt();
+    });
   }
 
   retry(): Promise<Result> {
-    if (this.inFlight) return this.inFlight;
-    if (!this.attempt)
+    if (this.state.phase === 'sending') return this.state.promise;
+    if (this.state.phase === 'idle')
       return Promise.reject(
         new Error('There is no unresolved request to retry.'),
       );
-    return this.sendAttempt();
+    return this.sendAttempt(this.state.attempt);
   }
 
-  private sendAttempt(): Promise<Result> {
-    const attempt = this.attempt!;
-    this.inFlight = Promise.resolve()
+  private sendAttempt(attempt: OperationAttempt<Input>): Promise<Result> {
+    const promise = Promise.resolve()
       .then(() => this.send(attempt.input, attempt.requestId))
-      .then((result) => {
-        this.attempt = null;
-        return result;
-      })
-      .catch((error: unknown) => {
-        // A validation/conflict response establishes that this request was not
-        // accepted. Transport failures and server errors can follow a commit.
-        if (isDefiniteOperationRejection(error)) this.attempt = null;
-        throw error;
-      })
-      .finally(() => {
-        this.inFlight = null;
-      });
-    return this.inFlight;
+      .then(
+        (result) => {
+          this.state = { phase: 'idle' };
+          return result;
+        },
+        (error: unknown) => {
+          // A validation/conflict response establishes that this request was not
+          // accepted. Transport failures and server errors can follow a commit.
+          this.state = isDefiniteOperationRejection(error)
+            ? { phase: 'idle' }
+            : { phase: 'uncertain', attempt };
+          throw error;
+        },
+      );
+    this.state = { phase: 'sending', attempt, promise };
+    return promise;
   }
 }
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { notificationError } from './api';
+import { SerialPoller } from '../../shared/api/serial-poller';
 
 export function useNotificationResource<T>(
   read: (signal: AbortSignal) => Promise<T>,
@@ -22,38 +23,28 @@ export function useNotificationResource<T>(
   useEffect(() => {
     if (!active) return;
     const current = ++generation.current;
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    async function load() {
-      setState((previous) => ({ ...previous, loading: true }));
-      try {
-        const signal = AbortSignal.any([
-          controller.signal,
-          AbortSignal.timeout(15000),
-        ]);
+    const poller = new SerialPoller({
+      timeoutMs: 15000,
+      intervalMs: pollMs,
+      onStart: () => setState((previous) => ({ ...previous, loading: true })),
+      read: async ({ signal, isCurrent }) => {
         const value = await read(signal);
+        if (!isCurrent()) return;
         signal.throwIfAborted();
         if (generation.current === current)
           setState({ value, loading: false, error: '' });
-      } catch (error) {
-        if (!controller.signal.aborted && generation.current === current)
+      },
+      onError: (error) => {
+        if (generation.current === current)
           setState((previous) => ({
             ...previous,
             loading: false,
             error: notificationError(error),
           }));
-      } finally {
-        if (!controller.signal.aborted && pollMs)
-          timer = setTimeout(() => void load(), pollMs);
-      }
-    }
-
-    void load();
-    return () => {
-      controller.abort();
-      clearTimeout(timer);
-    };
+      },
+    });
+    poller.start();
+    return () => poller.stop();
   }, [active, read, pollMs, revision]);
   return { ...state, refresh, accept };
 }

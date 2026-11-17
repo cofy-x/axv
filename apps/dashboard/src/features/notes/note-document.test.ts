@@ -21,6 +21,66 @@ function stored(content: string, revision: number) {
 }
 
 describe('note document lifecycle', () => {
+  it('shares one captured save before notifying subscribers while preserving later typing', async () => {
+    const response = deferred<{ entry: { revision: number } }>();
+    const write = vi.fn(() => response.promise);
+    const document = createNoteDocument({
+      read: async () => stored('saved', 1),
+      write,
+      refresh: async () => {},
+    });
+    await document.load();
+    document.edit('save this snapshot');
+    let repeated: Promise<boolean> | undefined;
+    let requested = false;
+    document.subscribe(() => {
+      if (!requested && document.getSnapshot().saving) {
+        requested = true;
+        document.edit('newer typing');
+        repeated = document.save();
+      }
+    });
+    const first = document.save();
+    expect(repeated).toBe(first);
+    expect(write).toHaveBeenCalledExactlyOnceWith('save this snapshot', 1);
+    response.resolve({ entry: { revision: 2 } });
+    await expect(first).resolves.toBe(false);
+    expect(document.getSnapshot()).toMatchObject({
+      text: 'newer typing',
+      saved: 'save this snapshot',
+      revision: 2,
+      dirty: true,
+      saving: false,
+    });
+  });
+
+  it('releases a synchronously failed save so the original revision can be explicitly retried', async () => {
+    const write = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error('Write setup failed');
+      })
+      .mockResolvedValue({ entry: { revision: 2 } });
+    const document = createNoteDocument({
+      read: async () => stored('saved', 1),
+      write,
+      refresh: async () => {},
+    });
+    await document.load();
+    document.edit('keep this draft');
+    await expect(document.save()).resolves.toBe(false);
+    expect(document.getSnapshot()).toMatchObject({
+      dirty: true,
+      saving: false,
+      revision: 1,
+    });
+    await expect(document.save()).resolves.toBe(true);
+    expect(write.mock.calls).toEqual([
+      ['keep this draft', 1],
+      ['keep this draft', 1],
+    ]);
+  });
+
   it('keeps its draft when database replacement wins the save acknowledgement microtask', async () => {
     const database = createDesktopDatabase();
     database.bind('original');
@@ -407,25 +467,30 @@ describe('note document lifecycle', () => {
     expect(write.mock.calls[1]).toEqual(['merged draft', 3]);
   });
 
-  it('does not report a committed save as failed when metadata refresh is offline', async () => {
-    const document = createNoteDocument({
-      read: async () => stored('original', 1),
-      write: async () => ({ entry: { revision: 2 } }),
-      refresh: async () => {
-        throw new Error('metadata offline');
-      },
-    });
-    await document.load();
-    document.edit('committed');
-    await expect(document.save()).resolves.toBe(true);
-    expect(document.getSnapshot()).toMatchObject({
-      saved: 'committed',
-      revision: 2,
-      dirty: false,
-      status: 'Saved',
-      error: '',
-    });
-  });
+  it.each(['rejection', 'synchronous failure'])(
+    'does not report a committed save as failed after metadata %s',
+    async (failure) => {
+      const document = createNoteDocument({
+        read: async () => stored('original', 1),
+        write: async () => ({ entry: { revision: 2 } }),
+        refresh: () => {
+          const error = new Error('metadata offline');
+          if (failure === 'synchronous failure') throw error;
+          return Promise.reject(error);
+        },
+      });
+      await document.load();
+      document.edit('committed');
+      await expect(document.save()).resolves.toBe(true);
+      expect(document.getSnapshot()).toMatchObject({
+        saved: 'committed',
+        revision: 2,
+        dirty: false,
+        status: 'Saved',
+        error: '',
+      });
+    },
+  );
 
   it.each(['success', 'failure'])(
     'ignores a stale load %s after cleanup and a newer document load',

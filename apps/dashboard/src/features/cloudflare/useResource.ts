@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { SerialPoller } from '../../shared/api/serial-poller';
 
 /** Each active view owns serial reads; mutations never use this hook. */
 export function useResource<T>(
@@ -13,27 +14,20 @@ export function useResource<T>(
     error?: string;
   }>({ loading: true });
   const [revision, setRevision] = useState(0);
-  const generation = useRef(0);
   const refresh = useCallback(() => setRevision((value) => value + 1), []);
   useEffect(() => {
     if (!active) return;
-    const current = ++generation.current;
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    async function load() {
-      if (controller.signal.aborted) return;
-      setState((previous) => ({ ...previous, loading: true }));
-      const signal = AbortSignal.any([
-        controller.signal,
-        AbortSignal.timeout(timeoutMs),
-      ]);
-      try {
+    const poller = new SerialPoller({
+      timeoutMs,
+      intervalMs: pollMs,
+      onStart: () => setState((previous) => ({ ...previous, loading: true })),
+      read: async ({ signal, isCurrent }) => {
         const value = await read(signal);
+        if (!isCurrent()) return;
         signal.throwIfAborted();
-        if (generation.current === current) setState({ value, loading: false });
-      } catch (error) {
-        if (controller.signal.aborted || generation.current !== current) return;
+        setState({ value, loading: false });
+      },
+      onError: (error) => {
         setState((previous) => ({
           ...previous,
           loading: false,
@@ -42,17 +36,10 @@ export function useResource<T>(
               ? error.message
               : 'Could not load this view.',
         }));
-      } finally {
-        if (!controller.signal.aborted && pollMs)
-          timer = setTimeout(() => void load(), pollMs);
-      }
-    }
-
-    void load();
-    return () => {
-      controller.abort();
-      clearTimeout(timer);
-    };
+      },
+    });
+    poller.start();
+    return () => poller.stop();
   }, [active, pollMs, read, revision, timeoutMs]);
   return { ...state, refresh };
 }

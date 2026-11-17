@@ -14,16 +14,21 @@ describe('compute form request identity', () => {
       .mockRejectedValueOnce(new TypeError('Connection lost'))
       .mockResolvedValue('accepted');
     const requests = new OperationRequest(send);
+    expect(requests.phase).toBe('idle');
     const input = { revision: 1, spec: { size: 8 } };
     await expect(requests.submit(input, 'Grow project')).rejects.toThrow(
       'Connection lost',
     );
+    expect(requests.phase).toBe('uncertain');
     input.revision = 3;
     input.spec.size = 16;
     await expect(requests.submit(input, 'Another change')).rejects.toThrow(
       'Resolve the previous request',
     );
-    await expect(requests.retry()).resolves.toBe('accepted');
+    const retry = requests.retry();
+    expect(requests.phase).toBe('sending');
+    await expect(retry).resolves.toBe('accepted');
+    expect(requests.phase).toBe('idle');
     expect(send.mock.calls[1]).toEqual(send.mock.calls[0]);
     expect(send.mock.calls[1][0]).toEqual({ revision: 1, spec: { size: 8 } });
     expect(requests.pending).toBeNull();
