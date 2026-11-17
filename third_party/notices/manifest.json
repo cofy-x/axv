@@ -7,7 +7,7 @@
     "source": "https://github.com/bigskysoftware/htmx/tree/b82cf843e47e575dd8c2ad8fee547d8e2c3bb87f",
     "via": {
       "module": "tailscale.com",
-      "version": "v1.104.5"
+      "version": "v1.104.7"
     },
     "files": [
       {
@@ -17,8 +17,8 @@
       }
     ],
     "generatedSources": [
-      "https://raw.githubusercontent.com/tailscale/tailscale/v1.104.5/util/eventbus/fetch-htmx.go",
-      "https://raw.githubusercontent.com/tailscale/tailscale/v1.104.5/util/eventbus/assets/htmx.min.js.gz"
+      "https://raw.githubusercontent.com/tailscale/tailscale/v1.104.7/util/eventbus/fetch-htmx.go",
+      "https://raw.githubusercontent.com/tailscale/tailscale/v1.104.7/util/eventbus/assets/htmx.min.js.gz"
     ]
   },
   {
@@ -29,7 +29,7 @@
     "source": "https://github.com/bigskysoftware/htmx-extensions/tree/f3bb31edd5e287e2678f312103525e3ea5abdb01/src/ws",
     "via": {
       "module": "tailscale.com",
-      "version": "v1.104.5"
+      "version": "v1.104.7"
     },
     "files": [
       {
@@ -39,8 +39,8 @@
       }
     ],
     "generatedSources": [
-      "https://raw.githubusercontent.com/tailscale/tailscale/v1.104.5/util/eventbus/fetch-htmx.go",
-      "https://raw.githubusercontent.com/tailscale/tailscale/v1.104.5/util/eventbus/assets/htmx-websocket.min.js.gz"
+      "https://raw.githubusercontent.com/tailscale/tailscale/v1.104.7/util/eventbus/fetch-htmx.go",
+      "https://raw.githubusercontent.com/tailscale/tailscale/v1.104.7/util/eventbus/assets/htmx-websocket.min.js.gz"
     ]
   },
   {
