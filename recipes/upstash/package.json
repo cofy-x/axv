@@ -9,7 +9,7 @@
   },
   "packageManager": "pnpm@12.11.2",
   "dependencies": {
-    "@upstash/ratelimit": "2.2.0",
+    "@upstash/ratelimit": "2.2.1",
     "@upstash/redis": "1.41.0"
   }
 }

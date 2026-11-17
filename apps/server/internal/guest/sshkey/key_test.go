@@ -51,7 +51,12 @@ func TestNormalizeRejectsOptionsCertificatesAndMalformedKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	certificate := &ssh.Certificate{Key: signer.PublicKey(), CertType: ssh.UserCert, ValidBefore: ssh.CertTimeInfinity}
+	certificate := &ssh.Certificate{
+		Key:             signer.PublicKey(),
+		CertType:        ssh.UserCert,
+		ValidPrincipals: []string{"axv"},
+		ValidBefore:     ssh.CertTimeInfinity,
+	}
 	if err := certificate.SignCert(rand.Reader, signer); err != nil {
 		t.Fatal(err)
 	}

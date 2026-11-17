@@ -9,9 +9,9 @@ overrides:
   react-dom: 19.3.1
 
 minimumReleaseAgeExclude:
-  - '@playwright/test@1.64.1'
-  - playwright-core@1.64.1
-  - playwright@1.64.1
+  - '@playwright/test@1.65.0'
+  - playwright-core@1.65.0
+  - playwright@1.65.0
   - react-dom@19.3.1
   - react@19.3.1
 
