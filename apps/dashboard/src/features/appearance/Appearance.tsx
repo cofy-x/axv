@@ -107,10 +107,7 @@ export function Appearance({ desktop }: AppWindowProps) {
         <fieldset className="preferences-access-group">
           <legend>Notifications</legend>
           <div className="preferences-access-row">
-            <span>
-              <strong>Pocket Alert</strong>
-              <span className="fine-print">Optional delivery and history</span>
-            </span>
+            <span>Browser alerts, Pocket Alert and delivery history</span>
             <Button
               aria-label="Open Notifications"
               onClick={() => desktop.openApp('notifications')}

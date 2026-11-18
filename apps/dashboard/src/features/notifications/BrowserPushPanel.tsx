@@ -1,5 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Checkbox, Field } from '@cofy-x/axv-nextstep';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
+import { Button, Checkbox, Field, IconButton } from '@cofy-x/axv-nextstep';
+import { canTransferWindowFocus } from '../../shared/desktop/focus-transfer';
 import { notificationKinds } from './types';
 import {
   browserPushSubscription,
@@ -82,6 +89,11 @@ export function BrowserPushPanel({ active }: { active: boolean }) {
   ]);
   const pending = useRef<AbortController | null>(null);
   const generation = useRef(0);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const focusChange = useRef<{
+    source: HTMLButtonElement;
+    editable: boolean;
+  }>(null);
   const environment = pushEnvironment();
 
   const refresh = useCallback(async () => {
@@ -227,8 +239,21 @@ export function BrowserPushPanel({ active }: { active: boolean }) {
     snapshot.publicKey === state.applicationKey;
   const editable = !binding && !browserSubscribed;
 
+  useLayoutEffect(() => {
+    if (active && (loading || busy)) return;
+    const change = focusChange.current;
+    focusChange.current = null;
+    if (
+      active &&
+      change?.editable === editable &&
+      canTransferWindowFocus(heading.current, change.source)
+    )
+      heading.current?.focus();
+  }, [active, busy, editable, loading]);
+
   async function change(
     action: 'subscribe' | 'test' | 'disable' | 'unsubscribe',
+    source?: HTMLButtonElement,
   ) {
     if (
       !active ||
@@ -236,6 +261,10 @@ export function BrowserPushPanel({ active }: { active: boolean }) {
       (action !== 'unsubscribe' && (!snapshot || !serverReady))
     )
       return;
+    if (source && (action === 'subscribe' || action === 'unsubscribe')) {
+      source.focus({ preventScroll: true });
+      focusChange.current = { source, editable: action === 'unsubscribe' };
+    }
     const controller = new AbortController();
     pending.current = controller;
     const current = ++generation.current;
@@ -351,9 +380,7 @@ export function BrowserPushPanel({ active }: { active: boolean }) {
               subscriptionId: registered.id,
             });
             if (current === generation.current)
-              setMessage(
-                'This browser is subscribed. Use Test to inspect a synthetic delivery outcome.',
-              );
+              setMessage('Browser subscribed.');
           },
         );
       } else if (action === 'unsubscribe') {
@@ -480,18 +507,22 @@ export function BrowserPushPanel({ active }: { active: boolean }) {
   return (
     <section aria-label="This browser notifications">
       <div className="notification-heading">
-        <h2>This browser</h2>
-        <Button
+        <h2 ref={heading} tabIndex={-1}>
+          Browser alerts
+        </h2>
+        <IconButton
+          icon="refresh"
+          label="Refresh browser state"
           disabled={!active || loading || !!busy}
           onClick={() => void refresh()}
-        >
-          Refresh browser state
-        </Button>
+        />
       </div>
-      <p>
-        Optional standard Web Push without a Pocket Alert account. Subscribe
-        only in the browser or installed AXV app that should receive alerts.
-      </p>
+      {editable && (
+        <p>
+          Subscribe in the browser or installed AXV app that should receive
+          alerts.
+        </p>
+      )}
       {environment && <p role="status">{environment}</p>}
       <dl className="info-list">
         <dt>Browser permission</dt>
@@ -557,7 +588,7 @@ export function BrowserPushPanel({ active }: { active: boolean }) {
       )}
       {message && <p role="status">{message}</p>}
       {loading && <p role="status">Reading browser notification state…</p>}
-      <fieldset disabled={serverDisabled || !editable}>
+      <fieldset hidden={!editable} disabled={serverDisabled || !editable}>
         <legend>Subscribe this browser</legend>
         <Field
           label="Device label"
@@ -573,11 +604,10 @@ export function BrowserPushPanel({ active }: { active: boolean }) {
           autoComplete="off"
           onChange={(event) => setContact(event.target.value)}
         />
-        <p className="fine-print">
-          The sending key uses this owner-reviewed public email address or HTTPS
-          contact URL. Push vendors receive it in the authentication token; it
-          is not notification content. Changing an existing contact requires
-          local sending-key rotation and explicit re-subscription.
+        <p className="notification-note">
+          Push services receive this public email or HTTPS contact in the
+          authentication token. Changing it requires sending-key rotation on the
+          AXV host and a new subscription.
         </p>
         <fieldset className="notification-event-options">
           <legend>Notify this browser about</legend>
@@ -604,12 +634,12 @@ export function BrowserPushPanel({ active }: { active: boolean }) {
             !eventTypes.length ||
             (!snapshot?.publicKey && !contact.trim())
           }
-          onClick={() => void change('subscribe')}
+          onClick={(event) => void change('subscribe', event.currentTarget)}
         >
           {busy === 'subscribe' ? 'Subscribing…' : 'Subscribe this browser'}
         </Button>
       </fieldset>
-      <div className="app-actions">
+      <div className="app-actions" hidden={editable}>
         <Button
           disabled={
             serverDisabled ||
@@ -630,7 +660,7 @@ export function BrowserPushPanel({ active }: { active: boolean }) {
         </Button>
         <Button
           disabled={disabled || (!binding && !browserSubscribed)}
-          onClick={() => void change('unsubscribe')}
+          onClick={(event) => void change('unsubscribe', event.currentTarget)}
         >
           Unsubscribe this browser
         </Button>
@@ -641,14 +671,19 @@ export function BrowserPushPanel({ active }: { active: boolean }) {
           subscribe again.
         </p>
       )}
-      <p className="fine-print">
-        Alerts contain only minimal status and an opaque original-event
-        reference. Receiving an alert does not require reaching AXV, but
-        reopening private work requires owner authorization and connectivity.
-        Delivery and display are best-effort with finite expiry; stopping AXV
-        postpones sends. Server disable does not revoke browser permission or
-        retract queued alerts.
-      </p>
+      <details className="notification-delivery">
+        <summary>About browser alerts</summary>
+        <p className="notification-note">
+          Browser alerts work independently of Pocket Alert. They contain a
+          short status and a reference to the original event. This browser can
+          receive alerts while disconnected from AXV. Reopening the original
+          work requires authorization and connectivity.
+        </p>
+        <p className="notification-note">
+          Alerts expire. Stopping AXV postpones sends. Disabling server delivery
+          leaves browser permission in place. Queued alerts may still arrive.
+        </p>
+      </details>
     </section>
   );
 }

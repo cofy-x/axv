@@ -236,6 +236,10 @@ test('Preferences opens optional Pocket Alert settings with explicit save, write
   await expect(
     panel(page).getByText('Delivery uncertain', { exact: true }),
   ).toBeVisible();
+  await select(
+    panel(page).getByRole('button', { name: /^Test notification/ }),
+    touch,
+  );
   await expect(panel(page).getByText(/bounded retry.*duplicate/)).toBeVisible();
   await expect(panel(page).getByText(token, { exact: false })).toHaveCount(0);
   const saved = JSON.stringify(await persistedLayout(page, request));
@@ -271,7 +275,14 @@ test('notification return link inspects the original task attempt through GET on
   page,
 }, info) => {
   const item = event();
-  const state = await fixture(page, { events: [item] });
+  const state = await fixture(page, {
+    events: [
+      ...Array.from({ length: 24 }, (_, index) =>
+        event({ id: `newer-${index}`, kind: 'task_succeeded' }),
+      ),
+      item,
+    ],
+  });
   const sourceRequests: { method: string; path: string }[] = [];
   await page.route(
     '**/api/compute/projects/source-project/tasks/**',
@@ -314,8 +325,11 @@ test('notification return link inspects the original task attempt through GET on
     `/?notification=${storeId}:${item.id}&approve=true&cancel=true&submit=true&dismiss=true`,
   );
   await expect(
-    panel(page).getByRole('heading', { name: 'Notification details' }),
+    panel(page).getByRole('tab', { name: 'Settings', exact: true }),
   ).toBeVisible();
+  await expect(
+    panel(page).getByRole('heading', { name: 'Notification details' }),
+  ).toBeInViewport();
   await expect(panel(page).getByText(/This event is stale/)).toBeVisible();
   expect(sourceRequests).toEqual([]);
   expect(state.writes).toEqual([]);
@@ -377,9 +391,6 @@ test('remote history exposes gaps and quota without a settings form, and hidden 
   ).toBeHidden();
   await expect(panel(page).getByText(/Source history has a gap/)).toBeVisible();
   await expect(
-    panel(page).getByText(/quota or rate limit reached/),
-  ).toBeVisible();
-  await expect(
     panel(page).getByText(/All queued deliveries wait until this time/),
   ).toBeVisible();
   await expect(
@@ -388,6 +399,17 @@ test('remote history exposes gaps and quota without a settings form, and hidden 
   await panel(page).screenshot({
     path: info.outputPath('notifications-quota-cooldown.png'),
   });
+  await select(
+    panel(page).getByRole('button', { name: /^Task failed/ }),
+    info.project.use.hasTouch === true,
+  );
+  await expect(
+    panel(page).getByText(/quota or rate limit reached/),
+  ).toBeVisible();
+  await select(
+    panel(page).getByRole('button', { name: 'Back to History' }),
+    info.project.use.hasTouch === true,
+  );
   await expect(panel(page).getByText(token, { exact: false })).toHaveCount(0);
   await windowAction(
     page,
@@ -405,6 +427,82 @@ test('remote history exposes gaps and quota without a settings form, and hidden 
     info.project.use.hasTouch === true,
   );
   await expect.poll(state.reads).toBeGreaterThan(reads);
+});
+
+test('history details open in view and Back restores the exact event and scroll position', async ({
+  page,
+}, info) => {
+  const touch = info.project.use.hasTouch === true;
+  await page.setViewportSize({ width: 390, height: 844 });
+  const selected = event({
+    kind: 'task_unknown',
+    attempts: 2,
+    nextAttemptAt: '2026-11-06T00:02:00Z',
+  });
+  const state = await fixture(page, {
+    canConfigure: false,
+    events: [
+      ...Array.from({ length: 16 }, (_, index) =>
+        event({
+          id: `above-${index}`,
+          kind: 'task_succeeded',
+          status: 'accepted',
+        }),
+      ),
+      selected,
+      ...Array.from({ length: 20 }, (_, index) =>
+        event({
+          id: `below-${index}`,
+          kind: 'task_succeeded',
+          status: 'accepted',
+        }),
+      ),
+    ],
+  });
+  await open(page, touch);
+  const notifications = panel(page);
+  const row = notifications.getByRole('button', {
+    name: /^Task outcome unknown/,
+  });
+  await expect(row).toBeVisible();
+  await row.scrollIntoViewIfNeeded();
+  await expect(row).toBeInViewport({ ratio: 1 });
+  const position = (await row.boundingBox())!.y;
+  await notifications.screenshot({
+    path: info.outputPath('notifications-history-390.png'),
+  });
+  if (touch) await row.tap();
+  else {
+    await row.focus();
+    await row.press('Enter');
+  }
+  const details = notifications.getByRole('heading', {
+    name: 'Notification details',
+    exact: true,
+  });
+  await expect(details).toBeVisible();
+  await notifications.screenshot({
+    path: info.outputPath('notification-selected-390.png'),
+  });
+  await expect(details).toBeInViewport({ ratio: 1 });
+  await expect(details).toBeFocused();
+  await expect(row).toBeHidden();
+  await expect(
+    notifications.getByRole('button', { name: 'Open original work' }),
+  ).toBeInViewport({ ratio: 1 });
+  await expect(notifications.getByText(/Delivery attempts: 2/)).toBeVisible();
+  const back = notifications.getByRole('button', { name: 'Back to History' });
+  if (touch) await back.tap();
+  else {
+    await back.focus();
+    await back.press('Enter');
+  }
+  await expect(row).toBeFocused();
+  await expect(row).toBeInViewport({ ratio: 1 });
+  expect(Math.abs((await row.boundingBox())!.y - position)).toBeLessThanOrEqual(
+    2,
+  );
+  expect(state.writes).toEqual([]);
 });
 
 test('missing original targets keep their exact identity and never open another run', async ({
