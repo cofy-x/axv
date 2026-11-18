@@ -64,7 +64,7 @@ verify-codex-live:
 security: audit-js audit-go
 
 audit-js:
-	$(PNPM) audit --audit-level=low
+	node scripts/audit-js.mjs $(PNPM)
 
 audit-go: build
 	GO="$(GO)" node scripts/audit-go.mjs

@@ -244,7 +244,7 @@ The reusable [dependency security workflow](../.github/workflows/security.yml) r
 make security
 ```
 
-`make audit-js` uses the pinned pnpm to scan production, development and optional dependencies, failing on low severity or higher.
+`make audit-js` uses the pinned pnpm to scan production, development and optional dependencies at low severity or higher. The [launcher](../scripts/audit-js.mjs) prints the full registry report and fails on unresolved advisories or incomplete results. It verifies the scoped [development glob mitigation](#dependency-patches) against the installed files before reporting that finding as locally mitigated.
 
 `make audit-go` first runs the production build to prepare embedded assets, then installs the fixed scanner version from [its launcher](../scripts/audit-go.mjs) into private temporary storage. It runs text-mode `govulncheck -test -tags production,ts_omit_webclient ./...` from the server module with the selected Go toolchain and `CGO_ENABLED=0`, matching the production build. Reachable known vulnerabilities, including tests and the standard library, fail the check; module-only advisories remain informational. The scan covers the selected build platform. Both audits preserve registry/database and scanner errors as failures and apply no automatic fixes.
 
@@ -289,7 +289,9 @@ The [public terminal API regression](../apps/dashboard/src/shared/terminal/xterm
 
 The development glob patches reject unbounded repetition in extended globs before compiling the groups to regular expressions. The project selectors use ordinary file wildcards and globstars, such as `**/*.test.ts`. The restriction applies to [picomatch 4.0.7](https://github.com/micromatch/picomatch/tree/4.0.7), which Vite and Vitest use, and the picomatch code that [Prettier 3.10.1](https://github.com/prettier/prettier/tree/3.10.1) bundles for glob selection. The patches are original AXV changes to the upstream [MIT-licensed picomatch code](https://github.com/micromatch/picomatch/blob/4.0.7/LICENSE) and preserve package notices.
 
-The restriction mitigates [CVE-2026-112366](https://github.com/advisories/GHSA-fc5q-39xc-vjpf) in those matching paths. The full version-based audit continues to report the advisory while the locked package version is affected. Upgrades must account for bundled code separately. Playwright test discovery uses minimatch, for example, even though Playwright's assertion bundle includes picomatch. When a patched release replaces either affected matcher, remove the corresponding patch and update the [glob regression](../scripts/toolchain-globs.test.mjs) for the supported behavior. Review test discovery and the production build when updating the dependency graph.
+The restriction mitigates [CVE-2026-112366](https://github.com/advisories/GHSA-fc5q-39xc-vjpf) in those matching paths. The registry audit still displays the affected version. The [patch verifier](../scripts/verify-glob-patches.mjs) follows every reported development dependency path through the installed package resolution, including separate workspaces and peer copies. It checks SHA-256 digests of both tracked patches and the complete installed file trees of each resolved picomatch copy and the root Prettier package. A missing or changed copy, a change in the advisory or its development scope, or an additional blocking advisory fails the check.
+
+Review bundled code separately when upgrading. Playwright test discovery uses minimatch, for example, even though Playwright's assertion bundle includes picomatch. When a fixed release replaces the standalone matcher, remove its patch and the advisory verification. Evaluate the Prettier bundle separately before removing its patch. Update the [glob regression](../scripts/toolchain-globs.test.mjs) for the supported behavior and review test discovery and the production build.
 
 ## Test isolation and diagnostics
 
