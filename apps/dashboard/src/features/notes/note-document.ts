@@ -44,6 +44,16 @@ interface DraftStorage {
   remove: (guard?: DraftRemovalGuard) => Promise<DraftRemoval | void>;
 }
 
+type SavingNote = {
+  phase: 'saving';
+  content: string;
+  revision: number;
+  promise: Promise<boolean>;
+};
+
+type NoteSaveState = { phase: 'idle' } | SavingNote;
+type LocalWriteState = { phase: 'idle' | 'writing'; promise: Promise<void> };
+
 /** Server saves commit one explicit snapshot; recovery keeps the draft's original revision. */
 export function createNoteDocument(
   storage: NoteStorage,
@@ -65,9 +75,11 @@ export function createNoteDocument(
     resolvingRecovery: false,
     localStatus: '',
   };
-  let inFlight: Promise<boolean> | null = null;
-  let localQueue: Promise<void> = Promise.resolve();
-  let localRunning = false;
+  let saveState: NoteSaveState = { phase: 'idle' };
+  let localWrites: LocalWriteState = {
+    phase: 'idle',
+    promise: Promise.resolve(),
+  };
   let pendingLocal: LocalDraft | undefined;
   let recovery: LocalDraft | undefined;
   let loadGeneration = 0;
@@ -80,15 +92,15 @@ export function createNoteDocument(
       }
     : undefined;
 
-  function publish(patch: Partial<NoteSnapshot>) {
-    snapshot = { ...snapshot, ...patch };
+  function publish(patch: Partial<Omit<NoteSnapshot, 'saving'>>) {
+    snapshot = { ...snapshot, ...patch, saving: saveState.phase === 'saving' };
     for (const listener of listeners) listener();
   }
 
   function flushLocal() {
-    if (!drafts || localRunning || !pendingLocal) return localQueue;
-    localRunning = true;
-    localQueue = Promise.resolve()
+    if (!drafts || localWrites.phase === 'writing' || !pendingLocal)
+      return localWrites.promise;
+    const promise = Promise.resolve()
       .then(async () => {
         while (pendingLocal) {
           const draft = pendingLocal;
@@ -121,9 +133,10 @@ export function createNoteDocument(
         }
       })
       .finally(() => {
-        localRunning = false;
+        localWrites = { phase: 'idle', promise };
       });
-    return localQueue;
+    localWrites = { phase: 'writing', promise };
+    return promise;
   }
 
   function persistDraft() {
@@ -150,7 +163,7 @@ export function createNoteDocument(
     publish({ resolvingRecovery: true });
     pendingLocal = undefined;
     try {
-      await localQueue;
+      await localWrites.promise;
       if (requireCurrent) storage.assertCurrent?.();
       pendingLocal = undefined;
       if (drafts)
@@ -245,53 +258,71 @@ export function createNoteDocument(
     }
   }
 
-  async function save(): Promise<boolean> {
-    if (inFlight) return inFlight;
+  function save(): Promise<boolean> {
+    if (saveState.phase === 'saving') return saveState.promise;
     if (
       !snapshot.loaded ||
       snapshot.blocked ||
       snapshot.recoveryAvailable ||
       snapshot.resolvingRecovery
     )
-      return false;
-    if (!snapshot.dirty) return true;
-    const content = snapshot.text;
-    const revision = snapshot.revision;
-    publish({ status: 'Saving…', error: '', saving: true });
-    inFlight = (async () => {
+      return Promise.resolve(false);
+    if (!snapshot.dirty) return Promise.resolve(true);
+    let complete!: (result: boolean | PromiseLike<boolean>) => void;
+    const promise = new Promise<boolean>((resolve) => {
+      complete = resolve;
+    });
+    const saving: SavingNote = {
+      phase: 'saving',
+      content: snapshot.text,
+      revision: snapshot.revision,
+      promise,
+    };
+    saveState = saving;
+    publish({ status: 'Saving…', error: '' });
+    complete(writeSnapshot(saving));
+    return promise;
+  }
+
+  async function writeSnapshot(saving: SavingNote): Promise<boolean> {
+    const { content, revision } = saving;
+    try {
+      const result = await storage.write(content, revision);
+      storage.assertCurrent?.();
+      publish({
+        saved: content,
+        revision: result.entry.revision,
+        dirty: snapshot.text !== content,
+        recovered: false,
+        status: snapshot.text === content ? 'Saved' : 'Unsaved changes',
+      });
+      persistDraft();
       try {
-        const result = await storage.write(content, revision);
-        storage.assertCurrent?.();
-        publish({
-          saved: content,
-          revision: result.entry.revision,
-          dirty: snapshot.text !== content,
-          recovered: false,
-          status: snapshot.text === content ? 'Saved' : 'Unsaved changes',
-        });
-        persistDraft();
-        await storage.refresh().catch(() => {});
-        storage.assertCurrent?.();
-        return snapshot.text === snapshot.saved;
-      } catch (error) {
-        const conflict =
-          error instanceof APIError && error.code === 'revision_conflict';
-        publish({
-          blocked: conflict,
-          conflict,
-          error: error instanceof Error ? error.message : String(error),
-          status: conflict
-            ? 'Another window changed this document'
-            : 'Not saved — your draft is still here',
-        });
-        persistDraft();
-        return false;
-      } finally {
-        inFlight = null;
-        publish({ saving: false });
+        await storage.refresh();
+      } catch {
+        // Metadata availability does not change the acknowledged content write.
       }
-    })();
-    return inFlight;
+      storage.assertCurrent?.();
+      return snapshot.text === snapshot.saved;
+    } catch (error) {
+      const conflict =
+        error instanceof APIError && error.code === 'revision_conflict';
+      publish({
+        blocked: conflict,
+        conflict,
+        error: error instanceof Error ? error.message : String(error),
+        status: conflict
+          ? 'Another window changed this document'
+          : 'Not saved — your draft is still here',
+      });
+      persistDraft();
+      return false;
+    } finally {
+      if (saveState === saving) {
+        saveState = { phase: 'idle' };
+        publish({});
+      }
+    }
   }
 
   return {

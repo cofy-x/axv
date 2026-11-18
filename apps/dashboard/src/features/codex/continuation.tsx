@@ -20,11 +20,20 @@ interface ResumeRequest {
   vmProject?: { binding: VMProjectBinding };
 }
 
+interface SendingResume {
+  phase: 'sending';
+  attempt: ResumeRequest;
+  pending: ResumeRequest;
+  promise: Promise<CodexSessionRecord>;
+}
+
+type ResumeState =
+  SendingResume | { phase: 'uncertain'; pending: ResumeRequest };
+
 /** Unknown outcomes retain their request identity until a definite response. */
 export class CodexResumeRequests {
-  private pending = new Map<string, ResumeRequest>();
-  private inFlight = new Map<string, Promise<CodexSessionRecord>>();
-  private persisted = new Map<string, VMProjectRequests>();
+  private readonly states = new Map<string, ResumeState>();
+  private readonly persisted = new Map<string, VMProjectRequests>();
 
   constructor(
     private readonly scope?: string,
@@ -32,7 +41,8 @@ export class CodexResumeRequests {
   ) {}
 
   restore(session: CodexSessionRecord) {
-    if (!session.vmProject || !this.scope) return this.pending.get(session.id);
+    if (!session.vmProject || !this.scope)
+      return this.states.get(session.id)?.pending;
     let store = this.persisted.get(session.id);
     if (!store) {
       store = new VMProjectRequests(
@@ -48,36 +58,55 @@ export class CodexResumeRequests {
         throw new Error(
           'The saved Codex continuation request has no original run. Preserve its recovery data before clearing it.',
         );
-      this.pending.set(session.id, {
+      const pending: ResumeRequest = {
         requestId: saved.requestId,
         expectedRunId: saved.expectedRunId,
         vmProject: { binding: saved.binding },
-      });
-    } else if (!this.inFlight.has(session.id)) {
+      };
+      const state = this.states.get(session.id);
+      if (state?.phase === 'sending') {
+        // A newer shared receipt changes recovery, never the request in flight.
+        state.pending = pending;
+      } else this.states.set(session.id, { phase: 'uncertain', pending });
+    } else if (this.states.get(session.id)?.phase !== 'sending') {
       // Other mounted views can resolve and remove the shared receipt. Keep
       // only this instance's active submission when persistence is now empty.
-      this.pending.delete(session.id);
+      this.states.delete(session.id);
     }
-    return this.pending.get(session.id);
+    return this.states.get(session.id)?.pending;
   }
 
   hasPending(sessionId: string) {
-    return this.pending.has(sessionId);
+    return this.states.has(sessionId);
   }
 
   pendingRequestId(sessionId: string) {
-    return this.pending.get(sessionId)?.requestId;
+    return this.states.get(sessionId)?.pending.requestId;
   }
 
-  private complete(sessionId: string, requestId: string) {
-    this.persisted.get(sessionId)?.complete(requestId);
-    if (this.pending.get(sessionId)?.requestId === requestId)
-      this.pending.delete(sessionId);
+  private settle(sessionId: string, sending: SendingResume, confirmed = false) {
+    let released = false;
+    try {
+      if (confirmed) {
+        this.persisted.get(sessionId)?.complete(sending.attempt.requestId);
+        released = true;
+      }
+    } finally {
+      if (this.states.get(sessionId) === sending) {
+        if (released && sending.pending.requestId === sending.attempt.requestId)
+          this.states.delete(sessionId);
+        else
+          this.states.set(sessionId, {
+            phase: 'uncertain',
+            pending: sending.pending,
+          });
+      }
+    }
   }
 
   resume(session: CodexSessionRecord, binding?: VMProjectBinding) {
-    const active = this.inFlight.get(session.id);
-    if (active) return active;
+    const state = this.states.get(session.id);
+    if (state?.phase === 'sending') return state.promise;
     const pending = this.restore(session);
     const saved =
       !pending && session.vmProject && binding
@@ -85,53 +114,67 @@ export class CodexResumeRequests {
         : undefined;
     if (session.vmProject && !pending?.vmProject && !binding)
       throw new Error('Review the VM project environment before continuing.');
-    const attempt = pending || {
-      requestId: saved?.requestId || crypto.randomUUID(),
-      expectedRunId: saved?.expectedRunId || session.runId,
-      ...(session.vmProject && binding
-        ? { vmProject: { binding: saved?.binding || binding } }
-        : {}),
+    const attempt: ResumeRequest = pending
+      ? structuredClone(pending)
+      : {
+          requestId: saved?.requestId || crypto.randomUUID(),
+          expectedRunId: saved?.expectedRunId || session.runId,
+          ...(session.vmProject && binding
+            ? { vmProject: { binding: { ...(saved?.binding || binding) } } }
+            : {}),
+        };
+    let complete!: (
+      result: CodexSessionRecord | PromiseLike<CodexSessionRecord>,
+    ) => void;
+    const promise = new Promise<CodexSessionRecord>((resolve) => {
+      complete = resolve;
+    });
+    const sending: SendingResume = {
+      phase: 'sending',
+      attempt,
+      pending: attempt,
+      promise,
     };
-    this.pending.set(session.id, attempt);
-    const submission = attempt.vmProject
-      ? this.databaseId
-        ? codexAPI.resume(
-            session.id,
-            attempt.requestId,
-            attempt.expectedRunId,
-            attempt.vmProject,
-            this.databaseId,
-          )
-        : codexAPI.resume(
-            session.id,
-            attempt.requestId,
-            attempt.expectedRunId,
-            attempt.vmProject,
-          )
-      : codexAPI.resume(session.id, attempt.requestId, attempt.expectedRunId);
-    const request = submission
-      .then((result) => {
-        desktopDatabase.assertUnchanged();
-        if (
-          result.id !== session.id ||
-          !result.runId ||
-          result.runId === attempt.expectedRunId
-        )
-          throw new Error(
-            'The host did not confirm a new run for this conversation. Retry the same continuation request.',
-          );
-        this.complete(session.id, attempt.requestId);
-        return result;
-      })
-      .catch((error: unknown) => {
-        if (launchRejectedBeforeStart(error)) {
-          this.complete(session.id, attempt.requestId);
-        }
-        throw error;
-      })
-      .finally(() => this.inFlight.delete(session.id));
-    this.inFlight.set(session.id, request);
-    return request;
+    this.states.set(session.id, sending);
+    complete(this.send(session.id, sending));
+    return promise;
+  }
+
+  private async send(sessionId: string, sending: SendingResume) {
+    const { attempt } = sending;
+    try {
+      const result = await (attempt.vmProject
+        ? this.databaseId
+          ? codexAPI.resume(
+              sessionId,
+              attempt.requestId,
+              attempt.expectedRunId,
+              attempt.vmProject,
+              this.databaseId,
+            )
+          : codexAPI.resume(
+              sessionId,
+              attempt.requestId,
+              attempt.expectedRunId,
+              attempt.vmProject,
+            )
+        : codexAPI.resume(sessionId, attempt.requestId, attempt.expectedRunId));
+      desktopDatabase.assertUnchanged();
+      if (
+        result.id !== sessionId ||
+        !result.runId ||
+        result.runId === attempt.expectedRunId
+      )
+        throw new Error(
+          'The host did not confirm a new run for this conversation. Retry the same continuation request.',
+        );
+      this.settle(sessionId, sending, true);
+      return result;
+    } catch (error) {
+      if (this.states.get(sessionId) === sending)
+        this.settle(sessionId, sending, launchRejectedBeforeStart(error));
+      throw error;
+    }
   }
 }
 

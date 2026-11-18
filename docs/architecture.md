@@ -40,6 +40,26 @@ flowchart TB
 
 Desktop workspaces, virtual-document IDs, host project paths, VM projects/volumes, provider conversations and process runs have separate identities. Changing a window or selection never retargets existing work. Virtual documents live in desktop SQLite; host projects remain on the host; VM project records belong to compute and their files stay on retained volumes. Links and snapshots explicitly connect these domains without changing their ownership or synchronizing files.
 
+## State ownership
+
+Each owner controls its transitions and side effects. Independent dimensions remain separate: a running VM may have an unavailable guest, a completed Codex turn may have a live process, and a successful document save may leave newer typing dirty. Browser loading or connection state does not establish the outcome of durable work. Follow the owning reference before changing a transition or consolidating its representation.
+
+| State family | Owner and transition boundary |
+| --- | --- |
+| Browser startup and identity | [Desktop persistence](desktop.md#persistent-layout-and-recovery) owns bootstrap, the browser client identity, the immutable database binding and replacement rejection. |
+| Desktop interaction and presentation | [Desktop](desktop.md) owns application loading, window/workspace visibility, menus, dialogs, focus, pointer gestures, preferences and layout writes. [Design](design.md#interaction-conventions) owns interaction expectations. |
+| Read observation | Feature stores own data freshness, last successful values, error presentation and target validation. The shared [serial poller](#shared-infrastructure) supplies reusable scheduling and cancellation. |
+| Shared editor and rendering | [Shared infrastructure](#shared-infrastructure) owns editor/module loading, rendering failures, fallback text input and external text updates. Consuming features retain content and save/recovery decisions. |
+| Documents and exchange | [Storage](storage.md) owns explicit saves, dirty drafts, revision conflicts, local recovery, snapshots, transfers and deletion transactions. Project editors additionally retain the [project binding](api/project-files.md). |
+| Installed applications | [Extension lifecycle](api/extensions.md) owns catalog availability, installed versions, sandbox handshakes, private data saves and per-window recovery. |
+| Terminal input and attachments | [Terminal](desktop.md#terminal-sessions) owns Host Terminal startup, readiness, byte queues and exit; [clipboard input](desktop.md#clipboard-input) captures one attachment generation. Codex and guest attachment/process lifetimes follow the comparison below. |
+| Codex work | [Codex](codex.md) owns launch/continuation requests, exact runs, attachment retries, provider activity, approvals/input and document-context delivery. Attachment, process, turn and delivery states have independent lifetimes. |
+| VM preparation and resources | [VM architecture](vm-platform.md#state-and-operations) owns preparation plans/jobs, desired and observed machine state, guest readiness, operation phases, reservations, volumes and images. |
+| VM projects | [VM projects](vm-platform.md#vm-projects) owns bindings, initialization, backups, GitHub observations and preview targets. [Persistent tasks](vm-platform.md#persistent-project-tasks) and [guest execution](vm-platform.md#guest-execution) own task attempts, cancellation and terminal recovery. |
+| Work notifications | [Notifications](api/notifications.md) owns producer checkpoints, intake gaps, delivery receipts, browser registration and adapter retries. Observing or delivering an event does not control its source work. |
+| Remote access and publishing | [Tailscale](api/tailscale.md) and [Cloudflare](api/cloudflare.md) own enablement, enrollment/configuration, authenticated connection lifetimes and withdrawal. Publication phases and cleanup belong to the captured publication receipt. |
+| Service and artifact lifecycle | [Startup](startup.md) owns launch identity, activation, supervision, process locks, cache downloads and configuration publication. Readiness and resource ownership remain distinct. |
+
 ## Document save
 
 Text Editor captures a snapshot and expected revision; the storage transaction either commits that snapshot or rejects it. Later typing remains dirty. Browser recovery is independent of both the server file and layout persistence. Continue with [document saves and recovery](storage.md#document-saves) and the [Files API](api/files.md).
@@ -73,6 +93,8 @@ Desktop and managed VM host jobs have independent supervision. Foreground shutdo
 ## Shared infrastructure
 
 Browser [`shared`](../apps/dashboard/src/shared) modules supply rendering, editor, API and desktop helpers. Shared Markdown rendering performs no filesystem access. The [code editor](../apps/dashboard/src/shared/code-editor) owns text presentation, position mapping and input; consuming features retain file access, target bindings, saves, recovery and external-change observation. Editor and language modules come from the embedded UI. [Deferred window loading](desktop.md#application-content-loading) remains dashboard-owned.
+
+[`SerialPoller`](../apps/dashboard/src/shared/api/serial-poller.ts) supplies the browser read lifecycle: stopped, idle, reading and waiting. Refreshes during a read coalesce into one subsequent read; the normal interval starts after completion. Stopping retires the current read before aborting it, and late replies cannot publish through its `isCurrent` guard. Completion callbacks may refresh, stop or restart the owner without leaving an older timer behind. VM inventory/preparation, remote status/diagnostics and Cloudflare/notification resource hooks share this scheduler; features retain subscription/visibility policy, target checks, data and mutation ownership. Preparation pauses observation while a mutation request is in flight, then checks the resulting server state.
 
 Backend file and locking primitives have no host-service dependencies: [`atomicfile`](../apps/server/internal/atomicfile) publishes files by atomic rename, [`filelock`](../apps/server/internal/filelock) supplies nonblocking exclusive locks and [`hostpath`](../apps/server/internal/hostpath) expands home markers and returns absolute paths. [`diagnostics`](../apps/server/internal/diagnostics) owns sanitized events independently of profiles; [`profile/logs`](../apps/server/internal/profile/logs) supplies its private rotating sink. [`artifactcache`](../apps/server/internal/artifactcache) owns public downloads independently of profile state. Feature stores own their data, identities and migration directories; the shared [`sqlitemigrate`](../apps/server/internal/sqlitemigrate) runner only validates and executes their [transactional migrations](storage.md#migration-runner).
 

@@ -76,7 +76,7 @@ describe('desktop layout persistence', () => {
     const flushing = persistence.flush();
     persistence.enqueue(layout(20));
     persistence.enqueue(layout(30));
-    await persistence.flush();
+    expect(persistence.flush()).toBe(flushing);
     expect(write).toHaveBeenCalledTimes(1);
     first.resolve();
     await flushing;
@@ -117,5 +117,27 @@ describe('desktop layout persistence', () => {
     await persistence.flush();
     await persistence.flush();
     expect(write.mock.calls).toEqual([[layout(20)], [layout(20)]]);
+  });
+
+  it('waits for the newest queued layout when another caller flushes during a write', async () => {
+    const first = deferred();
+    const second = deferred();
+    const write = vi
+      .fn()
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise);
+    const persistence = createLayoutPersistence(write, vi.fn(), vi.fn());
+    persistence.enqueue(layout(10));
+    const initial = persistence.flush();
+    persistence.enqueue(layout(20));
+    const finished = vi.fn();
+    const joined = persistence.flush().then(finished);
+    first.resolve();
+    await Promise.resolve();
+    expect(write.mock.calls).toEqual([[layout(10)], [layout(20)]]);
+    expect(finished).not.toHaveBeenCalled();
+    second.resolve();
+    await Promise.all([initial, joined]);
+    expect(finished).toHaveBeenCalledOnce();
   });
 });

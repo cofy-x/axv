@@ -78,9 +78,19 @@ export interface PendingMachineAction {
   uncertain: boolean;
 }
 
+type MachineActionResult = Awaited<ReturnType<typeof machinesApi.action>>;
+
+type SendingMachineAction = {
+  phase: 'sending';
+  pending: PendingMachineAction;
+  promise: Promise<MachineActionResult>;
+};
+
+type MachineActionState =
+  SendingMachineAction | { phase: 'uncertain'; pending: PendingMachineAction };
+
 export class MachineActionRequests {
-  private pending = new Map<string, PendingMachineAction>();
-  private inFlight = new Map<string, ReturnType<typeof machinesApi.action>>();
+  private readonly states = new Map<string, MachineActionState>();
   private readonly listeners = new Set<() => void>();
 
   subscribe = (listener: () => void) => {
@@ -95,46 +105,72 @@ export class MachineActionRequests {
   }
 
   getPending(hostId: string, machineId: string) {
-    return this.pending.get(JSON.stringify([hostId, machineId]));
+    return this.states.get(JSON.stringify([hostId, machineId]))?.pending;
   }
 
   execute(machine: Machine, action: VMAction) {
     const key = JSON.stringify([machine.hostId, machine.id]);
-    const pending = this.pending.get(key);
+    const state = this.states.get(key);
+    const pending = state?.pending;
     if (pending && pending.action !== action)
       return Promise.reject(
         new Error(
           `Resolve the original ${pending.action} request before changing this VM.`,
         ),
       );
-    const active = this.inFlight.get(key);
-    if (active) return active;
+    if (state?.phase === 'sending') return state.promise;
     const attempt = pending
       ? { ...pending, uncertain: false }
       : {
-          machine,
+          machine: structuredClone(machine),
           action,
           requestId: crypto.randomUUID(),
           uncertain: false,
         };
-    this.pending.set(key, attempt);
+    let complete!: (
+      result: MachineActionResult | PromiseLike<MachineActionResult>,
+    ) => void;
+    const promise = new Promise<MachineActionResult>((resolve) => {
+      complete = resolve;
+    });
+    const sending: SendingMachineAction = {
+      phase: 'sending',
+      pending: attempt,
+      promise,
+    };
+    // Install the shared request before notifying any mounted owner or sending I/O.
+    this.states.set(key, sending);
     this.publish();
-    const request = machinesApi
-      .action(attempt.machine, action, attempt.requestId)
-      .then((result) => {
-        this.pending.delete(key);
+    complete(this.send(key, sending));
+    return promise;
+  }
+
+  private async send(key: string, sending: SendingMachineAction) {
+    const attempt = sending.pending;
+    let result: MachineActionResult;
+    try {
+      result = await machinesApi.action(
+        attempt.machine,
+        attempt.action,
+        attempt.requestId,
+      );
+    } catch (error) {
+      if (this.states.get(key) === sending) {
+        if (isDefiniteOperationRejection(error)) this.states.delete(key);
+        else
+          this.states.set(key, {
+            phase: 'uncertain',
+            pending: { ...attempt, uncertain: true },
+          });
         this.publish();
-        return result;
-      })
-      .catch((error: unknown) => {
-        if (isDefiniteOperationRejection(error)) this.pending.delete(key);
-        else this.pending.set(key, { ...attempt, uncertain: true });
-        this.publish();
-        throw error;
-      })
-      .finally(() => this.inFlight.delete(key));
-    this.inFlight.set(key, request);
-    return request;
+      }
+      throw error;
+    }
+    if (this.states.get(key) === sending) {
+      this.states.delete(key);
+      this.publish();
+    }
+    return result;
   }
 }
 

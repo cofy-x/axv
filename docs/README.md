@@ -4,7 +4,7 @@ Use this page to choose context and find the owner of a fact. [AGENTS.md](../AGE
 
 ## Choose context
 
-**Understand the project:** Read the [project README](../README.md) introduction and relevant status entries, then [ownership and dependencies](architecture.md#ownership-and-dependencies) and the [lifetime comparison](architecture.md#codex-attachment-and-process-lifetime). Read [product direction](product.md) when the task concerns goals, scope or open decisions. Use a feature reference only to go deeper into that area.
+**Understand the project:** Read the [project README](../README.md) introduction and relevant status entries, then [ownership and dependencies](architecture.md#ownership-and-dependencies) and the [lifetime comparison](architecture.md#codex-attachment-and-process-lifetime). For lifecycle and transition work, use [state ownership](architecture.md#state-ownership) to locate the affected owners. Read [product direction](product.md) when the task concerns goals, scope or open decisions. Use a feature reference only to go deeper into that area.
 
 **Change a feature or fix a bug:**
 

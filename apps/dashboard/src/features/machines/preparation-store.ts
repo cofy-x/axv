@@ -7,6 +7,8 @@ import type {
 } from './api';
 import { computeStore } from './compute-store';
 import { OperationRequest, operationError } from './operation-requests';
+import { SerialPoller } from '../../shared/api/serial-poller';
+import type { PollContext } from '../../shared/api/serial-poller';
 
 type PreparationAPI = Pick<
   typeof machinesApi,
@@ -45,9 +47,7 @@ export function preparationRunning(job?: PreparationJob) {
 export class PreparationStore {
   private snapshot: PreparationSnapshot = { loading: true, refreshing: false };
   private readonly listeners = new Set<() => void>();
-  private timer?: ReturnType<typeof setTimeout>;
-  private request?: AbortController;
-  private refreshQueued = false;
+  private readonly poller: SerialPoller;
   private checkNeeded = true;
   private mutationFlight?: Promise<void>;
   private readonly mutations: OperationRequest<
@@ -59,6 +59,18 @@ export class PreparationStore {
     private readonly api: PreparationAPI = machinesApi,
     private readonly onChanged: () => void = () => {},
   ) {
+    this.poller = new SerialPoller({
+      timeoutMs: 15000,
+      intervalMs: () =>
+        preparationRunning(this.snapshot.job) && !this.snapshot.connectionError
+          ? 1000
+          : 5000,
+      onStart: () => this.publish({ refreshing: true }),
+      read: (context) => this.load(context),
+      onError: (error) =>
+        this.publish({ connectionError: operationError(error) }),
+      onSettled: () => this.publish({ loading: false, refreshing: false }),
+    });
     this.mutations = new OperationRequest((input, id) =>
       input.kind === 'start'
         ? this.api.startPreparation(input.planId, id, input.instanceId)
@@ -78,24 +90,19 @@ export class PreparationStore {
     this.listeners.add(listener);
     if (this.listeners.size === 1) {
       this.checkNeeded = true;
-      void this.load();
+      if (!this.mutationFlight) this.poller.start();
     }
     return () => {
       this.listeners.delete(listener);
       if (this.listeners.size) return;
-      clearTimeout(this.timer);
-      this.request?.abort();
-      this.request = undefined;
-      this.refreshQueued = false;
+      this.poller.stop();
     };
   };
 
   refresh = () => {
     this.checkNeeded = true;
-    if (!this.listeners.size) return;
-    clearTimeout(this.timer);
-    if (this.request) this.refreshQueued = true;
-    else void this.load();
+    if (!this.listeners.size || this.mutationFlight) return;
+    this.poller.refresh();
   };
 
   review = (
@@ -166,14 +173,7 @@ export class PreparationStore {
         : original.kind === 'retry'
           ? 'Retry preparation'
           : 'Cancel preparation';
-    clearTimeout(this.timer);
-    this.request?.abort();
-    this.request = undefined;
-    this.publish({
-      mutation: original.kind,
-      error: undefined,
-      refreshing: false,
-    });
+    this.poller.stop();
     this.mutationFlight = (
       input ? this.mutations.submit(input, label) : this.mutations.retry()
     )
@@ -186,70 +186,46 @@ export class PreparationStore {
       })
       .finally(() => {
         const pending = this.mutations.pending;
+        this.mutationFlight = undefined;
+        this.checkNeeded = true;
         this.publish({
           mutation: undefined,
           pending: pending
             ? { label: pending.label, kind: pending.input.kind }
             : undefined,
         });
-        this.mutationFlight = undefined;
-        this.refresh();
+        if (this.listeners.size && !this.mutationFlight) this.poller.start();
       });
+    this.publish({
+      mutation: original.kind,
+      error: undefined,
+      refreshing: false,
+    });
     return this.mutationFlight;
   }
 
-  private async load() {
-    if (this.request || !this.listeners.size) return;
-    const controller = new AbortController();
-    this.request = controller;
-    const signal = AbortSignal.any([
-      controller.signal,
-      AbortSignal.timeout(15000),
-    ]);
-    const current = () =>
-      this.request === controller && !controller.signal.aborted;
-    this.publish({ refreshing: true });
-    try {
-      const job = this.snapshot.job;
-      if (!this.checkNeeded && preparationRunning(job)) {
-        const result = await this.api.preparationJob(job!.id, signal);
-        if (!current()) return;
-        signal.throwIfAborted();
-        this.accept(result);
-        if (!preparationRunning(result)) {
-          this.checkNeeded = true;
-          this.refreshQueued = true;
-        }
-      } else {
-        const check = await this.api.preparationCheck(signal);
-        if (!current()) return;
-        signal.throwIfAborted();
-        this.checkNeeded = false;
-        this.publish({ check });
-        this.accept(check.activeJob || check.latestJob);
-      }
-      this.publish({ connectionError: undefined });
-    } catch (error) {
+  private async load({ signal, isCurrent: current }: PollContext) {
+    const job = this.snapshot.job;
+    if (!this.checkNeeded && preparationRunning(job)) {
+      const result = await this.api.preparationJob(job!.id, signal);
       if (!current()) return;
-      this.publish({ connectionError: operationError(error) });
-    } finally {
-      if (this.request === controller) {
-        this.request = undefined;
-        controller.abort();
-        this.publish({ loading: false, refreshing: false });
-        if (this.refreshQueued) {
-          this.refreshQueued = false;
-          void this.load();
-        } else if (this.listeners.size)
-          this.timer = setTimeout(
-            () => void this.load(),
-            preparationRunning(this.snapshot.job) &&
-              !this.snapshot.connectionError
-              ? 1000
-              : 5000,
-          );
+      signal.throwIfAborted();
+      this.accept(result);
+      if (!current()) return;
+      if (!preparationRunning(result)) {
+        this.checkNeeded = true;
+        this.poller.refresh();
       }
+    } else {
+      const check = await this.api.preparationCheck(signal);
+      if (!current()) return;
+      signal.throwIfAborted();
+      this.checkNeeded = false;
+      this.publish({ check });
+      if (!current()) return;
+      this.accept(check.activeJob || check.latestJob);
     }
+    if (current()) this.publish({ connectionError: undefined });
   }
 }
 
