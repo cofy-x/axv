@@ -185,13 +185,16 @@ async function fixture(
       );
     if (path.includes('/task-requests/')) {
       const requestId = path.split('/').at(-1);
-      const found = [...values.values()].find(
-        (item) =>
-          item.task.requestId === requestId ||
-          item.attempts.some((attempt) => attempt.requestId === requestId),
+      const found = [...values.values()].find((item) =>
+        item.attempts.some((attempt) => attempt.requestId === requestId),
       );
       return found
-        ? json(found)
+        ? json({
+            ...found,
+            attempt: found.attempts.find(
+              (attempt) => attempt.requestId === requestId,
+            ),
+          })
         : json({ code: 'not_found', error: 'Submission not accepted.' }, 404);
     }
     const parts = path.split('/');
@@ -270,7 +273,7 @@ async function fixture(
         target.status = 'cancelled';
         target.cancelRequested = true;
       }
-      return json(item);
+      return json({ ...item, attempt: target });
     }
     if (path.endsWith('/logs')) {
       const bytes = Buffer.from(taskOutputs.get(taskId) ?? logText);
@@ -622,12 +625,18 @@ test('cancellation stops only the selected task while another task continues', a
   await selectTask(page, /npm run build/);
   await panel
     .getByRole('button', { name: 'Cancel Attempt', exact: true })
-    .click();
+    .evaluate((button: HTMLButtonElement) => {
+      button.click();
+      button.click();
+    });
   await page
-    .getByRole('dialog')
+    .getByRole('dialog', { name: 'Cancel attempt 1?', exact: true })
     .getByRole('button', { name: 'Cancel Attempt', exact: true })
     .click();
   await expect.poll(() => state.cancellations.length).toBe(1);
+  await expect(
+    page.getByRole('dialog', { name: 'Cancel attempt 1?', exact: true }),
+  ).toHaveCount(0);
   expect(state.cancellations).toEqual([
     { taskId: 'second', attemptId: 'second-attempt-1', binding },
   ]);
@@ -762,6 +771,62 @@ test('a lost submission response recovers the original receipt after reload with
   expect(state.submissions[0].binding).toEqual(binding);
 });
 
+test('a pending dismissal keeps a newer submission record', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const state = await fixture(page);
+  await openTasks(page);
+  const panel = tasksWindow(page);
+  state.loseSubmission();
+  await panel
+    .getByRole('textbox', { name: 'Shell command', exact: true })
+    .fill('npm ci');
+  await panel.getByRole('button', { name: 'Run in VM', exact: true }).click();
+  await panel
+    .getByRole('button', { name: 'Dismiss Recovery', exact: true })
+    .click();
+  const dialog = page.getByRole('dialog', {
+    name: 'Dismiss submission recovery?',
+    exact: true,
+  });
+  await expect(dialog).toBeVisible();
+  const { key, raw } = await page.evaluate(() => {
+    const key = Object.keys(sessionStorage).find((name) =>
+      name.startsWith('["axv-vm-task-submission",'),
+    )!;
+    const previous = JSON.parse(sessionStorage.getItem(key)!);
+    const raw = JSON.stringify({
+      ...previous,
+      requestId: 'later-task-submission',
+      spec: { ...previous.spec, argv: ['/bin/sh', '-lc', 'npm run check'] },
+    });
+    sessionStorage.setItem(key, raw);
+    return { key, raw };
+  });
+  await dialog.getByRole('button', { name: 'Dismiss', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(await page.evaluate((key) => sessionStorage.getItem(key), key)).toBe(
+    raw,
+  );
+  const recovery = panel.getByRole('region', {
+    name: 'Unconfirmed task submission',
+  });
+  await recovery.getByText('Submission details', { exact: true }).click();
+  await expect(recovery).toContainText('later-task-submission');
+  await expect(recovery).toContainText('npm run check');
+  const recover = recovery.getByRole('button', {
+    name: 'Recover Submission',
+    exact: true,
+  });
+  await expect(recover).toBeEnabled();
+  await expect(recover).toBeInViewport({ ratio: 0.95 });
+  await expect(
+    panel.getByRole('textbox', { name: 'Shell command', exact: true }),
+  ).toHaveValue('npm ci');
+  expect(state.submissions).toHaveLength(1);
+});
+
 test('unknown attempts are not retried and finished attempts require explicit confirmation', async ({
   page,
 }) => {
@@ -856,6 +921,17 @@ test('a lost retry response recovers its exact attempt after reload without laun
   ).toBeEnabled();
   expect(state.retries).toHaveLength(1);
   const accepted = item.attempt;
+  accepted.status = 'succeeded';
+  const later = {
+    ...accepted,
+    id: 'later-attempt',
+    number: 3,
+    requestId: 'later-request',
+    status: 'running',
+  };
+  item.attempts.push(later);
+  item.attempt = later;
+  item.task.currentAttemptId = later.id;
   await expect
     .poll(async () =>
       (await persistedLayout(page, request))?.windows.some(
@@ -873,7 +949,7 @@ test('a lost retry response recovers its exact attempt after reload without laun
     panel.getByRole('button', { name: 'Recover Submission', exact: true }),
   ).toHaveCount(0);
   expect(state.retries).toHaveLength(1);
-  expect(item.attempts).toHaveLength(2);
+  expect(item.attempts).toHaveLength(3);
   expect(state.submissions).toHaveLength(0);
   expect(accepted.binding).toEqual(binding);
 });
