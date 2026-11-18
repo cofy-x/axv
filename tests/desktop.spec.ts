@@ -532,6 +532,10 @@ test('revision conflicts preserve local text and save a separate copy', async ({
   await page.reload();
   const note = await openDocument(page, entry);
   const editor = note.getByRole('textbox', { name: 'Document text' });
+  const newerRevision = note.getByText(
+    /^The saved document changed elsewhere\./,
+  );
+  const draft = 'My local draft stays intact';
   await expect(editor).toHaveValue('Initial text');
   expect(
     (
@@ -540,12 +544,26 @@ test('revision conflicts preserve local text and save a separate copy', async ({
       })
     ).ok(),
   ).toBeTruthy();
-  await editor.fill('My local draft stays intact');
+  await editor.fill(draft);
+  await page.evaluate(() => globalThis.dispatchEvent(new Event('focus')));
+  await expect(newerRevision).toBeVisible();
+  const conflictingSave = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/api/entries/${entry.id}`) &&
+      response.request().method() === 'PATCH',
+  );
   await editor.press('ControlOrMeta+s');
+  const rejected = await conflictingSave;
+  expect(rejected.status()).toBe(409);
+  expect((await rejected.json()).code).toBe('revision_conflict');
+  expect(rejected.request().postDataJSON()).toEqual({
+    content: draft,
+    revision: entry.revision,
+  });
   await expect(note.getByTestId('save-status')).toHaveText(
     'Another window changed this document',
   );
-  await expect(editor).toHaveValue('My local draft stays intact');
+  await expect(editor).toHaveValue(draft);
   await note
     .getByRole('button', { name: 'More document actions', exact: true })
     .click();
@@ -562,7 +580,7 @@ test('revision conflicts preserve local text and save a separate copy', async ({
   expect(copy.name).toBe('E2E Preserved.txt');
   await expect(
     editorWindow(page, copy.id).getByRole('textbox', { name: 'Document text' }),
-  ).toHaveValue('My local draft stays intact');
+  ).toHaveValue(draft);
   expect(await readContent(request, entry.id)).toBe('Remote saved text');
   await activate(page, note);
   await note
@@ -575,6 +593,7 @@ test('revision conflicts preserve local text and save a separate copy', async ({
     .click();
   await expect(editor).toHaveValue('Remote saved text');
   await expect(note.getByTestId('save-status')).toHaveText('Saved');
+  await expect(newerRevision).toHaveCount(0);
 });
 
 test('failed saves, cancel/discard protection and local recovery preserve drafts', async ({
