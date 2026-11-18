@@ -1,18 +1,7 @@
-.vm-project-launcher .project-register-form {
-  gap: 8px;
-  margin-block: 8px;
-}
-.vm-project-launcher .project-register-fields,
 .vm-project-initialize-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
-}
-.vm-project-launcher .project-register-name {
-  grid-column: 1 / -1;
-}
-.vm-project-launcher .project-register-actions {
-  justify-content: flex-start;
 }
 .vm-project-initialize {
   min-width: 0;
@@ -73,7 +62,6 @@
   overflow-wrap: anywhere;
 }
 @container project-files (max-width: 440px) {
-  .vm-project-launcher .project-register-fields,
   .vm-project-initialize-fields {
     grid-template-columns: minmax(0, 1fr);
   }

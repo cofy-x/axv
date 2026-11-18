@@ -333,14 +333,12 @@
   overflow-wrap: anywhere;
 }
 .codex-session-reference {
-  color: #555;
   white-space: nowrap;
 }
 .codex-session-summary code {
   font: var(--ns-font-size-secondary) var(--ns-mono);
 }
 .codex-session-summary > span {
-  color: #555;
   font-size: var(--ns-font-size-secondary);
 }
 .codex-session-actions {

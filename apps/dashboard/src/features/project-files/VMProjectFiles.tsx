@@ -899,17 +899,6 @@ export function VMProjectFiles({
                     action: () => downloadFileDraft(target, path, generation),
                   },
                   {
-                    label: 'Reload',
-                    disabled:
-                      !interactive ||
-                      !path ||
-                      saving ||
-                      composing ||
-                      !!pendingRecovery ||
-                      blockedRecovery,
-                    action: () => void reloadFile(target, path, generation),
-                  },
-                  {
                     label: 'Reconnect',
                     disabled: !interactive || saving || composing,
                     action: () => void reconnectProject(target, generation),
@@ -951,47 +940,61 @@ export function VMProjectFiles({
           />
         </div>
       </div>
-      <div className="project-location">
-        <div className="project-location-summary">
-          <strong>VM · {project?.name || window.title}</strong>
-          <span>{folder || 'Project root'}</span>
-        </div>
-        <details>
-          <summary>Details</summary>
-          <dl className="info-list">
-            <dt>Project</dt>
-            <dd>
-              <code>{id}</code>
-            </dd>
-            <dt>Host</dt>
-            <dd>
-              <code>{hostId}</code>
-            </dd>
-            <dt>Volume</dt>
-            <dd>
-              <code>
-                {binding?.volumeId || project?.volumeId || 'Unavailable'}
-              </code>
-            </dd>
-            <dt>Directory in volume</dt>
-            <dd>
-              <code>{project?.root || 'Volume root'}</code>
-            </dd>
-            <dt>VM</dt>
-            <dd>
-              <code>{binding?.machineId || 'Unavailable'}</code>
-            </dd>
-            <dt>Boot / instance</dt>
-            <dd>
-              <code>
-                {binding
-                  ? `${binding.bootId} / ${binding.instanceId}`
-                  : 'Unavailable'}
-              </code>
-            </dd>
-          </dl>
-        </details>
-      </div>
+      <details className="project-location">
+        {section === 'files' ? (
+          <summary title={folder || 'Project root'}>
+            <strong>VM · {folder || 'Project root'}</strong> · Details
+          </summary>
+        ) : (
+          <summary>Project details</summary>
+        )}
+        <dl className="info-list">
+          {project && (
+            <>
+              <dt>Project name</dt>
+              <dd>{project.name}</dd>
+            </>
+          )}
+          <dt>Project</dt>
+          <dd>
+            <code>{id}</code>
+          </dd>
+          <dt>Host</dt>
+          <dd>
+            <code>{hostId}</code>
+          </dd>
+          <dt>Volume</dt>
+          <dd>
+            <code>
+              {binding?.volumeId || project?.volumeId || 'Unavailable'}
+            </code>
+          </dd>
+          <dt>Directory in volume</dt>
+          <dd>
+            <code>{project?.root || 'Volume root'}</code>
+          </dd>
+          {section === 'files' && folder && (
+            <>
+              <dt>Current folder</dt>
+              <dd>
+                <code>{folder}</code>
+              </dd>
+            </>
+          )}
+          <dt>VM</dt>
+          <dd>
+            <code>{binding?.machineId || 'Unavailable'}</code>
+          </dd>
+          <dt>Boot / instance</dt>
+          <dd>
+            <code>
+              {binding
+                ? `${binding.bootId} / ${binding.instanceId}`
+                : 'Unavailable'}
+            </code>
+          </dd>
+        </dl>
+      </details>
       <div className="vm-project-sections">
         <Tabs
           label="VM project view"

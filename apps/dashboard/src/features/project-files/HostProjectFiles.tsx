@@ -252,31 +252,31 @@ export function HostProjectFiles({
           />
         </div>
       </div>
-      <div className="project-location">
-        <div className="project-location-summary">
-          <strong>Host · {listing.data?.project.name || window.title}</strong>
-          <span>{folder || 'Project root'}</span>
-        </div>
-        <details>
-          <summary>Details</summary>
-          <dl className="info-list">
-            <dt>Project directory</dt>
-            <dd>
-              <code>
-                {listing.data?.project.rootPath || 'Loading project…'}
-              </code>
-            </dd>
-            <dt>Current folder</dt>
-            <dd>
-              <code>{folder || 'Project root'}</code>
-            </dd>
-            <dt>Registered project</dt>
-            <dd>
-              <code>{id}</code>
-            </dd>
-          </dl>
-        </details>
-      </div>
+      <details className="project-location">
+        <summary title={folder || 'Project root'}>
+          <strong>Host · {folder || 'Project root'}</strong> · Details
+        </summary>
+        <dl className="info-list">
+          {listing.data && (
+            <>
+              <dt>Project name</dt>
+              <dd>{listing.data.project.name}</dd>
+            </>
+          )}
+          <dt>Project directory</dt>
+          <dd>
+            <code>{listing.data?.project.rootPath || 'Loading project…'}</code>
+          </dd>
+          <dt>Current folder</dt>
+          <dd>
+            <code>{folder || 'Project root'}</code>
+          </dd>
+          <dt>Registered project</dt>
+          <dd>
+            <code>{id}</code>
+          </dd>
+        </dl>
+      </details>
       {(error || listing.error) && (
         <p className="project-error" role="alert">
           {error || listing.error}

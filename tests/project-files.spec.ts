@@ -200,10 +200,23 @@ test('project location switching preserves both forms and an in-flight registrat
   const vmPath = launcher.getByLabel('Directory', { exact: true });
   await expect(host).toHaveAttribute('aria-selected', 'true');
   await expect(vm).toBeInViewport();
+  const hostProjects = launcher.getByRole('list', {
+    name: 'Registered host projects',
+  });
+  const hostRows = hostProjects.getByRole('button');
+  await expect(hostRows.first()).toBeInViewport();
+  await expect(hostPath).toBeInViewport();
+  expect((await hostProjects.boundingBox())!.y).toBeLessThan(
+    (await hostPath.boundingBox())!.y,
+  );
   await hostPath.fill('/fixture/host-draft');
   await launcher.screenshot({
     path: testInfo.outputPath('project-launcher-host.png'),
   });
+  await hostRows.last().focus();
+  await expect(hostRows.last()).toBeFocused();
+  await expect(hostRows.last()).toBeInViewport();
+  await expect(hostPath).toBeInViewport();
   await choose(
     launcher.getByRole('button', { name: 'Choose Folder', exact: true }),
   );
@@ -226,6 +239,16 @@ test('project location switching preserves both forms and an in-flight registrat
   await expect(hostPath).toBeHidden();
   await pickerPath.evaluate((element) => (element as HTMLInputElement).focus());
   await expect(vm).toBeFocused();
+  const vmProjects = launcher.getByRole('list', {
+    name: 'Registered VM projects',
+  });
+  const savedVM = vmProjects.getByRole('button', {
+    name: /Shared name · aaaaaaaa/,
+  });
+  await expect(savedVM).toBeInViewport();
+  expect((await vmProjects.boundingBox())!.y).toBeLessThan(
+    (await vmPath.boundingBox())!.y,
+  );
   await launcher
     .getByRole('combobox', { name: 'Project volume' })
     .selectOption(volumeId);
@@ -233,9 +256,7 @@ test('project location switching preserves both forms and an in-flight registrat
   await launcher
     .getByLabel('Project name', { exact: true })
     .fill('Draft project');
-  await expect(
-    launcher.getByRole('button', { name: /Shared name · aaaaaaaa/ }),
-  ).toContainText('Work · 11111111 / repo');
+  await expect(savedVM).toContainText('Work · 11111111 / repo');
   await expect(
     launcher.getByRole('button', { name: /Shared name · bbbbbbbb/ }),
   ).toContainText('Work · 22222222 / repo');
