@@ -287,6 +287,10 @@ The `patchedDependencies` entry in [pnpm-workspace.yaml](../pnpm-workspace.yaml)
 
 The [public terminal API regression](../apps/dashboard/src/shared/terminal/xterm-buffer.test.ts) covers initial and reused alternate screens, visible output and normal-screen preservation. When adopting an upstream release containing this fix, remove the patch and its workspace entry, regenerate the lockfile, and rerun that regression plus the runtime and browser matrix. Keep the regression after removing the patch.
 
+The development glob patches reject unbounded repetition in extended globs before compiling the groups to regular expressions. The project selectors use ordinary file wildcards and globstars, such as `**/*.test.ts`. The restriction applies to [picomatch 4.0.7](https://github.com/micromatch/picomatch/tree/4.0.7), which Vite and Vitest use, and the picomatch code that [Prettier 3.10.1](https://github.com/prettier/prettier/tree/3.10.1) bundles for glob selection. The patches are original AXV changes to the upstream [MIT-licensed picomatch code](https://github.com/micromatch/picomatch/blob/4.0.7/LICENSE) and preserve package notices.
+
+The restriction mitigates [CVE-2026-112366](https://github.com/advisories/GHSA-fc5q-39xc-vjpf) in those matching paths. The full version-based audit continues to report the advisory while the locked package version is affected. Upgrades must account for bundled code separately. Playwright test discovery uses minimatch, for example, even though Playwright's assertion bundle includes picomatch. When a patched release replaces either affected matcher, remove the corresponding patch and update the [glob regression](../scripts/toolchain-globs.test.mjs) for the supported behavior. Review test discovery and the production build when updating the dependency graph.
+
 ## Test isolation and diagnostics
 
 Repository verification uses `.data/test` by default for generated host executables, helper fixtures, profiles and temporary files. Set `AXV_TEST_TMPDIR` to choose another private root; relative overrides resolve from the invoking working directory:
