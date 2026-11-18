@@ -1,12 +1,17 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
-import type { ConnectionStatus } from '../shared/api/connection';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { desktopDatabase } from '../shared/api/desktop';
 import { filesystemApi } from './api';
 import type { FilesystemData } from './context';
 import type { Entry } from './types';
 
+type RefreshTrigger = 'requested' | 'periodic';
+
+export type FilesystemObservation =
+  | { phase: 'available'; trigger: RefreshTrigger }
+  | { phase: 'unavailable'; error: unknown };
+
 export function useFilesystem(
-  onConnectionChange: (status: ConnectionStatus) => void,
+  onObservation: (result: FilesystemObservation) => void,
   initialEntries: Entry[] = [],
 ) {
   const [entries, setEntries] = useState<Entry[]>(initialEntries);
@@ -18,19 +23,33 @@ export function useFilesystem(
   );
   const [selections, setSelections] = useState<Record<string, string[]>>({});
   const [clipboard, setClipboard] = useState<FilesystemData['clipboard']>(null);
-  const generation = useRef(0);
-  const refresh = useCallback(async () => {
-    const current = ++generation.current;
-    try {
-      const result = await filesystemApi.entries();
-      desktopDatabase.assertActive();
-      if (current === generation.current) setEntries(result.entries);
-      onConnectionChange('connected');
-    } catch (error) {
-      onConnectionChange('offline');
-      throw error;
-    }
-  }, [onConnectionChange]);
+  const latestRead = useRef<symbol | null>(null);
+  useEffect(
+    () => () => {
+      latestRead.current = null;
+    },
+    [],
+  );
+  const refresh = useCallback(
+    async (trigger: RefreshTrigger = 'requested') => {
+      const read = Symbol();
+      latestRead.current = read;
+      let entries: Entry[];
+      try {
+        ({ entries } = await filesystemApi.entries());
+        desktopDatabase.assertActive();
+      } catch (error) {
+        if (latestRead.current === read)
+          onObservation({ phase: 'unavailable', error });
+        // A command still receives the outcome of the read it requested.
+        throw error;
+      }
+      if (latestRead.current !== read) return;
+      setEntries(entries);
+      onObservation({ phase: 'available', trigger });
+    },
+    [onObservation],
+  );
   const data = useMemo<FilesystemData>(
     () => ({
       entries,
@@ -63,5 +82,5 @@ export function useFilesystem(
       metadataListeners,
     ],
   );
-  return { data, setEntries };
+  return { data, refresh };
 }
