@@ -4,7 +4,7 @@ import {
   editVMFile,
   expectEditorText,
 } from './code-editor-helpers';
-import type { Page, Route } from '@playwright/test';
+import type { Locator, Page, Route } from '@playwright/test';
 import {
   actionMenu,
   activate,
@@ -537,6 +537,18 @@ test('VM project actions reopen Projects without closing the draft', async ({
   const text = await openProject(page);
   await editVMFile(browser(page));
   await text.fill('Keep this project draft');
+  const location = browser(page).locator('details.project-location');
+  const details = location.locator('summary').filter({
+    hasText: 'VM · Project root · Details',
+  });
+  const identity = location.getByText(project.id, { exact: true });
+  await expect(identity).toHaveCount(1);
+  await expect(identity).toBeHidden();
+  await details.focus();
+  await details.press('Enter');
+  await expect(identity).toBeVisible();
+  await details.press('Enter');
+  await expect(identity).toBeHidden();
   const projects = page.locator('[data-window-id="project-files:projects"]');
   await activate(page, projects);
   await projects
@@ -544,20 +556,29 @@ test('VM project actions reopen Projects without closing the draft', async ({
     .click();
   await expect(projects).toHaveCount(0);
   await activate(page, browser(page));
-  await actionMenu(
-    page,
-    browser(page),
-    'More VM project actions',
-    'Projects',
-    isMobile,
+  await expect(
+    browser(page).getByRole('button', { name: 'Reload file', exact: true }),
+  ).toBeVisible();
+  const choose = (target: Locator) =>
+    isMobile ? target.tap() : target.click();
+  await choose(
+    browser(page).getByRole('button', { name: 'More VM project actions' }),
   );
+  const menu = page.getByRole('menu', { name: /^VM repository ·/ });
+  await expect(menu).toBeVisible();
+  await expect(
+    menu.getByRole('menuitem', { name: 'Reload', exact: true }),
+  ).toHaveCount(0);
+  await choose(menu.getByRole('menuitem', { name: 'Projects', exact: true }));
   await expect(projects).toBeVisible();
   await expectEditorText(text, 'Keep this project draft');
   await expect(text).not.toBeEditable();
   await projects.getByRole('tab', { name: 'VM', exact: true }).click();
-  await expect(
-    projects.getByRole('button', { name: /^VM repository ·/ }),
-  ).toBeVisible();
+  const saved = projects.getByRole('button', { name: /^VM repository ·/ });
+  await expect(saved).toBeInViewport();
+  await choose(saved);
+  await expectEditorText(text, 'Keep this project draft');
+  await expect(text).toBeEditable();
 });
 
 test('narrow VM project Back returns focus to the selected file', async ({

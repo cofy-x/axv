@@ -1178,6 +1178,10 @@ export function CodexManager({
           <ul className="codex-session-list">
             {visibleSessions.map((session) => {
               const recovery = continuationRecovery.get(session.id);
+              const ended = session.status === 'ended';
+              const showActivity =
+                !ended ||
+                (session.activity && session.activity.state !== 'unknown');
               const shouldContinue =
                 !!recovery?.requestId || sessionCanContinue(session);
               const canContinue =
@@ -1204,36 +1208,38 @@ export function CodexManager({
                           Run {session.runId.slice(0, 8)}
                         </code>
                       )}
-                      <CodexActivity
-                        activity={session.activity}
-                        stale={!!sessionError}
-                      />
+                      {showActivity && (
+                        <CodexActivity
+                          activity={session.activity}
+                          stale={!!sessionError}
+                        />
+                      )}
                     </div>
-                    {session.activity?.reason && (
+                    <span>
+                      <span
+                        data-testid="codex-session-project"
+                        title={
+                          session.vmProject
+                            ? session.vmProject.project.root
+                            : session.projectPath
+                        }
+                      >
+                        {session.vmProject
+                          ? `Host → VM · ${session.vmProject.project.name}`
+                          : projectName(session.projectPath)}
+                        {session.archivedAt &&
+                          filter === 'attention' &&
+                          ' · Archived'}
+                      </span>
+                      {ending === session.id
+                        ? ' · Ending…'
+                        : session.status !== 'running' &&
+                          ` · Run ${session.status}`}
+                    </span>
+                    {showActivity && session.activity?.reason && (
                       <span>{session.activity.reason}</span>
                     )}
-                    <span
-                      data-testid="codex-session-project"
-                      title={
-                        session.vmProject
-                          ? session.vmProject.project.root
-                          : session.projectPath
-                      }
-                    >
-                      {session.vmProject
-                        ? `Host → VM · ${session.vmProject.project.name}`
-                        : projectName(session.projectPath)}
-                      {session.archivedAt && ' · Archived'}
-                    </span>
-                    {(ending === session.id ||
-                      session.status !== 'running') && (
-                      <span className="codex-session-process-state">
-                        {ending === session.id
-                          ? 'Ending…'
-                          : `Run ${session.status}`}
-                      </span>
-                    )}
-                    {session.reason && <span>{session.reason}</span>}
+                    {!ended && session.reason && <span>{session.reason}</span>}
                     {recovery?.error && (
                       <span role="alert">{recovery.error}</span>
                     )}

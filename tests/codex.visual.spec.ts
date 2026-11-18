@@ -251,6 +251,9 @@ for (const viewport of [
       .getByRole('button', { name: 'Archived', exact: true })
       .click();
     await expect(row).toContainText(name);
+    await expect(row.getByTestId('codex-session-project')).not.toContainText(
+      'Archived',
+    );
     await row.scrollIntoViewIfNeeded();
     await capture('codex-archived-sessions');
     await rowAction('Unarchive');
@@ -310,5 +313,19 @@ for (const viewport of [
       .click();
     expect((await session(request, id)).runId).toBe(runId);
     expect((await session(request, id, runId)).status).toBe('ended');
+    await openCodexManager(page);
+    await expect(row).toHaveAttribute('data-run-id', runId);
+    await expect(row).toContainText('Run ended');
+    await expect(row.getByTestId('codex-activity')).toHaveCount(0);
+    await expect(row).not.toContainText('Session ended.');
+    await row.scrollIntoViewIfNeeded();
+    await expect(
+      row.getByRole('button', { name: 'Continue', exact: true }),
+    ).toBeInViewport();
+    await capture('codex-ended-sessions');
+    await rowAction('Details');
+    await expect(details).toContainText('Activity unavailable');
+    await expect(details).toContainText('Session ended.');
+    await details.getByRole('button', { name: 'Close', exact: true }).click();
   });
 }

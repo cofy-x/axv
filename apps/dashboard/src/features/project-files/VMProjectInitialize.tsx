@@ -102,7 +102,7 @@ export function VMProjectInitialize({
     try {
       if (saved && localStorage.getItem(recoveryKey) !== retainedRaw.current)
         throw new Error(
-          'The original recovery record changed. Reopen VM Projects before recovering it.',
+          'The original recovery record changed. Reopen the VM tab in Project Files before recovering it.',
         );
       let operation = saved;
       if (!operation) {
@@ -133,7 +133,7 @@ export function VMProjectInitialize({
           !health.instanceId
         )
           throw new Error(
-            'The selected VM environment could not be captured. Refresh VM Projects before submitting.',
+            'The selected VM environment could not be captured. Refresh the VM project list before submitting.',
           );
         operation = {
           version: 1,
@@ -331,7 +331,7 @@ export function VMProjectInitialize({
       const raw = localStorage.getItem(recoveryKey);
       if (!active.current || raw !== retainedRaw.current)
         throw new Error(
-          'The original recovery record changed. Reopen VM Projects before dismissing it.',
+          'The original recovery record changed. Reopen the VM tab in Project Files before dismissing it.',
         );
       await replaceVMRecoveryRecord(recoveryKey, retainedRaw.current, null);
       retainedRaw.current = null;
@@ -402,7 +402,8 @@ export function VMProjectInitialize({
               {busy ? 'Submitting…' : mode === 'clone' ? 'Clone' : 'Create'}
             </Button>
             <p className="vm-project-initialize-guidance">
-              Existing directories are never overwritten.
+              Existing directories are never overwritten. Accepted setup
+              continues after you close this window.
             </p>
           </div>
         </form>
