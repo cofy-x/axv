@@ -1,0 +1,15 @@
+diff --git a/index.mjs b/index.mjs
+index 4454be36902b812c6fdca6c6302cdbe1a66ee435..bc11f909a57d35ab54403942f64f046f6e1dbfc9 100644
+--- a/index.mjs
++++ b/index.mjs
+@@ -2385,6 +2385,10 @@ var require_parse2 = __commonJS({
+         prev = tok;
+       };
+       const extglobOpen = (type, value2) => {
++        // Keep unbounded group repetition out of AXV toolchain globs.
++        if (type === "plus" || type === "star") {
++          throw new SyntaxError("Repeated extglob groups are disabled in AXV tooling.");
++        }
+         const token2 = { ...EXTGLOB_CHARS[value2], conditions: 1, inner: "" };
+         token2.prev = prev;
+         token2.parens = state.parens;
