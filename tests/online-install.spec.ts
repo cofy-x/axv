@@ -880,6 +880,8 @@ for (const expired of [false, true]) {
       releaseReads();
       await expect(save).toBeEnabled();
       expect(await status.textContent()).toBe(expectedStatus);
+      if (expired)
+        await expect(notices).toContainText('Authorization is required.');
       await expect(text).toBeFocused();
       await expect(text).toHaveValue(draft);
       expect(await readContent(request, entry.id)).toBe(snapshot);
