@@ -826,6 +826,9 @@ for (const expired of [false, true]) {
     const editor = await openDocument(page, entry, hasTouch);
     const text = editor.getByRole('textbox', { name: 'Document text' });
     const save = editor.getByRole('button', { name: 'Save', exact: true });
+    const newerRevision = editor.getByText(
+      /^The saved document changed elsewhere\./,
+    );
     const status = page.locator('.ns-desktop-status').getByRole('status');
     const notices = page.getByRole('region', { name: 'Desktop notices' });
     const expectedStatus = expired ? 'Offline' : 'Connected';
@@ -863,6 +866,8 @@ for (const expired of [false, true]) {
       ).toBeVisible();
       await expect.poll(() => delayedReads).toBeGreaterThan(0);
       await expect.poll(() => readContent(request, entry.id)).toBe(snapshot);
+      await expect(editor.getByTestId('save-status')).toHaveText('Saved');
+      await expect(newerRevision).toHaveCount(0);
       await text.fill(draft);
 
       const marker = 'E2E Newer read.txt';
@@ -884,6 +889,16 @@ for (const expired of [false, true]) {
         await expect(notices).toContainText('Authorization is required.');
       await expect(text).toBeFocused();
       await expect(text).toHaveValue(draft);
+      await expect(newerRevision).toHaveCount(0);
+      await expect
+        .poll(() => storedDrafts(page, entry.id))
+        .toContainEqual(
+          expect.objectContaining({
+            baseRevision: entry.revision + 1,
+            saved: snapshot,
+            text: draft,
+          }),
+        );
       expect(await readContent(request, entry.id)).toBe(snapshot);
     } finally {
       releaseReads();

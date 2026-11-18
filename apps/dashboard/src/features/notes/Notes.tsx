@@ -664,9 +664,10 @@ function DocumentEditor({
           Recovered a local draft. It has not been saved to the server.
         </div>
       )}
+      {/* Cached entry metadata can trail the acknowledged document revision. */}
       {loaded &&
         entry &&
-        entry.revision !== note.revision &&
+        entry.revision > note.revision &&
         !conflict &&
         !databaseFailure && (
           <div className="editor-recovery" role="status">

@@ -27,6 +27,8 @@ The notification feature independently owns `AXV_HOME/notifications/state.json` 
 
 The controller keeps current text separate from the content acknowledged by the server and the expected revision. Explicit Save captures a text-and-revision snapshot. A successful write acknowledges that snapshot; typing during the write remains a newer dirty draft. A later metadata-refresh failure does not undo a successful content write. A failed write never marks the draft saved.
 
+The editor shows the change notice when the file list reports a newer revision for the same entry. The list can lag an acknowledged save while the editor retains its saved revision and any newer draft. The editor keeps its own expected revision for Save, and the server checks it exactly.
+
 The [document controller](../apps/dashboard/src/features/notes/note-document.ts) owns an idle/saving state with one captured snapshot and shared completion. It registers that completion before publishing the saving state or invoking storage, so callbacks and repeated Save actions join the original write. The visible `saving` field is derived from this owner. Local recovery writes independently alternate between idle and writing, coalescing pending snapshots without changing the server save or recovery-choice boundaries.
 
 Rename and move notifications carry both previous and resulting revisions. An editor may acknowledge a metadata-only revision change only when its expected revision exactly matches that previous revision. Otherwise it preserves the draft and resolves any conflict explicitly, without substituting a newer revision automatically.
