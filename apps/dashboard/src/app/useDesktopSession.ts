@@ -1,11 +1,6 @@
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { useFilesystem } from '../filesystem/useFilesystem';
+import type { FilesystemObservation } from '../filesystem/useFilesystem';
 import { usePreferences } from '../features/appearance/usePreferences';
 import type { ConnectionStatus } from '../shared/api/connection';
 import { desktopDatabase } from '../shared/api/desktop';
@@ -13,38 +8,50 @@ import { APIError } from '../shared/api/http';
 import type { ReadyDesktop } from './useBootstrap';
 import { useLayoutPersistence } from './useLayoutPersistence';
 
+type DesktopAccess =
+  | { phase: ConnectionStatus }
+  | { phase: 'authorization-required'; message: string };
+
 export function useDesktopSession({ bootstrap, clientId }: ReadyDesktop) {
-  const [connection, setConnection] = useState<ConnectionStatus>('connected');
-  const { data: filesystem } = useFilesystem(setConnection, bootstrap.entries);
+  const [access, setAccess] = useState<DesktopAccess>({ phase: 'connected' });
+  const reportConnection = useCallback((phase: ConnectionStatus) => {
+    setAccess((previous) =>
+      previous.phase === 'authorization-required' || previous.phase === phase
+        ? previous
+        : { phase },
+    );
+  }, []);
   const { data: appearance } = usePreferences(
-    setConnection,
+    reportConnection,
     bootstrap.preferences,
   );
   const databaseError = useSyncExternalStore(
     desktopDatabase.subscribe,
     desktopDatabase.getSnapshot,
   );
-  const layout = useLayoutPersistence(clientId, setConnection);
-  const [authenticationError, setAuthenticationError] = useState('');
-  const authenticationGeneration = useRef(0);
-  const { refresh: refreshFilesystem } = filesystem;
-  const refresh = useCallback(async () => {
-    const current = ++authenticationGeneration.current;
-    try {
-      await refreshFilesystem();
-      if (current === authenticationGeneration.current)
-        setAuthenticationError('');
-    } catch (error) {
-      if (
-        current === authenticationGeneration.current &&
-        error instanceof APIError &&
-        error.code === 'authentication_required'
-      )
-        setAuthenticationError(error.message);
-      throw error;
-    }
-  }, [refreshFilesystem]);
+  const layout = useLayoutPersistence(clientId, reportConnection);
   const { flushLayout } = layout;
+  const observeFilesystem = useCallback(
+    (result: FilesystemObservation) => {
+      if (result.phase === 'available') {
+        setAccess({ phase: 'connected' });
+        if (result.trigger === 'periodic') void flushLayout();
+      } else if (
+        result.error instanceof APIError &&
+        result.error.code === 'authentication_required'
+      ) {
+        setAccess({
+          phase: 'authorization-required',
+          message: result.error.message,
+        });
+      } else reportConnection('offline');
+    },
+    [flushLayout, reportConnection],
+  );
+  const { data: filesystem, refresh } = useFilesystem(
+    observeFilesystem,
+    bootstrap.entries,
+  );
   useEffect(() => {
     if (databaseError) return;
     const visibility = () => {
@@ -54,12 +61,7 @@ export function useDesktopSession({ bootstrap, clientId }: ReadyDesktop) {
     };
     const timer = setInterval(() => {
       if (desktopDatabase.getSnapshot()) return;
-      void refresh()
-        .then(() => {
-          setConnection('connected');
-          void flushLayout();
-        })
-        .catch(() => setConnection('offline'));
+      void refresh('periodic').catch(() => {});
     }, 5000);
     const focus = () => {
       if (!desktopDatabase.getSnapshot()) void refresh().catch(() => {});
@@ -72,13 +74,17 @@ export function useDesktopSession({ bootstrap, clientId }: ReadyDesktop) {
       document.removeEventListener('visibilitychange', visibility);
     };
   }, [databaseError, refresh, flushLayout]);
+  const authorizationRequired = access.phase === 'authorization-required';
   return {
     ...layout,
-    connection: databaseError ? ('offline' as const) : connection,
+    connection:
+      databaseError || authorizationRequired
+        ? ('offline' as const)
+        : access.phase,
     filesystem,
     appearance,
     databaseError,
-    authenticationError,
-    retryAuthentication: refresh,
+    authenticationError: authorizationRequired ? access.message : '',
+    retryAuthentication: filesystem.refresh,
   };
 }

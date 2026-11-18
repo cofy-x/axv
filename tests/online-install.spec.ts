@@ -815,6 +815,80 @@ test('expired authorization has a recoverable notice and retains editor focus an
   expect(await readContent(request, entry.id)).toBe('Initial text');
 });
 
+for (const expired of [false, true]) {
+  test(`a late document refresh cannot override ${expired ? 'newer authorization expiry' : 'a newer successful desktop read'}`, async ({
+    page,
+    request,
+    hasTouch,
+  }) => {
+    const entry = await createEntry(request, 'E2E Refresh ordering.txt');
+    await page.reload();
+    const editor = await openDocument(page, entry, hasTouch);
+    const text = editor.getByRole('textbox', { name: 'Document text' });
+    const save = editor.getByRole('button', { name: 'Save', exact: true });
+    const status = page.locator('.ns-desktop-status').getByRole('status');
+    const notices = page.getByRole('region', { name: 'Desktop notices' });
+    const expectedStatus = expired ? 'Offline' : 'Connected';
+    const snapshot = 'Save this snapshot before the delayed list read.';
+    const draft = 'Keep this newer draft in the same editor.';
+    let delayedReads = 0;
+    let releaseReads = () => {};
+    const delayedResponses = new Promise<void>((resolve) => {
+      releaseReads = resolve;
+    });
+    let holdReads = true;
+    await page.route('**/api/entries', async (route) => {
+      if (route.request().method() !== 'GET') return route.continue();
+      if (!holdReads)
+        return expired
+          ? route.fulfill({
+              status: 401,
+              json: { code: 'cloudflare_unauthorized' },
+            })
+          : route.continue();
+      const oldResponse = expired ? await route.fetch() : undefined;
+      delayedReads++;
+      await delayedResponses;
+      await route.fulfill(
+        oldResponse
+          ? { response: oldResponse }
+          : { status: 503, json: { error: 'Old read failed.' } },
+      );
+    });
+    try {
+      await text.fill(snapshot);
+      await choose(save, hasTouch);
+      await expect(
+        editor.getByRole('button', { name: 'Saving…' }),
+      ).toBeVisible();
+      await expect.poll(() => delayedReads).toBeGreaterThan(0);
+      await expect.poll(() => readContent(request, entry.id)).toBe(snapshot);
+      await text.fill(draft);
+
+      const marker = 'E2E Newer read.txt';
+      if (!expired) await createEntry(request, marker);
+      holdReads = false;
+      await page.evaluate(() => globalThis.dispatchEvent(new Event('focus')));
+      if (expired)
+        await expect(notices).toContainText('Authorization is required.');
+      else
+        await expect(
+          filesWindow(page).getByText(marker, { exact: true }),
+        ).toHaveCount(1);
+      await expect(status).toHaveText(expectedStatus);
+
+      releaseReads();
+      await expect(save).toBeEnabled();
+      expect(await status.textContent()).toBe(expectedStatus);
+      await expect(text).toBeFocused();
+      await expect(text).toHaveValue(draft);
+      expect(await readContent(request, entry.id)).toBe(snapshot);
+    } finally {
+      releaseReads();
+    }
+  });
+}
+
 test('removing one focused notice restores the editor without reclaiming deliberately moved focus', async ({
   page,
   context,
