@@ -334,13 +334,33 @@ test('browser Web Push is explicit and independent of local Pocket Alert setting
     permission: 'default',
   });
   expect(state.writes).toEqual([]);
+  await browserPanel(page)
+    .getByLabel('Device label', { exact: true })
+    .fill('Work browser');
   await subscribe(page, touch);
+  await expect(
+    browserPanel(page).getByRole('button', { name: 'Refresh browser state' }),
+  ).toBeInViewport();
   await browserPanel(page).evaluate((element) =>
     element.closest('.ns-tab-panel')?.scrollTo({ top: 0 }),
   );
   await panel(page).screenshot({
     path: info.outputPath('webpush-enabled-top.png'),
   });
+  await expect(
+    browserPanel(page).getByLabel('Device label', { exact: true }),
+  ).toBeHidden();
+  await expect(
+    panel(page).getByText('Pocket Alert disabled.', { exact: true }),
+  ).toHaveCount(0);
+  for (const name of [
+    'Test this browser',
+    'Disable server delivery',
+    'Unsubscribe this browser',
+  ])
+    await expect(
+      browserPanel(page).getByRole('button', { name, exact: true }),
+    ).toBeInViewport({ ratio: 0.95 });
   expect(state.writes.map((value) => value.action)).toEqual([
     '/push/prepare',
     '/push/subscribe',
@@ -398,6 +418,15 @@ test('browser Web Push is explicit and independent of local Pocket Alert setting
   ).toBeVisible();
   expect((await browserState(page)).permission).toBe('granted');
   expect(state.snapshot.subscriptions).toEqual([]);
+  await expect(
+    browserPanel(page).getByLabel('Device label', { exact: true }),
+  ).toHaveValue('Work browser');
+  await expect(
+    browserPanel(page).getByRole('button', {
+      name: 'Unsubscribe this browser',
+      exact: true,
+    }),
+  ).toBeHidden();
   await panel(page).screenshot({
     path: info.outputPath('webpush-browser-lifecycle.png'),
   });
@@ -656,7 +685,9 @@ test('a click retained during bootstrap opens its exact original event after the
     }),
   ).toBeVisible();
   await expect(
-    panel(page).getByText('Test notification', { exact: true }).first(),
+    panel(page)
+      .getByRole('region', { name: 'Notification details' })
+      .getByRole('heading', { name: 'Test notification', exact: true }),
   ).toBeVisible();
 });
 

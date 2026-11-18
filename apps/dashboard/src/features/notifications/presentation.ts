@@ -10,7 +10,7 @@ export const kindLabel = (kind: string) =>
       : 'Notification');
 
 export function deliveryLabel(event: NotificationEvent) {
-  return (
+  const label =
     {
       pending: 'Pending',
       sending: 'Sending',
@@ -19,7 +19,26 @@ export function deliveryLabel(event: NotificationEvent) {
       failed: 'Delivery failed',
       disabled: 'Disabled before delivery',
       superseded: 'Superseded before delivery',
-    }[event.status] || 'Delivery unavailable'
+    }[event.status] || 'Delivery unavailable';
+  return event.pushDeliveries?.length && event.status !== 'accepted'
+    ? `Pocket Alert: ${label}`
+    : label;
+}
+
+export function pushDeliveryLabel(status: string) {
+  return (
+    (
+      {
+        pending: 'Queued',
+        sending: 'Sending',
+        accepted: 'Accepted by push service',
+        uncertain: 'Delivery uncertain',
+        failed: 'Delivery failed',
+        disabled: 'Disabled before send',
+        expired: 'Delivery expired',
+        superseded: 'Superseded before send',
+      } as Record<string, string>
+    )[status] || 'Delivery unavailable'
   );
 }
 

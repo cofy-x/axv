@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, Checkbox, Field, StatusBar, Tabs } from '@cofy-x/axv-nextstep';
+import {
+  Button,
+  Checkbox,
+  Field,
+  IconButton,
+  StatusBar,
+  Tabs,
+} from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { notificationError, notificationsAPI } from './api';
-import { NotificationDetails } from './NotificationDetails';
+import { NotificationHistory } from './NotificationHistory';
 import { BrowserPushPanel } from './BrowserPushPanel';
-import { PushDeliveryDetails } from './PushDeliveryDetails';
-import { deliveryExplanation, deliveryLabel, kindLabel } from './presentation';
 import { useNotificationResource } from './useNotificationResource';
 import { notificationKinds } from './types';
-import type {
-  NotificationConfig,
-  NotificationReference,
-  NotificationSnapshot,
-} from './types';
+import type { NotificationConfig, NotificationSnapshot } from './types';
 
 function sameConfig(left: NotificationConfig, right: NotificationConfig) {
   return (
@@ -23,15 +24,6 @@ function sameConfig(left: NotificationConfig, right: NotificationConfig) {
     [...left.eventTypes].sort().join(',') ===
       [...right.eventTypes].sort().join(',')
   );
-}
-
-function referenceValue(value: unknown): NotificationReference | undefined {
-  if (!value || typeof value !== 'object') return undefined;
-  const candidate = value as NotificationReference;
-  return typeof candidate.storeId === 'string' &&
-    typeof candidate.notificationId === 'string'
-    ? candidate
-    : undefined;
 }
 
 export function NotificationsPanel({
@@ -60,7 +52,6 @@ export function NotificationsPanel({
       : window.viewState.notificationTab === 'history' || !allowed
         ? 'history'
         : 'settings';
-  const reference = referenceValue(window.viewState.notificationReference);
   const dirty =
     !!token ||
     clearToken ||
@@ -186,12 +177,6 @@ export function NotificationsPanel({
       ...state,
       notificationTab: next,
     }));
-  const selectEvent = (notificationId: string) =>
-    snapshot &&
-    desktop.updateWindowState(window.id, (state) => ({
-      ...state,
-      notificationReference: { storeId: snapshot.storeId, notificationId },
-    }));
 
   async function reloadSavedSettings() {
     if (!snapshot) return;
@@ -221,6 +206,21 @@ export function NotificationsPanel({
 
   const currentStore =
     !snapshot || !baseline || baseline.storeId === snapshot.storeId;
+  const status = busy
+    ? busy === 'test'
+      ? 'Recording test…'
+      : busy === 'disable'
+        ? 'Disabling notifications…'
+        : 'Saving settings…'
+    : dirty
+      ? 'Unsaved settings.'
+      : tab !== 'browser' && snapshot && !resource.error
+        ? snapshot.nextSendAt
+          ? 'Pocket Alert quota cooldown.'
+          : snapshot.config.enabled
+            ? 'Pocket Alert enabled.'
+            : 'Pocket Alert disabled.'
+        : '';
   return (
     <div className="notifications-app">
       <Tabs
@@ -235,7 +235,7 @@ export function NotificationsPanel({
           { id: 'history', label: 'History', disabled: !interactive },
         ]}
       >
-        {resource.error && (
+        {resource.error && tab !== 'browser' && (
           <p className="app-error" role="alert">
             {resource.error} Retained history may be stale.
           </p>
@@ -246,7 +246,7 @@ export function NotificationsPanel({
             review the new store. The unsaved settings are retained here.
           </p>
         )}
-        {snapshot?.error && (
+        {snapshot?.error && tab !== 'browser' && (
           <p className="app-error" role="alert">
             Notification delivery needs attention. Review the saved settings and
             delivery history.
@@ -260,17 +260,13 @@ export function NotificationsPanel({
           >
             <div className="notification-heading">
               <h2>Pocket Alert</h2>
-              <Button
+              <IconButton
+                icon="refresh"
+                label="Refresh settings"
                 disabled={!interactive || !!busy || resource.loading}
                 onClick={resource.refresh}
-              >
-                Refresh
-              </Button>
+              />
             </div>
-            <p className="fine-print">
-              Optional notifications for agent requests and completed work.
-              Delivery history stays in AXV.
-            </p>
             {!draft ? (
               <p role="status">Loading settings…</p>
             ) : (
@@ -320,11 +316,10 @@ export function NotificationsPanel({
                     setMessage('');
                   }}
                 />
-                <p className="fine-print">
+                <p className="notification-note">
                   {baseline?.config.tokenConfigured
-                    ? 'A token is saved on the server. Leave this field empty to keep it.'
-                    : 'No token is saved. Enter a Pocket Alert API token before enabling delivery.'}{' '}
-                  Tokens are never shown after saving.
+                    ? 'Leave blank to keep the saved token.'
+                    : 'Enter a token before enabling delivery.'}
                 </p>
                 {baseline?.config.tokenConfigured && (
                   <Checkbox
@@ -438,119 +433,15 @@ export function NotificationsPanel({
         >
           <BrowserPushPanel active={interactive && tab === 'browser'} />
         </div>
-        <div
-          className="app-pad notifications-content"
-          hidden={tab !== 'history'}
-          inert={!interactive || tab !== 'history'}
-        >
-          <div className="notification-heading">
-            <h2>Delivery history</h2>
-            <Button
-              disabled={!interactive || resource.loading}
-              onClick={resource.refresh}
-            >
-              Refresh
-            </Button>
-          </div>
-          {!allowed && (
-            <p className="fine-print">
-              Manage Pocket Alert settings on the computer running AXV.
-            </p>
-          )}
-          {snapshot?.nextSendAt && (
-            <p className="notification-error" role="status">
-              Pocket Alert quota cooldown until{' '}
-              <time dateTime={snapshot.nextSendAt}>
-                {new Date(snapshot.nextSendAt).toLocaleString()}
-              </time>
-              . All queued deliveries wait until this time, including events
-              without an individual retry time.
-            </p>
-          )}
-          {snapshot?.intake.gap && (
-            <p className="notification-error" role="alert">
-              Source history has a gap. Some events could not be recovered; AXV
-              will not invent missing outcomes.
-            </p>
-          )}
-          {snapshot?.intake.error && (
-            <p className="notification-error" role="alert">
-              Notification intake is unavailable. The retained history may be
-              incomplete.
-            </p>
-          )}
-          {!snapshot && !resource.error && (
-            <p role="status">Loading history…</p>
-          )}
-          {snapshot && snapshot.events.length === 0 && (
-            <p>No notifications recorded.</p>
-          )}
-          <ul className="notification-history">
-            {snapshot?.events.map((event) => (
-              <li key={event.id}>
-                <button
-                  className="notification-history-item"
-                  aria-pressed={
-                    reference?.notificationId === event.id &&
-                    reference.storeId === snapshot.storeId
-                  }
-                  onClick={() => selectEvent(event.id)}
-                >
-                  <strong>{kindLabel(event.kind)}</strong>
-                  <span>
-                    {event.pushDeliveries?.length ? 'Pocket Alert: ' : ''}
-                    <span>{deliveryLabel(event)}</span>
-                  </span>
-                  <time dateTime={event.createdAt}>
-                    {new Date(event.createdAt).toLocaleString()}
-                  </time>
-                </button>
-                <PushDeliveryDetails deliveries={event.pushDeliveries} />
-                {deliveryExplanation(event) && (
-                  <p className="fine-print">{deliveryExplanation(event)}</p>
-                )}
-                <p className="fine-print">
-                  Delivery attempts: {event.attempts}
-                  {event.nextAttemptAt && (
-                    <>
-                      {' '}
-                      · Next check:{' '}
-                      <time dateTime={event.nextAttemptAt}>
-                        {new Date(event.nextAttemptAt).toLocaleString()}
-                      </time>
-                    </>
-                  )}
-                </p>
-              </li>
-            ))}
-          </ul>
-          {reference && (
-            <NotificationDetails
-              key={`${reference.storeId}:${reference.notificationId}`}
-              reference={reference}
-              active={interactive && tab === 'history'}
-              desktop={desktop}
-            />
-          )}
-        </div>
+        <NotificationHistory
+          window={window}
+          desktop={desktop}
+          active={interactive && tab === 'history'}
+          visible={tab === 'history'}
+          resource={resource}
+        />
       </Tabs>
-      <StatusBar>
-        {busy
-          ? busy === 'test'
-            ? 'Recording test…'
-            : busy === 'disable'
-              ? 'Disabling notifications…'
-              : 'Saving settings…'
-          : resource.error
-            ? 'History may be stale.'
-            : dirty
-              ? 'Unsaved settings.'
-              : snapshot?.nextSendAt
-                ? 'Pocket Alert quota cooldown.'
-                : snapshot?.config.enabled
-                  ? 'Pocket Alert enabled.'
-                  : 'Pocket Alert disabled.'}
-      </StatusBar>
+      {status && <StatusBar>{status}</StatusBar>}
     </div>
   );
 }
