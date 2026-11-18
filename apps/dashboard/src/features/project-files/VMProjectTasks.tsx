@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import {
   Button,
   Field,
@@ -8,8 +14,6 @@ import {
   TextArea,
 } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
-import { APIError } from '../../shared/api/http';
-import { RequestIdentity } from '../../shared/api/request-identity';
 import { useDraftNamespace } from '../../shared/drafts/context';
 import { vmProjectsAPI } from './vm-api';
 import type { VMProject, VMProjectBinding } from './vm-api';
@@ -18,23 +22,21 @@ import {
   readVMTaskLog,
   taskFinished,
   vmTaskLogPageBytes,
-  validVMTaskSubmission,
   vmTasksAPI,
 } from './vm-task-api';
-import type {
-  VMTaskAttempt,
-  VMTaskResult,
-  VMTaskSubmission,
-} from './vm-task-api';
+import type { VMTaskAttempt, VMTaskResult } from './vm-task-api';
+import { createVMTaskRequests } from './vm-task-requests';
 
 const describe = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
+const shellLabel = (argv: string[]) =>
+  argv[0] === '/bin/sh' && argv[1] === '-lc' && argv[2] !== undefined
+    ? argv[2]
+    : argv.join(' ');
 const commandLabel = (result: VMTaskResult) =>
   result.task.spec.initialization
     ? `${result.task.spec.initialization.repository ? 'Clone Repository' : 'Create Project'} · ${result.task.spec.initialization.directory}`
-    : result.task.spec.argv.slice(0, 2).join(' ') === '/bin/sh -lc'
-      ? result.task.spec.argv[2]
-      : result.task.spec.argv.join(' ');
+    : shellLabel(result.task.spec.argv);
 const dateLabel = (value: string) => new Date(value).toLocaleString();
 const timeLabel = (value: string) =>
   new Date(value).toLocaleTimeString([], {
@@ -64,38 +66,44 @@ export function VMProjectTasks({
     hostId,
     projectId,
   ]);
-  const requests = useRef(new RequestIdentity(recoveryKey));
-  const [recovery] = useState(() => {
-    try {
-      const raw = sessionStorage.getItem(recoveryKey);
-      const value = raw === null ? null : (JSON.parse(raw) as VMTaskSubmission);
-      if (raw !== null && !validVMTaskSubmission(value, hostId, projectId))
-        throw new Error(
-          'The saved task submission could not be read. Keep its browser record before discarding recovery.',
-        );
-      return { value, error: '' };
-    } catch (error) {
-      return { value: null, error: describe(error) };
-    }
-  });
-  const [pending, setPending] = useState(recovery.value);
-  const [recoveryError, setRecoveryError] = useState(recovery.error);
-  const [command, setCommand] = useState(recovery.value?.spec?.argv[2] || '');
-  const [directory, setDirectory] = useState(
-    recovery.value?.spec?.directory || '',
+  const mounted = useRef(false);
+  const [error, setError] = useState('');
+  const [feedback, setFeedback] = useState('');
+  const [requests] = useState(() =>
+    createVMTaskRequests({
+      hostId,
+      projectId,
+      recoveryKey,
+      isOpen: () => mounted.current,
+      onSend: () => {
+        setError('');
+        setFeedback('');
+      },
+      onError: setError,
+    }),
   );
+  const { command: taskCommand, recovery } = useSyncExternalStore(
+    requests.subscribe,
+    requests.getSnapshot,
+  );
+  const pending = recovery.kind === 'pending' ? recovery.submission : null;
+  const recoveryError = 'error' in recovery ? recovery.error : '';
+  const action = taskCommand.phase === 'sending' ? taskCommand.kind : '';
+  const busy = taskCommand.phase !== 'idle';
+  const [command, setCommand] = useState(pending?.spec?.argv[2] || '');
+  const [directory, setDirectory] = useState(pending?.spec?.directory || '');
   const [timeout, setTimeoutSeconds] = useState(
-    recovery.value?.spec?.limits.timeoutSeconds || 900,
+    pending?.spec?.limits.timeoutSeconds || 900,
   );
-  const [cpus, setCPUs] = useState(recovery.value?.spec?.limits.cpus || 1);
+  const [cpus, setCPUs] = useState(pending?.spec?.limits.cpus || 1);
   const [memoryMiB, setMemoryMiB] = useState(
-    recovery.value?.spec?.limits.memoryMiB || 512,
+    pending?.spec?.limits.memoryMiB || 512,
   );
   const [maxProcesses, setMaxProcesses] = useState(
-    recovery.value?.spec?.limits.maxProcesses || 64,
+    pending?.spec?.limits.maxProcesses || 64,
   );
   const [logKiB, setLogKiB] = useState(
-    (recovery.value?.spec?.limits.maxLogBytes || 1 << 20) / 1024,
+    (pending?.spec?.limits.maxLogBytes || 1 << 20) / 1024,
   );
   const [project, setProject] = useState<VMProject | null>(null);
   const [binding, setBinding] = useState<VMProjectBinding | null>(null);
@@ -104,21 +112,12 @@ export function VMProjectTasks({
   const [loaded, setLoaded] = useState(false);
   const [stale, setStale] = useState(false);
   const [pollError, setPollError] = useState('');
-  const [error, setError] = useState('');
-  const [feedback, setFeedback] = useState('');
-  const [action, setAction] = useState<'submit' | 'recover' | 'cancel' | ''>(
-    '',
-  );
-  const busy = !!action;
   const [refresh, setRefresh] = useState(0);
   const [focusRequest, setFocusRequest] = useState(0);
   const [logs, setLogs] = useState<
     Record<string, Awaited<ReturnType<typeof readVMTaskLog>>>
   >({});
-  const latest = useRef({ pending, recoveryError });
-  latest.current = { pending, recoveryError };
-  const mounted = useRef(false);
-  const mutation = useRef(false);
+  const activePoll = useRef<AbortController | null>(null);
   const connectionGeneration = useRef(0);
   const resultSurface = useRef<HTMLElement>(null);
   const focusedTask = useRef('');
@@ -219,7 +218,7 @@ export function VMProjectTasks({
     browsing,
   ]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
@@ -227,11 +226,11 @@ export function VMProjectTasks({
   }, []);
 
   async function connect() {
+    const current = requests.getSnapshot();
     if (
       !mounted.current ||
-      mutation.current ||
-      latest.current.pending ||
-      latest.current.recoveryError
+      current.command.phase !== 'idle' ||
+      current.recovery.kind !== 'empty'
     )
       return;
     const generation = ++connectionGeneration.current;
@@ -282,18 +281,19 @@ export function VMProjectTasks({
 
   useEffect(() => {
     const prevent = (event: BeforeUnloadEvent) => {
-      if (pending || recoveryError) {
+      if (requests.getSnapshot().recovery.kind !== 'empty') {
         event.preventDefault();
         event.returnValue = '';
       }
     };
     globalThis.addEventListener('beforeunload', prevent);
     return () => globalThis.removeEventListener('beforeunload', prevent);
-  }, [pending, recoveryError]);
+  }, [requests]);
 
   useEffect(() => {
     if (!interactive || !hostId) return;
     const controller = new AbortController();
+    activePoll.current = controller;
     let timer: ReturnType<typeof globalThis.setTimeout>;
 
     async function poll() {
@@ -354,6 +354,7 @@ export function VMProjectTasks({
 
     void poll();
     return () => {
+      if (activePoll.current === controller) activePoll.current = null;
       controller.abort();
       globalThis.clearTimeout(timer);
     };
@@ -368,62 +369,30 @@ export function VMProjectTasks({
     followLatest,
   ]);
 
+  function recordResult(result: VMTaskResult) {
+    activePoll.current?.abort();
+    setResults((current) => replaceTask(current, result));
+    setRefresh((value) => value + 1);
+  }
+
   function show(result: VMTaskResult) {
     setFocusRequest((value) => value + 1);
     setComposing(false);
     setBrowsing(false);
-    setResults((current) => replaceTask(current, result));
+    recordResult(result);
     desktop.updateWindowState(window.id, {
       taskId: result.task.id,
       attemptId: result.attempt.id,
     });
-    setRefresh((value) => value + 1);
   }
 
-  async function send(submission: VMTaskSubmission, recover = false) {
-    if (mutation.current || !interactive) return;
-    mutation.current = true;
-    setAction(recover ? 'recover' : 'submit');
-    setError('');
-    setFeedback('');
-    let stored = false;
-    try {
-      sessionStorage.setItem(recoveryKey, JSON.stringify(submission));
-      stored = true;
-      setPending(submission);
-      let result: VMTaskResult;
-      if (recover) {
-        try {
-          result = await vmTasksAPI.recover(
-            projectId,
-            hostId,
-            submission.requestId,
-          );
-        } catch (error) {
-          if (!(error instanceof APIError) || error.status !== 404) throw error;
-          result = await vmTasksAPI.submit(projectId, submission);
-        }
-      } else result = await vmTasksAPI.submit(projectId, submission);
-      if (!mounted.current) return;
-      show(result);
-      sessionStorage.removeItem(recoveryKey);
-      setPending(null);
-      if (!requests.current.complete(submission.requestId))
-        setError(
-          'Task accepted, but its local retry identity could not be cleared. Review task history before submitting the same command again.',
-        );
-      setFeedback('Task accepted. Continues in VM.');
-    } catch (error) {
-      if (mounted.current)
-        setError(
-          stored
-            ? `${describe(error)} Recover the original submission before starting another task.`
-            : `The task was not submitted because its recovery record could not be saved. ${describe(error)}`,
-        );
-    } finally {
-      mutation.current = false;
-      if (mounted.current) setAction('');
-    }
+  function accepted(result: VMTaskResult) {
+    show(result);
+    setFeedback(
+      taskFinished(result.attempt.status)
+        ? `Attempt ${result.attempt.number} · ${result.attempt.status}`
+        : 'Task accepted.',
+    );
   }
 
   function submit() {
@@ -432,7 +401,7 @@ export function VMProjectTasks({
       !command.trim() ||
       pending ||
       recoveryError ||
-      mutation.current ||
+      busy ||
       !interactive
     )
       return;
@@ -459,81 +428,101 @@ export function VMProjectTasks({
       );
       return;
     }
-    try {
-      const spec = {
-        argv: ['/bin/sh', '-lc', command],
-        directory,
-        limits: {
-          timeoutSeconds: timeout,
-          cpus,
-          memoryMiB,
-          maxProcesses,
-          maxLogBytes: logKiB * 1024,
-        },
-      };
-      const values = { binding, spec };
-      void send({ ...values, requestId: requests.current.for(values) });
-    } catch (error) {
-      setError(describe(error));
-    }
+    const spec = {
+      argv: ['/bin/sh', '-lc', command],
+      directory,
+      limits: {
+        timeoutSeconds: timeout,
+        cpus,
+        memoryMiB,
+        maxProcesses,
+        maxLogBytes: logKiB * 1024,
+      },
+    };
+    void requests.submit({ binding: { ...binding }, spec }, accepted);
   }
 
-  async function retry(result: VMTaskResult) {
+  function retry(result: VMTaskResult) {
     const target = binding;
     if (
       !target ||
       pending ||
+      recoveryError ||
       busy ||
       !interactive ||
       !taskFinished(currentTaskAttempt(result)?.status || '')
     )
       return;
-    const answer = await desktop.dialog({
-      title: 'Retry task?',
-      message: `Run “${commandLabel(result)}” again in VM “${target.machineId}”? This creates a new attempt and preserves previous results.`,
-      buttons: [
-        { label: 'Cancel', value: 'cancel', cancel: true },
-        { label: 'Retry', value: 'retry', default: true },
-      ],
-    });
-    if (answer?.button !== 'retry' || !mounted.current) return;
-    try {
-      const values = { taskId: result.task.id, binding: target };
-      await send({ ...values, requestId: requests.current.for(values) });
-    } catch (error) {
-      setError(describe(error));
-    }
+    const label = commandLabel(result);
+    void requests.retry(
+      { taskId: result.task.id, binding: { ...target } },
+      async () => {
+        const answer = await desktop.dialog({
+          title: 'Retry task?',
+          message: `Run “${label}” again in VM “${target.machineId}”? This creates a new attempt and preserves previous results.`,
+          buttons: [
+            { label: 'Cancel', value: 'cancel', cancel: true },
+            { label: 'Retry', value: 'retry', default: true },
+          ],
+        });
+        return answer?.button === 'retry';
+      },
+      accepted,
+    );
   }
 
-  async function cancel(target: VMTaskAttempt, label: string) {
-    if (mutation.current || !interactive) return;
-    const answer = await desktop.dialog({
-      title: `Cancel attempt ${target.number}?`,
-      message: `Stop “${label}” (attempt ${target.number}) and its child processes in its original VM (${target.binding.machineId})? Other tasks continue.`,
-      buttons: [
-        { label: 'Keep Running', value: 'keep', cancel: true },
-        { label: 'Cancel Attempt', value: 'cancel', default: true },
-      ],
-    });
-    if (answer?.button !== 'cancel' || !mounted.current) return;
-    mutation.current = true;
-    setAction('cancel');
-    setError('');
-    setFeedback('');
-    try {
-      await vmTasksAPI.cancel(projectId, target);
-      if (mounted.current) {
+  function cancel(target: VMTaskAttempt, label: string) {
+    if (!interactive || target.cancelRequested || taskFinished(target.status))
+      return;
+    void requests.cancel(
+      { ...target, binding: { ...target.binding } },
+      async () => {
+        const answer = await desktop.dialog({
+          title: `Cancel attempt ${target.number}?`,
+          message: `Stop “${label}” (attempt ${target.number}) and its child processes in its original VM (${target.binding.machineId})? Other tasks continue.`,
+          buttons: [
+            { label: 'Keep Running', value: 'keep', cancel: true },
+            { label: 'Cancel Attempt', value: 'cancel', default: true },
+          ],
+        });
+        return answer?.button === 'cancel';
+      },
+      (result) => {
+        recordResult(result);
         setFeedback(
-          `Cancellation requested for “${label}” (attempt ${target.number}).`,
+          taskFinished(result.attempt.status)
+            ? `Attempt ${target.number} · ${result.attempt.status}`
+            : `Cancellation requested for “${label}” (attempt ${target.number}).`,
         );
-        setRefresh((value) => value + 1);
-      }
-    } catch (error) {
-      if (mounted.current) setError(describe(error));
-    } finally {
-      mutation.current = false;
-      if (mounted.current) setAction('');
-    }
+      },
+    );
+  }
+
+  function dismissRecovery(raw: string, corrupt: boolean) {
+    if (!interactive) return;
+    void requests.dismiss(
+      raw,
+      async () => {
+        const answer = await desktop.dialog({
+          title: corrupt
+            ? 'Discard submission recovery?'
+            : 'Dismiss submission recovery?',
+          message: corrupt
+            ? 'Preserve the browser record first. A task may already have been accepted. Review task history before starting it again.'
+            : 'A task may already have been accepted. Dismissing this prompt keeps any running work active. Review task history before changing the command or VM.',
+          buttons: [
+            {
+              label: corrupt ? 'Cancel' : 'Keep Recovery',
+              value: 'keep',
+              cancel: true,
+            },
+            { label: corrupt ? 'Discard' : 'Dismiss', value: 'dismiss' },
+          ],
+        });
+        return answer?.button === 'dismiss';
+      },
+      () => setError(''),
+    );
   }
 
   return (
@@ -658,71 +647,77 @@ export function VMProjectTasks({
             Reconnect VM
           </Button>
         )}
-        {recoveryError && (
+        {recovery.kind === 'unavailable' && (
           <Button
-            disabled={!interactive}
-            onClick={() =>
-              void (async () => {
-                const answer = await desktop.dialog({
-                  title: 'Discard submission recovery?',
-                  message:
-                    'Preserve the browser record first. A task may already have been accepted; review task history before starting it again.',
-                  buttons: [
-                    { label: 'Cancel', value: 'cancel', cancel: true },
-                    { label: 'Discard', value: 'discard' },
-                  ],
-                });
-                if (answer?.button === 'discard')
-                  try {
-                    sessionStorage.removeItem(recoveryKey);
-                    setRecoveryError('');
-                  } catch (error) {
-                    setError(describe(error));
-                  }
-              })()
-            }
+            disabled={!interactive || busy}
+            onClick={requests.readRecovery}
+          >
+            Check Recovery
+          </Button>
+        )}
+        {recovery.kind === 'invalid' && (
+          <Button
+            disabled={!interactive || busy}
+            onClick={() => dismissRecovery(recovery.raw, true)}
           >
             Discard Recovery
           </Button>
         )}
-        {pending && (
+        {recovery.kind === 'pending' && action !== 'submit' && (
           <section aria-label="Unconfirmed task submission">
-            <p>
-              A submission has no confirmed receipt in this tab. Recover it with
-              its original request and VM binding.
-            </p>
-            <Button
-              disabled={!interactive || busy}
-              onClick={() => void send(pending, true)}
-            >
-              {action === 'recover' ? 'Recovering…' : 'Recover Submission'}
-            </Button>
-            <Button
-              disabled={!interactive || busy}
-              onClick={() =>
-                void (async () => {
-                  const answer = await desktop.dialog({
-                    title: 'Dismiss submission recovery?',
-                    message:
-                      'A task may already have been accepted. This only dismisses this tab’s recovery prompt; it does not cancel work. Review task history before changing the command or VM.',
-                    buttons: [
-                      { label: 'Keep Recovery', value: 'keep', cancel: true },
-                      { label: 'Dismiss', value: 'dismiss' },
-                    ],
+            <p>Recover the original submission and its VM binding.</p>
+            <div className="app-actions">
+              <Button
+                disabled={!interactive || busy}
+                onClick={() => {
+                  if (!interactive) return;
+                  void requests.recover(recovery, (result) => {
+                    show(result);
+                    setFeedback(
+                      `Recovered attempt ${result.attempt.number} · ${result.attempt.status}`,
+                    );
                   });
-                  if (answer?.button === 'dismiss')
-                    try {
-                      sessionStorage.removeItem(recoveryKey);
-                      setPending(null);
-                      setError('');
-                    } catch (error) {
-                      setError(describe(error));
-                    }
-                })()
-              }
-            >
-              Dismiss Recovery
-            </Button>
+                }}
+              >
+                {action === 'recover' ? 'Recovering…' : 'Recover Submission'}
+              </Button>
+              <Button
+                disabled={!interactive || busy}
+                onClick={() => dismissRecovery(recovery.raw, false)}
+              >
+                Dismiss Recovery
+              </Button>
+            </div>
+            <details>
+              <summary>Submission details</summary>
+              <dl className="info-list">
+                <dt>VM</dt>
+                <dd>
+                  <code>{recovery.submission.binding.machineId}</code>
+                </dd>
+                <dt>Request ID</dt>
+                <dd>
+                  <code>{recovery.submission.requestId}</code>
+                </dd>
+                {recovery.submission.taskId ? (
+                  <>
+                    <dt>Task</dt>
+                    <dd>
+                      <code>{recovery.submission.taskId}</code>
+                    </dd>
+                  </>
+                ) : (
+                  <>
+                    <dt>Command</dt>
+                    <dd>
+                      <code>
+                        {shellLabel(recovery.submission.spec?.argv ?? [])}
+                      </code>
+                    </dd>
+                  </>
+                )}
+              </dl>
+            </details>
           </section>
         )}
       </div>
