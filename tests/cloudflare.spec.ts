@@ -784,6 +784,9 @@ test('Preferences opens the same Cloudflare utility and controls fit desktop and
   );
   await choose(menuItem(page, 'Preferences'), touch);
   const preferences = page.locator('[data-app-id="appearance"]');
+  await expect(
+    preferences.getByText('Preferences', { exact: true }),
+  ).toHaveCount(1);
   expect(reads).toBe(0);
   const remoteAccess = preferences.getByRole('group', {
     name: 'Remote access',
@@ -797,41 +800,31 @@ test('Preferences opens the same Cloudflare utility and controls fit desktop and
     name: 'Open Cloudflare',
     exact: true,
   });
-  await expect(tailscaleButton).toBeVisible();
-  await expect(cloudflareButton).toBeVisible();
+  const notificationsButton = preferences.getByRole('button', {
+    name: 'Open Notifications',
+    exact: true,
+  });
+  await expect(tailscaleButton).toHaveText('Open Tailscale');
+  await expect(cloudflareButton).toHaveText('Open Cloudflare');
+  await expect(notificationsButton).toHaveText('Open Notifications');
   if (!touch) {
     const frame = await bounds(preferences);
     expect(frame.width).toBe(440);
     expect(frame.height).toBe(500);
-    const visibility = await preferences
-      .locator('.app-pad')
-      .evaluate((content) => {
-        const area = content.getBoundingClientRect();
-        const buttons = Array.from(content.querySelectorAll('button'))
-          .filter((button) =>
-            ['Open Tailscale', 'Open Cloudflare'].includes(
-              button.getAttribute('aria-label') || '',
-            ),
-          )
-          .map((button) => {
-            const rect = button.getBoundingClientRect();
-            return { top: rect.top, bottom: rect.bottom };
-          });
-        return {
-          scrollTop: content.scrollTop,
-          top: area.top,
-          bottom: area.bottom,
-          buttons,
-        };
-      });
-    expect(visibility.scrollTop).toBe(0);
-    expect(visibility.buttons).toHaveLength(2);
+    const content = preferences.locator('.app-pad');
+    const area = await bounds(content);
+    expect(await content.evaluate((element) => element.scrollTop)).toBe(0);
     const group = await bounds(remoteAccess);
-    expect(group.y).toBeGreaterThanOrEqual(visibility.top);
-    expect(group.y + group.height).toBeLessThanOrEqual(visibility.bottom);
-    for (const button of visibility.buttons) {
-      expect(button.top).toBeGreaterThanOrEqual(visibility.top);
-      expect(button.bottom).toBeLessThanOrEqual(visibility.bottom);
+    expect(group.y).toBeGreaterThanOrEqual(area.y);
+    expect(group.y + group.height).toBeLessThanOrEqual(area.y + area.height);
+    for (const button of [
+      tailscaleButton,
+      cloudflareButton,
+      notificationsButton,
+    ]) {
+      const rect = await bounds(button);
+      expect(rect.y).toBeGreaterThanOrEqual(area.y);
+      expect(rect.y + rect.height).toBeLessThanOrEqual(area.y + area.height);
     }
   }
   await choose(tailscaleButton, touch);

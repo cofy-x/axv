@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Checkbox, PixelIcon, StatusBar } from '@cofy-x/axv-nextstep';
+import { Button, Checkbox, StatusBar } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { runCommand } from '../../shared/desktop/dialogs';
 import { useAppearanceData } from './PreferencesContext';
@@ -28,14 +28,8 @@ export function Appearance({ desktop }: AppWindowProps) {
   return (
     <div className="settings-app">
       <div className="app-pad">
-        <div className="panel-heading">
-          <PixelIcon name="appearance" />
-          <div>
-            <strong>Preferences</strong>
-          </div>
-        </div>
         <fieldset disabled={saving}>
-          <legend>Desktop Pattern</legend>
+          <legend>Wallpaper</legend>
           <div className="wallpaper-options">
             {(['slate', 'dither', 'solid'] as const).map((wallpaper) => (
               <button
@@ -60,7 +54,7 @@ export function Appearance({ desktop }: AppWindowProps) {
           </div>
         </fieldset>
         <fieldset disabled={saving}>
-          <legend>Desktop Options</legend>
+          <legend>Desktop</legend>
           <Checkbox
             label="Snap icons to grid"
             checked={data.preferences.iconSnap}
@@ -77,42 +71,27 @@ export function Appearance({ desktop }: AppWindowProps) {
             </Button>
           </div>
         </fieldset>
-        <fieldset className="preferences-access-group">
+        <fieldset>
           <legend>Remote access</legend>
           <div className="preferences-access-row">
-            <span>
-              <strong>Tailscale</strong>
-              <span className="fine-print">Private network</span>
-            </span>
-            <Button
-              aria-label="Open Tailscale"
-              onClick={() => desktop.openApp('remote-access')}
-            >
-              Open
+            <span>Private network</span>
+            <Button onClick={() => desktop.openApp('remote-access')}>
+              Open Tailscale
             </Button>
           </div>
           <div className="preferences-access-row">
-            <span>
-              <strong>Cloudflare</strong>
-              <span className="fine-print">Browser access</span>
-            </span>
-            <Button
-              aria-label="Open Cloudflare"
-              onClick={() => desktop.openApp('cloudflare')}
-            >
-              Open
+            <span>Browser access</span>
+            <Button onClick={() => desktop.openApp('cloudflare')}>
+              Open Cloudflare
             </Button>
           </div>
         </fieldset>
-        <fieldset className="preferences-access-group">
+        <fieldset>
           <legend>Notifications</legend>
           <div className="preferences-access-row">
-            <span>Browser alerts, Pocket Alert and delivery history</span>
-            <Button
-              aria-label="Open Notifications"
-              onClick={() => desktop.openApp('notifications')}
-            >
-              Open
+            <span>Browser alerts, Pocket Alert and history</span>
+            <Button onClick={() => desktop.openApp('notifications')}>
+              Open Notifications
             </Button>
           </div>
         </fieldset>
