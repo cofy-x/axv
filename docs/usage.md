@@ -96,7 +96,7 @@ Once configured, **Off** means the AXV entrypoint is disabled. **Enable** saves 
 
 ## Work notifications
 
-Open **Notifications** from Applications or **Preferences → Notifications → Open**. Welcome also links to it under **Connect from another device**. Browser push and Pocket Alert are independent, optional delivery adapters, both disabled by default. Agent requests and outcomes, plus VM task outcomes, have durable event identities; closing the panel or browser does not stop accepted work or remove notification history.
+Open **Notifications** from Applications or choose **Open Notifications** in Preferences. Welcome also links to it under **Connect from another device**. Browser push and Pocket Alert are independent, optional delivery adapters, both disabled by default. Agent requests and outcomes, plus VM task outcomes, have durable event identities; closing the panel or browser does not stop accepted work or remove notification history.
 
 Configure delivery on the computer running AXV. In **Settings**, enter the Pocket Alert **Application ID**, **Device ID**, **API token** and **Return-link origin**, select event types, enable delivery and choose **Save**. The origin must be the AXV address reachable from the receiving device; it is separate from configuring Tailscale or Cloudflare access. Remote authenticated owners can read History and original-work details, while configuration, Test and Disable stay local. The [notification API](api/notifications.md) owns access, storage and provider limits.
 
