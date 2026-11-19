@@ -10,7 +10,7 @@
   flex-shrink: 0;
   align-items: center;
   gap: 16px;
-  padding: 20px;
+  padding: 12px 18px;
   background: #242424;
   color: #f0f0f0;
   border-bottom: 3px ridge #ddd;
@@ -25,16 +25,12 @@
   display: block;
   font-size: var(--ns-font-size-body);
   color: #ddd;
-  margin-top: 5px;
+  margin-top: 3px;
 }
 .welcome-copy {
   padding: 16px 18px;
   overflow: auto;
   flex: 1;
-}
-.welcome-copy > h2 {
-  font-size: var(--ns-font-size-body);
-  margin: 0 0 10px;
 }
 .welcome-links {
   display: grid;
@@ -130,7 +126,7 @@
 }
 @media (max-width: 599px) {
   .welcome-banner {
-    padding: 15px;
+    padding: 10px 14px;
     gap: 10px;
   }
   .welcome-banner strong {
