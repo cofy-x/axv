@@ -48,12 +48,20 @@ test.describe('fresh desktop defaults', () => {
     await expect(page.locator('[data-window-id]')).toHaveCount(1);
     await expect(filesWindow(page)).toHaveCount(0);
     await expect(welcome).toHaveClass(/is-active/);
+    const workApps = welcome.getByRole('group', { name: 'Work applications' });
+    const codex = workApps.getByRole('button', { name: 'Codex', exact: true });
+    await expect(codex).toBeInViewport();
+    await expect(codex).toHaveAccessibleDescription(
+      'Start or resume coding sessions.',
+    );
     await expect(
-      welcome.getByRole('button', { name: /^Codex/ }),
+      workApps.getByRole('button', { name: 'Project Files', exact: true }),
     ).toBeInViewport();
-    await expect(
-      welcome.getByRole('button', { name: /^Project Files/ }),
-    ).toBeInViewport();
+    for (const label of ['Connect from another device', 'Install AXV']) {
+      await expect(welcome.getByText(label, { exact: true })).toBeInViewport({
+        ratio: 1,
+      });
+    }
     await expect(page.locator('[data-icon-id="system:terminal"]')).toHaveCount(
       0,
     );

@@ -47,11 +47,16 @@ test('compact Workspace commands remain reachable with selected desktop icons', 
     await expect(workspaceMenu).toBeFocused();
     await expect(icon).toHaveAttribute('aria-pressed', 'true');
   }
+  await page.setViewportSize({ width: 320, height: 720 });
   await choose(workspaceMenu);
   await choose(menuItem(page, 'Welcome'));
-  await expect(page.locator('[data-app-id="welcome"]')).toHaveClass(
-    /is-active/,
-  );
+  const welcome = page.locator('[data-app-id="welcome"]');
+  await expect(welcome).toHaveClass(/is-active/);
+  for (const label of ['Connect from another device', 'Install AXV']) {
+    await expect(welcome.getByText(label, { exact: true })).toBeInViewport({
+      ratio: 1,
+    });
+  }
   await expect(
     page.getByRole('navigation', { name: 'Application menus' }),
   ).toHaveCount(0);
@@ -452,10 +457,11 @@ for (const viewport of [
     const welcome = page.locator('[data-window-id="welcome:main"]');
     await activate(page, welcome);
     await expect(
-      welcome.getByRole('button', { name: /^Codex / }),
+      welcome.getByRole('button', { name: 'Codex', exact: true }),
     ).toBeVisible();
     const machinesLink = welcome.getByRole('button', {
-      name: /^Virtual Machines /,
+      name: 'Virtual Machines',
+      exact: true,
     });
     if (info.project.use.hasTouch) await machinesLink.tap();
     else await machinesLink.click();

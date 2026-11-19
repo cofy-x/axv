@@ -1,48 +1,58 @@
+import { useId } from 'react';
 import { Button, IconButton, PixelIcon } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 
 export function Welcome({ desktop, window }: AppWindowProps) {
+  const linkDescriptions = useId();
+
   return (
     <div className="welcome-app">
       <div className="welcome-banner">
         <img src="/favicon.svg" alt="" width={48} height={48} />
         <div>
-          <strong>Welcome to AXV</strong>
+          <strong>AXV</strong>
           <span>Your personal cloud for VMs and coding agents.</span>
         </div>
       </div>
       <div className="welcome-copy">
-        <h2>Start working</h2>
-        <div className="welcome-links" aria-label="Work applications">
+        <div
+          className="welcome-links"
+          role="group"
+          aria-label="Work applications"
+        >
           {[
             {
               app: 'codex',
               icon: 'companion' as const,
               name: 'Codex',
-              text: 'Resume coding and review sessions that need attention.',
+              text: 'Start or resume coding sessions.',
             },
             {
               app: 'machines',
               icon: 'virtual-machines' as const,
               name: 'Virtual Machines',
-              text: 'Create and manage your development machines.',
+              text: 'Create and manage development VMs.',
             },
             {
               app: 'project-files',
               icon: 'project' as const,
               name: 'Project Files',
-              text: 'Browse files, run VM tasks and review GitHub checks.',
+              text: 'Browse host and VM project files.',
             },
           ].map((link) => (
             <button
               key={link.app}
               className="welcome-link"
+              aria-label={link.name}
+              aria-describedby={`${linkDescriptions}-${link.app}`}
               onClick={() => desktop.openApp(link.app)}
             >
               <PixelIcon name={link.icon} size={40} />
               <span>
                 <strong>{link.name}</strong>
-                <small>{link.text}</small>
+                <small id={`${linkDescriptions}-${link.app}`}>
+                  {link.text}
+                </small>
               </span>
             </button>
           ))}
