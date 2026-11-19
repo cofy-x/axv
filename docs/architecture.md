@@ -16,10 +16,13 @@ flowchart TB
     API --> State[(desktop.sqlite)]
     API --> Extensions[(extensions.sqlite)]
     API --> NotificationStore[(notifications/state.json)]
+    API --> Reviews["GitHub Review worker"]
+    Reviews --> ReviewStore[(github-review/reviews.sqlite)]
     API --> Preparation[(preparation.sqlite)]
     API --> Shell["Ephemeral host shells"]
     API -->|attach and control| Codex["tmux<br/>independent Codex runners"]
     API -->|private Unix socket| Host["axv host<br/>compute controller"]
+    Reviews -->|pinned test task and receipt| Host
     CLI["axv vm<br/>local CLI and OpenSSH"] -->|private Unix socket| Host
     Host --> Compute[(compute.sqlite)]
     Host --> Providers["Lima / VZ<br/>Firecracker / KVM"]
@@ -35,6 +38,7 @@ flowchart TB
 | Host work | [`terminal`](../apps/server/internal/terminal) owns connection-bound shells; [`codex`](../apps/server/internal/codex) controls independent runners. Shared [`hostdir`](../apps/server/internal/hostdir) validation and [`projectfiles`](../apps/server/internal/projectfiles) access do not depend on Codex lifecycle. See [Terminal](desktop.md#terminal-sessions), [Codex](codex.md) and [project files](api/project-files.md). |
 | Compute and guest | [`compute/host`](../apps/server/internal/compute/host) composes the controller, private API and provider drivers against shared `compute` contracts. Desktop gateway and CLI clients use the same verified local host boundary; [`guest`](../apps/server/internal/guest) executes inside VMs. [VM architecture](vm-platform.md) owns preparation, execution and retained projects. |
 | Work notifications | [`notifications`](../apps/server/internal/notifications) owns the desktop outbox and private adapter configuration. Independent Codex runners and the compute owner retain sanitized producer journals; feature-neutral [`notificationevent`](../apps/server/internal/notificationevent) carries exact identities. Observation never controls execution. [Notifications](api/notifications.md) owns checkpoints, gaps, delivery and read-only links. |
+| GitHub Review | [`githubreview`](../apps/server/internal/githubreview) owns account attachment, PR discovery, the review queue, immutable review inputs and local candidate comments. It captures the author’s PR description at review time, records GitHub check associations and observed checkouts, and selects repository quick tests using the reviewed diff and its head tree. Each executed test retains its Compute Task. Local finding decisions retain evidence across revisions. A confirmed assertion can run on the diff merge base and PR head in the same VM boot, with both original Compute receipts linked to its candidate. [GitHub Review](api/github-review.md) owns the local routes and job states. |
 | Startup | [`cli`](../apps/server/internal/cli) owns parsing and I/O; [`app`](../apps/server/internal/app) composes desktop, host activation and preparation. [`profile`](../apps/server/internal/profile) storage and [`app/launch`](../apps/server/internal/app/launch) verification remain independent of service execution. [Startup](startup.md) owns configuration and supervision. |
 | Remote access and project services | [Tailscale](api/tailscale.md) and [Cloudflare](api/cloudflare.md) add authenticated desktop listeners sharing existing feature managers. [Local previews](api/project-previews.md) and [Cloudflare publications](api/cloudflare.md#published-project-services) capture exact project targets and use separate browser origins. Shared [access rules](api/README.md#access-and-identity-boundaries) constrain every transport. |
 

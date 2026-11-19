@@ -2,6 +2,7 @@ import type { AppDefinition } from '@cofy-x/axv-nextstep';
 import type { WindowCommands } from '../shared/desktop/window-commands';
 import { welcomeApp, aboutApp } from '../features/welcome/definition';
 import { projectFilesApp } from '../features/project-files/definition';
+import { githubReviewApp } from '../features/github-review/definition';
 import { appearanceApp } from '../features/appearance/definition';
 import { galleryApp } from '../features/gallery/definition';
 import { createTerminalApp } from '../features/terminal/definition';
@@ -29,6 +30,7 @@ export function createAppRegistry(commands: WindowCommands): AppDefinition[] {
     welcomeApp,
     aboutApp,
     projectFilesApp,
+    githubReviewApp,
     createTerminalApp(commands),
     createMachinesApp(commands),
     createMachineApp,

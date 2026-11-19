@@ -497,6 +497,14 @@ Alternatively, `axv setup --host-config /etc/axv/host.json` reads a regular conf
 
 For other architectures, custom paths or an existing administrator-managed service, use the [host configuration example](../config/examples/host-firecracker.json) and the [systemd unit](../config/examples/axv-host.service) with compatible Firecracker and jailer binaries. Choose local paths, capacity, an unused subnet, a socket group and dedicated jail identities for that host. The service needs KVM, TUN, cgroup v2 with `cgroup.kill` and delegated `cpu`, `memory` and `pids` controllers, plus `ip`, `nft`, `cp`, `mkfs.ext4` and `resize2fs`. Enable IPv4 forwarding and allow guest egress in the applicable host firewalls. See [VM networking](vm-platform.md#host-firewall-integration) for coexistence with Docker and other firewall managers.
 
+After setting up the host mounts, check the effective mount options for `dataDir` with `findmnt`. Substitute your configured path, and check its `firecracker/jails` subdirectory if it already exists.
+
+```sh
+findmnt -n -o TARGET,OPTIONS -T /var/lib/axv
+```
+
+Jailer runs Firecracker from the jail under `dataDir/firecracker/jails`. A `noexec` option on its mount can cause VM startup to time out. To use a short path under `/run`, bind-mount a dedicated data filesystem that permits execution at the configured path and repeat the check there.
+
 Set `firecracker.cgroupParent` to the service's delegated path relative to `/sys/fs/cgroup`, for example `system.slice/axv-host.service`. The example unit uses `Delegate=yes` and `DelegateSubgroup=controller` to place the controller process in its own leaf. Keep the unit name and configured parent stable while VMs exist. `KillMode=process` preserves guests across controller restarts. Alternative supervisors must provide the equivalent writable, empty delegated parent and place the controller outside that parent or in a separate leaf. In **Virtual Machines**, use **Edit connection** to choose the custom socket or readable configuration file.
 
 ### Linux Guest bundle installation

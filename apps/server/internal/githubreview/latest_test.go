@@ -1,0 +1,163 @@
+package githubreview
+
+import (
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+func latestReviewRef(target Target, revision uint64) RetryRequest {
+	return RetryRequest{Repository: target.Repository, Number: target.Number, BaseSHA: target.BaseSHA, HeadSHA: target.HeadSHA, Revision: revision}
+}
+
+func TestReviewLatestWhilePausedSurvivesRestartAndHonorsBudget(t *testing.T) {
+	ctx := t.Context()
+	filename := filepath.Join(t.TempDir(), "jobs.sqlite")
+	ledger := testReviewStore(t, filename, true)
+	config := workerSettings(t, ledger).Config
+	config.Enabled = false
+	config.DailyLimit = 1
+	saved := configureWorker(t, ledger, config)
+	old := workerTestTarget("owner/alpha", 174, sourceRepository)
+	current := old
+	current.HeadSHA = strings.Repeat("c", 40)
+	unselected := workerTestTarget("other/repo", 2, sourceRequested)
+	next := workerTestTarget("owner/beta", 9, sourceRepository)
+	targets := []Target{old, unselected, next}
+	if err := ledger.enqueue(ctx, saved.account, targets, targets, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	remote := &workerGitHub{current: func(target Target) (Target, error) {
+		switch target.Number {
+		case old.Number:
+			return current, nil
+		case next.Number:
+			return next, nil
+		default:
+			t.Fatalf("a different PR was queried: %s#%d", target.Repository, target.Number)
+			return Target{}, nil
+		}
+	}}
+	reviewer := &countedReviewer{}
+	service := newService(ctx, func() {}, ledger, remote, connectedCLI{}, reviewer)
+	mux := http.NewServeMux()
+	service.Register(mux)
+	request := latestReviewRef(old, saved.Revision)
+	body, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := reviewRequest(t, mux, "POST", route+"/review-latest", "http://localhost", "127.0.0.1:39282", string(body))
+	var snapshot Snapshot
+	if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &snapshot) != nil || snapshot.Config.Enabled {
+		t.Fatalf("selected PR response: %d %s", response.Code, response.Body)
+	}
+	workerJob(t, ledger, old, "stale")
+	workerJob(t, ledger, current, "queued")
+	if err := ledger.db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	ledger = testReviewStore(t, filename, false)
+	service = newService(ctx, func() {}, ledger, remote, connectedCLI{}, reviewer)
+	if err := service.processNext(ctx, saved, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	workerJob(t, ledger, current, "analyzed")
+	workerJob(t, ledger, unselected, "queued")
+	if err := service.reviewLatest(ctx, request); err != nil {
+		t.Fatal(err)
+	}
+	workerJob(t, ledger, current, "analyzed")
+	if err := service.reviewLatest(ctx, latestReviewRef(next, saved.Revision)); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.processNext(ctx, saved, time.Now()); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("exhausted budget allowed work: %v", err)
+	}
+	if budget, err := ledger.budget(ctx, time.Now()); err != nil || budget.Used != 1 {
+		t.Fatalf("budget: %+v, %v", budget, err)
+	}
+	if job := workerJob(t, ledger, next, "queued"); !job.manualReview {
+		t.Fatal("selected PR was not held for the next budget window")
+	}
+	if len(reviewer.numbers) != 1 || reviewer.numbers[0] != old.Number || workerSettings(t, ledger).Enabled {
+		t.Fatalf("unexpected reviews or polling change: %v", reviewer.numbers)
+	}
+}
+
+func TestReviewLatestLocalWithPublicationEnabledAndChangingBase(t *testing.T) {
+	ctx := t.Context()
+	ledger := testReviewStore(t, filepath.Join(t.TempDir(), "jobs.sqlite"), true)
+	saved := workerSettings(t, ledger)
+	current := workerTestTarget("owner/alpha", 174, sourceRepository)
+	first := current
+	github := &workerGitHub{
+		current: func(Target) (Target, error) { return current, nil },
+		merge:   func(target Target) (string, error) { return target.BaseSHA, nil },
+	}
+	runner := &countedReviewer{}
+	service := newService(ctx, func() {}, ledger, github, connectedCLI{}, runner)
+	if err := ledger.enqueue(ctx, saved.account, []Target{first}, []Target{first}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	ref := latestReviewRef(first, saved.Revision)
+	if err := service.reviewLatest(ctx, ref); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.processNext(ctx, saved, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	workerJob(t, ledger, first, "analyzed")
+	current.BaseSHA = strings.Repeat("d", 40)
+	if err := service.reviewLatest(ctx, ref); err != nil {
+		t.Fatal(err)
+	}
+	if job := workerJob(t, ledger, current, "queued"); job.BaseSHA != current.BaseSHA {
+		t.Fatalf("requeued the wrong comparison: %+v", job.Target)
+	}
+	if err := service.processNext(ctx, saved, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	workerJob(t, ledger, current, "analyzed")
+	if len(runner.numbers) != 2 {
+		t.Fatalf("wanted both comparisons reviewed, got %v", runner.numbers)
+	}
+}
+
+func TestReviewLatestRevalidatesDirectRequestAndSettings(t *testing.T) {
+	ctx := t.Context()
+	ledger := testReviewStore(t, filepath.Join(t.TempDir(), "jobs.sqlite"), true)
+	saved := workerSettings(t, ledger)
+	direct := workerTestTarget("outside/repo", 13, sourceRequested)
+	current := direct
+	github := &workerGitHub{current: func(Target) (Target, error) { return current, nil }}
+	service := newService(ctx, func() {}, ledger, github, connectedCLI{}, &countedReviewer{})
+	if err := ledger.enqueue(ctx, saved.account, []Target{direct}, []Target{direct}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	request := latestReviewRef(direct, saved.Revision)
+	if err := service.reviewLatest(ctx, request); !errors.Is(err, ErrRetryStale) {
+		t.Fatalf("revoked direct request: %v", err)
+	}
+	current.Requested = true
+	current.Draft = true
+	if err := service.reviewLatest(ctx, request); !errors.Is(err, ErrRetryStale) {
+		t.Fatalf("draft review request: %v", err)
+	}
+	current.Draft = false
+	github.current = func(Target) (Target, error) {
+		configureWorker(t, ledger, saved.Config)
+		return current, nil
+	}
+	if err := service.reviewLatest(ctx, request); !errors.Is(err, ErrConflict) {
+		t.Fatalf("changed settings: %v", err)
+	}
+	if workerJob(t, ledger, direct, "queued").manualReview {
+		t.Fatal("an ineligible request authorized a paused review")
+	}
+}

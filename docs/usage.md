@@ -72,6 +72,33 @@ Use **More → Disable** to stop further access from the old runtime while retai
 
 Extensions in this version store only their own data. They cannot access AXV documents, registered projects, commands, terminals, agents or VMs. Package format and limits belong to the [Extensions API](api/extensions.md); authoring and the message bridge belong to [desktop architecture](desktop.md#installed-extensions).
 
+## GitHub Review
+
+Open **GitHub Review** on the local AXV desktop. Install `git`, the official GitHub CLI (`gh`) and Codex CLI on the computer running AXV. Connect GitHub and Codex in the application. AXV can attach the existing host CLI logins or display the provider's device code for a new login. Codex uses a ChatGPT sign-in and its associated usage allowance. If the GitHub account changes, reconnect the intended account. Disconnecting in AXV detaches the integration. Revoke its provider authorization in the provider's account settings when needed.
+
+Add one GitHub `owner/repository` per line, choose a polling interval from 1 to 1,440 minutes and enable automatic reviews. AXV also reviews ready PRs requested directly from the connected account, including PRs outside the watch list. **Scan now** requests an immediate scan. The AXV daemon continues processing while the browser is closed. [Daily commands](startup.md#daily-commands) covers daemon restarts and host startup.
+
+Choose a watched repository under **Repository policy** and enter its review rules. You can keep a single VM command, such as `go test ./pkg/config`, or configure named tests in priority order. Give each named test a file that must exist at the PR head, an executable and its arguments, and optionally the changed files or directories that should trigger it. For example, a deployment test can watch `deploy/scripts` and require `deploy/scripts/test_configure.py`. Put a broader fallback after a more specific test. AXV runs the first applicable test. The dedicated VM needs the tools and offline dependencies for the selected command. Keep your own test helpers with your project or in a directory you maintain separately. To use an external helper in AXV, provision it inside the VM as a read-only dependency and use its guest path in the command. [VM setup](../recipes/github-review/README.md)
+
+Set **Daily review limit** from 1 to 1,000. The default is 10. AXV counts each Codex review attempt when it starts and resumes queued work after midnight in the host's time zone. A failed or interrupted analysis still counts.
+
+In **Pull requests**, **Needs verification** groups current revisions with pending assessments. Open a PR and choose **Assess candidate** to mark the issue **Confirmed**, **False positive** or **Needs verification**. Link evidence from this comparison and record why it supports the assessment. Open a linked receipt to inspect its commit, outcome and details.
+
+From a candidate, choose **Compare revisions**, select the runtime, enter the assertion and choose **Run comparison**. Use an exit code of zero when the expected behavior holds. AXV runs the same assertion on the reviewed common ancestor and PR head in the same VM. **Comparison evidence** shows both actual checkouts, exit results and logs together. Compare the observed behavior before updating the candidate’s assessment. You can close the window while the two tasks run.
+
+To use a particular interpreter, open **Settings**, choose the repository, expand **Comparison runtimes** and enter its guest executable and flags, one argument per line. For Python, enter `python3` followed by `-c` on the next line. A repository without a saved launcher uses the guest’s POSIX shell. New comparisons work while polling is paused using the attached GitHub account.
+
+**Issue history** keeps decisions on earlier comparisons. If AXV has not matched a newly reported candidate, **Track the same issue across revisions** lets you select its earlier occurrence. If Codex did not report an earlier issue again, expand **Earlier findings on this PR** and choose **Follow up on this revision**. The resulting reviewer follow-up preserves the original file location. Assess it with current evidence or mark it **Resolved on this revision**.
+
+**Commits and review rules** identifies the PR head, target base, and diff merge base when recorded. New reviews also retain the PR title and description Codex received at review time. The evidence stages show which parts were tested.
+
+- **Upstream CI** shows the checks associated with that head. Expand a job to see the steps GitHub reports as executed and its observed checkout when available. A workflow can test a merge commit. **Checkout evidence** opens the original log. **Refresh checks** updates the evidence while polling is paused. A refresh error appears alongside the previous observation, its timestamp and its check runs.
+- **Local quick test** shows how AXV selected a test, which commit it checked out, and the VM task’s output. **Not applicable** means no configured test matched. A selection error means AXV could not establish applicability. A failed command records its exit status. Retry in automatic mode or choose another saved test for this PR only. Each attempt keeps its own result, and test retries use no Codex review start.
+
+**Review latest commit** checks the selected PR even while automatic polling is paused. A new comparison consumes one daily review when Codex starts. Reopening an already reviewed comparison, refreshing checks, running a VM test and recording a candidate decision preserve the Codex review budget.
+
+New commits move earlier reviews to **Superseded** on discovery. A change to the comparison on the target branch also expires the old decision. Open the older review to see the target it used and the newly observed base. Older reviews with no recorded evidence can run with their current repository rules. Candidate comments stay local. Direct review requests outside the watched list receive a Codex review and GitHub Checks. Add the repository and configure its command to use the dedicated VM for future reviews. [API and ownership](api/github-review.md)
+
 ## Remote desktop
 
 Open **Tailscale** from **Workspace → Applications**, **Preferences → Remote access → Open Tailscale** or its optional desktop icon. The stable desktop launcher opens one non-modal panel and can also be kept in the Dock or saved as a workspace shortcut. Its icon does not indicate connection readiness; the panel checks AXV's connection while active. AXV includes Tailscale and needs no system installation on its server.

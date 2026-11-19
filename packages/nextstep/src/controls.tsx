@@ -216,6 +216,27 @@ export function PixelIcon({
           <path fill="none" stroke="#777" d="M9.5 23.5h4v3h-4z" />
           <path fill="none" stroke="#777" d="M17 12.5h5M17 19.5h5M17 25.5h5" />
         </g>
+      ) : name === 'code-review' ? (
+        <g {...common}>
+          <path
+            fill="#24292f"
+            d="M10.5 1.5h9v1h3v1h2v2h2v2h1v3h1v9h-1v3h-1v2h-2v2h-2v1h-3v1h-9v-1h-3v-1h-2v-2h-2v-2h-1v-3h-1v-9h1v-3h1v-2h2v-2h2v-1h3z"
+          />
+          <path fill="none" stroke="#69737e" d="M11 3h8M8 4h2M6 6h2M3.5 11v7" />
+          <path
+            fill="#f6f8fa"
+            stroke="none"
+            d="M9 6h2v1h2v1h5V7h2V6h2v2h1v4h1v4h-1v2h-2v1h-3v2h1v5h-7v-3H9v-1H7v-2H6v-1H4v-2h2v1h2v2h2v1h2v-2h-2v-1H8v-2H7v-4h1V8h1z"
+          />
+          <path fill="#73d991" d="M23.5 20.5h5l3 3v5l-3 3h-5l-3-3v-5z" />
+          <path fill="none" stroke="#c7f6d4" d="M24 22h4M22 24v4" />
+          <path
+            fill="none"
+            stroke="#143b28"
+            strokeWidth="2"
+            d="m23 26 2 2 4-4"
+          />
+        </g>
       ) : name === 'gallery' ? (
         <g {...common}>
           <path fill="#ccc" d="M2.5 2.5h27v27h-27z" />

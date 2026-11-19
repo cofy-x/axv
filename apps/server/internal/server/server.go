@@ -26,6 +26,7 @@ import (
 	"github.com/cofy-x/axv/apps/server/internal/config"
 	"github.com/cofy-x/axv/apps/server/internal/diagnostics"
 	"github.com/cofy-x/axv/apps/server/internal/extensions"
+	"github.com/cofy-x/axv/apps/server/internal/githubreview"
 	hostdirhttp "github.com/cofy-x/axv/apps/server/internal/hostdir/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/httpapi"
 	projectfileshttp "github.com/cofy-x/axv/apps/server/internal/projectfiles/httpapi"
@@ -107,6 +108,25 @@ func RunContext(ctx context.Context, settings config.Config, options Options) (r
 		codexAPI.Close()
 	}()
 	application := http.NewServeMux()
+	reviews, reviewErr := githubreview.Open(ctx, githubreview.Options{
+		Directory: filepath.Join(settings.DataDir, "github-review"), ProxyURL: settings.ProxyURL,
+		VMTests: githubreview.ComputeVMTests{Gateway: computeGateway,
+			HostID: os.Getenv("AXV_REVIEW_VM_HOST_ID"), ProjectID: os.Getenv("AXV_REVIEW_VM_PROJECT_ID"),
+			MachineID: os.Getenv("AXV_REVIEW_VM_MACHINE_ID"),
+		},
+	})
+	if reviewErr != nil {
+		diagnostics.FromContext(ctx).Error("github_review.unavailable", reviewErr)
+		githubreview.RegisterUnavailable(application)
+	} else {
+		reviews.Register(application)
+		defer func() {
+			if err := reviews.Close(); err != nil {
+				diagnostics.FromContext(ctx).Error("github_review.close_failed", err)
+				result = errors.Join(result, errors.New("close GitHub Review failed"))
+			}
+		}()
+	}
 	workNotifications, notificationErr := workstationNotifications(ctx, settings.Home, codexSessions, computeGateway)
 	if notificationErr != nil {
 		application.HandleFunc("/api/notifications", notificationsUnavailable)
