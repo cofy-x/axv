@@ -587,8 +587,8 @@ test('Codex reports a missing dependency and refreshes availability without star
   await page.reload();
   await expect(
     page.locator('[data-app-id="welcome"]').getByRole('button', {
-      name: /^Codex /,
-      exact: false,
+      name: 'Codex',
+      exact: true,
     }),
   ).toHaveCount(1);
   const manager = await openCodexManager(page);
@@ -665,8 +665,8 @@ test('Codex keeps setup discoverable before installation without starting a proc
   await page.reload();
   const welcome = page.locator('[data-app-id="welcome"]');
   const welcomeLauncher = welcome.getByRole('button', {
-    name: /^Codex /,
-    exact: false,
+    name: 'Codex',
+    exact: true,
   });
   await activate(page, welcome);
   await expect(
