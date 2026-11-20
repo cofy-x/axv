@@ -428,7 +428,7 @@ export function GuestTerminalApp({
       data-session-id={window.id}
     >
       <div className="app-toolbar terminal-toolbar">
-        <PixelIcon name="terminal" size={16} />
+        <PixelIcon name="guest-terminal" size={16} />
         <span className="toolbar-caption">Guest shell</span>
         {!live && <Button onClick={() => void reconnect()}>Reconnect</Button>}
         <IconButton
@@ -454,19 +454,12 @@ export function GuestTerminalApp({
           label="More guest terminal actions"
           aria-haspopup="menu"
           onClick={(event) => {
+            event.currentTarget.focus({ preventScroll: true });
             const rect = event.currentTarget.getBoundingClientRect();
             desktop.contextMenu(
               guestTerminalSessionMenu(commands, window.id),
               { x: rect.left, y: rect.bottom },
-              {
-                title: 'Session',
-                pin: {
-                  kind: 'application',
-                  groupId: 'session',
-                  ownerWindowId: window.id,
-                  title: 'Session',
-                },
-              },
+              { title: 'Session', ownerWindowId: window.id },
             );
           }}
         />

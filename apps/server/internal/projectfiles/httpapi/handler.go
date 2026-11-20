@@ -1,5 +1,4 @@
-// Package httpapi adapts registered host-project files and document exchange
-// to the local desktop API. Filesystem and recovery rules belong to projectfiles.
+// Package httpapi adapts registered host-project files to the desktop API.
 package httpapi
 
 import (
@@ -47,16 +46,6 @@ func Register(mux *http.ServeMux, store *storage.Store) {
 	register("GET /api/projects/{id}/files", a.files)
 	register("GET /api/projects/{id}/file", a.file)
 	register("GET /api/projects/{id}/download", a.download)
-	register("POST /api/projects/{id}/import", a.importFile)
-	register("POST /api/projects/{id}/export", a.exportSnapshot)
-	register("GET /api/documents/{id}/links", a.links)
-	register("GET /api/documents/{id}/origins", a.origins)
-	register("POST /api/documents/{id}/links", a.addLink)
-	register("GET /api/document-links", a.related)
-	register("DELETE /api/document-links/{id}", a.removeLink)
-	register("GET /api/documents/{id}/snapshots", a.snapshots)
-	register("POST /api/documents/{id}/snapshots", a.createSnapshot)
-	register("GET /api/document-snapshots/{id}", a.snapshot)
 }
 
 func problem(code, message string) error { return &storage.Error{Code: code, Message: message} }
@@ -71,7 +60,7 @@ func write(w http.ResponseWriter, status int, value any) {
 func fail(w http.ResponseWriter, err error) {
 	var e *storage.Error
 	status := 500
-	code, message := "internal_error", "The document operation could not be completed."
+	code, message := "internal_error", "The project file operation could not be completed."
 	if errors.As(err, &e) {
 		code, message = e.Code, e.Message
 		switch e.Code {
@@ -79,11 +68,11 @@ func fail(w http.ResponseWriter, err error) {
 			status = 404
 		case "host_forbidden", "file_forbidden":
 			status = 403
-		case "invalid_name", "invalid_parent", "invalid_link", "invalid_project", "invalid_path", "invalid_cursor", "invalid_directory", "invalid_request", "not_file", "not_text":
+		case "invalid_name", "invalid_project", "invalid_path", "invalid_cursor", "invalid_directory", "invalid_request", "not_file", "not_text":
 			status = 400
-		case "project_changed", "revision_conflict", "unavailable", "idempotency_conflict", "name_conflict", "source_changed", "transfer_unresolved":
+		case "project_changed":
 			status = 409
-		case "file_too_large", "text_too_large":
+		case "file_too_large":
 			status = 413
 		case "unsupported":
 			status = 501
@@ -93,7 +82,7 @@ func fail(w http.ResponseWriter, err error) {
 	}
 	if status == 500 {
 		log.Printf("project files operation failed: %v", err)
-		code, message = "internal_error", "The document operation could not be completed."
+		code, message = "internal_error", "The project file operation could not be completed."
 	}
 	write(w, status, map[string]string{"code": code, "error": message})
 }

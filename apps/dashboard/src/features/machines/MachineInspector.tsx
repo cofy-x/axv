@@ -16,7 +16,6 @@ import {
 } from './lifecycle';
 import type { VMAction } from './lifecycle';
 import { guestTerminalReason, humanize, machineGuidance } from './presentation';
-import { RelatedDocuments } from '../document-workflow/RelatedDocuments';
 
 export function MachineInspector({ desktop, window }: AppWindowProps) {
   const data = useCompute();
@@ -429,12 +428,6 @@ export function MachineInspector({ desktop, window }: AppWindowProps) {
           </div>
         )}
       </div>
-      {hostId && id && (
-        <RelatedDocuments
-          target={{ hostId, machineId: id }}
-          desktop={desktop}
-        />
-      )}
       <StatusBar>
         {machine
           ? `${machine.spec.name} · ${!connected ? 'Unavailable' : humanize(machine.status)}`

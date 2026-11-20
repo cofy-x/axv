@@ -3,22 +3,11 @@
 package projectfiles
 
 import (
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"syscall"
-
-	"golang.org/x/sys/unix"
 )
-
-func exportLockContended(err error) bool {
-	return errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN)
-}
-
-func linkDirectories(source *os.File, oldname string, destination *os.File, newname string) error {
-	return unix.Linkat(int(source.Fd()), oldname, int(destination.Fd()), newname, 0)
-}
 
 // The persisted device/inode identity refuses a different directory occupying
 // an old registered path; operations stay anchored to the opened root handle.

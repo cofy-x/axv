@@ -16,7 +16,6 @@ function layout(x: number): DesktopLayout {
     ],
     currentWorkspaceId: 'workspace-1',
     dock: [],
-    pinnedMenus: [],
     windows: [],
     activeWindowId: null,
     icons: { document: { x, y: 0 } },

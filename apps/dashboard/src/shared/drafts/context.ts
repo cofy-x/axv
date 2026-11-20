@@ -9,6 +9,6 @@ export const DraftNamespaceContext = createContext<DraftNamespace | null>(null);
 
 export function useDraftNamespace() {
   const value = useContext(DraftNamespaceContext);
-  if (!value) throw new Error('Text Editor needs a draft namespace.');
+  if (!value) throw new Error('The application needs a draft namespace.');
   return value;
 }

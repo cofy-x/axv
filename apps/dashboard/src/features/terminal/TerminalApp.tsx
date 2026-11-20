@@ -422,19 +422,12 @@ export function TerminalApp({
           label="More terminal actions"
           aria-haspopup="menu"
           onClick={(event) => {
+            event.currentTarget.focus({ preventScroll: true });
             const rect = event.currentTarget.getBoundingClientRect();
             desktop.contextMenu(
               terminalSessionMenu(commands, window.id),
               { x: rect.left, y: rect.bottom },
-              {
-                title: 'Session',
-                pin: {
-                  kind: 'application',
-                  groupId: 'session',
-                  ownerWindowId: window.id,
-                  title: 'Session',
-                },
-              },
+              { title: 'Session', ownerWindowId: window.id },
             );
           }}
         />

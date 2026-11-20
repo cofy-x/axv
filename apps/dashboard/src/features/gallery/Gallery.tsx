@@ -250,6 +250,7 @@ export function Gallery({ desktop }: AppWindowProps) {
               {(
                 [
                   'computer',
+                  'welcome-door',
                   'folder',
                   'project',
                   'document',
@@ -261,12 +262,23 @@ export function Gallery({ desktop }: AppWindowProps) {
                   'checklist',
                   'image',
                   'network',
+                  'cloud-tunnel',
                   'mesh-network',
                   'virtual-machines',
                   'virtual-machine',
+                  'new-virtual-machine',
+                  'virtual-machine-inspector',
                   'info',
+                  'notification-bell',
+                  'sliders',
+                  'document-return',
                   'save',
+                  'inspector',
+                  'workspace',
                   'terminal',
+                  'guest-terminal',
+                  'companion',
+                  'clock',
                 ] as const
               ).map((name) => (
                 <div key={name}>

@@ -34,17 +34,14 @@ func TestDatabaseIdentityPersistsAndSeparatesProjects(t *testing.T) {
 	}
 }
 
-func TestRepeatedMigrationPreservesFilesAndClientLayouts(t *testing.T) {
+func TestRepeatedMigrationPreservesProjectsAndClientLayouts(t *testing.T) {
 	s := testStore(t)
 	identity, err := s.DatabaseID(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	custom := create(t, s, "documents", "Keep.txt", "file")
-	if _, err := s.Trash(ctx, "readme"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Delete(ctx, "readme"); err != nil {
+	project, err := s.RegisterProject(ctx, "Main", "/project", "device:inode")
+	if err != nil {
 		t.Fatal(err)
 	}
 	layout := json.RawMessage(`{"version":1,"windows":[{"id":"keep"}]}`)
@@ -65,9 +62,10 @@ func TestRepeatedMigrationPreservesFilesAndClientLayouts(t *testing.T) {
 	if b.DatabaseID != identity || string(b.Layout) != string(layout) || b.Preferences != prefs {
 		t.Fatalf("migration lost settings: %+v", b)
 	}
-	entry(t, s, custom.ID)
-	_, _, err = s.Get(ctx, "readme")
-	requireCode(t, err, "not_found")
+	got, err := s.Project(ctx, project.ID)
+	if err != nil || got != project {
+		t.Fatalf("migration changed registered project: %+v %v", got, err)
+	}
 	if err = s.migrate(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -95,41 +93,16 @@ func TestDamagedPreferencesArePreserved(t *testing.T) {
 	if stored != "broken" {
 		t.Fatalf("damaged preferences reset without consent: %q", stored)
 	}
-	entry(t, s, "readme")
 }
 
-func TestMetadataChangesRequireExpectedRevision(t *testing.T) {
-	s := testStore(t)
-	e := create(t, s, "documents", "Original.txt", "file")
-	name, destination, content := "Renamed.txt", "desktop", "Original revision's draft"
-	_, err := s.Update(ctx, e.ID, UpdateInput{Name: &name})
-	requireCode(t, err, "revision_conflict")
-	renamed, err := s.Update(ctx, e.ID, UpdateInput{Name: &name, Revision: &e.Revision})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = s.Update(ctx, e.ID, UpdateInput{ParentID: &destination, Revision: &e.Revision})
-	requireCode(t, err, "revision_conflict")
-	_, err = s.Update(ctx, e.ID, UpdateInput{Content: &content, Revision: &e.Revision})
-	requireCode(t, err, "revision_conflict")
-	current, bytes, err := s.Get(ctx, e.ID)
-	if err != nil || current.Name != name || current.ParentID != "documents" || len(bytes) != 0 {
-		t.Fatalf("stale write changed data: %+v %q %v", current, bytes, err)
-	}
-	moved, err := s.Update(ctx, e.ID, UpdateInput{ParentID: &destination, Revision: &renamed.Revision})
-	if err != nil || moved.ParentID != destination || moved.Revision != e.Revision+2 {
-		t.Fatalf("valid move failed: %+v %v", moved, err)
-	}
-}
-
-func TestDamagedLayoutDoesNotBlockFilesOrResetStoredRecord(t *testing.T) {
+func TestDamagedLayoutDoesNotBlockBootstrapOrResetStoredRecord(t *testing.T) {
 	s := testStore(t)
 	for _, raw := range []string{"invalid-json", "[]", "null"} {
 		if _, err := s.db.Exec("INSERT INTO layouts(client_id,value) VALUES('browser',?) ON CONFLICT(client_id) DO UPDATE SET value=excluded.value", raw); err != nil {
 			t.Fatal(err)
 		}
 		b, err := s.Bootstrap(ctx, "browser")
-		if err != nil || b.LayoutError == "" || string(b.Layout) != "null" || len(b.Entries) == 0 {
+		if err != nil || b.LayoutError == "" || string(b.Layout) != "null" || b.DatabaseID == "" {
 			t.Fatalf("damaged layout blocked bootstrap: %+v %v", b, err)
 		}
 		var stored string

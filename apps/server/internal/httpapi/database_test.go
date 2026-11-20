@@ -20,12 +20,6 @@ func TestDatabaseReplacementRejectsEveryDesktopResource(t *testing.T) {
 	original, replacement := testAPI(t), testAPI(t)
 	before := request(t, replacement, "GET", "/api/bootstrap?clientId=original", nil).Body.String()
 	for _, route := range []struct{ method, path string }{
-		{"GET", "/api/entries"}, {"POST", "/api/entries"},
-		{"GET", "/api/entries/readme"}, {"PATCH", "/api/entries/readme"},
-		{"GET", "/api/entries/readme/content"}, {"HEAD", "/api/entries/readme/content"},
-		{"POST", "/api/entries/readme/duplicate"}, {"POST", "/api/entries/readme/trash"},
-		{"POST", "/api/entries/readme/restore"}, {"DELETE", "/api/entries/readme"},
-		{"DELETE", "/api/trash"}, {"POST", "/api/import"},
 		{"PUT", "/api/preferences"}, {"PUT", "/api/layout"},
 	} {
 		for _, id := range []string{"", original.databaseID} {
@@ -45,33 +39,42 @@ func TestDatabaseReplacementRejectsEveryDesktopResource(t *testing.T) {
 		}
 	}
 	if after := request(t, replacement, "GET", "/api/bootstrap?clientId=original", nil).Body.String(); after != before {
-		t.Fatal("stale requests changed replacement entries, preferences or layout")
+		t.Fatal("stale requests changed replacement preferences or layout")
 	}
 }
 
-func TestContentNavigationRequiresItsOriginalDatabase(t *testing.T) {
+func TestDesktopHealthChecksCapturedDatabaseWhenProvided(t *testing.T) {
 	h := testAPI(t)
-	for _, method := range []string{"GET", "HEAD"} {
-		for _, id := range []string{h.databaseID, "replaced"} {
-			r := httptest.NewRequest(method, "/api/entries/readme/content?preview=1&databaseId="+id, nil)
+	for _, tc := range []struct {
+		name string
+		path string
+		ids  []string
+		want int
+	}{
+		{"launcher", "/api/health", nil, http.StatusOK},
+		{"browser", "/api/health", []string{h.databaseID}, http.StatusOK},
+		{"replacement", "/api/health", []string{"replaced"}, http.StatusConflict},
+		{"multiple identities", "/api/health", []string{h.databaseID, h.databaseID}, http.StatusBadRequest},
+		{"query identity", "/api/health?databaseId=" + h.databaseID, nil, http.StatusBadRequest},
+		{"malformed query identity", "/api/health?databaseId=%", nil, http.StatusBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			for _, id := range tc.ids {
+				r.Header.Add(httpaccess.DatabaseIdentityHeader, id)
+			}
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, r)
-			want := http.StatusOK
-			if id != h.databaseID {
-				want = http.StatusConflict
+			if w.Code != tc.want || tc.want == http.StatusConflict && !strings.Contains(w.Body.String(), `"database_changed"`) {
+				t.Fatalf("response %d %s", w.Code, w.Body.String())
 			}
-			if w.Code != want {
-				t.Fatalf("content %s: %d %s", method, w.Code, w.Body.String())
-			}
-		}
+		})
 	}
-	for _, route := range []struct{ method, path string }{
-		{"GET", "/api/entries"}, {"PUT", "/api/layout"},
-	} {
+	for _, path := range []string{"/api/preferences", "/api/layout"} {
 		w := httptest.NewRecorder()
-		h.ServeHTTP(w, httptest.NewRequest(route.method, route.path+"?databaseId="+h.databaseID, unreadBody{t}))
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodPut, path+"?databaseId="+h.databaseID, unreadBody{t}))
 		if w.Code != http.StatusBadRequest {
-			t.Fatalf("query identity accepted by %s: %d", route.path, w.Code)
+			t.Fatalf("query identity accepted by %s: %d", path, w.Code)
 		}
 	}
 }

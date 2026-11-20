@@ -8,14 +8,11 @@ import {
 } from 'react';
 import { Button, Desktop } from '@cofy-x/axv-nextstep';
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
-import { FilesystemContext } from '../filesystem/context';
-import { trashEntries } from '../filesystem/commands';
 import { PreferencesContext } from '../features/appearance/PreferencesContext';
-import { runCommand } from '../shared/desktop/dialogs';
 import { createWindowCommands } from '../shared/desktop/window-commands';
 import { WindowCommandsContext } from '../shared/desktop/WindowCommandsContext';
 import { createAppRegistry } from './registry';
-import { createDesktopIcons, createDesktopMenu } from './desktop-items';
+import { createDesktopIcons } from './desktop-items';
 import { useDesktopSession } from './useDesktopSession';
 import { DraftNamespaceContext } from '../shared/drafts/context';
 import { clientIdentityKey } from './client-identity';
@@ -87,7 +84,6 @@ export function App() {
 
 function DesktopApp({ bootstrap, clientId }: ReadyDesktop) {
   const {
-    filesystem,
     appearance,
     connection,
     persistenceError,
@@ -160,10 +156,7 @@ function DesktopApp({ bootstrap, clientId }: ReadyDesktop) {
     computeStore.subscribe,
     computeStore.getSnapshot,
   );
-  const builtins = useMemo(
-    () => createAppRegistry(filesystem, commands),
-    [filesystem, commands],
-  );
+  const builtins = useMemo(() => createAppRegistry(commands), [commands]);
   const extensions = useSyncExternalStore(
     extensionStore.subscribe,
     extensionStore.getSnapshot,
@@ -190,74 +183,84 @@ function DesktopApp({ bootstrap, clientId }: ReadyDesktop) {
     [builtins, clientId],
   );
   const machineIcons = createMachineDesktopIcons(compute, getDesktop);
-  const icons = [
-    ...createDesktopIcons(filesystem, getDesktop),
-    ...machineIcons,
-  ];
+  const icons = [...createDesktopIcons(getDesktop), ...machineIcons];
 
   return (
     <DraftNamespaceContext.Provider
       value={{ databaseId: bootstrap.databaseId, clientId }}
     >
-      <FilesystemContext.Provider value={filesystem}>
-        <PreferencesContext.Provider value={appearance}>
-          <WindowCommandsContext.Provider value={commands}>
-            <ApplicationCatalogContext.Provider value={applicationCatalog}>
-              <Desktop
-                apps={apps}
-                isShortcutAvailable={(shortcut) => {
-                  const id =
-                    shortcut.params.entryId || shortcut.params.folderId;
-                  return (
-                    !id ||
-                    filesystem.entries.some(
-                      (entry) => entry.id === id && !entry.trashedAt,
-                    )
-                  );
-                }}
-                icons={icons}
-                initialLayout={bootstrap.layout || undefined}
-                initialLayoutError={bootstrap.layoutError}
-                initialDesktopApplications={{
-                  notes: false,
-                  terminal: false,
-                  'project-files': false,
-                  'remote-access': false,
-                  appearance: false,
-                  codex: false,
-                  machines: false,
-                  gallery: false,
-                  applications: false,
-                  cloudflare: false,
-                  notifications: false,
-                }}
-                initialDockOrder={[
-                  'codex',
-                  'machines',
-                  'project-files',
-                  'terminal',
-                  'files',
-                  'notes',
-                ]}
-                initialWindows={[{ appId: 'welcome' }]}
-                wallpaper={preferences.wallpaper}
-                clock24Hour={preferences.clock24Hour}
-                iconSnap={preferences.iconSnap}
-                connectionStatus={connection}
-                statusOverlay={
-                  databaseError ||
-                  identityError ||
-                  persistenceError ||
-                  authenticationError ? (
-                    <div className="desktop-warnings">
-                      {databaseError && (
-                        <div className="persistence-warning" role="alert">
-                          <span>
-                            {databaseError.code === 'database_changed'
-                              ? 'The AXV desktop database changed.'
-                              : 'This page can no longer verify its AXV desktop database.'}{' '}
-                            Keep this page open to preserve unsaved work.
-                          </span>
+      <PreferencesContext.Provider value={appearance}>
+        <WindowCommandsContext.Provider value={commands}>
+          <ApplicationCatalogContext.Provider value={applicationCatalog}>
+            <Desktop
+              apps={apps}
+              icons={icons}
+              initialLayout={bootstrap.layout || undefined}
+              initialLayoutError={bootstrap.layoutError}
+              initialDesktopApplications={{
+                terminal: false,
+                'project-files': false,
+                'remote-access': false,
+                appearance: false,
+                codex: false,
+                machines: false,
+                gallery: false,
+                applications: false,
+                cloudflare: false,
+                notifications: false,
+              }}
+              initialDockOrder={[
+                'codex',
+                'machines',
+                'project-files',
+                'terminal',
+              ]}
+              initialWindows={[{ appId: 'welcome' }]}
+              workspaceMenuIcon={
+                <img src="/favicon.svg" alt="" width={17} height={17} />
+              }
+              wallpaper={preferences.wallpaper}
+              clock24Hour={preferences.clock24Hour}
+              iconSnap={preferences.iconSnap}
+              connectionStatus={connection}
+              statusOverlay={
+                databaseError ||
+                identityError ||
+                persistenceError ||
+                authenticationError ? (
+                  <div className="desktop-warnings">
+                    {databaseError && (
+                      <div className="persistence-warning" role="alert">
+                        <span>
+                          {databaseError.code === 'database_changed'
+                            ? 'The AXV desktop database changed.'
+                            : 'This page can no longer verify its AXV desktop database.'}{' '}
+                          Keep this page open to preserve unsaved work.
+                        </span>
+                        <a
+                          className="ns-button"
+                          href="/"
+                          target="_blank"
+                          rel="noopener"
+                          title="Open in a new window"
+                        >
+                          Open current AXV
+                        </a>
+                      </div>
+                    )}
+                    {identityError && (
+                      <div className="persistence-warning" role="alert">
+                        <span>{identityError}</span>
+                      </div>
+                    )}
+                    {authenticationError && !databaseError && (
+                      <div className="persistence-warning" role="alert">
+                        <span>
+                          Authorization is required. Restore access for this
+                          browser or installed app, then retry. Keep this page
+                          open to preserve drafts.
+                        </span>
+                        <div className="desktop-warning-actions">
                           <a
                             className="ns-button"
                             href="/"
@@ -265,101 +268,64 @@ function DesktopApp({ bootstrap, clientId }: ReadyDesktop) {
                             rel="noopener"
                             title="Open in a new window"
                           >
-                            Open current AXV
+                            Open AXV
                           </a>
+                          <Button onClick={() => void retryAuthentication()}>
+                            Retry
+                          </Button>
                         </div>
-                      )}
-                      {identityError && (
+                      </div>
+                    )}
+                    {persistenceError &&
+                      !databaseError &&
+                      !authenticationError && (
                         <div className="persistence-warning" role="alert">
-                          <span>{identityError}</span>
+                          <span>{persistenceError}</span>
+                          <Button onClick={() => void flushLayout()}>
+                            Retry
+                          </Button>
                         </div>
                       )}
-                      {authenticationError && !databaseError && (
-                        <div className="persistence-warning" role="alert">
-                          <span>
-                            Authorization is required. Restore access for this
-                            browser or installed app, then retry. Keep this page
-                            open to preserve drafts.
-                          </span>
-                          <div className="desktop-warning-actions">
-                            <a
-                              className="ns-button"
-                              href="/"
-                              target="_blank"
-                              rel="noopener"
-                              title="Open in a new window"
-                            >
-                              Open AXV
-                            </a>
-                            <Button
-                              onClick={() =>
-                                void retryAuthentication().catch(() => {})
-                              }
-                            >
-                              Retry
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                      {persistenceError &&
-                        !databaseError &&
-                        !authenticationError && (
-                          <div className="persistence-warning" role="alert">
-                            <span>{persistenceError}</span>
-                            <Button onClick={() => void flushLayout()}>
-                              Retry
-                            </Button>
-                          </div>
-                        )}
-                    </div>
-                  ) : null
+                  </div>
+                ) : null
+              }
+              onReady={(desktop) => {
+                desktopRef.current = desktop;
+                if (pendingPushReference.current) {
+                  openNotification(desktop, pendingPushReference.current);
+                  void takePendingPushOpen(pendingPushReference.current).catch(
+                    () => {},
+                  );
+                  pendingPushReference.current = null;
                 }
-                onReady={(desktop) => {
-                  desktopRef.current = desktop;
-                  if (pendingPushReference.current) {
-                    openNotification(desktop, pendingPushReference.current);
-                    void takePendingPushOpen(
-                      pendingPushReference.current,
-                    ).catch(() => {});
-                    pendingPushReference.current = null;
-                  }
-                  void takePendingPushOpen()
-                    .then((reference) => {
-                      if (reference && desktopRef.current === desktop)
-                        openNotification(desktop, reference);
-                    })
-                    .catch(() => {
-                      // A retained reference that cannot be verified stays unavailable.
-                    });
-                  if (!notificationOpened.current) {
-                    notificationOpened.current = true;
-                    const reference = notificationLink(
-                      globalThis.location.search,
-                    );
-                    if (reference) openNotification(desktop, reference);
-                  }
-                }}
-                onLayoutChange={onLayoutChange}
-                onTrashIcons={(ids) => {
-                  const desktop = getDesktop();
-                  if (desktop)
-                    void runCommand(desktop, () =>
-                      trashEntries(filesystem, desktop, ids),
-                    );
-                }}
-                onDesktopMenu={(ids, desktop) =>
-                  createMachineDesktopMenu(machineIcons, ids) ||
-                  createDesktopMenu(filesystem, ids, desktop, icons)
+                void takePendingPushOpen()
+                  .then((reference) => {
+                    if (reference && desktopRef.current === desktop)
+                      openNotification(desktop, reference);
+                  })
+                  .catch(() => {
+                    // A retained reference that cannot be verified stays unavailable.
+                  });
+                if (!notificationOpened.current) {
+                  notificationOpened.current = true;
+                  const reference = notificationLink(
+                    globalThis.location.search,
+                  );
+                  if (reference) openNotification(desktop, reference);
                 }
-                onAppearance={() => getDesktop()?.openApp('appearance')}
-                onAbout={() => getDesktop()?.openApp('about')}
-                onHelp={() => getDesktop()?.openApp('welcome')}
-                helpLabel="Welcome"
-              />
-            </ApplicationCatalogContext.Provider>
-          </WindowCommandsContext.Provider>
-        </PreferencesContext.Provider>
-      </FilesystemContext.Provider>
+              }}
+              onLayoutChange={onLayoutChange}
+              onDesktopMenu={(ids) =>
+                createMachineDesktopMenu(machineIcons, ids) ?? []
+              }
+              onAppearance={() => getDesktop()?.openApp('appearance')}
+              onAbout={() => getDesktop()?.openApp('about')}
+              onHelp={() => getDesktop()?.openApp('welcome')}
+              helpLabel="Welcome"
+            />
+          </ApplicationCatalogContext.Provider>
+        </WindowCommandsContext.Provider>
+      </PreferencesContext.Provider>
     </DraftNamespaceContext.Provider>
   );
 }

@@ -4,7 +4,13 @@ import type {
   ExtensionCatalog,
   ExtensionRecord,
 } from '../apps/dashboard/src/features/extensions/types';
-import { expect, menuItem, persistedLayout, test } from './helpers';
+import {
+  expect,
+  menuItem,
+  openWorkspaceShortcutMenu,
+  persistedLayout,
+  test,
+} from './helpers';
 
 const sdk = readFileSync(
   new URL('../examples/extensions/sdk.js', import.meta.url),
@@ -20,7 +26,7 @@ axv.ready.then(async (initial) => {
   checks.ownData = (await axv.request('storage.get')).value === null;
   try { await axv.request('host.exec'); checks.exec = false; } catch { checks.exec = true; }
   try { await axv.request('storage.get', { appId: 'local.other' }); checks.crossApp = false; } catch { checks.crossApp = true; }
-  try { await fetch('/api/entries'); checks.api = false; } catch { checks.api = true; }
+  try { await fetch('/api/bootstrap'); checks.api = false; } catch { checks.api = true; }
   const image = new Image();
   image.src = '/api/health?extension-probe=1';
   await new Promise((resolve) => { image.onload = resolve; image.onerror = resolve; });
@@ -231,10 +237,10 @@ axv.ready.then(async () => {
   await expect(win).toHaveCount(0);
 });
 
-test('temporarily missing application definitions preserve windows, Dock and Clip across reload', async ({
+test('temporarily missing application definitions preserve windows, Dock and workspace shortcuts across reload', async ({
   page,
   request,
-}) => {
+}, info) => {
   await expect
     .poll(async () => !!(await persistedLayout(page, request)))
     .toBeTruthy();
@@ -292,4 +298,11 @@ test('temporarily missing application definitions preserve windows, Dock and Cli
       (item: { id: string }) => item.id === 'missing-shortcut',
     ),
   ).toBeTruthy();
+  const shortcut = await openWorkspaceShortcutMenu(
+    page,
+    'Retained shortcut',
+    info.project.use.hasTouch === true,
+  );
+  await expect(menuItem(shortcut, 'Open')).toBeDisabled();
+  await expect(menuItem(shortcut, 'Remove Shortcut')).toBeEnabled();
 });

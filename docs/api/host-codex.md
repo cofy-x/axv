@@ -2,7 +2,7 @@
 
 [API index](README.md)
 
-Stable conversations and explicit process runs are independent of browser windows, desktop workspaces and virtual documents.
+Stable conversations and explicit process runs are independent of browser windows, desktop workspaces.
 
 Codex runs the official CLI as the desktop service's host user. Its persistent PTY + tmux backend supports macOS and Linux; missing dependencies do not fall back to an ephemeral process.
 
@@ -57,16 +57,6 @@ Every projects, sessions and run request requires the [captured desktop database
 - `GET /api/host/codex/sessions/:id/runs/:runId/terminal?cols=80&rows=24&databaseId=<captured-id>`
   - Request: WebSocket upgrade.
   - Response: Terminal byte and control frames.
-
-- `GET /api/host/codex/sessions/:id/runs/:runId/context`
-  - Response: `{ batches }` for that exact run.
-
-- `POST /api/host/codex/sessions/:id/runs/:runId/context`
-  - Request: `{ requestId, snapshotIds }`.
-  - Response: `{ batch }`.
-
-- `DELETE /api/host/codex/sessions/:id/runs/:runId/context/:batchId`
-  - Response: `{ batch }`; only a pending batch can be cancelled.
 
 ## Availability and environment
 
@@ -139,40 +129,4 @@ Attachment dimensions are **2–500 columns** and **1–200 rows**, defaulting t
 
 An error message may omit `code`. An explicit `attach_failed` control permits bounded attachment retries against the same session/run pair; other error controls remain visible without automatic retries. Closing the WebSocket or stopping AXV detaches clients. Reopening and transient reconnects use the same session/run pair. Clients discard unsent input on disconnect and stop automatic reconnection on final run states or access rejection. Creating, forking or switching conversations inside the managed TUI is rejected with guidance to use AXV's New Session.
 
-End is idempotent and terminates only the specified run. It waits for the runner's managed processes to finish cleanup before reporting ended. An older final run cannot affect a newer run of the same conversation. `409 run_starting` means runtime creation is still pending: retry End instead of assuming termination. `503 codex_cleanup_pending` means cleanup is still unconfirmed; an interrupted End stays stopping and can be retried. `503 codex_ownership_unavailable` reports invalid or inaccessible AXV ownership state. Continuation waits for the same cleanup boundary before verifying history or reserving its new run. The UI confirms ending separately from window closure and continuation. Session-only terminal/end routes are absent; input, resizing and scrolling also stay bound to the original run. Metadata responses contain no transcript, scrollback, credentials or document content.
-
-## Document context
-
-Context routes use the same access, decoding and request-body rules as the other host Codex routes. POST accepts immutable snapshot IDs from the [snapshot API](project-files.md#immutable-snapshots-and-provenance), with no client-provided text, host path or provider thread identifier. It resolves source content from this desktop database and binds the destination to the addressed session/run and its verified provider UUID. Reads and writes do not create or continue a conversation or submit a model turn.
-
-Supply **1–8 distinct snapshot IDs** and a `requestId` with the same **1–128 UTF-8 byte** syntax as a start request. IDs are scoped to the exact run. A matching retry returns its original batch before checking runtime readiness or rereading source content; the ordered snapshot ID list must match. A different payload with the same ID returns `409 context_request_conflict`. Preserve the original request ID after a lost HTTP response and recover its receipt before offering another delivery.
-
-Each batch permits at most **1 MiB** of combined snapshot content. A run permits **four pending batches** and retains at most **256 batches**, including terminal receipts. Receipts are retained for idempotency rather than evicted; reaching either bound returns `409 context_limit`. Cancel pending batches to free pending capacity, or explicitly end and continue the saved conversation in a new run after the receipt limit. The bridge's complete augmented protocol message must remain below **32 MiB**; otherwise those snapshots fail and the original user message is submitted without them.
-
-A batch contains:
-
-```text
-{
-  id, requestId, sessionId, runId, providerThreadId, status,
-  snapshots: [{ id, databaseId, entryId, revision, name, sha256 }],
-  createdAt, updatedAt, providerTurnId?, error?
-}
-```
-
-Timestamps use RFC 3339 with UTC and optional fractional seconds. Snapshot metadata identifies the captured saved revision, including after the source is edited or removed; batch responses omit document content. Poll the exact run's context route to observe changes:
-
-| Status | Meaning | Caller action |
-| --- | --- | --- |
-| `pending` | Stored for the next user message actually submitted by the official TUI | May cancel; queuing alone sends no message |
-| `unknown` | Dispatch was durably claimed but provider acceptance is unconfirmed | Continue observing; never automatically retry or cancel an attempted delivery |
-| `accepted` | The corresponding provider response confirmed its turn ID | Delivery is confirmed, independently of whether the model turn finishes successfully |
-| `failed` | Explicit provider rejection, input-size rejection, or the run ended before dispatch | Show the reason; a new delivery requires a separate explicit user action |
-| `cancelled` | Cancellation won before dispatch | No delivery will be made for this batch |
-
-All pending batches accompany the next nonempty user message actually submitted by the official TUI, including an explicit message to steer an active turn. Buffered input and tool-only turns do not consume them. Original user input and turn settings remain intact. `unknown` also covers the period while awaiting acknowledgment; a provider response may advance it to accepted or failed. An explicit rejection fails the delivery without requeuing it. Lost or invalid acknowledgment, a crash or disconnection leaves it unknown and never causes automatic replay. Accepted content belongs to Codex's saved conversation history; the receipt confirms delivery independently of generation or execution success. [Codex architecture](../codex.md#document-context) owns provider protocol matching and durable dispatch.
-
-DELETE is idempotent for an already cancelled batch. If dispatch or another terminal state already won, it returns `409 context_state_changed`; callers must refresh the receipt. End fails pending batches without redirecting them to a later run, including when called on an already final run with an initialized queue. An End rejected before stopping begins leaves pending batches intact. A provider acknowledgment arriving after End can still resolve an attempted batch. Desktop service restart and browser detachment preserve the queue; runner exit fails remaining pending batches. End still terminates the addressed runtime if queue cleanup fails, with a visible queue error.
-
-New delivery requires a running, ready run. `409 context_not_ready` requires waiting or refreshing; an ended run cannot accept a new batch. `409 context_unsupported` identifies a live runner started before document-context capability was added: the user must explicitly end it and continue the verified conversation to use the new runner. `409 context_source_changed` rejects a snapshot whose database identity or digest cannot be verified. `503 context_unavailable` reports missing established receipts, invalid or inaccessible queue state; it is never silently reset or recreated. Receipt reads return an empty list for runs that never initialized a queue and do not initialize one themselves. No state, retry or cancellation operation substitutes a new provider conversation.
-
-See [Codex architecture](../codex.md) for runner, protocol-identity and storage ownership; [startup](../startup.md) for configuration; and [Host Terminal](host-terminal.md) for a separate ephemeral shell in the project.
+End is idempotent and terminates only the specified run. It waits for the runner's managed processes to finish cleanup before reporting ended. An older final run cannot affect a newer run of the same conversation. `409 run_starting` means runtime creation is still pending: retry End instead of assuming termination. `503 codex_cleanup_pending` means cleanup is still unconfirmed; an interrupted End stays stopping and can be retried. `503 codex_ownership_unavailable` reports invalid or inaccessible AXV ownership state. Continuation waits for the same cleanup boundary before verifying history or reserving its new run. The UI confirms ending separately from window closure and continuation. Session-only terminal/end routes are absent; input, resizing and scrolling also stay bound to the original run. Metadata responses contain no transcript, scrollback, or credentials.

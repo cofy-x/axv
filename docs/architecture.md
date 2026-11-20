@@ -13,7 +13,7 @@ flowchart TB
         Dashboard --> Desktop
     end
     Browser -->|HTTP / WebSocket| API["Desktop service"]
-    API --> Documents[(desktop.sqlite)]
+    API --> State[(desktop.sqlite)]
     API --> Extensions[(extensions.sqlite)]
     API --> NotificationStore[(notifications/state.json)]
     API --> Preparation[(preparation.sqlite)]
@@ -29,20 +29,20 @@ flowchart TB
 | Boundary | Entry point and dependency rule |
 | --- | --- |
 | Browser composition | [`app/App.tsx`](../apps/dashboard/src/app/App.tsx) connects providers, desktop callbacks and the [feature registry](../apps/dashboard/src/app/registry.ts). Features own their definitions, views, styles and commands; they do not import this composition layer. |
-| Generic desktop | [`packages/nextstep`](../packages/nextstep/src) owns windows, workspaces, Dock, Clip and menus through host callbacks and `AppDefinition` capabilities. It has no dashboard imports, hard-coded AXV app IDs or application-data access. [Desktop architecture](desktop.md) owns integration and mounted-window behavior. |
+| Generic desktop | [`packages/nextstep`](../packages/nextstep/src) owns windows, workspaces, Dock, workspace shortcuts and menus through host callbacks and `AppDefinition` capabilities. It has no dashboard imports, hard-coded AXV app IDs or application-data access. [Desktop architecture](desktop.md) owns integration and mounted-window behavior. |
 | Desktop HTTP composition | [`server.go`](../apps/server/internal/server/server.go) composes feature managers and route adapters. Adapters own transport and access checks; domain services and stores own validation and state. The [API implementation map](api/README.md#find-the-implementation) locates each boundary. |
-| Documents and installed applications | [`filesystem`](../apps/dashboard/src/filesystem) owns the virtual-file model with tree logic independent of React and HTTP; [`storage`](../apps/server/internal/storage) owns desktop transactions. [Installed applications](api/extensions.md) have a separate store and sandbox broker, without host-execution or virtual-document dependencies. [Storage](storage.md) owns database and recovery mechanisms. |
+| Desktop state and installed applications | [Storage](storage.md) owns desktop SQLite transactions, client identity and host project registration. [Installed applications](api/extensions.md) use a separate store and sandbox broker. |
 | Host work | [`terminal`](../apps/server/internal/terminal) owns connection-bound shells; [`codex`](../apps/server/internal/codex) controls independent runners. Shared [`hostdir`](../apps/server/internal/hostdir) validation and [`projectfiles`](../apps/server/internal/projectfiles) access do not depend on Codex lifecycle. See [Terminal](desktop.md#terminal-sessions), [Codex](codex.md) and [project files](api/project-files.md). |
 | Compute and guest | [`compute/host`](../apps/server/internal/compute/host) composes the controller, private API and provider drivers against shared `compute` contracts. Desktop gateway and CLI clients use the same verified local host boundary; [`guest`](../apps/server/internal/guest) executes inside VMs. [VM architecture](vm-platform.md) owns preparation, execution and retained projects. |
 | Work notifications | [`notifications`](../apps/server/internal/notifications) owns the desktop outbox and private adapter configuration. Independent Codex runners and the compute owner retain sanitized producer journals; feature-neutral [`notificationevent`](../apps/server/internal/notificationevent) carries exact identities. Observation never controls execution. [Notifications](api/notifications.md) owns checkpoints, gaps, delivery and read-only links. |
 | Startup | [`cli`](../apps/server/internal/cli) owns parsing and I/O; [`app`](../apps/server/internal/app) composes desktop, host activation and preparation. [`profile`](../apps/server/internal/profile) storage and [`app/launch`](../apps/server/internal/app/launch) verification remain independent of service execution. [Startup](startup.md) owns configuration and supervision. |
 | Remote access and project services | [Tailscale](api/tailscale.md) and [Cloudflare](api/cloudflare.md) add authenticated desktop listeners sharing existing feature managers. [Local previews](api/project-previews.md) and [Cloudflare publications](api/cloudflare.md#published-project-services) capture exact project targets and use separate browser origins. Shared [access rules](api/README.md#access-and-identity-boundaries) constrain every transport. |
 
-Desktop workspaces, virtual-document IDs, host project paths, VM projects/volumes, provider conversations and process runs have separate identities. Changing a window or selection never retargets existing work. Virtual documents live in desktop SQLite; host projects remain on the host; VM project records belong to compute and their files stay on retained volumes. Links and snapshots explicitly connect these domains without changing their ownership or synchronizing files.
+Desktop workspaces, host project paths, VM projects/volumes, provider conversations and process runs have separate identities. Changing a window or selection never retargets existing work. Host files live on the host and VM project files stay on retained volumes.
 
 ## State ownership
 
-Each owner controls its transitions and side effects. Independent dimensions remain separate: a running VM may have an unavailable guest, a completed Codex turn may have a live process, and a successful document save may leave newer typing dirty. Browser loading or connection state does not establish the outcome of durable work. Follow the owning reference before changing a transition or consolidating its representation.
+Each owner controls its transitions and side effects. Independent dimensions remain separate: a running VM may have an unavailable guest, a completed Codex turn may have a live process, and a successful project-file save may leave newer typing dirty. Browser loading or connection state does not establish the outcome of durable work. Follow the owning reference before changing a transition or consolidating its representation.
 
 | State family | Owner and transition boundary |
 | --- | --- |
@@ -50,19 +50,15 @@ Each owner controls its transitions and side effects. Independent dimensions rem
 | Desktop interaction and presentation | [Desktop](desktop.md) owns application loading, window/workspace visibility, menus, dialogs, focus, pointer gestures, preferences and layout writes. [Design](design.md#interaction-conventions) owns interaction expectations. |
 | Read observation | Feature stores own data freshness, last successful values, error presentation and target validation. The shared [serial poller](#shared-infrastructure) supplies reusable scheduling and cancellation. |
 | Shared editor and rendering | [Shared infrastructure](#shared-infrastructure) owns editor/module loading, rendering failures, fallback text input and external text updates. Consuming features retain content and save/recovery decisions. |
-| Documents and exchange | [Storage](storage.md) owns explicit saves, dirty drafts, revision conflicts, local recovery, snapshots, transfers and deletion transactions. Project editors additionally retain the [project binding](api/project-files.md). |
+| Project-file edits | [VM project files](usage.md#project-files) retain captured VM bindings, expected hashes, saves and local drafts. [Host project root access](storage.md#project-root-access) owns confined host reads. |
 | Installed applications | [Extension lifecycle](api/extensions.md) owns catalog availability, installed versions, sandbox handshakes, private data saves and per-window recovery. |
 | Terminal input and attachments | [Terminal](desktop.md#terminal-sessions) owns Host Terminal startup, readiness, byte queues and exit; [clipboard input](desktop.md#clipboard-input) captures one attachment generation. Codex and guest attachment/process lifetimes follow the comparison below. |
-| Codex work | [Codex](codex.md) owns launch/continuation requests, exact runs, attachment retries, provider activity, approvals/input and document-context delivery. Attachment, process, turn and delivery states have independent lifetimes. |
+| Codex work | [Codex](codex.md) owns launch/continuation requests, exact runs, attachment retries, provider activity and approvals/input. Attachment, process and turn states have independent lifetimes. |
 | VM preparation and resources | [VM architecture](vm-platform.md#state-and-operations) owns preparation plans/jobs, desired and observed machine state, guest readiness, operation phases, reservations, volumes and images. |
 | VM projects | [VM projects](vm-platform.md#vm-projects) owns bindings, initialization, backups, GitHub observations and preview targets. [Persistent tasks](vm-platform.md#persistent-project-tasks) and [guest execution](vm-platform.md#guest-execution) own task attempts, cancellation and terminal recovery. |
 | Work notifications | [Notifications](api/notifications.md) owns producer checkpoints, intake gaps, delivery receipts, browser registration and adapter retries. Observing or delivering an event does not control its source work. |
 | Remote access and publishing | [Tailscale](api/tailscale.md) and [Cloudflare](api/cloudflare.md) own enablement, enrollment/configuration, authenticated connection lifetimes and withdrawal. Publication phases and cleanup belong to the captured publication receipt. |
 | Service and artifact lifecycle | [Startup](startup.md) owns launch identity, activation, supervision, process locks, cache downloads and configuration publication. Readiness and resource ownership remain distinct. |
-
-## Document save
-
-Text Editor captures a snapshot and expected revision; the storage transaction either commits that snapshot or rejects it. Later typing remains dirty. Browser recovery is independent of both the server file and layout persistence. Continue with [document saves and recovery](storage.md#document-saves) and the [Files API](api/files.md).
 
 ## Codex attachment and process lifetime
 

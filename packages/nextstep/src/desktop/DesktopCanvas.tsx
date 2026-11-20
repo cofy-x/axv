@@ -1,19 +1,14 @@
 import { PixelIcon } from '../controls';
-import type { DesktopProps } from '../types';
+import type { DesktopIcon } from '../types';
 import type { DesktopGestures } from './useDesktopGestures';
 
-interface DesktopCanvasProps extends Pick<
-  DesktopProps,
-  'icons' | 'onTrashIcons'
-> {
+interface DesktopCanvasProps {
+  icons: DesktopIcon[];
   gestures: DesktopGestures;
+  inert?: boolean;
 }
 
-export function DesktopCanvas({
-  icons,
-  onTrashIcons,
-  gestures,
-}: DesktopCanvasProps) {
+export function DesktopCanvas({ icons, gestures, inert }: DesktopCanvasProps) {
   const {
     desktopRef,
     iconArea,
@@ -24,8 +19,6 @@ export function DesktopCanvas({
     desktopItems,
     selection,
     setSelection,
-    trashHover,
-    setTrashHover,
     iconPosition,
     beginIconGesture,
     clickIcon,
@@ -44,6 +37,7 @@ export function DesktopCanvas({
       }}
       role="group"
       aria-label="Desktop icons"
+      inert={inert}
       tabIndex={0}
       onPointerDown={beginMarquee}
       onContextMenu={(event) => {
@@ -69,7 +63,7 @@ export function DesktopCanvas({
               icon.status ? `${icon.label} — ${icon.status.label}` : icon.label
             }
             aria-pressed={selection.includes(icon.id)}
-            className={`ns-desktop-icon ${icon.status ? 'has-status' : ''} ${selection.includes(icon.id) ? 'is-selected' : ''} ${icon.isTrash && trashHover ? 'is-trash-target' : ''}`}
+            className={`ns-desktop-icon ${icon.status ? 'has-status' : ''} ${selection.includes(icon.id) ? 'is-selected' : ''}`}
             style={{
               left: iconPosition(icon).x - iconArea.x,
               top: iconPosition(icon).y - iconArea.y,
@@ -91,45 +85,6 @@ export function DesktopCanvas({
                 x: event.clientX,
                 y: event.clientY,
               });
-            }}
-            onDragOver={(event) => {
-              if (
-                icon.isTrash &&
-                event.dataTransfer.types.includes(
-                  'application/x-nextstep-entries',
-                )
-              ) {
-                event.preventDefault();
-                event.dataTransfer.dropEffect = 'move';
-                setTrashHover(true);
-              }
-            }}
-            onDragLeave={() => {
-              if (icon.isTrash) setTrashHover(false);
-            }}
-            onDrop={(event) => {
-              if (!icon.isTrash) return;
-              event.preventDefault();
-              setTrashHover(false);
-              try {
-                const ids: unknown = JSON.parse(
-                  event.dataTransfer.getData('application/x-nextstep-entries'),
-                );
-                if (
-                  Array.isArray(ids) &&
-                  ids.every((id) => typeof id === 'string')
-                ) {
-                  const trashable = ids.filter((id) => {
-                    const source = icons.find((item) => item.id === id);
-                    return (
-                      !source || (source.trashable === true && !source.isTrash)
-                    );
-                  });
-                  if (trashable.length) onTrashIcons?.(trashable);
-                }
-              } catch {
-                /* Ignore unrelated native drag payloads. */
-              }
             }}
           >
             <PixelIcon name={icon.icon} />

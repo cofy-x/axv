@@ -45,9 +45,6 @@ func vmWorkBridge(t *testing.T) (*protocolBridge, *bytes.Buffer, vmwork.Context)
 	output := new(bytes.Buffer)
 	bridge := newBridge(manifest, filepath.Join(directory, "state.json"), output, nil)
 	bridge.ready, bridge.state.ThreadID = true, testThreadID
-	if err := bridge.contextQueue().Initialize(context.Background()); err != nil {
-		t.Fatal(err)
-	}
 	return bridge, output, work
 }
 
@@ -66,11 +63,6 @@ func submitVMWorkTurn(t *testing.T, bridge *protocolBridge, value map[string]any
 
 func TestVMWorkAccompaniesEachUserTurnWithSkillAndPreservesOverrides(t *testing.T) {
 	bridge, output, work := vmWorkBridge(t)
-	document := testContextDocument()
-	queue := bridge.contextQueue()
-	if _, err := queue.Enqueue(context.Background(), "snapshot-request", []ContextDocument{document}, true); err != nil {
-		t.Fatal(err)
-	}
 	for index, method := range []string{"turn/start", "turn/steer"} {
 		output.Reset()
 		params := map[string]any{
@@ -101,11 +93,7 @@ func TestVMWorkAccompaniesEachUserTurnWithSkillAndPreservesOverrides(t *testing.
 		if err := json.Unmarshal(forwarded.Params["input"], &input); err != nil {
 			t.Fatal(err)
 		}
-		want := 4
-		if index == 0 {
-			want++
-		}
-		if len(input) != want || input[0]["text"] != "Inspect the VM project" || input[1]["type"] != "image" ||
+		if len(input) != 4 || input[0]["text"] != "Inspect the VM project" || input[1]["type"] != "image" ||
 			input[3]["type"] != "skill" || input[3]["name"] != vmwork.SkillName || input[3]["path"] != bridge.manifest.VMSkillPath {
 			t.Fatalf("original input or skill missing: %+v", input)
 		}
@@ -114,9 +102,6 @@ func TestVMWorkAccompaniesEachUserTurnWithSkillAndPreservesOverrides(t *testing.
 			if !strings.Contains(text, expected) {
 				t.Fatalf("captured work context missing %q: %s", expected, text)
 			}
-		}
-		if index == 0 && !strings.Contains(input[4]["text"].(string), document.Content) {
-			t.Fatal("document snapshot was lost when adding VM work context")
 		}
 	}
 }
@@ -138,13 +123,10 @@ func TestVMWorkDoesNotCreateUserInputForToolOnlyOrInvalidSteer(t *testing.T) {
 	}
 }
 
-func TestVMWorkChangesFailBeforeForwardingOrConsumingSnapshots(t *testing.T) {
+func TestVMWorkChangesFailBeforeForwardingTheTurn(t *testing.T) {
 	for _, change := range []string{"binding", "run", "missing", "skill"} {
 		t.Run(change, func(t *testing.T) {
 			bridge, output, work := vmWorkBridge(t)
-			if _, err := bridge.contextQueue().Enqueue(context.Background(), "snapshot-request", []ContextDocument{testContextDocument()}, true); err != nil {
-				t.Fatal(err)
-			}
 			var err error
 			switch change {
 			case "binding", "run":
@@ -166,97 +148,67 @@ func TestVMWorkChangesFailBeforeForwardingOrConsumingSnapshots(t *testing.T) {
 			if err := submitVMWorkTurn(t, bridge, map[string]any{"id": 1, "method": "turn/start", "params": map[string]any{"threadId": testThreadID, "input": []any{map[string]string{"type": "text", "text": "Run tests"}}}}); err == nil || output.Len() != 0 {
 				t.Fatalf("changed VM context was forwarded: %v, %s", err, output.String())
 			}
-			batches, err := bridge.contextQueue().List(context.Background())
-			if err != nil || len(batches) != 1 || batches[0].Status != "pending" {
-				t.Fatalf("VM context failure consumed document snapshots: %+v %v", batches, err)
-			}
 		})
 	}
 }
 
 func TestVMWorkProtocolLimitNeverForwardsAnUnboundTurn(t *testing.T) {
-	for _, scenario := range []string{"snapshots exceed limit", "VM context exceeds limit"} {
-		t.Run(scenario, func(t *testing.T) {
-			bridge, output, _ := vmWorkBridge(t)
-			document := testContextDocument()
-			if _, err := bridge.contextQueue().Enqueue(context.Background(), "snapshot-request", []ContextDocument{document}, true); err != nil {
-				t.Fatal(err)
-			}
-			workInput, err := bridge.vmWorkInput()
-			if err != nil {
-				t.Fatal(err)
-			}
-			workBytes := 0
-			for _, item := range workInput {
-				workBytes += len(item) + 1 // one comma per appended input item
-			}
-			documentItem, _ := json.Marshal(map[string]any{"type": "text", "text": contextText(document), "text_elements": []any{}})
-			textItem := map[string]string{"type": "text", "text": ""}
-			turn := map[string]any{"id": "large-turn", "method": "turn/start", "params": map[string]any{"threadId": testThreadID, "input": []any{textItem}}}
-			empty, _ := json.Marshal(turn)
-			targetBytes := maxMessageBytes - workBytes - len(documentItem)/2
-			if scenario == "VM context exceeds limit" {
-				targetBytes = maxMessageBytes - workBytes/2
-			}
-			textItem["text"] = strings.Repeat("x", targetBytes-len(empty))
-			raw, _ := json.Marshal(turn)
-			if len(raw) >= maxMessageBytes {
-				t.Fatal("fixture must fit the original TUI protocol limit")
-			}
+	bridge, output, _ := vmWorkBridge(t)
+	workInput, err := bridge.vmWorkInput()
+	if err != nil {
+		t.Fatal(err)
+	}
+	workBytes := 0
+	for _, item := range workInput {
+		workBytes += len(item) + 1 // one comma per appended input item
+	}
+	textItem := map[string]string{"type": "text", "text": ""}
+	turn := map[string]any{"id": "large-turn", "method": "turn/start", "params": map[string]any{"threadId": testThreadID, "input": []any{textItem}}}
+	empty, _ := json.Marshal(turn)
+	textItem["text"] = strings.Repeat("x", maxMessageBytes-workBytes/2-len(empty))
+	raw, _ := json.Marshal(turn)
+	if len(raw) >= maxMessageBytes {
+		t.Fatal("fixture must fit the original TUI protocol limit")
+	}
 
-			// Only a small rejection response crosses this socket. Forwarding is
-			// inspected directly so the test does not depend on TUI frame limits.
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			connected, stop := make(chan struct{}), make(chan struct{})
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				connection, err := websocket.Accept(w, r, nil)
-				if err != nil {
-					t.Error(err)
-					return
-				}
-				defer connection.CloseNow()
-				bridge.client = connection
-				close(connected)
-				<-stop
-			}))
-			defer server.Close()
-			defer close(stop)
-			peer, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer peer.CloseNow()
-			select {
-			case <-connected:
-			case <-ctx.Done():
-				t.Fatal(ctx.Err())
-			}
-			var message wireMessage
-			if err := json.Unmarshal(raw, &message); err != nil {
-				t.Fatal(err)
-			}
-			if err := bridge.forwardTurn(ctx, raw, message); err != nil {
-				t.Fatal(err)
-			}
-			if scenario == "VM context exceeds limit" {
-				_, data, err := peer.Read(ctx)
-				var rejection wireMessage
-				if err != nil || json.Unmarshal(data, &rejection) != nil || len(rejection.Error) == 0 || string(rejection.ID) != `"large-turn"` || output.Len() != 0 {
-					t.Fatalf("oversized VM turn was not rejected before forwarding: response=%s bytes=%d error=%v", data, output.Len(), err)
-				}
-			} else {
-				var forwarded struct {
-					Params struct{ Input []map[string]any }
-				}
-				if err := json.Unmarshal(output.Bytes(), &forwarded); err != nil || output.Len() >= maxMessageBytes || len(forwarded.Params.Input) != 3 || forwarded.Params.Input[2]["type"] != "skill" || forwarded.Params.Input[2]["path"] != bridge.manifest.VMSkillPath || !strings.Contains(forwarded.Params.Input[1]["text"].(string), bridge.manifest.VMContextPath) {
-					t.Fatalf("snapshot fallback lost the required VM context or forwarded the oversized attachment: bytes=%d input=%d error=%v", output.Len(), len(forwarded.Params.Input), err)
-				}
-			}
-			batches, err := bridge.contextQueue().List(ctx)
-			if err != nil || len(batches) != 1 || batches[0].Status != "failed" || batches[0].ProviderTurnID != "" || !strings.Contains(batches[0].Error, "not submitted") {
-				t.Fatalf("unsubmitted snapshots retained an uncertain or successful receipt: %+v %v", batches, err)
-			}
-		})
+	// Only a small rejection response crosses this socket. Forwarding is
+	// inspected directly so the test does not depend on TUI frame limits.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	connected, stop := make(chan struct{}), make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		connection, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer connection.CloseNow()
+		bridge.client = connection
+		close(connected)
+		<-stop
+	}))
+	defer server.Close()
+	defer close(stop)
+	peer, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer peer.CloseNow()
+	select {
+	case <-connected:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	var message wireMessage
+	if err := json.Unmarshal(raw, &message); err != nil {
+		t.Fatal(err)
+	}
+	if err := bridge.forwardTurn(ctx, raw, message); err != nil {
+		t.Fatal(err)
+	}
+	_, data, err := peer.Read(ctx)
+	var rejection wireMessage
+	if err != nil || json.Unmarshal(data, &rejection) != nil || len(rejection.Error) == 0 || string(rejection.ID) != `"large-turn"` || output.Len() != 0 {
+		t.Fatalf("oversized VM turn was not rejected before forwarding: response=%s bytes=%d error=%v", data, output.Len(), err)
 	}
 }

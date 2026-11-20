@@ -92,7 +92,7 @@ func apply(ctx context.Context, tx *sql.Tx, migrations []migration, expectedAppl
 		return fmt.Errorf("read database format: %w", err)
 	}
 	if applicationID != expectedApplicationID && (version > 0 || applicationID != 0) {
-		return fmt.Errorf("incompatible development database format: stop its writers and reset this AXV-owned development database; no migration is provided")
+		return fmt.Errorf("incompatible development database format: keep this database for recovery with a compatible build and use a fresh store for this version")
 	}
 	if version > len(migrations) {
 		return fmt.Errorf("database schema %d is newer than this application (latest %d)", version, len(migrations))

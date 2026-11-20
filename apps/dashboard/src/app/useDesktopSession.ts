@@ -1,10 +1,15 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
-import { useFilesystem } from '../filesystem/useFilesystem';
-import type { FilesystemObservation } from '../filesystem/useFilesystem';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { usePreferences } from '../features/appearance/usePreferences';
 import type { ConnectionStatus } from '../shared/api/connection';
 import { desktopDatabase } from '../shared/api/desktop';
 import { APIError } from '../shared/api/http';
+import { desktopApi } from './api';
 import type { ReadyDesktop } from './useBootstrap';
 import { useLayoutPersistence } from './useLayoutPersistence';
 
@@ -31,44 +36,53 @@ export function useDesktopSession({ bootstrap, clientId }: ReadyDesktop) {
   );
   const layout = useLayoutPersistence(clientId, reportConnection);
   const { flushLayout } = layout;
-  const observeFilesystem = useCallback(
-    (result: FilesystemObservation) => {
-      if (result.phase === 'available') {
-        setAccess({ phase: 'connected' });
-        if (result.trigger === 'periodic') void flushLayout();
-      } else if (
-        result.error instanceof APIError &&
-        result.error.code === 'authentication_required'
-      ) {
-        setAccess({
-          phase: 'authorization-required',
-          message: result.error.message,
-        });
-      } else reportConnection('offline');
+  const latestRead = useRef<symbol | null>(null);
+  const refresh = useCallback(
+    async (retryLayout = false) => {
+      const read = Symbol();
+      latestRead.current = read;
+      try {
+        await desktopApi.health();
+        desktopDatabase.assertActive();
+      } catch (error) {
+        if (latestRead.current !== read) return;
+        if (
+          error instanceof APIError &&
+          error.code === 'authentication_required'
+        ) {
+          setAccess({
+            phase: 'authorization-required',
+            message: error.message,
+          });
+        } else reportConnection('offline');
+        return;
+      }
+      if (latestRead.current !== read) return;
+      setAccess((previous) =>
+        previous.phase === 'connected' ? previous : { phase: 'connected' },
+      );
+      if (retryLayout) void flushLayout();
     },
     [flushLayout, reportConnection],
-  );
-  const { data: filesystem, refresh } = useFilesystem(
-    observeFilesystem,
-    bootstrap.entries,
   );
   useEffect(() => {
     if (databaseError) return;
     const visibility = () => {
       if (desktopDatabase.getSnapshot()) return;
       if (document.visibilityState === 'hidden') void flushLayout();
-      else void refresh().catch(() => {});
+      else void refresh();
     };
     const timer = setInterval(() => {
       if (desktopDatabase.getSnapshot()) return;
-      void refresh('periodic').catch(() => {});
+      void refresh(true);
     }, 5000);
     const focus = () => {
-      if (!desktopDatabase.getSnapshot()) void refresh().catch(() => {});
+      if (!desktopDatabase.getSnapshot()) void refresh();
     };
     globalThis.addEventListener('focus', focus);
     document.addEventListener('visibilitychange', visibility);
     return () => {
+      latestRead.current = null;
       clearInterval(timer);
       globalThis.removeEventListener('focus', focus);
       document.removeEventListener('visibilitychange', visibility);
@@ -81,10 +95,9 @@ export function useDesktopSession({ bootstrap, clientId }: ReadyDesktop) {
       databaseError || authorizationRequired
         ? ('offline' as const)
         : access.phase,
-    filesystem,
     appearance,
     databaseError,
     authenticationError: authorizationRequired ? access.message : '',
-    retryAuthentication: filesystem.refresh,
+    retryAuthentication: refresh,
   };
 }

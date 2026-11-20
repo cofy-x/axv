@@ -8,7 +8,7 @@ import type {
   DesktopAPI,
   DesktopWindow,
 } from '../types';
-import { Clip } from './Clip';
+import { createDesktopContextMenu } from './menus';
 import { Dock } from './Dock';
 import { WindowFrame } from './WindowFrame';
 import { launchApplication, resolveApplication } from './applications';
@@ -73,7 +73,6 @@ function renderWindow(
       app,
       index: 0,
       api: desktop(),
-      viewport,
       workArea: windowWorkArea(viewport, false),
       mobile: false,
       overview: false,
@@ -206,7 +205,7 @@ describe('unavailable application presentation', () => {
     expect(shaded).toContain('aria-hidden="true"');
   });
 
-  it('shows saved Dock and Clip entries while their definitions are absent', () => {
+  it('shows saved Dock and workspace shortcut entries while their definitions are absent', () => {
     vi.stubGlobal('window', { innerWidth: 1024, innerHeight: 768 });
     const api = desktop();
     const layout = sanitizeLayout(
@@ -247,15 +246,20 @@ describe('unavailable application presentation', () => {
     expect(dock).toContain('data-dock-app="org.example.tool"');
     expect(dock).toContain('data-dock-app="another.tool"');
     expect(dock).toContain('org.example.tool — unavailable');
-    const clip = renderToStaticMarkup(
-      createElement(Clip, {
-        props,
-        layout,
-        api: { ...api, workspaces: layout.workspaces },
-        setLayout: vi.fn(),
-      }),
-    );
-    expect(clip).toContain('Clip: Retained document unavailable');
-    expect(clip).toContain('Options for Clip shortcut Retained document');
+    const workspaces = createDesktopContextMenu(
+      props,
+      { ...api, workspaces: layout.workspaces },
+      [],
+    ).find((item) => item.label === 'Workspaces')!.children!;
+    const shortcuts = workspaces.find((item) => item.label === 'Shortcuts');
+    expect(shortcuts?.children).toEqual([
+      {
+        label: 'Retained document',
+        children: [
+          expect.objectContaining({ label: 'Open', disabled: true }),
+          expect.objectContaining({ label: 'Remove Shortcut' }),
+        ],
+      },
+    ]);
   });
 });

@@ -167,7 +167,7 @@ File writes and mkdir are synchronous and have no durable request receipt. A tra
 | 503 | `unsupported`, `host_unavailable`, `guest_unavailable`, `guest_identity_mismatch`, `project_unavailable`, `file_unavailable` |
 | 507 | `disk_full` |
 
-[VM architecture](../vm-platform.md#vm-projects) owns durable project and file-publication mechanisms; [VM project CLI](../startup.md#vm-project-files) provides the host-agent workflow. These IDs remain separate from [registered host projects](project-files.md), virtual documents and task/run identities.
+[VM architecture](../vm-platform.md#vm-projects) owns durable project and file-publication mechanisms; [VM project CLI](../startup.md#vm-project-files) provides the host-agent workflow. These IDs remain separate from [registered host projects](project-files.md) and task/run identities.
 
 ### GitHub project review
 

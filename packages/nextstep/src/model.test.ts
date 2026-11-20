@@ -14,7 +14,6 @@ import {
   ICON_SIZE,
   intersects,
   marqueeBounds,
-  mergeMenuGroups,
   minimizedWindows,
   moveIconGroup,
   overviewTransform,
@@ -25,6 +24,7 @@ import {
   visibleBounds,
   windowIdentity,
   windowWorkArea,
+  workspaceLabel,
 } from './model';
 import type { AppDefinition, DesktopWindow } from './types';
 
@@ -51,36 +51,6 @@ describe('application menus', () => {
     };
     expect(sanitizeLayout(saved, apps).dock).toEqual(saved.dock);
   });
-  it('replaces built-in menus and inserts app menus without duplicate IDs', () => {
-    const defaults = ['desktop', 'file', 'view', 'window'].map((id) => ({
-      id,
-      label: id,
-      items: [],
-    }));
-    const file = {
-      id: 'file',
-      label: 'File',
-      items: [{ label: 'New Folder' }],
-    };
-    const result = mergeMenuGroups(defaults, [
-      file,
-      { id: 'edit', label: 'Edit', items: [] },
-    ]);
-    expect(result.map((group) => group.id)).toEqual([
-      'desktop',
-      'file',
-      'edit',
-      'view',
-      'window',
-    ]);
-    expect(result[1]).toEqual(file);
-    expect(defaults.map((group) => group.id)).toEqual([
-      'desktop',
-      'file',
-      'view',
-      'window',
-    ]);
-  });
 });
 
 describe('window geometry and restoration', () => {
@@ -91,12 +61,12 @@ describe('window geometry and restoration', () => {
     expect(adjacentWindowBounds(panel, source, area)).toEqual({
       ...panel,
       x: 922,
-      y: 52,
+      y: 64,
     });
     expect(adjacentWindowBounds(panel, { ...source, x: 600 }, area)).toEqual({
       ...panel,
       x: 238,
-      y: 52,
+      y: 64,
     });
     expect(source).toEqual({ x: 190, y: 52, width: 720, height: 510 });
     expect(panel).toEqual({ x: 216, y: 76, width: 350, height: 510 });
@@ -109,7 +79,7 @@ describe('window geometry and restoration', () => {
       { x: 50, y: 150, width: 500, height: 200 },
       area,
     );
-    expect(result).toEqual({ ...panel, x: 382, y: 64 });
+    expect(result).toEqual({ ...panel, x: 386, y: 64 });
     const visible = visibleBounds(result, area);
     expect(visible.x + visible.width).toBeLessThanOrEqual(area.x + area.width);
     expect(visible.y + visible.height).toBeLessThanOrEqual(
@@ -179,9 +149,17 @@ describe('window geometry and restoration', () => {
   });
   it('overview derives transforms and never changes persisted geometry', () => {
     const saved = structuredClone(bounds);
-    expect(overviewTransform(bounds, 2, 5, viewport)).toMatch(
+    expect(overviewTransform(bounds, 2, 5, workArea)).toMatch(
       /^translate\(.+\) scale\(.+\)$/,
     );
+    expect(
+      overviewTransform({ x: 0, y: 0, width: 100, height: 100 }, 0, 1, {
+        x: 4,
+        y: 64,
+        width: 536,
+        height: 780,
+      }),
+    ).toBe('translate(222px, 404px) scale(1)');
     expect(bounds).toEqual(saved);
   });
   it('preserves unavailable applications while filtering malformed geometry from stored layouts', () => {
@@ -236,19 +214,35 @@ describe('window geometry and restoration', () => {
   });
 });
 
+it('uses numbered workspace labels and restores custom names without changing workspace IDs', () => {
+  const workspaces = defaultWorkspaces();
+  expect(workspaces.map(workspaceLabel)).toEqual([
+    'Workspace 1',
+    'Workspace 2',
+    'Workspace 3',
+    'Workspace 4',
+  ]);
+  workspaces[2].name = 'Documents';
+  const restored = sanitizeLayout({ version: 2, workspaces }, []);
+  expect(restored.workspaces).toEqual(workspaces);
+  expect(workspaceLabel(restored.workspaces[2], 2)).toBe(
+    'Workspace 3 · Documents',
+  );
+});
+
 describe('dynamic window work areas', () => {
   it('reserves the desktop Dock while reclaiming an empty miniwindow shelf', () => {
     expect(windowWorkArea(viewport, false)).toEqual({
       x: 4,
-      y: 28,
-      width: 952,
-      height: 732,
+      y: 64,
+      width: 956,
+      height: 696,
     });
     expect(windowWorkArea(viewport, true)).toEqual({
       x: 4,
-      y: 28,
-      width: 952,
-      height: 656,
+      y: 64,
+      width: 956,
+      height: 620,
     });
   });
 
@@ -256,15 +250,15 @@ describe('dynamic window work areas', () => {
     const mobile = { width: 390, height: 844 };
     expect(windowWorkArea(mobile, false)).toEqual({
       x: 4,
-      y: 90,
+      y: 64,
       width: 382,
-      height: 690,
+      height: 720,
     });
     expect(windowWorkArea(mobile, true)).toEqual({
       x: 4,
-      y: 90,
+      y: 64,
       width: 382,
-      height: 614,
+      height: 644,
     });
   });
 
@@ -288,22 +282,22 @@ describe('dynamic window work areas', () => {
       {
         viewport: { width: 568, height: 320 },
         sideDock: true,
-        area: { x: 4, y: 64, width: 496, height: 248 },
+        area: { x: 4, y: 64, width: 500, height: 248 },
       },
       {
         viewport: { width: 844, height: 390 },
         sideDock: true,
-        area: { x: 4, y: 64, width: 772, height: 318 },
+        area: { x: 4, y: 64, width: 776, height: 318 },
       },
       {
         viewport: { width: 390, height: 320 },
         sideDock: false,
-        area: { x: 4, y: 64, width: 382, height: 192 },
+        area: { x: 4, y: 64, width: 382, height: 196 },
       },
       {
         viewport: { width: 320, height: 260 },
         sideDock: false,
-        area: { x: 4, y: 64, width: 312, height: 132 },
+        area: { x: 4, y: 64, width: 312, height: 136 },
       },
     ]) {
       expect(desktopLayoutMode(viewport)).toMatchObject({
@@ -472,9 +466,9 @@ describe('desktop selection', () => {
         );
         expect(points[0].x + ICON_SIZE.width).toBe(area.x + area.width);
         expect(points[0].y).toBe(area.y);
-        expect(area.y).toBeGreaterThanOrEqual(viewport.width < 600 ? 90 : 26);
+        expect(area.y).toBe(68);
         expect(area.x + area.width).toBe(
-          viewport.width - (viewport.width < 600 ? 8 : 72),
+          viewport.width - (viewport.width < 600 ? 8 : 68),
         );
         for (const point of points) {
           expect(point.x).toBeGreaterThanOrEqual(area.x);
@@ -502,8 +496,8 @@ describe('desktop selection', () => {
   });
   it('keeps saved wider-spaced positions when adding launchers to the compact grid', () => {
     const saved = {
-      first: { x: 1112, y: 40 },
-      second: { x: 1112, y: 124 },
+      first: { x: 1112, y: 68 },
+      second: { x: 1112, y: 152 },
     };
     const before = structuredClone(saved);
     const area = iconWorkArea({ width: 1280, height: 720 }, false);
@@ -611,7 +605,7 @@ function testWindow(id: string, workspaceId = 'workspace-1'): DesktopWindow {
 }
 
 describe('versioned workspace persistence', () => {
-  it('round-trips missing and disabled apps without losing resource identity, view state or owner references', () => {
+  it('restores unavailable apps and their shortcuts while dropping retired floating menus', () => {
     const initial = sanitizeLayout(undefined, [app]);
     const savedWindow = {
       ...testWindow('retained'),
@@ -657,7 +651,7 @@ describe('versioned workspace persistence', () => {
     expect(missing.windows).toEqual([savedWindow]);
     expect(missing.dock).toEqual(saved.dock);
     expect(missing.workspaces[0].clip).toEqual(saved.workspaces[0].clip);
-    expect(missing.pinnedMenus).toEqual(saved.pinnedMenus);
+    expect(missing).not.toHaveProperty('pinnedMenus');
     const definition = {
       ...app,
       id: savedWindow.appId,
@@ -767,9 +761,6 @@ describe('versioned workspace persistence', () => {
             clip: [{ id: 'bad', appId: 'missing' }],
           },
         ],
-        pinnedMenus: [
-          { id: 'bad', kind: 'window', ownerWindowId: 'missing', x: 0, y: 0 },
-        ],
         icons: { bad: null },
       },
       [app],
@@ -780,7 +771,6 @@ describe('versioned workspace persistence', () => {
     expect(broken.workspaces[0].clip).toEqual([
       { id: 'bad', appId: 'missing', title: 'missing', params: {} },
     ]);
-    expect(broken.pinnedMenus).toEqual([]);
   });
   it('repairs missing running Dock entries and malformed maximized restore data', () => {
     const layout = {
@@ -833,7 +823,7 @@ describe('versioned workspace persistence', () => {
     expect(result.windows[0].shaded).toBe(false);
     expect(result.workspaces[1].order).toEqual([b.id, a.id]);
   });
-  it('removes closed window menu owners and restores a visible workspace focus', () => {
+  it('restores focus to a visible workspace window when saved focus is minimized', () => {
     const base = sanitizeLayout(undefined, [app]);
     const a = testWindow('a');
     const b = { ...testWindow('b'), minimized: true };
@@ -841,19 +831,8 @@ describe('versioned workspace persistence', () => {
       ...base,
       windows: [a, b],
       activeWindowId: b.id,
-      pinnedMenus: [
-        {
-          id: 'pin',
-          kind: 'window',
-          title: 'Window',
-          ownerWindowId: 'missing',
-          x: 0,
-          y: 0,
-        },
-      ],
     });
     expect(layout.activeWindowId).toBe(a.id);
-    expect(layout.pinnedMenus).toEqual([]);
     expect(inWorkspace({ ...a, sticky: true }, 'workspace-4')).toBe(true);
     expect(defaultWorkspaces()[0].order).toEqual([]);
   });

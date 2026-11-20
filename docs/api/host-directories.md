@@ -2,7 +2,7 @@
 
 [API index](README.md)
 
-This shared endpoint supplies local host-directory selection for Codex, Terminal and Project Files. It lists directory metadata without registering a project, starting a session or reading file contents. Host paths remain separate from virtual-document IDs and registered project IDs.
+This shared endpoint supplies local host-directory selection for Codex, Terminal and Project Files. It lists directory metadata without registering a project, starting a session or reading file contents. Host paths remain separate from registered project IDs.
 
 The [local access rules](README.md#access-and-identity-boundaries) apply before filesystem access. Responses use `Cache-Control: no-store`.
 

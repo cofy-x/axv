@@ -13,8 +13,7 @@
 .markdown-preview > :last-child {
   margin-bottom: 0;
 }
-.markdown-preview :is(h1, h2, h3, h4, h5, h6),
-.inspector-preview .markdown-preview :is(h1, h2, h3, h4, h5, h6) {
+.markdown-preview :is(h1, h2, h3, h4, h5, h6) {
   margin: 1em 0 0.45em;
   padding: 0;
   border: 0;
@@ -23,8 +22,7 @@
 .markdown-preview h1 {
   font-size: 1.65em;
 }
-.markdown-preview h2,
-.inspector-preview .markdown-preview h2 {
+.markdown-preview h2 {
   font-size: 1.35em;
 }
 .markdown-preview h3 {
@@ -58,8 +56,7 @@
   background: var(--ns-light);
   font: 0.92em/1.55 var(--ns-mono);
 }
-.markdown-preview pre,
-.inspector-preview .markdown-preview pre {
+.markdown-preview pre {
   max-height: none;
   overflow: auto;
   padding: 9px;
@@ -112,12 +109,6 @@
   margin-top: 1em;
   border-top: 1px solid var(--ns-mid);
   font-size: 0.92em;
-}
-.inspector-preview > .markdown-preview {
-  max-height: 280px;
-  overflow: auto;
-  border: 1px solid var(--ns-mid);
-  box-shadow: var(--ns-recessed);
 }
 @media (max-width: 599px) {
   .markdown-preview {

@@ -3,7 +3,6 @@
 package runner
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -446,7 +445,7 @@ func TestActivityPreReadyMetadataIsBoundedAndOverflowRemainsUnknown(t *testing.T
 	if strings.Contains(fmt.Sprintf("%+v", bridge.activityPending), "private") {
 		t.Fatal("startup metadata retained request text")
 	}
-	if err := bridge.publishReady(context.Background(), testThreadID); err != nil {
+	if err := bridge.publishReady(testThreadID); err != nil {
 		t.Fatal(err)
 	}
 	manifest := filepath.Join(directory, "manifest.json")

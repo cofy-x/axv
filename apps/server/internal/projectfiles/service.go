@@ -9,13 +9,17 @@ import (
 	"github.com/cofy-x/axv/apps/server/internal/storage"
 )
 
-// Service owns registered host-project access and explicit document exchange.
-// It keeps filesystem publication and receipt recovery independent of HTTP.
+const (
+	maxTextSize = 1 << 20
+	maxFileSize = 10 << 20
+)
+
+// Service owns registered host-project access.
 type Service struct {
 	store *storage.Store
 }
 
-// New uses the desktop store for registered identities and transfer receipts.
+// New uses the desktop store for registered project identities.
 func New(store *storage.Store) *Service { return &Service{store: store} }
 
 // Listing is one page of the current directory, not a frozen snapshot.
@@ -32,7 +36,6 @@ type File struct {
 	Path      string `json:"path"`
 	Name      string `json:"name"`
 	Content   string `json:"content"`
-	SHA256    string `json:"sha256"`
 	Size      int    `json:"size"`
 }
 
@@ -105,18 +108,18 @@ func (s *Service) fileBytes(ctx context.Context, projectID, filename string, max
 
 // Read accepts only bounded UTF-8 text from a regular project file.
 func (s *Service) Read(ctx context.Context, projectID, filename string) (File, error) {
-	p, name, data, err := s.fileBytes(ctx, projectID, filename, storage.MaxTextSize)
+	p, name, data, err := s.fileBytes(ctx, projectID, filename, maxTextSize)
 	if err != nil {
 		return File{}, err
 	}
 	if !text(data) {
 		return File{}, problem("not_text", "This file is not previewable text. Download the original file instead.")
 	}
-	return File{ProjectID: p.ID, Path: name, Name: filepath.Base(name), Content: string(data), SHA256: digest(data), Size: len(data)}, nil
+	return File{ProjectID: p.ID, Path: name, Name: filepath.Base(name), Content: string(data), Size: len(data)}, nil
 }
 
 // Download returns the name and original bytes of a bounded regular file.
 func (s *Service) Download(ctx context.Context, projectID, filename string) (string, []byte, error) {
-	_, name, data, err := s.fileBytes(ctx, projectID, filename, storage.MaxFileSize)
+	_, name, data, err := s.fileBytes(ctx, projectID, filename, maxFileSize)
 	return filepath.Base(name), data, err
 }

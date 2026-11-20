@@ -79,7 +79,7 @@ describe('Markdown preview', () => {
         '[Site](https://example.com/guide)',
         '[Email](mailto:hello@example.com)',
         '[Relative](./guide.md)',
-        '[Server](/api/entries)',
+        '[Server](/api/health)',
         '[Protocol relative](//example.com)',
       ].join('\n'),
     );
@@ -88,7 +88,7 @@ describe('Markdown preview', () => {
     expect(result.match(/target="_blank"/g)).toHaveLength(2);
     expect(result.match(/rel="noopener noreferrer"/g)).toHaveLength(2);
     expect(result).not.toContain('href="./guide.md"');
-    expect(result).not.toContain('href="/api/entries"');
+    expect(result).not.toContain('href="/api/health"');
     expect(result).not.toContain('href="//example.com"');
   });
 

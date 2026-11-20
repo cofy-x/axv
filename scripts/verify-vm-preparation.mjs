@@ -76,6 +76,7 @@ const environment = {
 let server;
 let base;
 let instanceId;
+let databaseId;
 let daemonStarted = false;
 let machineId;
 let createRequest;
@@ -211,6 +212,9 @@ async function api(path, method = 'GET', body, address = base) {
       Origin: address,
       'Content-Type': 'application/json',
       ...(instanceId ? { 'X-AXV-Instance-ID': instanceId } : {}),
+      ...(databaseId && path === '/api/preferences'
+        ? { 'X-AXV-Database-ID': databaseId }
+        : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(30_000),
@@ -725,15 +729,18 @@ try {
   base = server.base;
   const originalDesktop = await discover();
   await access(join(profile, 'data', 'desktop.sqlite'));
+  const desktopClient = '/api/bootstrap?clientId=preparation';
+  ({ databaseId } = await api(desktopClient));
+  assert.ok(databaseId);
   const initial = await api('/api/compute/preparation/check');
   assert.equal(initial.configured, false);
   assert.equal((await api('/api/compute/info')).configured, false);
-  const document = await api('/api/entries', 'POST', {
-    parentId: 'documents',
-    kind: 'file',
-    name: 'VM preparation continuity.txt',
-    content: 'The desktop remains available during VM preparation.',
-  });
+  const preferences = {
+    wallpaper: 'dither',
+    iconSnap: false,
+    clock24Hour: true,
+  };
+  await api('/api/preferences', 'PUT', preferences);
   const planInput = {
     imageSource: 'bundle',
     imageBundle,
@@ -814,10 +821,9 @@ try {
     (await api('/api/runtime')).instanceId,
     originalDesktop.instanceId,
   );
-  assert.equal(
-    (await api(`/api/entries/${document.entry.id}`)).content,
-    'The desktop remains available during VM preparation.',
-  );
+  const preparedDesktop = await api(desktopClient);
+  assert.equal(preparedDesktop.databaseId, databaseId);
+  assert.deepEqual(preparedDesktop.preferences, preferences);
   const hostConfig = JSON.parse(
     await readFile(join(profile, 'host.json'), 'utf8'),
   );

@@ -708,10 +708,6 @@ export function CodexTerminal({
     );
     return true;
   }, [desktop]);
-  const attachments = useCallback(async () => {
-    desktop.openApp('conversation-context', { sessionId: id, runId });
-    return true;
-  }, [desktop, id, runId]);
   const projectTasks = useCallback(async () => {
     const project =
       connection.current?.getSnapshot().session?.vmProject?.project;
@@ -759,7 +755,6 @@ export function CodexTerminal({
         !!activeRun,
       ),
       commands.register(window.id, 'codex:details', details, !!state.session),
-      commands.register(window.id, 'codex:attachments', attachments),
       commands.register(
         window.id,
         'codex:project-files',
@@ -818,7 +813,6 @@ export function CodexTerminal({
     rename,
     archive,
     projectTerminal,
-    attachments,
     projectFiles,
     projectTasks,
     changingMetadata,
@@ -854,13 +848,6 @@ export function CodexTerminal({
       <div className="app-toolbar terminal-toolbar codex-primary-toolbar">
         <div className="codex-toolbar-actions">
           <Button onClick={() => desktop.openApp('codex')}>Sessions</Button>
-          <IconButton
-            icon="attachment"
-            label="Attachments"
-            onClick={() =>
-              desktop.openApp('conversation-context', { sessionId: id, runId })
-            }
-          />
           <Button
             disabled={state.phase !== 'connected'}
             onClick={() => void interrupt()}
@@ -917,12 +904,6 @@ export function CodexTerminal({
               const rect = event.currentTarget.getBoundingClientRect();
               desktop.contextMenu(
                 codexMoreMenu(commands, window.id, {
-                  attachments: () => {
-                    desktop.openApp('conversation-context', {
-                      sessionId: id,
-                      runId,
-                    });
-                  },
                   projectFiles: () =>
                     void runCommand(desktop, async () => {
                       await projectFiles();

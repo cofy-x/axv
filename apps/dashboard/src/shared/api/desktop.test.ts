@@ -17,7 +17,7 @@ describe('page database binding', () => {
     const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);
     const database = createDesktopDatabase();
-    await expect(database.request('/entries')).rejects.toMatchObject({
+    await expect(database.request('/health')).rejects.toMatchObject({
       code: 'database_identity_required',
     });
     expect(fetch).not.toHaveBeenCalled();
@@ -36,14 +36,14 @@ describe('page database binding', () => {
   it('binds JSON and binary requests without binding independent APIs', async () => {
     const fetch = vi
       .fn()
-      .mockResolvedValueOnce(Response.json({ entries: [] }))
+      .mockResolvedValueOnce(Response.json({ status: 'ok' }))
       .mockResolvedValueOnce(new Response('source text'))
       .mockResolvedValueOnce(Response.json({ machines: [] }));
     vi.stubGlobal('fetch', fetch);
     const database = createDesktopDatabase();
     database.bind('original');
-    await expect(database.request('/entries')).resolves.toEqual({
-      entries: [],
+    await expect(database.request('/health')).resolves.toEqual({
+      status: 'ok',
     });
     expect(
       await (await database.blob('/projects/host/download?path=a')).text(),
@@ -77,9 +77,9 @@ describe('page database binding', () => {
     database.bind('original');
     const listener = vi.fn();
     database.subscribe(listener);
-    const read = database.request('/entries');
-    const save = database.request('/entries/readme', {
-      method: 'PATCH',
+    const read = database.request('/health');
+    const save = database.request('/layout', {
+      method: 'PUT',
       body: '{}',
     });
     const readRejected = expect(read).rejects.toMatchObject({
@@ -91,8 +91,8 @@ describe('page database binding', () => {
     await expect(
       database.request('/layout', { method: 'PUT' }),
     ).rejects.toMatchObject({ code: 'database_changed' });
-    slowResponse.resolve(Response.json({ entries: ['late-original-data'] }));
-    slowBody.resolve({ entry: { revision: 2 } });
+    slowResponse.resolve(Response.json({ status: 'ok' }));
+    slowBody.resolve({ ok: true });
     await Promise.all([readRejected, saveRejected]);
     await expect(
       database.request('/layout', { method: 'PUT' }),
@@ -101,17 +101,12 @@ describe('page database binding', () => {
     expect(database.getSnapshot()?.code).toBe('database_changed');
     expect(fetch).toHaveBeenCalledTimes(3);
     expect(listener).toHaveBeenCalledOnce();
-    // Image URLs are constructed during rendering, so a blocked desktop must
-    // keep producing the original URL rather than throw and unmount the image.
-    expect(database.resourceURL('/entries/image/content?preview=1')).toBe(
-      '/api/entries/image/content?preview=1&databaseId=original',
-    );
   });
 
   it.each([
     [401, 'cloudflare_unauthorized'],
     [403, 'remote_forbidden'],
-    [409, 'revision_conflict'],
+    [409, 'layout_conflict'],
     [503, 'remote_identity_unavailable'],
   ])('does not rebind or freeze for %s %s', async (status, code) => {
     vi.stubGlobal(
@@ -124,14 +119,14 @@ describe('page database binding', () => {
             { status },
           ),
         )
-        .mockResolvedValueOnce(Response.json({ entries: [] })),
+        .mockResolvedValueOnce(Response.json({ status: 'ok' })),
     );
     const database = createDesktopDatabase();
     database.bind('original');
-    await expect(database.request('/entries')).rejects.toBeInstanceOf(Error);
+    await expect(database.request('/health')).rejects.toBeInstanceOf(Error);
     expect(database.getSnapshot()).toBeNull();
-    await expect(database.request('/entries')).resolves.toEqual({
-      entries: [],
+    await expect(database.request('/health')).resolves.toEqual({
+      status: 'ok',
     });
     expect(database.getDatabaseId()).toBe('original');
   });
@@ -151,7 +146,7 @@ describe('page database binding', () => {
     );
     const database = createDesktopDatabase();
     database.bind('original');
-    await expect(database.request('/entries')).rejects.toMatchObject({
+    await expect(database.request('/health')).rejects.toMatchObject({
       status: 428,
     });
     expect(database.getSnapshot()?.code).toBe('database_identity_required');

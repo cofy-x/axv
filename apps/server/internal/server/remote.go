@@ -177,9 +177,9 @@ func remoteRoute(r *http.Request) bool {
 			return remoteExtensionRoute(r)
 		}
 		for _, prefix := range []string{
-			"/api/health", "/api/bootstrap", "/api/connection", "/api/entries", "/api/import",
-			"/api/preferences", "/api/layout", "/api/trash", "/api/terminal",
-			"/api/projects", "/api/documents", "/api/document-links", "/api/document-snapshots",
+			"/api/health", "/api/bootstrap", "/api/connection",
+			"/api/preferences", "/api/layout", "/api/terminal",
+			"/api/projects",
 			"/api/host/directories", "/api/host/codex", "/api/compute",
 			"/api/project-previews",
 			"/api/cloudflare-publications",

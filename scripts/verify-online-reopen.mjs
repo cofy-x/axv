@@ -4,6 +4,7 @@ import { cp, readFile, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { chromium, expect } from '@playwright/test';
+import { openVMEditorFixture } from '../tests/vm-editor-fixture.ts';
 import { exitAfterCleanup, launchServer, scratch, stop } from './lib.mjs';
 import { createShellEnvironment } from './shell-fixture.mjs';
 import { initializeTestTemp } from './test-temp.mjs';
@@ -106,32 +107,18 @@ async function launchTerminal(page) {
 }
 
 async function drafts(page) {
-  return page.evaluate(
-    () =>
-      new Promise((resolveRecords, reject) => {
-        const open = globalThis.indexedDB.open('nextstep-drafts', 1);
-        open.onerror = () => reject(open.error);
-        open.onsuccess = () => {
-          const db = open.result;
-          const tx = db.transaction('drafts');
-          const read = tx.objectStore('drafts').getAll();
-          tx.oncomplete = () => {
-            db.close();
-            resolveRecords(
-              read.result.map((draft) => {
-                const retained = { ...draft };
-                delete retained.updatedAt;
-                return retained;
-              }),
-            );
-          };
-          tx.onabort = () => {
-            db.close();
-            reject(tx.error);
-          };
-        };
-      }),
+  return page.evaluate(() =>
+    Object.entries(globalThis.sessionStorage).filter(([key]) =>
+      key.startsWith('["axv-vm-project-draft",'),
+    ),
   );
+}
+
+async function editorText(editor) {
+  return editor
+    .locator('.cm-line')
+    .allTextContents()
+    .then((lines) => lines.join('\n'));
 }
 
 try {
@@ -171,16 +158,6 @@ try {
     null,
     '/bootstrap?clientId=reopen-acceptance',
   );
-  const originalDocument = await api(
-    base,
-    original.databaseId,
-    '/entries/readme',
-    'PATCH',
-    {
-      content: 'Original database content.',
-      revision: 1,
-    },
-  );
   report.databaseId = original.databaseId;
   browser = await chromium.launch();
   report.browser = browser.version();
@@ -192,39 +169,34 @@ try {
     localStorage.setItem('nextstep-browser-id', 'reopen-acceptance'),
   );
   const page = await context.newPage();
+  await page.clock.install();
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.goto(base);
-  await page
-    .locator('[data-app-id="welcome"]')
-    .getByRole('button', { name: 'Documents', exact: true })
-    .click();
-  const files = page.locator('[data-window-id="files:documents"]');
-  await files.getByRole('option', { name: 'Read Me.txt', exact: true }).click();
-  await files.getByRole('button', { name: 'Open', exact: true }).click();
-  const editor = page.locator('[data-window-id="notes:readme"]');
-  const input = editor.getByRole('textbox', {
-    name: 'Document text',
-    exact: true,
+  let oldTerminalRequests = 0;
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === before.terminal)
+      oldTerminalRequests++;
   });
+  await page.goto(base);
+  const {
+    window: editor,
+    editor: input,
+    filename,
+    writes: vmWrites,
+  } = await openVMEditorFixture(page);
   const dirty = 'Unsaved upgrade draft — 保留最新文本\n';
   await input.fill(dirty);
   const node = await input.elementHandle();
   const timeOrigin = await page.evaluate(() => performance.timeOrigin);
   await expect
     .poll(async () =>
-      (await drafts(page)).some((draft) => draft.text === dirty),
+      (await drafts(page)).some(
+        ([, draft]) => JSON.parse(draft).editor.text === dirty,
+      ),
     )
     .toBe(true);
   const originalDrafts = await drafts(page);
-  assert.equal(
-    await page.evaluate(
-      (asset) =>
-        performance.getEntriesByName(globalThis.location.origin + asset).length,
-      before.terminal,
-    ),
-    0,
-  );
+  assert.equal(oldTerminalRequests, 0);
   await stop(server.child);
   server = await launchServer({
     ...options,
@@ -241,17 +213,23 @@ try {
   assert.equal((await fetch(base + after.terminal)).status, 200);
   const oldTerminal = await launchTerminal(page);
   await expect(oldTerminal.getByRole('alert')).toBeVisible();
+  await expect.poll(() => oldTerminalRequests).toBeGreaterThan(0);
   await expect(
     oldTerminal.getByRole('button', { name: 'Retry', exact: true }),
   ).toBeVisible();
   assert.equal(await page.evaluate(() => performance.timeOrigin), timeOrigin);
-  await expect(input).toHaveValue(dirty);
+  await expect.poll(() => editorText(input)).toBe(dirty);
   assert.ok(
     await input.evaluate((element, previous) => element === previous, node),
   );
   assert.deepEqual(await drafts(page), originalDrafts);
   await page.screenshot({ path: join(evidence, 'old-page-module-error.png') });
   const fresh = await context.newPage();
+  const terminalResponses = [];
+  fresh.on('response', (response) => {
+    if (new URL(response.url()).pathname === after.terminal)
+      terminalResponses.push(response.status());
+  });
   await fresh.goto(base);
   await expect(
     fresh.getByRole('complementary', { name: 'Application Dock' }),
@@ -261,21 +239,15 @@ try {
   await expect(
     fresh.locator('[data-app-id="terminal"]').getByTestId('terminal-status'),
   ).toHaveAttribute('data-state', 'connected');
-  assert.ok(
-    await fresh.evaluate(
-      (asset) =>
-        performance.getEntriesByName(globalThis.location.origin + asset)
-          .length > 0,
-      after.terminal,
-    ),
-  );
+  await expect.poll(() => terminalResponses).toContain(200);
   await fresh.close();
   report.checks.push(
     'same-origin same-database production upgrade; old DOM and draft retained; missing old module local error; new page loads new module',
   );
 
-  // Replace only this stopped test service's desktop store. The seeded IDs and
-  // revisions deliberately match while the actual document contents differ.
+  const layoutBeforeReplacement = (
+    await api(base, null, '/bootstrap?clientId=reopen-acceptance')
+  ).layout;
   await stop(server.child);
   server = await launchServer({
     ...options,
@@ -289,42 +261,26 @@ try {
     '/bootstrap?clientId=reopen-acceptance',
   );
   assert.notEqual(replacement.databaseId, original.databaseId);
-  const replacementDocument = await api(
-    base,
-    replacement.databaseId,
-    '/entries/readme',
-    'PATCH',
-    {
-      content: 'Replacement database content.',
-      revision: 1,
-    },
-  );
-  assert.equal(
-    replacementDocument.entry.revision,
-    originalDocument.entry.revision,
-  );
-  await editor.locator('.ns-window-title').click();
-  await editor.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.evaluate(() => globalThis.dispatchEvent(new Event('focus')));
   await expect(
     page.getByRole('link', { name: 'Open current AXV', exact: true }),
   ).toBeVisible();
-  await expect(input).toHaveValue(dirty);
-  await expect(
-    editor.getByRole('button', { name: 'Save', exact: true }),
-  ).toBeDisabled();
-  assert.equal(
-    (await api(base, replacement.databaseId, '/entries/readme')).content,
-    'Replacement database content.',
-  );
+  await editor.locator('.ns-window-title').click();
+  await expect.poll(() => editorText(input)).toBe(dirty);
   assert.deepEqual(await drafts(page), originalDrafts);
   await editor
-    .getByRole('button', { name: 'More document actions', exact: true })
+    .getByRole('button', { name: 'More VM project actions', exact: true })
     .click();
   const downloaded = page.waitForEvent('download');
   await page.getByRole('menuitem', { name: /^Download Draft(?:\s|$)/ }).click();
   const download = await downloaded;
-  assert.equal(download.suggestedFilename(), 'Read Me.txt.draft.txt');
+  assert.equal(download.suggestedFilename(), `${filename}.draft.txt`);
   assert.equal(await readFile(await download.path(), 'utf8'), dirty);
+  assert.equal(vmWrites.length, 0);
+  assert.equal(
+    (await api(base, null, '/bootstrap?clientId=reopen-acceptance')).layout,
+    null,
+  );
   await page.screenshot({ path: join(evidence, 'database-protection.png') });
   await stop(server.child);
   server = await launchServer({
@@ -332,25 +288,32 @@ try {
     addr,
     executable: after.executable,
   });
-  assert.equal(
-    (await api(base, original.databaseId, '/entries/readme')).content,
-    'Original database content.',
-  );
-  let writes = 0;
+  let layoutWrites = 0;
   page.on('request', (request) => {
-    if (!['GET', 'HEAD'].includes(request.method())) writes++;
+    if (
+      new URL(request.url()).pathname === '/api/layout' &&
+      request.method() === 'PUT'
+    )
+      layoutWrites++;
   });
+  await expect(editor).toBeVisible();
+  await page.keyboard.press('Alt+2');
+  await expect(editor).toBeHidden();
   await expect(
-    editor.getByRole('button', { name: 'Save', exact: true }),
-  ).toBeDisabled();
-  await input.press('Control+s');
-  await expect(editor).toContainText('Saving is unavailable in this window.');
-  assert.equal(writes, 0);
+    page.getByRole('link', { name: 'Open current AXV', exact: true }),
+  ).toBeVisible();
+  // Give layout persistence's debounce time to fire if protection was lost.
+  await page.clock.runFor(1000);
+  assert.equal(layoutWrites, 0);
+  assert.deepEqual(
+    (await api(base, null, '/bootstrap?clientId=reopen-acceptance')).layout,
+    layoutBeforeReplacement,
+  );
   assert.equal(await page.evaluate(() => performance.timeOrigin), timeOrigin);
   assert.deepEqual(await drafts(page), originalDrafts);
   assert.deepEqual(errors, []);
   report.checks.push(
-    'replacement database with same entry ID/revision rejects old save; both stores and original drafts preserved; local UTF-8 download; sticky protection after original database returns',
+    'replacement desktop database rejects old layout changes; VM draft stays on its original binding and downloads locally; desktop protection remains after the original database returns',
   );
 } catch (error) {
   console.error(error);

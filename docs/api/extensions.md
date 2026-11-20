@@ -2,7 +2,7 @@
 
 [API index](README.md)
 
-Installed applications use a separate catalog, immutable HTML packages and one private JSON document per application. The [extensions service](../../apps/server/internal/extensions) owns validation, persistence and runtime sessions; the [desktop application feature](../../apps/dashboard/src/features/extensions) owns the browser broker and recovery UI. These endpoints do not address virtual documents, host files or execution targets. [Storage ownership](../storage.md#installed-application-storage) and [desktop integration](../desktop.md) describe those boundaries.
+Installed applications use a separate catalog, immutable HTML packages and one private JSON document per application. The [extensions service](../../apps/server/internal/extensions) owns validation, persistence and runtime sessions; the [desktop application feature](../../apps/dashboard/src/features/extensions) owns the browser broker and recovery UI. These endpoints do not address host files or execution targets. [Storage ownership](../storage.md#installed-application-storage) and [desktop integration](../desktop.md) describe those boundaries.
 
 ## Access
 
@@ -59,7 +59,7 @@ HTML must be nonempty UTF-8 without NUL and at most **512 KiB**. The service enc
 }
 ```
 
-`storeId` is the persistent UUID of this extension store, separate from the virtual-document database identity. Results include uninstalled records so saved data and restored windows keep their original application identity. Each record includes `icon` only when declared by its package, using the same safe names. The catalog does not include HTML or user data.
+`storeId` is the persistent UUID of this extension store, separate from the desktop database identity. Results include uninstalled records so saved data and restored windows keep their original application identity. Each record includes `icon` only when declared by its package, using the same safe names. The catalog does not include HTML or user data.
 
 ## Local management
 

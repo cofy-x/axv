@@ -215,7 +215,9 @@ export async function verifyVMProjectPreview({
     const isolation = await page.evaluate(async (desktopOrigin) => {
       let denied = false;
       try {
-        await fetch(`${desktopOrigin}/api/entries`);
+        await fetch(
+          `${desktopOrigin}/api/bootstrap?clientId=preview-isolation`,
+        );
       } catch {
         denied = true;
       }

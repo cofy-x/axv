@@ -16,7 +16,7 @@ HTTPS Host must exactly match the enrolled `.ts.net` origin. A supplied Origin m
 
 ## Routes and lifecycle
 
-Authenticated remote access includes the production UI, virtual documents and desktop state, Host Terminal, host directory selection, host project files and document exchange, Codex and the browser compute gateway. These capabilities operate with the deployment account's existing permissions. Remote access does not sandbox host shells or host project paths.
+Authenticated remote access includes the production UI, desktop state, Host Terminal, host directory selection, host project files, Codex and the browser compute gateway. These capabilities operate with the deployment account's existing permissions. Remote access does not sandbox host shells or host project paths.
 
 [Notification history and browser subscription routes](notifications.md#routes-and-access) are explicitly admitted for the owner. Pocket Alert configuration and sender-key rotation retain their machine-local guards; notification links grant no additional authority.
 

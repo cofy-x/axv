@@ -27,9 +27,6 @@ func TestDatabaseReplacementRejectsCodexBeforeExecution(t *testing.T) {
 		{"GET", "/sessions/original"}, {"PATCH", "/sessions/original"},
 		{"POST", "/sessions/original/resume"}, {"GET", "/sessions/original/runs/original"},
 		{"POST", "/sessions/original/runs/original/activity/review"},
-		{"GET", "/sessions/original/runs/original/context"},
-		{"POST", "/sessions/original/runs/original/context"},
-		{"DELETE", "/sessions/original/runs/original/context/batch"},
 		{"POST", "/sessions/original/runs/original/end"},
 		{"GET", "/sessions/original/runs/original/terminal"},
 	} {

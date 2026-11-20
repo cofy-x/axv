@@ -159,7 +159,7 @@ async function host(page: Page, state: ReturnType<typeof fixture>) {
   return manager;
 }
 
-test('application menus follow VM selection and retain the owning view', async ({
+test('application menus follow the active VM view and retain its selection', async ({
   page,
   hasTouch,
 }, info) => {
@@ -177,24 +177,21 @@ test('application menus follow VM selection and retain the owning view', async (
   await expect(menuItem(page, 'Stop')).toBeDisabled();
   await capture(page, info, 'selected-vm-application-menu');
   await menus.screenshot({ path: info.outputPath('vm-application-panel.png') });
-  await page
-    .getByRole('button', { name: 'Pin Selected VM menu', exact: true })
-    .click();
-  const pinned = page.locator(
-    '.ns-pinned-menu[data-owner-window-id="machines:main"]',
-  );
-  await expect(pinned).toBeVisible();
-  await menuItem(pinned, 'Inspect').click();
+  const selectedVM = page.getByRole('menu', {
+    name: 'Selected VM',
+    exact: true,
+  });
+  await menuItem(selectedVM, 'Inspect').click();
   const inspector = page.locator('[data-app-id="machine-inspector"]');
   await expect(inspector).toBeVisible();
-  await expect(menuItem(pinned, 'Start')).toBeEnabled();
+  await expect(selectedVM).toHaveCount(0);
   await expect(
     menus.getByRole('button', { name: 'Selected VM', exact: true }),
   ).toHaveCount(0);
-  await pinned
-    .getByRole('button', { name: 'Close Selected VM menu', exact: true })
-    .click();
-  await activate(page, manager);
+  await activate(page, manager, hasTouch);
+  await applicationMenu(page, 'Selected VM', hasTouch);
+  await expect(menuItem(selectedVM, 'Start')).toBeEnabled();
+  await page.keyboard.press('Escape');
   await applicationMenu(page, 'View', hasTouch);
   await menuItem(page, 'Environment').click();
   await expect(manager.locator('.machines-environment')).toBeVisible();
@@ -497,7 +494,7 @@ test('a ready guest without terminal capability gives a concrete disabled reason
   expect(state.terminalReads).toBe(0);
 });
 
-test('narrow guest terminal menus keep clear and end bound to their original shell', async ({
+test('narrow guest terminal menus clear and end only the selected shell', async ({
   page,
 }, info) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -564,7 +561,6 @@ test('narrow guest terminal menus keep clear and end bound to their original she
     'connected',
   );
   await expect(output(first)).toContainText('GUEST guest-shell-1');
-  const firstWindowId = await first.getAttribute('data-window-id');
   const more = first.getByRole('button', {
     name: 'More guest terminal actions',
     exact: true,
@@ -585,19 +581,6 @@ test('narrow guest terminal menus keep clear and end bound to their original she
   await capture(page, info, 'guest-terminal-more-390');
   await page.keyboard.press('Escape');
   await expect(more).toBeFocused();
-  await more.press('Enter');
-  await page
-    .getByRole('button', { name: 'Pin Session menu', exact: true })
-    .click();
-  const pinned = page.locator('.ns-pinned-menu').filter({
-    has: page.getByRole('menuitem', { name: 'End Session', exact: true }),
-  });
-  await expect(pinned).toHaveAttribute('data-owner-window-id', firstWindowId!);
-  const title = (await pinned.locator('.ns-menu-title').boundingBox())!;
-  await page.mouse.move(title.x + title.width / 2, title.y + title.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(110, 520, { steps: 4 });
-  await page.mouse.up();
   await activate(page, manager);
   await manager
     .getByRole('button', { name: 'New Terminal', exact: true })
@@ -608,13 +591,16 @@ test('narrow guest terminal menus keep clear and end bound to their original she
     'connected',
   );
   await expect(output(second)).toContainText('GUEST guest-shell-2');
-  await pinned.getByRole('menuitem', { name: 'Clear', exact: true }).click();
+  await page
+    .getByRole('button', { name: 'Window Overview', exact: true })
+    .click();
+  await first.getByRole('button', { name: /^Switch to / }).click();
+  await expect(first).toHaveClass(/is-active/);
+  await actionMenu(page, first, 'More guest terminal actions', 'Clear');
   await expect(output(first)).not.toContainText('GUEST guest-shell-1');
   await expect(output(second)).toContainText('GUEST guest-shell-2');
   expect(input).toHaveLength(0);
-  await pinned
-    .getByRole('menuitem', { name: 'End Session', exact: true })
-    .click();
+  await actionMenu(page, first, 'More guest terminal actions', 'End Session');
   const confirmation = page.getByRole('dialog', {
     name: 'End guest terminal?',
     exact: true,
@@ -640,9 +626,7 @@ test('narrow guest terminal menus keep clear and end bound to their original she
     'running',
     'running',
   ]);
-  await pinned
-    .getByRole('menuitem', { name: 'End Session', exact: true })
-    .click();
+  await actionMenu(page, first, 'More guest terminal actions', 'End Session');
   await confirmation
     .getByRole('button', { name: 'End Session', exact: true })
     .click();

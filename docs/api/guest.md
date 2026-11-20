@@ -2,7 +2,7 @@
 
 [API index](README.md)
 
-Commands, detachable terminals and local SSH access run inside one selected VM, independently of host terminals and virtual documents.
+Commands, detachable terminals and local SSH access run inside one selected VM, independently of host terminals.
 
 Command and terminal routes are nested under `/machines/:id/guest`: the browser base is `/api/compute/machines/:id/guest`, and the private host socket uses `/v1/machines/:id/guest`. They require a machine with running intent and observed running state, a compatible image contract and a matching runtime capability handshake. `exec`, `terminals`, `ssh` and `network` each require their corresponding declared and runtime-confirmed capability; missing capabilities return `unsupported` while basic VM management remains available. The [compute access boundary](README.md#access-and-identity-boundaries) applies. The host injects per-machine guest authentication; browser clients never receive that token. Guest protocol version is **3**, using vsock port **1024** for Firecracker and a private Unix socket for Lima. JSON bodies accept one object with no unknown fields, limited to **64 KiB** unless a route specifies otherwise. Older guest protocols are rejected; [guest access provisioning](../vm-platform.md#guest-ssh-and-network-access) describes provider upgrade requirements.
 
@@ -106,7 +106,7 @@ These controls serve trusted development commands running as the same guest `axv
 
 ## Boundaries
 
-Private guest `POST /v1/shutdown` is used only by the host lifecycle controller and is not exposed by the gateway. It requires guest authentication and returns `202 { accepted: true }` after the guest's supervisor command succeeds; command failure or its three-second deadline returns `503 shutdown_failed`. Acceptance does not confirm that the VM has exited: the host still observes provider shutdown. [VM ownership](../vm-platform.md#guest-execution) describes provider-specific shutdown. [Virtual-document routes](files.md) and their opaque entry IDs retain their separate contract. Project-file routes are separate from command and terminal lifetime/permission contracts.
+Private guest `POST /v1/shutdown` is used only by the host lifecycle controller and is not exposed by the gateway. It requires guest authentication and returns `202 { accepted: true }` after the guest's supervisor command succeeds; command failure or its three-second deadline returns `503 shutdown_failed`. Acceptance does not confirm that the VM has exited: the host still observes provider shutdown. [VM ownership](../vm-platform.md#guest-execution) describes provider-specific shutdown. Project-file routes are separate from command and terminal lifetime/permission contracts.
 
 See [VM architecture](../vm-platform.md) for guest ownership and restart behavior. [Host Terminal](host-terminal.md) and [host Codex](host-codex.md) run on the host and use different process-lifetime contracts.
 

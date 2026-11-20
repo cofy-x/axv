@@ -71,7 +71,6 @@ export function codexMoreMenu(
   commands: WindowCommands,
   windowId: string,
   actions: {
-    attachments: () => void;
     projectFiles: () => void;
     projectFilesAvailable: boolean;
   },
@@ -89,7 +88,6 @@ export function codexMoreMenu(
   return [
     ...codexEditMenu(commands, windowId),
     { separator: true },
-    { label: 'Attachments', action: actions.attachments },
     {
       label: 'Project Files',
       disabled: !actions.projectFilesAvailable,
@@ -133,7 +131,7 @@ export function openVMProjectCodex(
 export const codexEnvironmentApp: AppDefinition = {
   id: 'codex-environment',
   title: 'Codex Environment',
-  icon: 'info',
+  icon: 'sliders',
   kind: 'panel',
   launchable: false,
   component: CodexEnvironment,
@@ -216,7 +214,6 @@ export function createCodexApp(commands: WindowCommands): AppDefinition {
                 label: 'Project',
                 items: (
                   [
-                    ['Attachments', 'codex:attachments'],
                     ['Project Files', 'codex:project-files'],
                     ['Tasks', 'codex:tasks'],
                     ['Host Terminal', 'codex:terminal'],

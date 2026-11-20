@@ -63,9 +63,6 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/host/codex/sessions/{id}/resume", h.handle(h.resume))
 	mux.HandleFunc("GET /api/host/codex/sessions/{id}/runs/{run}", h.handle(h.getRun))
 	mux.HandleFunc("POST /api/host/codex/sessions/{id}/runs/{run}/activity/review", h.handle(h.reviewActivity))
-	mux.HandleFunc("GET /api/host/codex/sessions/{id}/runs/{run}/context", h.handle(h.contextBatches))
-	mux.HandleFunc("POST /api/host/codex/sessions/{id}/runs/{run}/context", h.handle(h.queueContext))
-	mux.HandleFunc("DELETE /api/host/codex/sessions/{id}/runs/{run}/context/{batch}", h.handle(h.cancelContext))
 	mux.HandleFunc("POST /api/host/codex/sessions/{id}/runs/{run}/end", h.handle(h.end))
 	mux.HandleFunc("GET /api/host/codex/sessions/{id}/runs/{run}/terminal", h.handle(h.connect))
 }
@@ -82,37 +79,6 @@ func (h *Handler) reviewActivity(w http.ResponseWriter, r *http.Request) {
 	}
 	session, err := h.manager.ReviewActivity(r.Context(), r.PathValue("id"), r.PathValue("run"), input.EventID)
 	respond(w, map[string]any{"session": session}, err)
-}
-
-func (h *Handler) contextBatches(w http.ResponseWriter, r *http.Request) {
-	if !h.allowed(w, r, false) {
-		return
-	}
-	batches, err := h.manager.ContextBatches(r.Context(), r.PathValue("id"), r.PathValue("run"))
-	respond(w, map[string]any{"batches": batches}, err)
-}
-
-func (h *Handler) queueContext(w http.ResponseWriter, r *http.Request) {
-	if !h.allowed(w, r, true) {
-		return
-	}
-	var input struct {
-		RequestID   string   `json:"requestId"`
-		SnapshotIDs []string `json:"snapshotIds"`
-	}
-	if !decode(w, r, &input) {
-		return
-	}
-	batch, err := h.manager.QueueContext(r.Context(), r.PathValue("id"), r.PathValue("run"), codex.ContextInput{RequestID: input.RequestID, SnapshotIDs: input.SnapshotIDs})
-	respond(w, map[string]any{"batch": batch}, err)
-}
-
-func (h *Handler) cancelContext(w http.ResponseWriter, r *http.Request) {
-	if !h.allowed(w, r, true) {
-		return
-	}
-	batch, err := h.manager.CancelContext(r.Context(), r.PathValue("id"), r.PathValue("run"), r.PathValue("batch"))
-	respond(w, map[string]any{"batch": batch}, err)
 }
 
 func (h *Handler) handle(handler http.HandlerFunc) http.HandlerFunc {

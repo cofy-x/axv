@@ -315,7 +315,7 @@ func (m *Manager) End(ctx context.Context, id, runID string) (Session, error) {
 		return Session{}, err
 	}
 	if final(session.Status) {
-		return m.describe(session), contextError(m.closeContext(ctx, session))
+		return m.describe(session), nil
 	}
 	// Recover any confirmed identity, but an unreadable runner state must not
 	// prevent the user from ending this explicitly selected runtime.
@@ -339,7 +339,6 @@ func (m *Manager) End(ctx context.Context, id, runID string) (Session, error) {
 	if err != nil {
 		return Session{}, err
 	}
-	contextCloseErr := m.closeContext(ctx, session)
 	output, killErr := m.sessionTmux(m.ctx, path, session, "kill-session", "-t", target(session))
 	if killErr != nil && !missingRuntime(output) {
 		return Session{}, failure(Unavailable, "end_failed", "The Codex run could not be ended. Try again.")
@@ -348,8 +347,5 @@ func (m *Manager) End(ctx context.Context, id, runID string) (Session, error) {
 		return m.describe(session), err
 	}
 	session, err = m.store.UpdateCodexRun(m.ctx, session.RunID, "ended", "Session ended.")
-	if err == nil {
-		err = contextError(contextCloseErr)
-	}
 	return m.describe(session), err
 }

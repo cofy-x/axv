@@ -4,22 +4,20 @@
 
 **Your personal cloud for VMs and coding agents.**
 
-AXV brings coding-agent sessions, development VMs, files and terminals together in a Window Maker-inspired browser desktop. Run your workstation on your own Mac or Linux machine.
+AXV brings coding-agent sessions, development VMs, project files and terminals together in a Window Maker-inspired browser desktop. Run your workstation on your own Mac or Linux machine.
 
 [Get started](#install-and-use) · [User guide](docs/usage.md) · [Documentation](docs/README.md) · [Contribute](CONTRIBUTING.md)
-
-![AXV desktop with Welcome, a real Codex conversation and the Codex application menu](docs/assets/axv-desktop.png)
-
-_Welcome and a real Codex conversation, with the active app's commands in the desktop menu._
 
 ## Why AXV
 
 - **Keep coding work together.** Start and reopen Codex conversations for host or registered VM projects, with activity and requests for input in the same desktop.
 - **Give projects a VM workspace.** Manage development machines, retain project volumes, and run persistent build and test tasks with logs and cancellation.
-- **Work across windows.** Organize files, edit Markdown and use host shells across four desktop workspaces.
+- **Work across windows.** Browse host projects, edit VM project files and use host shells across four desktop workspaces.
 - **Reach your own workstation.** Connect through optional Tailscale HTTPS or Cloudflare Access while work and storage stay on your deployment machine.
 
 ## Install and use
+
+See [AXV4 recovery](docs/storage.md#recover-data-from-axv4-before-switching) before switching an older profile to AXV5.
 
 ### Download for Linux amd64
 
@@ -56,10 +54,10 @@ Windows VM hosting is unavailable. Before upgrading an existing profile, review 
 <details>
 <summary>Feature availability and validation details</summary>
 
-- **Desktop applications:** Multiple windows, four workspaces, Dock, menus, Inspector, Markdown documents, host and VM Project Files, host terminals and sandboxed HTML extensions are implemented. Extensions have private app data and no document, host-command, agent or VM access. Host shells end on disconnect. See the [user guide](docs/usage.md) for application behavior and persistence boundaries.
+- **Desktop applications:** Multiple windows, four workspaces, Dock, menus, VM Inspector, host and VM Project Files, host terminals and sandboxed HTML extensions are implemented. Extensions have private app data and no host-command, agent or VM access. Host shells end on disconnect. See the [user guide](docs/usage.md) for application behavior and persistence boundaries.
 - **Browser installation:** Basic installation and online use, installed-icon reopening, lock-screen return and disconnected draft retention/downloads are user-verified on macOS Chrome and physical iPhone Safari over Tailscale HTTPS. Edge installation and remaining native authorization/storage/lifecycle checks are pending. See [browser installation](docs/startup.md#browser-installation) for the supported workflow.
 - **VM workflows:** Native Linux amd64 Firecracker lifecycle, controller recovery, network isolation, enhanced Guest access, retained projects and persistent task/resource-failure handling are validated with the published Firecracker Guest baseline documented in [Linux Guest setup](docs/startup.md#linux-guest-bundle-installation). Project creation/cloning, local browser previews and offline backup/restoration workflows are validated on Linux amd64. Shared-cache preparation and basic VM lifecycle are also validated on macOS ARM64 with independent profiles. Scale remains unvalidated. A separate non-root, non-login operator check covers CLI permissions and lifecycle; VM desktop access from a login account remains unvalidated. See [VM workflows](docs/usage.md#virtual-machines).
-- **Codex:** Conversation recovery, names, archives, run activity, approvals/input, saved-document attachments and scoped VM-project tools are implemented. Real-provider continuity, saved-history recovery, approvals/input, completion, interruption and exact-event recovery across restarts are validated on Linux amd64. Failed-turn handling is validated under a controlled transport fault; real-model VM edits, builds and tests are validated with a locally built Firecracker image. Claude Code remains unimplemented. See [Codex usage](docs/usage.md#codex).
+- **Codex:** Conversation recovery, names, archives, run activity, approvals/input and scoped VM-project tools are implemented. Real-provider continuity, saved-history recovery, approvals/input, completion, interruption and exact-event recovery across restarts are validated on Linux amd64. Failed-turn handling is validated under a controlled transport fault; real-model VM edits, builds and tests are validated with a locally built Firecracker image. Claude Code remains unimplemented. See [Codex usage](docs/usage.md#codex).
 - **Remote access:** Tailscale production HTTPS, owner authorization and terminal continuity are validated on Linux through an independent authenticated client and physical iPhone Safari; physical tablet acceptance is pending. Cloudflare desktop Access and explicit project-service publications have controlled coverage; live Cloudflare acceptance remains pending. See [remote setup](docs/startup.md#remote-access) and [Cloudflare setup](docs/startup.md#cloudflare-access).
 - **Work notifications:** Optional Web Push and Pocket Alert delivery are implemented and disabled by default. Recovery, encryption/transport and browser flows have controlled coverage; live device delivery, installed iPhone/iPad background receipt and disconnected-tailnet behavior remain unvalidated. See [work notifications](docs/usage.md#work-notifications).
 - **GitHub project review:** Read-only repository associations, PRs and exact-commit checks are validated through controlled coverage and real GitHub reads with a current-source Linux amd64 Guest and browser. A Guest declaring the `project-github` capability is required; see [GitHub project review](docs/usage.md#github-project-review) for image requirements.

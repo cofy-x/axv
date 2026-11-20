@@ -30,14 +30,14 @@ import { usePointerGesture } from './usePointerGesture';
 import { resolveApplication } from './applications';
 
 interface GestureOptions {
-  props: Pick<DesktopProps, 'apps' | 'icons' | 'iconSnap' | 'onTrashIcons'>;
+  props: Pick<DesktopProps, 'apps' | 'icons' | 'iconSnap'>;
   layout: DesktopLayout;
   setLayout: Dispatch<SetStateAction<DesktopLayout>>;
   workArea: Bounds;
   iconArea: Bounds;
   mobile: boolean;
   overview: boolean;
-  setOverview: Dispatch<SetStateAction<boolean>>;
+  dismissOverview: () => void;
   overlayActive: boolean;
   api: DesktopAPI;
   activateWindow: (id: string) => void;
@@ -58,7 +58,7 @@ export function useDesktopGestures({
   iconArea,
   mobile,
   overview,
-  setOverview,
+  dismissOverview,
   overlayActive,
   api,
   activateWindow,
@@ -75,7 +75,6 @@ export function useDesktopGestures({
   );
   const [iconPreview, setIconPreview] = useState<Record<string, Point>>({});
   const [marquee, setMarquee] = useState<Bounds | null>(null);
-  const [trashHover, setTrashHover] = useState(false);
   const desktopRef = useRef<HTMLDivElement>(null);
   const lastTouch = useRef<{ id: string; time: number } | null>(null);
   const pendingTouchActivation = useRef<{ id: string; time: number } | null>(
@@ -114,7 +113,7 @@ export function useDesktopGestures({
     const keydown = (event: KeyboardEvent) => {
       if (overlayActive) return;
       if (event.key === 'Escape') {
-        setOverview(false);
+        if (overview) dismissOverview();
         setSelection([]);
       }
       if (
@@ -173,19 +172,6 @@ export function useDesktopGestures({
         props.icons
           .filter((icon) => selection.includes(icon.id))
           .forEach(openIcon);
-      }
-      if (
-        (event.key === 'Delete' || event.key === 'Backspace') &&
-        selection.length
-      ) {
-        event.preventDefault();
-        const trashable = props.icons
-          .filter(
-            (icon) =>
-              selection.includes(icon.id) && icon.trashable && !icon.isTrash,
-          )
-          .map((icon) => icon.id);
-        if (trashable.length) props.onTrashIcons?.(trashable);
       }
     };
     document.addEventListener('keydown', keydown);
@@ -274,7 +260,6 @@ export function useDesktopGestures({
     let delta = { x: 0, y: 0 };
     let dragged = false;
     let longPressed = false;
-    let overTrash = false;
     const timer =
       event.pointerType === 'touch'
         ? globalThis.setTimeout(() => {
@@ -285,12 +270,6 @@ export function useDesktopGestures({
             });
           }, 550)
         : undefined;
-    const trash = props.icons.find((item) => item.isTrash);
-    const trashable = props.icons
-      .filter(
-        (item) => ids.includes(item.id) && item.trashable && !item.isTrash,
-      )
-      .map((item) => item.id);
     beginGesture(
       event,
       (clientPoint) => {
@@ -305,29 +284,17 @@ export function useDesktopGestures({
         delta = { x: dx, y: dy };
         next = moveIconGroup(starting, ids, delta, dragArea);
         setIconPreview(next);
-        const trashPoint = trash ? starting[trash.id] : undefined;
-        overTrash =
-          trashable.length > 0 &&
-          !!trashPoint &&
-          !ids.includes(trash!.id) &&
-          point.x >= trashPoint.x &&
-          point.x <= trashPoint.x + ICON_SIZE.width &&
-          point.y >= trashPoint.y &&
-          point.y <= trashPoint.y + ICON_SIZE.height;
-        setTrashHover(overTrash);
       },
       (_, cancelled) => {
         globalThis.clearTimeout(timer);
         setIconPreview({});
-        setTrashHover(false);
         if (cancelled) {
           pendingTouchActivation.current = null;
           setSelection(prior);
           return;
         }
         if (longPressed || (dragged && touchScroll)) return;
-        if (dragged && overTrash) props.onTrashIcons?.(trashable);
-        else if (dragged) {
+        if (dragged) {
           if (props.iconSnap)
             next = moveIconGroup(starting, ids, delta, dragArea, true);
           setLayout((current) => ({
@@ -424,8 +391,6 @@ export function useDesktopGestures({
     setSelection,
     windowPreview,
     marquee,
-    trashHover,
-    setTrashHover,
     desktopRef,
     iconArea,
     iconContentHeight: fittedIcons.height,

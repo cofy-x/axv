@@ -67,6 +67,22 @@ export function PixelIcon({
           />
           <path fill="none" stroke="#555" d="M5 27h23V6" />
         </g>
+      ) : name === 'guest-terminal' ? (
+        <g {...common}>
+          <path fill="#697772" d="M3.5 25.5h25l2 3v2h-29v-2z" />
+          <path fill="#80a498" d="M2.5 3.5h27v22h-27z" />
+          <path stroke="#cce0d8" fill="none" d="M4 23V5h24" />
+          <path stroke="#48665e" fill="none" d="M4 24h24V6" />
+          <path fill="#20362f" d="M6.5 7.5h19v14h-19z" />
+          <path
+            stroke="#d7eee0"
+            strokeWidth="2"
+            fill="none"
+            d="m10 11 4 3-4 3m7 1h5"
+          />
+          <path stroke="#cad6d1" fill="none" d="M4 28h24" />
+          <path fill="#374942" stroke="none" d="M21 28h6v2h-6z" />
+        </g>
       ) : name === 'inspector' ? (
         <g {...common}>
           <path fill="#ccc" d="M3.5 2.5h21v25h-21z" />
@@ -140,6 +156,19 @@ export function PixelIcon({
           <path stroke="#fff" d="M7 3h17M5 28h22" />
           <path stroke="#999" d="M8 19h11M24 19h1M7 29h18" />
         </g>
+      ) : name === 'welcome-door' ? (
+        <g {...common}>
+          <path fill="#777" stroke="none" d="M2 28h28v3H2z" />
+          <path fill="#c7c7bc" d="M5.5 27.5v-24h21v24z" />
+          <path fill="#eee3bb" d="M8.5 27.5v-21h15v21z" />
+          <path fill="#fff5d7" stroke="none" d="M9 7h5v20H9zM9 26h6l-3 4H3z" />
+          <path fill="#6c8c83" d="m15.5 8.5 8-2v21l-8 3z" />
+          <path fill="#496961" stroke="none" d="M22 9h1v18l-7 3v-2l6-2z" />
+          <path stroke="#aeccc0" fill="none" d="M17 10l4-1M17.5 11v14" />
+          <path fill="#ead9a0" stroke="none" d="M17 18h2v2h-2z" />
+          <path stroke="#f0f0e8" fill="none" d="M6.5 25V4.5h18" />
+          <path stroke="#666" fill="none" d="M28 5v22M23 29h6" />
+        </g>
       ) : name === 'appearance' ? (
         <g {...common}>
           <path fill="#bbb" d="M1.5 4.5h29v23h-29z" />
@@ -154,21 +183,19 @@ export function PixelIcon({
         </g>
       ) : name === 'applications' ? (
         <g {...common}>
-          <path fill="#777" stroke="none" d="M4 29h26v2H4z" />
-          <path fill="#a7b6ab" d="M20.5 6.5h7v14h-7z" />
-          <path fill="none" stroke="#e7eee8" d="M22 8h4M22 9v10" />
-          <path fill="#ddd" d="M4.5 4.5h10v16h-10z" />
-          <path fill="#6f897a" stroke="none" d="M5 5h9v4H5z" />
-          <path fill="none" stroke="#fff" d="M6 11h6M6 13h5" />
-          <path fill="#eee" d="M10.5 1.5h12v20h-12z" />
-          <path fill="#455d50" stroke="none" d="M11 2h11v4H11z" />
-          <path fill="#dce6dc" d="M13.5 8.5h6v5h-6z" />
-          <path fill="none" stroke="#fff" d="M12 7v12M14 9h4" />
-          <path fill="#aaa" d="M2.5 15.5h27v14h-27z" />
-          <path fill="none" stroke="#eee" d="M3 16h25M3 17v11" />
-          <path fill="none" stroke="#777" d="M5 28h23V17" />
-          <path fill="#777" d="M11.5 20.5h9v4h-9z" />
-          <path fill="none" stroke="#eee" d="M13 22h6" />
+          <path fill="#777" stroke="none" d="m9 27 7 3 11-4 2 1-13 5-8-4z" />
+          <path fill="#bbab84" d="m4.5 15.5 11.5 5v10l-11.5-5z" />
+          <path fill="#9b8b66" d="m16 20.5 11.5-5v10l-11.5 5z" />
+          <path fill="#615642" d="m4.5 15.5 11.5-5 11.5 5-11.5 5z" />
+          <path fill="#cbbd98" d="m4.5 15.5-3-4 11-5 3.5 4z" />
+          <path fill="#b6a780" d="m16 10.5 3.5-4 11 5-3 4z" />
+          <path fill="#759087" d="m10.5 2.5 12 2.5v12.5L16 20.5l-5.5-2.5z" />
+          <path fill="#416258" stroke="none" d="m12 4 9 2v3l-9-2z" />
+          <path fill="none" stroke="#e5eee8" d="M12 8.5v5m2-3 5 1m-5 2 4 1" />
+          <path fill="#e1d3af" d="m4.5 15.5 11.5 5-3.5 4-11-5z" />
+          <path fill="#d3c39e" d="m16 20.5 11.5-5 3 4-11 5z" />
+          <path fill="none" stroke="#f9eed2" d="m4 17 9.5 4M18.5 21l9-4" />
+          <path fill="none" stroke="#736344" d="m6 25 8.5 3.5m3-.5 8.5-3.5" />
         </g>
       ) : name === 'checklist' ? (
         <g {...common}>
@@ -228,6 +255,35 @@ export function PixelIcon({
           <path fill="#6d8f7c" d="M20.5 25.5h2v2h-2z" />
           <path fill="none" stroke="#777" d="M7 26h9M27 10v17" />
           <path fill="none" stroke="#eee" d="M9 5h16l2 2" />
+        </g>
+      ) : name === 'new-virtual-machine' ? (
+        <g {...common}>
+          <path fill="#898b8a" d="M6.5 3.5h15l4 4v22h-19z" />
+          <path fill="#c8cac8" d="M2.5 7.5h19v22h-19z" />
+          <path stroke="#f1f2ee" fill="none" d="M4 27V9h16M8 5h13l2 2" />
+          <path fill="#59756b" d="M6.5 12.5h11v8h-11z" />
+          <path stroke="#c1d6ca" d="M8 14h8M8 17h5" />
+          <path stroke="#727b76" d="M7 25h7" />
+          <path fill="#a9c8ac" d="M20.5 16.5h5v4h5v5h-5v5h-5v-5h-5v-5h5z" />
+          <path stroke="#e5f0df" fill="none" d="M22 20v-2h2M17 22h4" />
+          <path stroke="#5f8768" fill="none" d="M26 24h3M24 25v4h-2" />
+        </g>
+      ) : name === 'virtual-machine-inspector' ? (
+        <g {...common}>
+          <path fill="#767d7c" d="M6.5 2.5h16l4 4v20h-20z" />
+          <path fill="#c0c8c5" d="M2.5 6.5h20v20h-20z" />
+          <path stroke="#ebf0eb" fill="none" d="M4 25V8h17M8 4h14l2 2" />
+          <path fill="#59756b" d="M6.5 11.5h12v8h-12z" />
+          <path stroke="#c1d6ca" d="M8 13h9M8 16h5" />
+          <path stroke="#747e79" d="M7 23h7" />
+          <path fill="#b09360" d="m24.5 21.5 6 6-3 3-6-6z" />
+          <path stroke="#f0daa6" d="m25 24 4 4" />
+          <path
+            fill="#d7bd83"
+            d="M17.5 13.5h7v2h2v2h2v7h-2v2h-2v2h-7v-2h-2v-2h-2v-7h2v-2h2z"
+          />
+          <path fill="#d3e2dc" d="M18.5 16.5h5v2h2v5h-2v2h-5v-2h-2v-5h2z" />
+          <path stroke="#f9faf2" fill="none" d="M18 21v-2h2v-1h2" />
         </g>
       ) : name === 'network' ? (
         <g {...common}>
@@ -301,6 +357,48 @@ export function PixelIcon({
             stroke="none"
             d="M14 7h5v4h-5zM12 14h7v10h3v2H11v-2h3v-8h-2z"
           />
+        </g>
+      ) : name === 'sliders' ? (
+        <g {...common}>
+          <path fill="#777" stroke="none" d="M5 6h25v24H5z" />
+          <path fill="#bcbfba" d="M2.5 3.5h26v25h-26z" />
+          <path fill="none" stroke="#eee" d="M4 5h23M4 6v21" />
+          <path fill="#e0e4dc" d="M6.5 7.5h18v17h-18z" />
+          <path fill="none" stroke="#a5ada3" d="M8 13h15M8 19h15" />
+          <path fill="none" stroke="#454e48" d="M10.5 9v14m5-14v14m5-14v14" />
+          <path fill="#7f9d8e" d="M8.5 11.5h4v3h-4zM13.5 17.5h4v3h-4z" />
+          <path fill="#b9ac7c" d="M18.5 13.5h4v3h-4z" />
+          <path stroke="#e7eee8" d="M9 12h3M14 18h3M19 14h3" />
+          <path fill="none" stroke="#717a74" d="M5 27h22V6" />
+        </g>
+      ) : name === 'document-return' ? (
+        <g {...common}>
+          <path fill="#777" stroke="none" d="M6 4h19v26H6z" />
+          <path fill="#f0e9d3" d="M3.5 2.5h15l6 6v20h-21z" />
+          <path fill="#c9c5ad" d="M18.5 2.5v6h6" />
+          <path fill="none" stroke="#fff8e9" d="M5 4h12M5 5v22" />
+          <path fill="none" stroke="#8f9282" d="M7 10h10M7 14h12M7 18h7" />
+          <path fill="#6f9b87" d="m12.5 22.5 8-6v3h5v-5h4v6l-3 3h-6v5z" />
+          <path fill="none" stroke="#c2ded0" d="m15 22 4-3m3 1h4v-4" />
+          <path fill="none" stroke="#3a6153" d="M22 22h4l2-2" />
+        </g>
+      ) : name === 'notification-bell' ? (
+        <g {...common}>
+          <path fill="#777" stroke="none" d="M10 29h12v1H10z" />
+          <path fill="#c3a469" d="M13.5 3.5h5v5h-5z" />
+          <path fill="#976f3f" d="M13.5 22.5h5v4l-1 2h-3l-1-2z" />
+          <path
+            fill="#c9ab6c"
+            d="M12.5 6.5h7v2h3v3h2v8l3 3v3h-23v-3l3-3v-8h2v-3h3z"
+          />
+          <path
+            fill="#f1dfae"
+            stroke="none"
+            d="M13 7h6v2h-6v2h-3v3H8v-2h2V9h3zM8 19h2v2l-2 2H5z"
+          />
+          <path fill="#977946" stroke="none" d="M22 11h2v8l3 3v3H5v-2h17z" />
+          <path stroke="#f3e6bf" fill="none" d="M7 23.5h17" />
+          <path stroke="#5e472e" fill="none" d="M6 25.5h20" />
         </g>
       ) : (
         <g {...common}>
@@ -401,6 +499,7 @@ export function WindowControlIcon({
     | 'unshade'
     | 'maximize'
     | 'restore'
+    | 'overview'
     | 'close';
 }) {
   return (
@@ -429,6 +528,8 @@ export function WindowControlIcon({
         <path d="M3 3h10v10H3zM3 5h10" />
       ) : icon === 'restore' ? (
         <path d="M6 6h7v7H6zM3 10V3h7v3" />
+      ) : icon === 'overview' ? (
+        <path d="M5 11H2V2h9v4M2 4h9M5 6h9v8H5zM5 8.5h9" />
       ) : (
         <path d="m4 4 8 8M12 4l-8 8" />
       )}

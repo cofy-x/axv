@@ -1,15 +1,10 @@
-import { desktopDatabase } from '../../shared/api/desktop';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, IconButton, PixelIcon, StatusBar } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
-import { useFilesystemData } from '../../filesystem/context';
-import { useDraftNamespace } from '../../shared/drafts/context';
 import { canTransferWindowFocus } from '../../shared/desktop/focus-transfer';
 import { useDesktopResource as useResource } from '../../shared/api/useDesktopResource';
-import { RequestIdentity } from '../../shared/api/request-identity';
 import { MarkdownPreview, isMarkdownFilename } from '../../shared/markdown';
 import { CodeEditor } from '../../shared/code-editor';
-import { RelatedDocuments } from '../document-workflow/RelatedDocuments';
 import { projectsAPI } from './api';
 import { projectFileLocation } from './navigation';
 
@@ -43,14 +38,7 @@ export function HostProjectFiles({
   const [refresh, setRefresh] = useState(0);
   const [raw, setRaw] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [feedback, setFeedback] = useState('');
   const [error, setError] = useState('');
-  const { databaseId } = useDraftNamespace();
-  const transfer = useRef(
-    new RequestIdentity(`${databaseId}:project-import:${id}`),
-  );
-  const filesystem = useFilesystemData();
   const load = useCallback(
     () => projectsAPI.files(id, folder, cursor),
     [id, folder, cursor],
@@ -121,54 +109,6 @@ export function HostProjectFiles({
     return () => observer.disconnect();
   }, [interactive, reading, file]);
 
-  async function copyToDocuments() {
-    if (!selected || busy) return;
-    setBusy(true);
-    setError('');
-    setFeedback('');
-    try {
-      const payload = {
-        path: selected.path,
-        sha256: selected.sha256,
-        parentId: 'documents',
-      };
-      const requestId = transfer.current.for({ id, ...payload });
-      const { entry } = await projectsAPI.import(id, {
-        ...payload,
-        requestId,
-      });
-      desktopDatabase.assertUnchanged();
-      const cleared = transfer.current.complete(requestId);
-      if (mounted.current) {
-        setFeedback(`Copied ${entry.name} to Documents.`);
-        if (!cleared)
-          setError(
-            'The copy was saved, but its retry identity could not be cleared in this browser.',
-          );
-      }
-      try {
-        await filesystem.refresh();
-        desktopDatabase.assertUnchanged();
-        if (mounted.current)
-          desktop.openApp(
-            'notes',
-            { entryId: entry.id },
-            { title: entry.name },
-          );
-      } catch {
-        if (mounted.current)
-          setError(
-            'The copy was saved, but the document list could not be refreshed. Refresh Documents before opening it.',
-          );
-      }
-    } catch (error) {
-      if (mounted.current)
-        setError(error instanceof Error ? error.message : String(error));
-    } finally {
-      if (mounted.current) setBusy(false);
-    }
-  }
-
   async function download(path: string) {
     if (!mounted.current || !path || downloadPending.current) return;
     downloadPending.current = true;
@@ -202,10 +142,7 @@ export function HostProjectFiles({
           <IconButton
             icon="refresh"
             label="Refresh"
-            onClick={() => {
-              setRefresh((value) => value + 1);
-              setFeedback('');
-            }}
+            onClick={() => setRefresh((value) => value + 1)}
           />
         </div>
         <div
@@ -213,12 +150,6 @@ export function HostProjectFiles({
           role="group"
           aria-label="Project actions"
         >
-          <Button
-            disabled={!selected || busy}
-            onClick={() => void copyToDocuments()}
-          >
-            {busy ? 'Copying…' : 'Copy to Documents'}
-          </Button>
           <IconButton
             icon="more"
             label="More project actions"
@@ -282,11 +213,6 @@ export function HostProjectFiles({
           {error || listing.error}
         </p>
       )}
-      {feedback && (
-        <p className="project-feedback" role="status">
-          {feedback}
-        </p>
-      )}
       {downloading && (
         <p className="project-feedback" role="status">
           Downloading…
@@ -309,7 +235,6 @@ export function HostProjectFiles({
                   onClick={(event) => {
                     event.currentTarget.focus({ preventScroll: true });
                     setError('');
-                    setFeedback('');
                     if (entry.kind === 'folder') navigate(entry.path);
                     else
                       desktop.updateWindowState(window.id, {
@@ -418,7 +343,6 @@ export function HostProjectFiles({
           )}
         </section>
       </div>
-      <RelatedDocuments target={{ projectId: id }} desktop={desktop} />
       <StatusBar>
         {file || folder || 'Project root'}
         {selected && ` · ${selected.size.toLocaleString()} bytes`}

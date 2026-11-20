@@ -17,17 +17,12 @@ func (b unreadBody) Read([]byte) (int, error) {
 	return 0, nil
 }
 
-func TestDatabaseReplacementRejectsProjectAndDocumentOperations(t *testing.T) {
+func TestDatabaseReplacementRejectsProjectOperations(t *testing.T) {
 	original, replacement := setup(t), setup(t)
 	for _, route := range []struct{ method, path string }{
 		{"GET", "/api/projects"}, {"POST", "/api/projects"},
 		{"GET", replacement.base() + "/files"}, {"GET", replacement.base() + "/file?path=secret"},
 		{"GET", replacement.base() + "/download?path=secret"},
-		{"POST", replacement.base() + "/import"}, {"POST", replacement.base() + "/export"},
-		{"GET", "/api/documents/readme/links"}, {"GET", "/api/documents/readme/origins"},
-		{"POST", "/api/documents/readme/links"}, {"GET", "/api/document-links?projectId=old"},
-		{"DELETE", "/api/document-links/old"}, {"GET", "/api/documents/readme/snapshots"},
-		{"POST", "/api/documents/readme/snapshots"}, {"GET", "/api/document-snapshots/old"},
 	} {
 		for _, id := range []string{"", original.databaseID} {
 			t.Run(route.method+route.path+id, func(t *testing.T) {
@@ -48,8 +43,9 @@ func TestDatabaseReplacementRejectsProjectAndDocumentOperations(t *testing.T) {
 	if entries, err := os.ReadDir(replacement.root); err != nil || len(entries) != 0 {
 		t.Fatalf("stale request modified host project: %v %v", entries, err)
 	}
-	if snapshots, err := replacement.store.Snapshots(context.Background(), "readme"); err != nil || len(snapshots) != 0 {
-		t.Fatalf("stale request created snapshots: %v %v", snapshots, err)
+	projects, err := replacement.store.Projects(context.Background())
+	if err != nil || len(projects) != 1 || projects[0].ID != replacement.project.ID {
+		t.Fatalf("stale requests changed project registrations: %+v %v", projects, err)
 	}
 	// Access errors take precedence over the missing identity precondition.
 	r := httptest.NewRequest("GET", "http://127.0.0.1:7777/api/projects", nil)
