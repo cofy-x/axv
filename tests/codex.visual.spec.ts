@@ -92,7 +92,7 @@ for (const viewport of [
     await expect(
       window.getByRole('button', { name: 'More Codex actions', exact: true }),
     ).toBeInViewport();
-    for (const label of ['Attachments', 'Page Up', 'Page Down'])
+    for (const label of ['Sessions', 'Page Up', 'Page Down'])
       await expect(
         window.getByRole('button', { name: label, exact: true }),
       ).toBeInViewport();

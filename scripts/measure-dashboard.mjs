@@ -76,6 +76,7 @@ let fixture;
 let server;
 let browser;
 let requestContext;
+let databaseId;
 let shuttingDown;
 let setupPromise = Promise.resolve();
 let interrupted = false;
@@ -132,7 +133,10 @@ for (const [signal, code] of [
 async function api(method, path, data) {
   const response = await requestContext[method](`${server.base}${path}`, {
     data,
-    headers: { Origin: server.base },
+    headers: {
+      Origin: server.base,
+      ...(databaseId ? { 'X-AXV-Database-ID': databaseId } : {}),
+    },
   });
   if (!response.ok())
     throw new Error(
@@ -356,6 +360,11 @@ async function setup() {
   browser = await chromium.launch();
   checkInterrupted();
   requestContext = await request.newContext();
+  ({ databaseId } = await api(
+    'get',
+    '/api/bootstrap?clientId=dashboard-measure-fixture',
+  ));
+  if (!databaseId) throw new Error('The measurement database has no identity.');
   checkInterrupted();
 }
 
@@ -365,7 +374,7 @@ try {
   const preparation = await createPage({ width: 1400, height: 1000 });
   await preparation.page.goto(server.base);
   await expect(
-    preparation.page.locator('[data-window-id="files:documents"]'),
+    preparation.page.locator('[data-app-id="welcome"]'),
   ).toBeVisible();
   let template;
   await expect
@@ -432,7 +441,7 @@ try {
         const ready = async () => {
           if (scenario === 'default')
             await expect(
-              target.page.locator('[data-window-id="files:documents"]'),
+              target.page.locator('[data-app-id="welcome"]'),
             ).toBeVisible();
           if (scenario === 'restored-codex-project') {
             await expect(

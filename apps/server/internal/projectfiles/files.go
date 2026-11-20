@@ -1,10 +1,7 @@
-// Package projectfiles owns explicit host projects and snapshot exchange with
-// virtual documents. Project paths never act as virtual-document entry IDs.
+// Package projectfiles owns root-constrained access to registered host projects.
 package projectfiles
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"io"
 	"io/fs"
 	"os"
@@ -57,7 +54,7 @@ func relative(value string, allowRoot bool) (string, error) {
 	}
 	for _, part := range strings.Split(value, "/") {
 		if strings.HasPrefix(part, ".axv-export-") {
-			return "", problem("invalid_path", "Internal transfer paths are not project files.")
+			return "", problem("invalid_path", "AXV staging paths are not project files.")
 		}
 	}
 	return value, nil
@@ -112,7 +109,6 @@ func fileError(err error) error {
 	return problem("file_unavailable", "The project path is unavailable or leaves its registered root.")
 }
 
-func digest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
 func text(data []byte) bool {
 	return utf8.Valid(data) && strings.IndexFunc(string(data), func(r rune) bool { return unicode.IsControl(r) && r != '\n' && r != '\r' && r != '\t' && r != '\f' }) < 0
 }

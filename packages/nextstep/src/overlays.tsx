@@ -2,7 +2,6 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import { Button, Field, PixelIcon } from './controls';
 import { MenuLabel } from './MenuLabel';
-import { usePointerGesture } from './desktop/usePointerGesture';
 import { useViewport } from './desktop/useViewport';
 import type {
   DialogOptions,
@@ -34,17 +33,13 @@ export function MenuOverlay({
   request,
   pointerPosition,
   close,
-  pin,
 }: {
   request: MenuRequest;
   pointerPosition: RefObject<Point | null>;
   close: (action?: () => void) => void;
-  pin?: (point: Point) => void;
 }) {
-  const beginGesture = usePointerGesture();
   const viewport = useViewport();
   const compact = viewport.width < 600;
-  const [dragPoint, setDragPoint] = useState<Point | null>(null);
   const menuId = useId();
   const [levels, setLevels] = useState<MenuLevel[]>([
     {
@@ -167,14 +162,8 @@ export function MenuOverlay({
           }
           className={`ns-menu${request.options?.width === 'wide' ? ' is-wide' : ''}`}
           style={{
-            left:
-              levelIndex === 0 && dragPoint
-                ? dragPoint.x
-                : (positions[levelIndex]?.x ?? level.point.x),
-            top:
-              levelIndex === 0 && dragPoint
-                ? dragPoint.y
-                : (positions[levelIndex]?.y ?? level.point.y),
+            left: positions[levelIndex]?.x ?? level.point.x,
+            top: positions[levelIndex]?.y ?? level.point.y,
           }}
           onKeyDown={(event) => {
             event.stopPropagation();
@@ -244,69 +233,8 @@ export function MenuOverlay({
             </div>
           )}
           {levelIndex === 0 && request.options?.title && (
-            <div
-              className="ns-menu-title"
-              onPointerDown={(event) => {
-                if (
-                  event.button !== 0 ||
-                  !pin ||
-                  !request.options?.pin ||
-                  (event.target as HTMLElement).closest('button')
-                )
-                  return;
-                event.preventDefault();
-                const origin = { x: event.clientX, y: event.clientY };
-                const start = positions[0] ?? request.point;
-                let next = start;
-                let moved = false;
-                beginGesture(
-                  event,
-                  (point) => {
-                    if (
-                      Math.abs(point.x - origin.x) +
-                        Math.abs(point.y - origin.y) >
-                      4
-                    )
-                      moved = true;
-                    next = {
-                      x: Math.max(
-                        2,
-                        Math.min(
-                          window.innerWidth - 190,
-                          start.x + point.x - origin.x,
-                        ),
-                      ),
-                      y: Math.max(
-                        26,
-                        Math.min(
-                          window.innerHeight - 45,
-                          start.y + point.y - origin.y,
-                        ),
-                      ),
-                    };
-                    setDragPoint(next);
-                  },
-                  (_, cancelled) => {
-                    setDragPoint(null);
-                    if (moved && !cancelled) pin(next);
-                  },
-                );
-              }}
-            >
+            <div className="ns-menu-title">
               <span>{request.options.title}</span>
-              {pin && request.options.pin && (
-                <button
-                  type="button"
-                  aria-label={`Pin ${request.options.title} menu`}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ')
-                      event.stopPropagation();
-                  }}
-                  onClick={() => pin(positions[0] ?? request.point)}
-                >
-                  ◆
-                </button>
-              )}
             </div>
           )}
           {level.items.map((item, index) =>

@@ -29,7 +29,6 @@ const resource: DesktopIcon = {
   params: { resourceId: 'original' },
   label: 'Original resource',
   icon: 'document',
-  trashable: true,
 };
 
 describe('desktop application shortcuts', () => {
@@ -51,7 +50,6 @@ describe('desktop application shortcuts', () => {
       launchApp,
     );
     expect(host.map((icon) => icon.id)).toEqual([launcher.id, resource.id]);
-    expect(host[0].trashable).toBe(false);
     host[0].onOpen?.();
     expect(launchApp).toHaveBeenCalledExactlyOnceWith(app.id);
     const generated = desktopApplicationIcons(
@@ -67,7 +65,6 @@ describe('desktop application shortcuts', () => {
     expect(generated[1]).toMatchObject({
       appId: app.id,
       applicationLauncher: true,
-      trashable: false,
     });
   });
 
@@ -105,7 +102,6 @@ describe('desktop application shortcuts', () => {
       appId: app.id,
       label: app.id,
       applicationLauncher: true,
-      trashable: false,
       status: { label: 'Unavailable', tone: 'warning' },
     });
     missing.onOpen?.();
@@ -137,7 +133,6 @@ describe('desktop application shortcuts', () => {
     expect(
       desktopApplicationIcons(hidden, [app], [hostLauncher, resource], launch),
     ).toEqual([resource]);
-    expect(hostLauncher).not.toHaveProperty('trashable');
   });
 
   it('preserves both geometry maps and unrelated user state through toggles and arrangement', () => {

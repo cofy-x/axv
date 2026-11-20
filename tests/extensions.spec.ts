@@ -610,15 +610,9 @@ test('application icons follow explicit desktop choices across reload, hiding an
   );
   await expect(managerIcon).toHaveCount(0);
   await showApplicationOnDesktop(page, 'Application Manager', touch);
-  for (const appId of ['files', 'welcome']) {
-    await activate(page, page.locator(`[data-app-id="${appId}"]`), touch);
-    await choose(
-      page
-        .locator(`[data-app-id="${appId}"]`)
-        .getByRole('button', { name: /^Close / }),
-      touch,
-    );
-  }
+  const welcome = page.locator('[data-app-id="welcome"]');
+  await activate(page, welcome, touch);
+  await choose(welcome.getByRole('button', { name: /^Close / }), touch);
   await expect(managerIcon).toBeVisible();
   await expect(checklistIcon).toHaveCount(0);
   const openIcon = async (icon: Locator) => {

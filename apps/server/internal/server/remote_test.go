@@ -111,29 +111,56 @@ func TestAuthenticatedRemoteDesktopSharesFeatureHandlers(t *testing.T) {
 			t.Fatalf("private route %s: HTTP %d", path, w.Code)
 		}
 	}
-	body := `{"parentId":"documents","name":"Remote document.txt","kind":"file","content":"saved remotely"}`
+	for _, route := range []struct{ method, path string }{
+		{"GET", "/api/entries"},
+		{"POST", "/api/import"},
+		{"DELETE", "/api/trash"},
+		{"GET", "/api/documents/test/snapshots"},
+		{"GET", "/api/document-links"},
+		{"GET", "/api/document-snapshots/test"},
+		{"POST", "/api/projects/test/import"},
+		{"POST", "/api/projects/test/export"},
+		{"GET", "/api/host/codex/sessions/test/runs/test-run/context"},
+		{"POST", "/api/host/codex/sessions/test/runs/test-run/context"},
+		{"DELETE", "/api/host/codex/sessions/test/runs/test-run/context/test-batch"},
+	} {
+		if w := request(route.method, route.path, "https://workstation.example.ts.net", "{}"); w.Code != http.StatusNotFound {
+			t.Fatalf("retired remote route %s %s: HTTP %d: %s", route.method, route.path, w.Code, w.Body.String())
+		}
+		r := httptest.NewRequest(route.method, route.path, strings.NewReader("{}"))
+		r.Host, r.RemoteAddr = "localhost:3001", "127.0.0.1:12345"
+		r.Header.Set("Origin", "http://localhost:3001")
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set(httpaccess.DatabaseIdentityHeader, manager.DatabaseID())
+		w := httptest.NewRecorder()
+		shared.ServeHTTP(w, r)
+		if w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), `"code":"not_found"`) {
+			t.Fatalf("retired local route %s %s: HTTP %d: %s", route.method, route.path, w.Code, w.Body.String())
+		}
+	}
+	body := `{"wallpaper":"dither","iconSnap":false,"clock24Hour":true}`
 	for _, origin := range []string{"", "http://localhost:3001", "https://other.example.ts.net"} {
-		if w := request("POST", "/api/entries", origin, body); w.Code != http.StatusForbidden {
+		if w := request("PUT", "/api/preferences", origin, body); w.Code != http.StatusForbidden {
 			t.Fatalf("mutation origin %q: HTTP %d: %s", origin, w.Code, w.Body.String())
 		}
 	}
-	w := request("POST", "/api/entries", "https://workstation.example.ts.net", body)
-	if w.Code != http.StatusCreated {
-		t.Fatalf("authorized document save: HTTP %d: %s", w.Code, w.Body.String())
+	w := request("PUT", "/api/preferences", "https://workstation.example.ts.net", body)
+	if w.Code != http.StatusOK {
+		t.Fatalf("authorized preference save: HTTP %d: %s", w.Code, w.Body.String())
 	}
-	// The local listener immediately sees the same committed document.
-	r := httptest.NewRequest("GET", "/api/entries", nil)
+	// The local listener immediately sees the same committed preferences.
+	r := httptest.NewRequest("GET", "/api/bootstrap?clientId=remote-browser", nil)
 	r.Header.Set(httpaccess.DatabaseIdentityHeader, manager.DatabaseID())
 	r.Host, r.RemoteAddr = "localhost:3001", "127.0.0.1:12345"
 	local := httptest.NewRecorder()
 	shared.ServeHTTP(local, r)
-	if local.Code != http.StatusOK || !strings.Contains(local.Body.String(), "Remote document.txt") {
-		t.Fatalf("shared local document: HTTP %d: %s", local.Code, local.Body.String())
+	if local.Code != http.StatusOK || !strings.Contains(local.Body.String(), `"wallpaper":"dither"`) {
+		t.Fatalf("shared local preferences: HTTP %d: %s", local.Code, local.Body.String())
 	}
 	owner = "456"
-	for _, path := range []string{"/", "/assets/app.js", "/manifest.webmanifest", "/icons/axv-192.png", "/icons/axv-512.png", "/icons/apple-touch-icon.png", "/api/entries", "/api/terminal/info"} {
+	for _, path := range []string{"/", "/assets/app.js", "/manifest.webmanifest", "/icons/axv-192.png", "/icons/axv-512.png", "/icons/apple-touch-icon.png", "/api/bootstrap?clientId=remote-browser", "/api/terminal/info"} {
 		w := request("GET", path, "", "")
-		if w.Code != http.StatusForbidden || strings.Contains(w.Body.String(), "saved remotely") || strings.Contains(w.Body.String(), "desktop UI") {
+		if w.Code != http.StatusForbidden || strings.Contains(w.Body.String(), `"wallpaper":"dither"`) || strings.Contains(w.Body.String(), "desktop UI") {
 			t.Fatalf("unauthorized %s: HTTP %d: %s", path, w.Code, w.Body.String())
 		}
 	}

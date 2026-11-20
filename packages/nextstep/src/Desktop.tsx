@@ -1,22 +1,25 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { PixelIcon } from './controls';
+import { PixelIcon, WindowControlIcon } from './controls';
 import {
+  APPLICATION_MENU_HEIGHT,
+  APPLICATION_MENU_TOP,
+  DEFAULT_WORKSPACE_COUNT,
   DOCK_SIZE,
   ICON_SIZE,
   desktopLayoutMode,
   iconWorkArea,
   minimizedWindows,
   windowWorkArea,
+  workspaceLabel,
 } from './model';
 import { DialogOverlay, MenuOverlay } from './overlays';
 import type { DesktopProps, Point } from './types';
-import { Clip } from './desktop/Clip';
 import { Dock } from './desktop/Dock';
 import { DesktopCanvas } from './desktop/DesktopCanvas';
-import { ApplicationMenu, PinnedMenus } from './desktop/MenuPanels';
+import { ApplicationMenu } from './desktop/MenuPanels';
 import { WindowFrame } from './desktop/WindowFrame';
-import { createDesktopContextMenu, createDesktopMenus } from './desktop/menus';
+import { createDesktopContextMenu } from './desktop/menus';
 import { useDesktopController } from './desktop/useDesktopController';
 import { useDesktopGestures } from './desktop/useDesktopGestures';
 import { useViewport } from './desktop/useViewport';
@@ -27,8 +30,14 @@ export function Desktop(props: DesktopProps) {
   const viewport = useViewport();
   const { mobile, short, sideDock } = desktopLayoutMode(viewport);
   const controller = useDesktopController(props);
-  const { layout, overview, setOverview, api, menu, dialogRequest } =
-    controller;
+  const { layout, setOverview, api, menu, dialogRequest } = controller;
+  const windowCount = layout.windows.length;
+  const overview = controller.overview && windowCount > 0;
+  const overviewButton = useRef<HTMLButtonElement>(null);
+  const dismissOverview = () => {
+    setOverview(false);
+    overviewButton.current?.focus({ preventScroll: true });
+  };
   const desktopProps = { ...props, icons: controller.icons };
   const minimized = minimizedWindows(layout.windows, layout.currentWorkspaceId);
   const baseWorkArea = windowWorkArea(viewport, minimized.length > 0);
@@ -95,14 +104,13 @@ export function Desktop(props: DesktopProps) {
     },
     mobile,
     overview,
-    setOverview,
+    dismissOverview,
     overlayActive: !!menu || !!dialogRequest,
     api,
     activateWindow: controller.activateWindow,
     focusDesktop: controller.focusDesktop,
     desktopItems,
   });
-  const { groups } = createDesktopMenus(desktopProps, api, gestures.selection);
   const workspace = layout.workspaces.find(
     (item) => item.id === layout.currentWorkspaceId,
   )!;
@@ -114,7 +122,11 @@ export function Desktop(props: DesktopProps) {
   useEffect(() => {
     const capture = (event: FocusEvent) => {
       const target = event.target;
-      if (!(target instanceof HTMLElement)) return;
+      if (
+        !(target instanceof HTMLElement) ||
+        target.classList.contains('ns-overview-pick')
+      )
+        return;
       const frame = target.closest<HTMLElement>('[data-window-id]');
       if (frame?.dataset.windowId)
         focusedElements.current.set(frame.dataset.windowId, target);
@@ -164,6 +176,7 @@ export function Desktop(props: DesktopProps) {
     layout.activeWindowId,
     layout.currentWorkspaceId,
     dialogRequest,
+    overview,
     hasStatus,
     noticeFocusRevision,
   ]);
@@ -172,7 +185,7 @@ export function Desktop(props: DesktopProps) {
     api.contextMenu(
       desktopItems([]),
       { x: rect.left, y: rect.bottom },
-      { title: 'Workspace', pin: { kind: 'desktop', title: 'Workspace' } },
+      { title: 'Workspace' },
     );
   };
   const recordPointer = (event: { clientX: number; clientY: number }) => {
@@ -186,6 +199,8 @@ export function Desktop(props: DesktopProps) {
       style={
         {
           '--ns-viewport-height': `${viewport.height}px`,
+          '--ns-application-menu-top': `${APPLICATION_MENU_TOP}px`,
+          '--ns-application-menu-height': `${APPLICATION_MENU_HEIGHT}px`,
           '--ns-dock-size': `${DOCK_SIZE}px`,
           '--ns-dock-width': `${DOCK_SIZE}px`,
           '--ns-icon-width': `${ICON_SIZE.width}px`,
@@ -197,23 +212,55 @@ export function Desktop(props: DesktopProps) {
         <header className="ns-desktop-status">
           <button
             type="button"
+            className="ns-workspace-menu-button"
             aria-label="Workspace menu"
+            title="Workspace menu"
+            aria-haspopup="menu"
             onClick={(event) => {
               event.currentTarget.focus();
               openWorkspaceMenu(event.currentTarget);
             }}
           >
-            ◆ Workspace
+            {props.workspaceMenuIcon ?? <PixelIcon name="computer" size={17} />}
           </button>
-          <span>{workspace.name}</span>
-          <button
-            type="button"
-            onClick={api.showAllWindows}
-            aria-label="Show all windows"
-            title="Switch windows: Ctrl+F6"
+          <div
+            className="ns-workspace-switcher"
+            role="group"
+            aria-label="Workspaces"
           >
-            {layout.windows.length}{' '}
-            {layout.windows.length === 1 ? 'window' : 'windows'}
+            {layout.workspaces.map((item, index) => {
+              const current = item.id === workspace.id;
+              if (index >= DEFAULT_WORKSPACE_COUNT && !current) return null;
+              const label = workspaceLabel(item, index);
+              return (
+                <button
+                  type="button"
+                  key={item.id}
+                  aria-label={label}
+                  aria-pressed={current}
+                  aria-keyshortcuts={index < 9 ? `Alt+${index + 1}` : undefined}
+                  title={label}
+                  onClick={() => api.switchWorkspace(item.id)}
+                >
+                  {index + 1}
+                </button>
+              );
+            })}
+          </div>
+          <button
+            ref={overviewButton}
+            type="button"
+            className="ns-window-overview"
+            onClick={(event) => {
+              event.currentTarget.focus({ preventScroll: true });
+              api.showAllWindows();
+            }}
+            aria-label="Window Overview"
+            aria-pressed={overview}
+            disabled={windowCount === 0}
+            title={`Window Overview · ${windowCount} open ${windowCount === 1 ? 'window' : 'windows'}`}
+          >
+            <WindowControlIcon icon="overview" />
           </button>
           <span
             className={`ns-connection ${props.connectionStatus ?? 'connected'}`}
@@ -228,17 +275,10 @@ export function Desktop(props: DesktopProps) {
         </header>
         <DesktopCanvas
           icons={desktopProps.icons}
-          onTrashIcons={props.onTrashIcons}
           gestures={gestures}
+          inert={overview || undefined}
         />
-        <Clip
-          props={desktopProps}
-          api={api}
-          layout={layout}
-          setLayout={controller.setLayout}
-          compact={short}
-        />
-        <ApplicationMenu groups={groups} api={api} props={desktopProps} />
+        {!overview && <ApplicationMenu api={api} props={desktopProps} />}
         {controller.persistenceBlocked && (
           <div className="ns-recovery" role="alert">
             This desktop layout is damaged or uses a newer version. Changes are
@@ -249,10 +289,7 @@ export function Desktop(props: DesktopProps) {
           </div>
         )}
         {overview && (
-          <div
-            className="ns-overview-backdrop"
-            onClick={() => setOverview(false)}
-          >
+          <div className="ns-overview-backdrop" onClick={dismissOverview}>
             <span>Choose a window · Escape to return</span>
           </div>
         )}
@@ -265,7 +302,6 @@ export function Desktop(props: DesktopProps) {
               app={app}
               index={overview ? index : workspace.order.indexOf(win.id)}
               api={api}
-              viewport={viewport}
               workArea={workArea}
               mobile={mobile}
               overview={overview}
@@ -278,12 +314,6 @@ export function Desktop(props: DesktopProps) {
             />
           );
         })}
-        <PinnedMenus
-          props={desktopProps}
-          api={api}
-          layout={layout}
-          setLayout={controller.setLayout}
-        />
         {minimized.length > 0 && (
           <div
             className="ns-miniwindow-shelf"
@@ -340,7 +370,6 @@ export function Desktop(props: DesktopProps) {
             request={menu}
             pointerPosition={pointerPosition}
             close={controller.dismissMenu}
-            pin={controller.pinMenu}
           />
         )}
       </div>

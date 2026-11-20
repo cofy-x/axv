@@ -6,9 +6,8 @@ import (
 	"testing"
 )
 
-func TestCodexSessionsPreserveDocumentsIdentityAndLayout(t *testing.T) {
+func TestCodexSessionsPreserveDatabaseIdentityAndLayout(t *testing.T) {
 	s := testStore(t)
-	file := create(t, s, "documents", "Kept.txt", "file")
 	identity, err := s.DatabaseID(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -52,9 +51,8 @@ func TestCodexSessionsPreserveDocumentsIdentityAndLayout(t *testing.T) {
 	}
 	bootstrap, err := s.Bootstrap(ctx, "client")
 	if err != nil || bootstrap.DatabaseID != identity || string(bootstrap.Layout) != string(layout) {
-		t.Fatalf("session operations changed document state: %+v %v", bootstrap, err)
+		t.Fatalf("session operations changed desktop state: %+v %v", bootstrap, err)
 	}
-	entry(t, s, file.ID)
 }
 
 func TestCodexRoutingPersistsAcrossReopen(t *testing.T) {

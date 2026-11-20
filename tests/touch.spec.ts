@@ -11,15 +11,12 @@ import type { Point } from '@cofy-x/axv-nextstep';
 
 import {
   bounds,
-  actionMenu,
-  createEntry,
   dockEntry,
-  editorWindow,
   expect,
-  filesWindow,
   menuItem,
   openDockOptions,
-  openWorkspaceControls,
+  openWorkspaceShortcutMenu,
+  pinDockApplication,
   switchWorkspace,
   persistedLayout,
   test,
@@ -32,16 +29,19 @@ test('overflowing Dock keeps native touch scrolling separate from launch and ord
   browserName,
 }) => {
   test.skip(!isMobile, 'Runs in the explicit touch projects.');
+  await page.setViewportSize({ width: 320, height: 844 });
+  await pinDockApplication(page, 'Tailscale', true);
   const dock = page.getByRole('complementary', { name: 'Application Dock' });
   const scroller = dock.locator('.ns-dock-scroll');
   const dockMenu = dock.getByRole('button', { name: 'Dock menu', exact: true });
   const menuBounds = await bounds(dockMenu);
-  expect(menuBounds.width).toBeGreaterThanOrEqual(44);
-  expect(menuBounds.height).toBeGreaterThanOrEqual(44);
+  expect(menuBounds).toMatchObject({ width: 52, height: 52 });
+  await expect(
+    dock.getByRole('button', { name: 'Add application to Dock', exact: true }),
+  ).toHaveCount(0);
   await expect(
     dock.getByRole('button', { name: 'Clock and date' }),
   ).toHaveCount(0);
-  await expect(dock.locator('.ns-dock-options')).toHaveCount(0);
   const order = () =>
     dock
       .locator('[data-dock-app]')
@@ -50,9 +50,10 @@ test('overflowing Dock keeps native touch scrolling separate from launch and ord
       );
   const before = await order();
   const firstEntry = dockEntry(page, before[0]!);
+  await expect(firstEntry.getByRole('button')).toHaveCount(1);
   const launcher = await bounds(firstEntry.locator('.ns-dock-tile'));
-  expect(launcher.width).toBe(56);
-  expect(launcher.height).toBe(56);
+  expect(launcher).toMatchObject({ width: 52, height: 52 });
+  expect(menuBounds.y).toBe(launcher.y);
   const windows = await page.locator('[data-window-id]').count();
   const scrollLeft = () => scroller.evaluate((element) => element.scrollLeft);
   const scrollEnd = await scroller.evaluate(
@@ -198,17 +199,9 @@ test('overflowing Dock keeps native touch scrolling separate from launch and ord
     .toEqual(reordered);
   await page.reload();
   await expect.poll(order).toEqual(reordered);
-  // Pinning is available from the fixed menu without launching the application.
+  // The Dock menu can pin the application without launching it.
   const beforePin = await page.locator('[data-window-id]').count();
-  await dockMenu.tap();
-  await menuItem(
-    page.getByRole('menu', { name: 'Dock', exact: true }),
-    'Add application',
-  ).tap();
-  await menuItem(
-    page.getByRole('menu', { name: 'Add application', exact: true }),
-    'Preferences',
-  ).tap();
+  await pinDockApplication(page, 'Preferences', true);
   await expect(dockEntry(page, 'appearance')).toHaveCount(1);
   await expect(page.locator('[data-window-id]')).toHaveCount(beforePin);
   const preferencesMenu = await openDockOptions(page, 'appearance', true);
@@ -224,96 +217,47 @@ test('overflowing Dock keeps native touch scrolling separate from launch and ord
     .toBe(false);
 });
 
-test('touch can navigate columns, inspect, edit and switch workspaces without right click', async ({
+test('touch preserves the project folder input through window and workspace changes', async ({
   page,
-  request,
   isMobile,
 }, info) => {
-  test.skip(
-    !isMobile,
-    'This scenario runs in the explicit Chromium and WebKit touch projects.',
-  );
-  const folder = await createEntry(request, 'E2E Touch folder', 'folder');
-  const document = await createEntry(
-    request,
-    'E2E Touch.txt',
-    'file',
-    folder.id,
-    'A touch-accessible document.',
-  );
-  await page.reload();
-  const files = filesWindow(page);
-  await files.getByRole('option', { name: folder.name, exact: true }).tap();
-  const column = files.getByRole('listbox', {
-    name: `${folder.name} column`,
+  test.skip(!isMobile, 'Runs in the explicit touch projects.');
+  await dockEntry(page, 'project-files').locator('.ns-dock-tile').tap();
+  const project = page.locator('[data-app-id="project-files"]');
+  const path = project.getByRole('textbox', {
+    name: 'Host project directory',
     exact: true,
   });
-  await expect(column).toBeVisible();
-  const file = column.getByRole('option', {
-    name: document.name,
-    exact: true,
-  });
-  await file.tap();
-  await file.tap();
-  await expect(files).toBeVisible();
-  await expect(file).toHaveAttribute('aria-selected', 'true');
-  await expect(editorWindow(page, document.id)).toHaveCount(0);
-  await files.getByRole('button', { name: 'Inspect', exact: true }).tap();
-  const inspector = page.locator('[data-app-id="inspector"]');
-  await expect(inspector.getByTestId('inspector-name')).toHaveText(
-    document.name,
-  );
-  await actionMenu(page, inspector, 'More inspector actions', 'Rename', true);
-  const rename = page.getByRole('dialog', { name: 'Rename', exact: true });
-  await expect(
-    rename.getByRole('textbox', { name: 'Name', exact: true }),
-  ).toHaveValue(document.name);
-  await rename.getByRole('button', { name: 'Cancel', exact: true }).tap();
-  await expect(rename).toBeHidden();
-  await expect(inspector.getByTestId('inspector-name')).toHaveText(
-    document.name,
-  );
-  await inspector.getByRole('button', { name: 'Open', exact: true }).tap();
-  const editor = editorWindow(page, document.id);
-  await editor
-    .getByRole('textbox', { name: 'Document text' })
-    .fill('A touch draft survives workspace switching.');
+  const pending = '/example/unfinished-project';
+  await path.fill(pending);
   await switchWorkspace(page, 2, true);
-  await expect(editor).toBeHidden();
+  await expect(project).toBeHidden();
   await switchWorkspace(page, 1, true);
-  await expect(
-    editor.getByRole('textbox', { name: 'Document text' }),
-  ).toHaveValue('A touch draft survives workspace switching.');
-  await editor.getByRole('button', { name: /^Window menu for / }).tap();
+  await expect(path).toHaveValue(pending);
+  const windowMenu = project.getByRole('button', { name: /^Window menu for / });
+  await windowMenu.tap();
   await menuItem(page, 'Shade').tap();
-  await expect(
-    editor.getByRole('textbox', { name: 'Document text' }),
-  ).toBeHidden();
-  await editor.getByRole('button', { name: /^Window menu for / }).tap();
+  await expect(path).toBeHidden();
+  await windowMenu.tap();
   await menuItem(page, 'Unshade').tap();
-  await editor.getByRole('button', { name: /^Window menu for / }).tap();
-  await menuItem(page, 'Add to Clip').tap();
-  await openWorkspaceControls(page, true);
-  await menuItem(page, 'Shortcuts').tap();
-  await menuItem(page, document.name).tap();
-  await menuItem(page, 'Open').tap();
-  await expect(editor).toBeVisible();
-  await expect(
-    editor.getByRole('textbox', { name: 'Document text' }),
-  ).toHaveValue('A touch draft survives workspace switching.');
-  await editor.getByRole('button', { name: 'Save', exact: true }).tap();
-  await expect(editor.getByTestId('save-status')).toHaveText('Saved');
-  await editor.getByRole('button', { name: /^Miniaturize / }).tap();
-  await expect(editor).toBeHidden();
+  await windowMenu.tap();
+  await menuItem(page, 'Add Workspace Shortcut').tap();
+  await menuItem(
+    await openWorkspaceShortcutMenu(page, 'Project Files', true),
+    'Open',
+  ).tap();
+  await expect(project).toBeVisible();
+  await expect(path).toHaveValue(pending);
+  await project.getByRole('button', { name: /^Miniaturize / }).tap();
+  await expect(project).toBeHidden();
   await page
-    .getByRole('button', { name: `Restore ${document.name}`, exact: true })
+    .getByRole('button', { name: 'Restore Project Files', exact: true })
     .tap();
+  await expect(path).toHaveValue(pending);
   await expect(
-    editor.getByRole('button', { name: /^Close / }),
+    project.getByRole('button', { name: /^Close / }),
   ).toBeInViewport();
-  const path = info.outputPath('390x844-touch-editor.png');
-  await page.screenshot({ path, fullPage: true });
-  await info.attach('touch-editor', { path, contentType: 'image/png' });
+  await captureWorkArea(page, info, 'touch-project-files');
 });
 
 test('touch Terminal supports input, explicit controls and workspace restoration', async ({
@@ -374,55 +318,62 @@ test('touch work area releases the miniwindow row while keeping the Dock and win
   isMobile,
 }, info) => {
   test.skip(!isMobile, 'Runs in the explicit touch projects.');
-  const files = filesWindow(page);
+  await dockEntry(page, 'project-files').locator('.ns-dock-tile').tap();
+  const project = page.locator('[data-app-id="project-files"]');
   const welcome = page.locator('[data-app-id="welcome"]');
-  const fullArea = { x: 4, y: 90, width: 382, height: 690 };
-  const reservedArea = { ...fullArea, height: 614 };
-  await expectRect(files, fullArea);
+  const fullArea = { x: 4, y: 64, width: 382, height: 720 };
+  const reservedArea = { ...fullArea, height: 644 };
+  await expectRect(project, fullArea);
   for (const action of ['Miniaturize', 'Shade', 'Maximize', 'Close'])
     await expect(
-      files.getByRole('button', { name: new RegExp(`^${action} `) }),
+      project.getByRole('button', { name: new RegExp(`^${action} `) }),
     ).toBeInViewport();
   await expect(
-    files.getByRole('button', { name: /^Window menu for / }),
+    project.getByRole('button', { name: /^Window menu for / }),
   ).toBeInViewport();
   await expect(
-    page.getByRole('complementary', { name: 'Workspace Clip' }),
+    page
+      .locator('.ns-desktop-status')
+      .getByRole('button', { name: 'Workspace 1', exact: true }),
   ).toBeInViewport();
   const dockGap = async () => {
-    const frame = await bounds(files);
+    const frame = await bounds(project);
     const dock = await bounds(page.locator('.ns-dock'));
     return dock.y - frame.y - frame.height;
   };
   await expect.poll(dockGap).toBe(4);
-  await files.getByRole('button', { name: /^Window menu for / }).tap();
+  await project.getByRole('button', { name: /^Window menu for / }).tap();
   await menuItem(page, 'All Workspaces').tap();
   await captureWorkArea(page, info, 'without-reserve');
   const welcomeMenu = await openDockOptions(page, 'welcome', true);
   await menuItem(welcomeMenu, 'Welcome').tap();
   await welcome.getByRole('button', { name: /^Miniaturize / }).tap();
-  await expectRect(files, reservedArea);
+  await expectRect(project, reservedArea);
   await expect.poll(dockGap).toBe(80);
   const miniature = page.getByRole('button', {
     name: 'Restore Welcome',
     exact: true,
   });
   await expect(miniature).toBeInViewport();
-  await expect(files.getByRole('button', { name: /^Close / })).toBeInViewport();
+  await expect(
+    project.getByRole('button', { name: /^Close / }),
+  ).toBeInViewport();
   await captureWorkArea(page, info, 'with-miniwindow');
   await switchWorkspace(page, 2, true);
-  await expectRect(files, fullArea);
+  await expectRect(project, fullArea);
   await expect(miniature).toHaveCount(0);
   await expect.poll(dockGap).toBe(4);
   await switchWorkspace(page, 1, true);
-  await expectRect(files, reservedArea);
+  await expectRect(project, reservedArea);
   await miniature.tap();
   await expectRect(welcome, fullArea);
   await welcome.getByRole('button', { name: /^Close / }).tap();
-  await expectRect(files, fullArea);
-  await openDockOptions(page, 'files', true);
-  await expect(menuItem(page, 'Documents')).toBeInViewport();
-  await menuItem(page, 'Documents').tap();
-  await expectRect(files, fullArea);
-  await expect(files.getByRole('button', { name: /^Close / })).toBeInViewport();
+  await expectRect(project, fullArea);
+  await openDockOptions(page, 'project-files', true);
+  await expect(menuItem(page, 'Project Files')).toBeInViewport();
+  await menuItem(page, 'Project Files').tap();
+  await expectRect(project, fullArea);
+  await expect(
+    project.getByRole('button', { name: /^Close / }),
+  ).toBeInViewport();
 });

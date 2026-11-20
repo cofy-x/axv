@@ -80,7 +80,7 @@ func TestMiddlewareAuthorizesActualPeerAndPreservesTransport(t *testing.T) {
 		return ownerIdentity(), nil
 	}
 	m := newMiddleware(t, input)
-	r := request(http.MethodPost, "/api/entries")
+	r := request(http.MethodPut, "/api/preferences")
 	r.Header.Set("Origin", testOrigin)
 	r.Header.Set("X-Forwarded-For", "127.0.0.1")
 	r.Header.Set("Tailscale-User-ID", "456")
@@ -107,7 +107,7 @@ func TestMiddlewareRejectsUnverifiedOrTaggedIdentitiesDespiteForgedHeaders(t *te
 		input := options()
 		input.WhoIs = func(context.Context, string) (Identity, error) { return identity, nil }
 		m := newMiddleware(t, input)
-		r := request(http.MethodGet, "/api/entries")
+		r := request(http.MethodGet, "/api/bootstrap")
 		r.Header.Set("Tailscale-User-ID", "123")
 		r.Header.Set("X-Forwarded-For", "127.0.0.1")
 		w := httptest.NewRecorder()
@@ -147,7 +147,7 @@ func TestMiddlewareRejectsInvalidTransportOrOriginBeforeIdentityLookup(t *testin
 				return Identity{}, nil
 			}
 			m := newMiddleware(t, input)
-			r := request(http.MethodGet, "/api/entries")
+			r := request(http.MethodGet, "/api/bootstrap")
 			tc.change(r)
 			w := httptest.NewRecorder()
 			m.Wrap(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("invalid request reached documents") })).ServeHTTP(w, r)
@@ -307,7 +307,7 @@ func TestMiddlewareCloseInterruptsPartialRequestBodyAndWaitsForHandler(t *testin
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	if _, err := fmt.Fprintf(conn, "POST /api/entries HTTP/1.1\r\nHost: %s\r\nOrigin: %s\r\nContent-Length: 100\r\n\r\n{", server.Listener.Addr(), input.Origin); err != nil {
+	if _, err := fmt.Fprintf(conn, "PUT /api/preferences HTTP/1.1\r\nHost: %s\r\nOrigin: %s\r\nContent-Length: 100\r\n\r\n{", server.Listener.Addr(), input.Origin); err != nil {
 		t.Fatal(err)
 	}
 	select {

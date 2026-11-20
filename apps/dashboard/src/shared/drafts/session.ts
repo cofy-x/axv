@@ -5,32 +5,6 @@ interface SessionStore {
   setItem: (key: string, value: string) => void;
 }
 
-/** Browser tabs have separate session storage; a reload keeps its editor identity. */
-export function editorDraftId(
-  namespace: DraftNamespace,
-  windowId: string,
-  storage?: SessionStore,
-  randomId: () => string = () => crypto.randomUUID(),
-): string {
-  const key = JSON.stringify([
-    'nextstep-editor',
-    namespace.databaseId,
-    namespace.clientId,
-    windowId,
-  ]);
-  try {
-    const session = storage ?? sessionStorage;
-    const existing = session.getItem(key);
-    if (existing) return existing;
-    const id = randomId();
-    session.setItem(key, id);
-    return id;
-  } catch {
-    // The recovery launcher can still discover IndexedDB records without a session pointer.
-    return randomId();
-  }
-}
-
 interface DraftLocks {
   request: (
     name: string,
@@ -47,7 +21,6 @@ export interface EditorSession {
 interface ClaimOptions {
   storage?: SessionStore;
   locks?: DraftLocks;
-  preferredId?: string;
   randomId?: () => string;
 }
 
@@ -68,9 +41,9 @@ export async function claimEditorSession(
   try {
     storage = options.storage ?? sessionStorage;
   } catch {
-    /* Recovery still works through the launcher. */
+    /* Independent draft identities remain available without session storage. */
   }
-  let candidate = options.preferredId || randomId();
+  let candidate = randomId();
   try {
     candidate = storage?.getItem(key) || candidate;
   } catch {
@@ -80,7 +53,7 @@ export async function claimEditorSession(
     try {
       storage?.setItem(key, id);
     } catch {
-      /* IndexedDB remains the source of recoverable records. */
+      /* The application persists its recoverable draft separately. */
     }
   };
   if (options.locks) {
@@ -106,12 +79,7 @@ export async function claimEditorSession(
         });
         if (available) {
           retain(candidate);
-          return {
-            draftId: candidate,
-            ...(options.preferredId && candidate !== options.preferredId
-              ? { recoveryId: options.preferredId }
-              : {}),
-          };
+          return { draftId: candidate };
         }
         candidate = randomId();
       }
@@ -121,19 +89,14 @@ export async function claimEditorSession(
   }
   // Without locks, never trust a possibly cloned tab identity. Offer its old
   // recovery as a copy, and write all new changes under a fresh identity.
-  const previous = options.preferredId || candidate;
   const independent = randomId();
   retain(independent);
-  return { draftId: independent, recoveryId: previous };
+  return { draftId: independent, recoveryId: candidate };
 }
 
 const sessions = new Map<string, Promise<EditorSession>>();
 
-export function getEditorSession(
-  namespace: DraftNamespace,
-  windowId: string,
-  preferredId?: string,
-) {
+export function getEditorSession(namespace: DraftNamespace, windowId: string) {
   const key = JSON.stringify([
     namespace.databaseId,
     namespace.clientId,
@@ -142,7 +105,6 @@ export function getEditorSession(
   let session = sessions.get(key);
   if (!session) {
     session = claimEditorSession(namespace, windowId, {
-      preferredId,
       locks: navigator.locks,
     });
     sessions.set(key, session);

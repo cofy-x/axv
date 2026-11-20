@@ -12,7 +12,7 @@ const DatabaseIdentityHeader = "X-AXV-Database-ID"
 
 // RequireDatabaseIdentity binds a request to the store captured by its owner.
 // Call this after access checks and before reading a body or touching resources.
-// Only browser content navigation and WebSocket upgrades allow query identity.
+// Only the Codex WebSocket upgrade allows query identity.
 func RequireDatabaseIdentity(w http.ResponseWriter, r *http.Request, current string, allowQuery bool) bool {
 	fail := func(status int, code, message string) bool {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")

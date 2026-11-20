@@ -1,9 +1,11 @@
 package storage
 
 import (
+	"bytes"
 	"database/sql"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -57,7 +59,9 @@ func TestMigrationFailureRollsBackEarlierFiles(t *testing.T) {
 	if version != 1 || tables != 0 {
 		t.Fatalf("earlier migration committed: version=%d tables=%d", version, tables)
 	}
-	entry(t, s, "readme")
+	if b, err := s.Bootstrap(ctx, "browser"); err != nil || b.DatabaseID == "" {
+		t.Fatalf("valid initialization failed after rollback: %+v %v", b, err)
+	}
 
 	// The failed files are synthetic future changes, not production migrations.
 	// Retrying after fixing the script must apply the entire pending sequence.
@@ -86,7 +90,7 @@ func TestMigrationFailureRollsBackEarlierFiles(t *testing.T) {
 	}
 }
 
-func TestInitialMigrationAndSeedFailureRollBack(t *testing.T) {
+func TestFailedInitializationRollsBackBaseline(t *testing.T) {
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatal(err)
@@ -96,11 +100,11 @@ func TestInitialMigrationAndSeedFailureRollBack(t *testing.T) {
 	t.Cleanup(func() { s.Close() })
 
 	files := baselineMigrationFiles(t)
-	files["migrations/0002_reject_seed.sql"] = &fstest.MapFile{
-		Data: []byte("CREATE TRIGGER reject_seed BEFORE INSERT ON entries BEGIN SELECT RAISE(ABORT, 'seed rejected'); END;"),
+	files["migrations/0002_reject_initialization.sql"] = &fstest.MapFile{
+		Data: []byte("INSERT INTO nonexistent_table VALUES (1);"),
 	}
-	if err := s.migrateFrom(ctx, files); err == nil || !strings.Contains(err.Error(), "seed database documents") {
-		t.Fatalf("want document seeding failure, got %v", err)
+	if err := s.migrateFrom(ctx, files); err == nil || !strings.Contains(err.Error(), "0002_reject_initialization.sql") {
+		t.Fatalf("want initialization failure, got %v", err)
 	}
 	var version, applicationID, objects int
 	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
@@ -118,7 +122,6 @@ func TestInitialMigrationAndSeedFailureRollBack(t *testing.T) {
 	if err := s.migrate(ctx); err != nil {
 		t.Fatal(err)
 	}
-	entry(t, s, "readme")
 }
 
 func TestMigrationRejectsNonemptyUnversionedDatabase(t *testing.T) {
@@ -166,10 +169,9 @@ func TestMigrationRejectsNegativeVersion(t *testing.T) {
 	if version != -1 {
 		t.Fatalf("invalid schema version was replaced with %d", version)
 	}
-	entry(t, s, "readme")
 }
 
-func TestInitialSchemaContainsOnlyCurrentCodexModel(t *testing.T) {
+func TestInitialSchemaContainsOnlyCurrentDesktopModel(t *testing.T) {
 	s := testStore(t)
 	names, err := fs.Glob(migrationFiles, "migrations/*.sql")
 	if err != nil || len(names) != 1 || names[0] != "migrations/0001_initial.sql" {
@@ -185,11 +187,23 @@ func TestInitialSchemaContainsOnlyCurrentCodexModel(t *testing.T) {
 	if version != 1 || applicationID != databaseApplicationID {
 		t.Fatalf("baseline identity: version=%d application=%d", version, applicationID)
 	}
-	for table, want := range map[string][]string{
+	var journalMode string
+	if err := s.db.QueryRow("PRAGMA journal_mode").Scan(&journalMode); err != nil || journalMode != "wal" {
+		t.Fatalf("expected WAL for the accepted baseline, got %q: %v", journalMode, err)
+	}
+	tables := map[string][]string{
+		"settings":       {"key", "value"},
+		"layouts":        {"client_id", "value"},
+		"projects":       {"id", "kind", "name", "root_path", "root_identity", "created_at"},
 		"codex_sessions": {"id", "project_path", "title", "archived_at", "metadata_revision", "created_at", "conversation_id", "history_home", "latest_run_id"},
 		"codex_runs":     {"id", "session_id", "request_id", "previous_run_id", "request_cols", "request_rows", "status", "created_at", "ended_at", "reason", "tmux_session", "tmux_socket", "vm_project", "vm_socket", "vm_config_fingerprint"},
 		"codex_projects": {"path", "last_used_at"},
-	} {
+	}
+	var count int
+	if err := s.db.QueryRow("SELECT count(*) FROM sqlite_schema WHERE type='table'").Scan(&count); err != nil || count != len(tables) {
+		t.Fatalf("unexpected baseline table count: %d %v", count, err)
+	}
+	for table, want := range tables {
 		rows, err := s.db.Query("SELECT name FROM pragma_table_info(?) ORDER BY cid", table)
 		if err != nil {
 			t.Fatal(err)
@@ -224,7 +238,7 @@ func TestIncompatibleDatabaseFormatIsRejectedWithoutChanges(t *testing.T) {
 		version, mark int
 	}{
 		{"unmarked version one", 1, 0},
-		{"previous VM-project-free baseline", 1, 0x41585633},
+		{"previous virtual-file baseline", 1, 0x41585634},
 		{"other format version one", 1, 1234},
 		{"other format unversioned", 0, 1234},
 	} {
@@ -238,11 +252,22 @@ func TestIncompatibleDatabaseFormatIsRejectedWithoutChanges(t *testing.T) {
 			if _, err := db.Exec(fmt.Sprintf("CREATE TABLE kept (value TEXT); INSERT INTO kept VALUES ('original'); PRAGMA user_version=%d; PRAGMA application_id=%d", tc.version, tc.mark)); err != nil {
 				t.Fatal(err)
 			}
+			before, err := os.ReadFile(filename)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if opened, err := Open(filename); err == nil {
 				opened.Close()
 				t.Fatal("opened an incompatible database")
 			} else if !strings.Contains(err.Error(), "incompatible development database format") {
 				t.Fatalf("wrong error: %v", err)
+			}
+			after, err := os.ReadFile(filename)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(after, before) {
+				t.Fatal("rejected database was rewritten")
 			}
 			var version, applicationID, tables int
 			if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {

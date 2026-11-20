@@ -30,8 +30,8 @@ describe('authorization failures preserve the current desktop', () => {
         async () => new Response('{}'),
       );
       vi.stubGlobal('fetch', fetch);
-      await request('/entries/document', {
-        method: 'PATCH',
+      await request('/layout', {
+        method: 'PUT',
         body: 'draft',
         headers,
       });
@@ -82,9 +82,9 @@ describe('authorization failures preserve the current desktop', () => {
       );
       vi.stubGlobal('fetch', fetch);
       await expect(
-        request('/entries/document', {
-          method: 'PATCH',
-          body: '{"content":"draft"}',
+        request('/layout', {
+          method: 'PUT',
+          body: '{"clientId":"browser","layout":{}}',
         }),
       ).rejects.toMatchObject({
         status: 401,

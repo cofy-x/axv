@@ -6,11 +6,10 @@ These pages own routes, request/response shapes, limits, errors and caller retry
 
 - [Desktop state](desktop.md): Runtime identity, health, bootstrap, preferences, layout and recovery identity.
 - [Installed applications](extensions.md): Package installation, sandboxed content, scoped runtime sessions and revision-checked private JSON data.
-- [Virtual files](files.md): Entries, revision-checked saves, trash, import, download and preview.
-- [Project files and document exchange](project-files.md): Explicit host projects, root-constrained browsing, document links, immutable snapshots, origins and idempotent copies.
+- [Host project files](project-files.md): Registered host projects, confined browsing and downloads.
 - [Host Terminal](host-terminal.md): An ephemeral host shell owned by one WebSocket connection.
 - [Host directories](host-directories.md): Shared local directory selection and path validation for host tools.
-- [Host Codex](host-codex.md): Conversations, exact process runs and attachments.
+- [Host Codex](host-codex.md): Conversations, exact process runs and terminal attachments.
 - [Work notifications](notifications.md): Producer checkpoints, bounded browser push/Pocket Alert delivery, explicit browser enrollment and authenticated read-only return links.
 - [Compute](compute.md): Environment preparation, service readiness, machines, volumes, images, durable operations and VM project bindings/files.
 - [VM project previews](project-previews.md): Explicit guest HTTP/WebSocket services on independent local origins, with exact registration recovery and remote owner inspection/revocation.
@@ -26,11 +25,11 @@ Follow the route handler into its service for validation and persistence rules; 
 
 | Contract | Route and transport entry point | Models and validation |
 | --- | --- | --- |
-| Desktop and virtual files | [httpapi](../../apps/server/internal/httpapi), [runtime route](../../apps/server/internal/server/server.go) | [storage](../../apps/server/internal/storage) |
+| Desktop state | [httpapi](../../apps/server/internal/httpapi), [runtime route](../../apps/server/internal/server/server.go) | [storage](../../apps/server/internal/storage) |
 | Installed applications | [extensions HTTP adapter](../../apps/server/internal/extensions/http.go), [desktop composition](../../apps/server/internal/server/server.go) | [package validation](../../apps/server/internal/extensions/manifest.go), [extension store](../../apps/server/internal/extensions/store.go) and [sessions](../../apps/server/internal/extensions/manager.go) |
 | Host Terminal | [terminal/manager.go](../../apps/server/internal/terminal/manager.go), [frames](../../apps/server/internal/terminal/session.go) | [terminal](../../apps/server/internal/terminal) |
 | [Host directories](host-directories.md) | [hostdir/httpapi](../../apps/server/internal/hostdir/httpapi) | [directory validation](../../apps/server/internal/hostdir/directories.go) |
-| Project files and document exchange | [projectfiles/httpapi](../../apps/server/internal/projectfiles/httpapi) | [host-project access and exchange](../../apps/server/internal/projectfiles/service.go), [registered references, snapshots and transfer receipts](../../apps/server/internal/storage/documents.go) |
+| Host project files | [projectfiles/httpapi](../../apps/server/internal/projectfiles/httpapi) | [Host file access](../../apps/server/internal/projectfiles/service.go), [registered projects](../../apps/server/internal/storage/projects.go) |
 | Host Codex | [codex/httpapi](../../apps/server/internal/codex/httpapi), [frames](../../apps/server/internal/codex/httpapi/connection.go) | [codex](../../apps/server/internal/codex), [stored records](../../apps/server/internal/storage/codex_runs.go) |
 | Tailscale remote access | [remote controller](../../apps/server/internal/server/remote_controller.go), [route policy](../../apps/server/internal/server/remote.go) | [tailnet transport](../../apps/server/internal/tailnet), [Tailscale authorization](../../apps/server/internal/tailnet/access) |
 | Cloudflare desktop access | [Cloudflare HTTP adapter](../../apps/server/internal/cloudflare/httpapi), [lifecycle controller](../../apps/server/internal/server/cloudflare_controller.go) | [Access verifier](../../apps/server/internal/cloudflare/access), [desktop listener](../../apps/server/internal/cloudflare/desktop) |
@@ -51,22 +50,22 @@ Request shapes, revision rules, idempotency scope and limits belong to their fun
 
 ## Access and identity boundaries
 
-The ordinary local desktop listener requires an actual loopback peer and a loopback Host before serving UI or API reads. Forwarded headers do not change this boundary. On that listener, desktop-state and virtual-file mutations validate a supplied Origin against the request Host or a loopback development host; they permit an omitted Origin.
+The ordinary local desktop listener requires an actual loopback peer and a loopback Host before serving UI or API reads. Forwarded headers do not change this boundary. On that listener, desktop-state mutations validate a supplied Origin against the request Host or a loopback development host; they permit an omitted Origin.
 
 The shared desktop boundary rejects all `/api` requests with `Origin: null` or `Sec-Fetch-Site: cross-site` or `same-site`, including simple GETs without Origin. This prevents sandboxed application frames and different-origin project preview pages from directly using existing API families. Their trusted browser host uses the [installed-application broker](extensions.md#browser-broker) and backend session scope instead.
 
 Host Terminal, host-directory, Codex and compute gateway routes use the shared [HTTP access validator](../../apps/server/internal/httpaccess): locally, a loopback peer, a Host of `localhost` or a loopback address, and an exact scheme/Host match when Origin is supplied. Their WebSocket upgrades and mutations require Origin. Forwarded headers do not bypass these checks. The private compute socket is authorized through OS permissions.
 
-The optional remote HTTPS listener authenticates every request, including UI assets and document reads, through the embedded node's `WhoIs`. Only the bound owner's untagged nodes are authorized. Its middleware supplies a private request context to the shared feature guards without changing `RemoteAddr` or trusting identity headers. Remote mutations and WebSocket upgrades require the exact HTTPS Origin; supplied Origin must match on reads too. Preparation, `/api/remote` and Cloudflare configuration/status controls remain local-only. Exact Cloudflare health, traffic and capability reads and the separate publication API explicitly allow the authenticated owner; `/api/connection` supplies a safe desktop summary. See the [Tailscale remote access contract](tailscale.md) for identity binding, route restrictions and failures.
+The optional remote HTTPS listener authenticates every request, including UI assets and API reads, through the embedded node's `WhoIs`. Only the bound owner's untagged nodes are authorized. Its middleware supplies a private request context to the shared feature guards without changing `RemoteAddr` or trusting identity headers. Remote mutations and WebSocket upgrades require the exact HTTPS Origin; supplied Origin must match on reads too. Preparation, `/api/remote` and Cloudflare configuration/status controls remain local-only. Exact Cloudflare health, traffic and capability reads and the separate publication API explicitly allow the authenticated owner; `/api/connection` supplies a safe desktop summary. See the [Tailscale remote access contract](tailscale.md) for identity binding, route restrictions and failures.
 
 The optional [Cloudflare entrypoint](cloudflare.md) independently verifies Access application JWTs and the configured owner on every request. It accepts a dedicated loopback HTTP hop with the exact public Host and HTTPS Origin, without trusting identity headers or converting remote clients into local users. Both remote transports use the same route policy and feature guards. Owner JWTs have at most a 15-minute signed lifetime and their original expiry closes HTTP/SSE/WebSocket connections without renewal on reconnect; offline JWT verification does not guarantee immediate provider-side Access revocation.
 
-Project-file and document-exchange routes use that same local-access validator, requiring Origin for mutations. Their registered root identity and project-relative paths remain separate from virtual-document IDs and VM project-volume identities.
+Host project-file routes use that same local-access validator, requiring Origin for mutations. Their registered root identity and project-relative paths remain separate from VM project-volume identities.
 
 Installed-application routes use the shared guard with Origin required for mutations. Installation, enable/disable, uninstall and data clearing are local-only; authenticated remote clients may use only the explicit catalog, data-read, content and session/RPC methods in the [application access contract](extensions.md#access). An extension's opaque browser origin is never an authenticated principal.
 
 VM project routes use the compute gateway/private-socket boundary and require the original host identity even for reads. File requests also carry the explicit project/volume/VM/boot/guest-service binding, verified before forwarding and inside the guest. A new binding must be requested as a separate caller decision; a missing VM never causes execution or file access on the host. [Compute projects](compute.md#vm-projects) owns that contract.
 
-Virtual-file entry IDs are not host paths. Host directory selection uses absolute paths on the service's computer; guest commands use project-relative starting directories inside a selected VM. Desktop workspaces do not select an execution target. Runtime instance, database, browser client, host, machine, guest boot, conversation and process-run identities have separate lifetimes and purposes.
+Host directory selection uses absolute paths on the service's computer; guest commands use project-relative starting directories inside a selected VM. Desktop workspaces do not select an execution target. Runtime instance, database, browser client, host, machine, guest boot, conversation and process-run identities have separate lifetimes and purposes.
 
 Compare terminal disconnect, end and recovery behavior in the [architecture lifetime table](../architecture.md#codex-attachment-and-process-lifetime); each functional API owns its exact endpoint and reconnection contract.

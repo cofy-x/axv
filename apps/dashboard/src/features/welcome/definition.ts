@@ -4,7 +4,7 @@ import { Welcome, About } from './Welcome';
 export const welcomeApp: AppDefinition = {
   id: 'welcome',
   title: 'Welcome',
-  icon: 'computer',
+  icon: 'welcome-door',
   defaultPinned: false,
   component: Welcome,
   defaultSize: { width: 550, height: 570 },

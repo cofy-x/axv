@@ -1,4 +1,4 @@
-import type { Request, WebSocket } from '@playwright/test';
+import type { Locator, Request, WebSocket } from '@playwright/test';
 import {
   activate,
   menuItem,
@@ -416,37 +416,51 @@ test('Codex transmits Unicode paste and IME composition as exact UTF-8', async (
   }
 });
 
-test('a fixed Codex Session menu ends its original session while another window is active', async ({
+test('the Codex Session menu ends the selected run without affecting another same-named window', async ({
   page,
   request,
 }) => {
   const first = await startCodex(page);
-  const firstWindowId = await first.window.getAttribute('data-window-id');
-  await applicationMenu(page, 'Session');
-  await page
-    .getByRole('button', { name: 'Pin Session menu', exact: true })
-    .click();
-  const pinned = page.locator(
-    `.ns-pinned-menu[data-owner-window-id="${firstWindowId}"]`,
-  );
   const second = await startCodex(page);
+  expect(await second.window.getAttribute('aria-label')).toBe(
+    await first.window.getAttribute('aria-label'),
+  );
+  const selectWindow = async (window: Locator) => {
+    await page
+      .getByRole('button', { name: 'Window Overview', exact: true })
+      .click();
+    await window.getByRole('button', { name: /^Switch to / }).click();
+    await expect(window).toHaveClass(/is-active/);
+  };
   const alive = await readState(second.window, 'other-window');
-  await pinned
+  await selectWindow(first.window);
+  await applicationMenu(page, 'Session');
+  const menu = page.getByRole('menu', { name: 'Session', exact: true });
+  await menu
     .getByRole('menuitem', { name: 'End Session', exact: true })
     .click();
   const dialog = page.getByRole('dialog', { name: 'End Codex session?' });
-  await dialog
-    .getByRole('button', { name: 'End Session', exact: true })
-    .click();
+  expect((await session(request, first.id)).status).toBe('running');
+  const [endRequest] = await Promise.all([
+    page.waitForRequest(
+      (request) =>
+        request.method() === 'POST' &&
+        new URL(request.url()).pathname.endsWith('/end'),
+    ),
+    dialog.getByRole('button', { name: 'End Session', exact: true }).click(),
+  ]);
+  expect(new URL(endRequest.url()).pathname).toBe(
+    `/api/host/codex/sessions/${first.id}/runs/${first.runId}/end`,
+  );
   await expect
     .poll(async () => (await session(request, first.id)).status)
     .toBe('ended');
   expect((await session(request, second.id)).status).toBe('running');
-  await resumeCodex(page, second.id, second.runId);
+  await selectWindow(second.window);
   expect(await readState(second.window, 'still-running')).toEqual(alive);
-  await resumeCodex(page, first.id, first.runId);
+  await selectWindow(first.window);
   await first.window.getByRole('button', { name: /^Close / }).click();
-  await expect(pinned).toHaveCount(0);
+  await expect(menu).toHaveCount(0);
 });
 
 test('Codex wheel scrolling moves tmux history without sending arrow keys to its composer', async ({

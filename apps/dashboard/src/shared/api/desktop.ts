@@ -10,7 +10,7 @@ export function createDesktopDatabase() {
   const getDatabaseId = () => {
     if (!databaseId)
       throw new APIError(
-        'Open the workspace before accessing its documents or sessions.',
+        'Open the workspace before accessing its desktop data.',
         428,
         'database_identity_required',
       );
@@ -85,15 +85,9 @@ export function createDesktopDatabase() {
     blob(path: string, init: RequestInit = {}) {
       return read(path, init, (response) => response.blob());
     },
-    resourceURL(path: string) {
-      // Render-time image URLs remain usable even after replacement is detected;
-      // they still address only the original database and cannot return new data.
-      return `/api${path}${path.includes('?') ? '&' : '?'}databaseId=${encodeURIComponent(getDatabaseId())}`;
-    },
   };
 }
 
 export const desktopDatabase = createDesktopDatabase();
 export const requestDesktop = desktopDatabase.request;
 export const requestDesktopBlob = desktopDatabase.blob;
-export const desktopResourceURL = desktopDatabase.resourceURL;

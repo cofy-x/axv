@@ -132,7 +132,7 @@ select:disabled {
   height: 26px;
   display: flex;
   align-items: center;
-  gap: 15px;
+  gap: 8px;
   padding: 0 9px 0 0;
   color: #eee;
   background: #252729;
@@ -141,8 +141,12 @@ select:disabled {
   font-size: 11px;
 }
 .ns-desktop-status button {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 30px;
   height: 25px;
-  padding: 0 10px;
+  padding: 0;
   border: 0;
   border-right: 1px solid #000;
   background: #aaa;
@@ -150,11 +154,45 @@ select:disabled {
   font-size: 12px;
   color: #111;
 }
-.ns-desktop-status button:active {
+.ns-desktop-status button:focus-visible {
+  outline-offset: -3px;
+}
+.ns-workspace-menu-button > img {
+  display: block;
+}
+.ns-workspace-switcher {
+  display: flex;
+}
+.ns-workspace-switcher > button {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.ns-workspace-switcher > button:hover {
+  background: #404347;
+}
+.ns-workspace-switcher > button:focus-visible:not([aria-pressed='true']) {
+  outline-color: #a8cce9;
+}
+.ns-desktop-status button:active:not(:disabled),
+.ns-desktop-status button[aria-pressed='true'] {
+  background: #aaa;
   box-shadow: var(--ns-recessed);
+  color: #111;
+}
+.ns-window-overview:disabled {
+  color: #666;
+}
+.ns-window-overview .ns-control-icon {
+  width: 16px;
+  height: 16px;
 }
 .ns-connection {
+  flex-shrink: 0;
   margin-left: auto;
+  white-space: nowrap;
 }
 .ns-connection::before {
   content: '';
@@ -258,138 +296,36 @@ select:disabled {
   color: #ffe4df;
   background: #633d36;
 }
-.ns-desktop-icon.is-trash-target {
-  outline: 2px solid #fff;
-}
 .ns-marquee {
   position: fixed;
   border: 1px dotted #fff;
   background: #ffffff15;
   pointer-events: none;
 }
-.ns-clip {
-  position: absolute;
-  z-index: 70;
-  left: 10px;
-  top: 42px;
-  width: 160px;
-}
-.ns-clip-tile {
-  position: relative;
-  width: 64px;
-  height: 64px;
-  border: 1px solid #111;
-  background: #aaa;
-  box-shadow:
-    var(--ns-raised),
-    1px 1px #222;
-}
-.ns-clip-center {
-  position: absolute;
-  inset: 4px;
-  background: transparent;
-  border: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  overflow: hidden;
-}
-.ns-clip-center strong {
-  font-size: 27px;
-  line-height: 1;
-  font-family: var(--ns-mono);
-}
-.ns-clip-center span {
-  font-size: 9px;
-  font-weight: bold;
-  width: 54px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.ns-clip-prev,
-.ns-clip-next {
-  position: absolute;
-  z-index: 2;
-  width: 22px;
-  height: 22px;
-  border: 0;
-  padding: 0;
-  background: transparent;
-  font-size: 21px;
-  line-height: 1;
-}
-.ns-clip-prev {
-  left: 0;
-  bottom: 0;
-}
-.ns-clip-next {
-  right: 0;
-  top: 0;
-}
-.ns-clip-prev:hover,
-.ns-clip-next:hover {
-  color: #fff;
-}
-.ns-clip-shortcuts {
-  display: flex;
-  flex-direction: column;
-  margin-top: 7px;
-  gap: 3px;
-  max-height: 120px;
-  overflow: auto;
-  width: 155px;
-}
-.ns-clip-shortcut {
-  display: flex;
-  border: 1px solid #111;
-  box-shadow: var(--ns-raised);
-  background: var(--ns-face);
-}
-.ns-clip-shortcut > button {
-  display: flex;
-  align-items: center;
-  border: 0;
-  background: transparent;
-}
-.ns-clip-shortcut > button:active {
-  box-shadow: var(--ns-recessed);
-}
-.ns-clip-shortcut > button:focus-visible {
-  outline-offset: -3px;
-}
-.ns-clip-shortcut > button:first-child {
-  flex: 1;
-  min-width: 0;
-  gap: 5px;
-  padding: 3px 5px;
-  text-align: left;
-}
-.ns-clip-shortcut span {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-size: 11px;
-}
-.ns-clip-shortcut > .ns-shortcut-options {
-  flex: 0 0 22px;
-  justify-content: center;
-  border-left: 1px solid var(--ns-shadow);
-  padding: 0;
-}
-.ns-clip-shortcut.is-unavailable {
-  color: #666;
-}
 .ns-application-menu {
   position: absolute;
-  z-index: 71;
-  top: 248px;
-  left: 10px;
-  width: 156px;
+  z-index: 770;
+  top: var(--ns-application-menu-top);
+  left: 4px;
+  width: max-content;
+  max-width: calc(100% - 8px);
+  height: var(--ns-application-menu-height);
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  touch-action: pan-x;
+  outline: 1px solid #111;
+  outline-offset: -1px;
   background: #aaa;
-  border: 1px solid #111;
-  box-shadow: 1px 1px #222;
+}
+.has-side-dock .ns-application-menu {
+  max-width: calc(100% - var(--ns-dock-size) - 22px);
+}
+.ns-application-menu > .ns-menu-title {
+  flex: 0 0 auto;
+  max-width: 120px;
+  height: 100%;
 }
 .ns-menu-title {
   min-height: 24px;
@@ -403,48 +339,27 @@ select:disabled {
   font-weight: bold;
   font-size: 12px;
   box-shadow: inset 0 1px #888;
-  touch-action: none;
 }
 .ns-menu-title > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ns-menu-title button {
-  padding: 0;
-  border: 1px solid #000;
-  background: #aaa;
-  color: #111;
-  width: 18px;
-  height: 18px;
-  line-height: 14px;
-  box-shadow: var(--ns-raised);
-}
 .ns-application-menu-item {
-  width: 100%;
-  min-height: 29px;
   display: flex;
-  justify-content: space-between;
+  flex: 0 0 auto;
   align-items: center;
-  background: #aaa;
+  gap: 6px;
+  padding: 3px 8px;
   border: 0;
-  border-bottom: 1px solid #777;
+  border-right: 1px solid #777;
+  background: #aaa;
   box-shadow: inset 1px 1px #ddd;
-  padding: 3px 9px;
-  text-align: left;
+  white-space: nowrap;
 }
 .ns-application-menu-item:hover,
 .ns-application-menu-item:focus-visible {
   background: #eee;
-}
-.ns-menu-owner {
-  padding: 4px 7px;
-  font-size: 10px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  background: #969696;
-  border-top: 1px solid #555;
 }
 .ns-dock {
   position: absolute;
@@ -468,22 +383,33 @@ select:disabled {
   scrollbar-width: none;
   overscroll-behavior: contain;
 }
-.ns-dock-menu {
+.ns-dock-menu,
+.ns-dock-add {
   display: flex;
+  align-self: center;
   align-items: center;
   justify-content: center;
-  flex: 0 0 44px;
-  width: var(--ns-dock-size);
-  height: 44px;
+  flex: 0 0 auto;
   padding: 0;
   border: 1px solid #111;
   background: var(--ns-face);
   box-shadow: var(--ns-raised);
 }
-.ns-dock-menu:active {
+.ns-dock-menu {
+  width: var(--ns-dock-size);
+  height: var(--ns-dock-size);
+}
+.ns-dock-add {
+  width: var(--ns-dock-size);
+  height: 23px;
+  background: #aaa;
+}
+.ns-dock-menu:active,
+.ns-dock-add:active {
   box-shadow: var(--ns-recessed);
 }
-.ns-dock-menu:focus-visible {
+.ns-dock-menu:focus-visible,
+.ns-dock-add:focus-visible {
   outline-offset: -3px;
 }
 .ns-dock-entry {
@@ -512,12 +438,6 @@ select:disabled {
 .ns-dock-tile:hover {
   background: #b8b8b8;
 }
-.ns-dock-tile > .ns-pixel-icon {
-  position: absolute;
-  top: 2px;
-  left: 50%;
-  transform: translateX(-50%);
-}
 .ns-dock-tile:active,
 .ns-dock-tile.is-active {
   box-shadow:
@@ -527,9 +447,11 @@ select:disabled {
 }
 .ns-dock-running {
   position: absolute;
+  top: 4px;
   left: 4px;
-  bottom: 1px;
-  font-size: 10px;
+  width: 5px;
+  height: 5px;
+  background: #222;
 }
 .ns-dock-count {
   position: absolute;
@@ -537,44 +459,12 @@ select:disabled {
   right: 4px;
   font-size: 10px;
 }
-.ns-dock-options {
-  position: absolute;
-  z-index: 2;
-  bottom: 2px;
-  right: 2px;
-  width: 19px;
-  height: 15px;
-  border: 0;
-  background: transparent;
-  font-size: 11px;
-  line-height: 11px;
-  padding: 0;
-}
-@media (hover: hover) {
-  .ns-dock-options:hover {
-    box-shadow: var(--ns-raised);
-  }
-}
-.ns-dock-options:focus-visible {
-  outline-offset: -2px;
-  box-shadow: var(--ns-raised);
-}
-.ns-dock-options:active {
-  box-shadow: var(--ns-recessed);
-}
 .ns-dock-entry.is-dragging {
   opacity: 0.55;
 }
-.ns-dock-add {
-  flex-shrink: 0;
-  height: 23px;
-  background: #aaa;
-  border: 1px solid #111;
-  box-shadow: var(--ns-raised);
-}
 .ns-clock {
   flex-direction: column;
-  padding: 2px;
+  padding: 1px;
   line-height: 1;
 }
 .ns-clock-month {
@@ -588,8 +478,8 @@ select:disabled {
 }
 .ns-clock strong {
   font-family: var(--ns-mono);
-  font-size: 23px;
-  line-height: 25px;
+  font-size: 22px;
+  line-height: 23px;
 }
 .ns-clock time {
   font-size: 10px;
@@ -923,14 +813,11 @@ select:disabled {
   white-space: nowrap;
   font-size: 12px;
 }
-.ns-menu-item.is-selected,
-.ns-pinned-menu .ns-menu-item:hover:not(:disabled),
-.ns-pinned-menu .ns-menu-item:focus-visible {
+.ns-menu-item.is-selected {
   background: #fff;
   color: #111;
 }
-.ns-menu-item[aria-disabled='true'],
-.ns-menu-item:disabled {
+.ns-menu-item[aria-disabled='true'] {
   color: #666;
   text-shadow: 1px 1px #ccc;
 }
@@ -957,8 +844,7 @@ select:disabled {
   color: #333;
   font-weight: 400;
 }
-.ns-menu-item[aria-disabled='true'] .ns-menu-description,
-.ns-menu-item:disabled .ns-menu-description {
+.ns-menu-item[aria-disabled='true'] .ns-menu-description {
   color: inherit;
 }
 .ns-menu-shortcut {
@@ -974,22 +860,19 @@ select:disabled {
   min-height: 34px;
 }
 .ns-submenu-title .ns-menu-back {
-  width: auto;
   min-width: 60px;
   min-height: 28px;
   flex-shrink: 0;
   padding: 2px 6px;
+  border: 1px solid #000;
+  background: #aaa;
+  color: #111;
+  box-shadow: var(--ns-raised);
 }
 .ns-menu-separator {
   height: 5px;
   border-top: 1px solid #666;
   border-bottom: 1px solid #ddd;
-}
-.ns-pinned-menu {
-  position: absolute;
-  z-index: 850;
-  width: 204px;
-  min-width: 180px;
 }
 .ns-recovery {
   position: absolute;
@@ -1319,54 +1202,8 @@ select:disabled {
 .is-mobile .ns-desktop-status {
   gap: 6px;
 }
-.is-mobile .ns-desktop-status > span:not(.ns-connection) {
-  display: none;
-}
 .is-mobile .ns-connection {
   font-size: 9px;
-}
-.is-mobile .ns-clip {
-  top: 31px;
-  left: 4px;
-  width: 60px;
-  z-index: 780;
-}
-.is-mobile .ns-clip-tile {
-  width: 58px;
-  height: 54px;
-}
-.is-mobile .ns-clip-center strong {
-  font-size: 22px;
-}
-.is-mobile .ns-clip-center span {
-  font-size: 8px;
-  width: 48px;
-}
-.is-mobile .ns-clip-shortcuts {
-  display: none;
-}
-.is-mobile .ns-application-menu {
-  top: 31px;
-  left: 70px;
-  right: 4px;
-  width: auto;
-  display: flex;
-  flex-wrap: wrap;
-  z-index: 770;
-}
-.is-mobile .ns-application-menu > .ns-menu-title {
-  flex: 0 0 100%;
-  height: 24px;
-}
-.is-mobile .ns-application-menu-item {
-  width: auto;
-  min-height: 28px;
-  flex: 1;
-  padding: 3px 5px;
-  font-size: 11px;
-}
-.is-mobile .ns-application-menu-item span {
-  display: none;
 }
 .is-mobile .ns-dock {
   top: auto;
@@ -1385,10 +1222,6 @@ select:disabled {
   flex-direction: row;
   overflow-x: auto;
   overflow-y: hidden;
-}
-.is-mobile .ns-dock-menu {
-  width: 44px;
-  height: var(--ns-dock-size);
 }
 .is-mobile .ns-dock-tile {
   touch-action: pan-x;
@@ -1412,74 +1245,9 @@ select:disabled {
   min-height: 34px;
 }
 .is-mobile .ns-recovery {
-  top: 90px;
+  top: 64px;
   left: 5px;
   right: 5px;
-}
-.is-short .ns-clip {
-  top: 30px;
-  left: 4px;
-  width: 96px;
-  z-index: 780;
-}
-.is-short .ns-clip-tile {
-  width: 96px;
-  height: 32px;
-  border: 0;
-  outline: 1px solid #111;
-  outline-offset: -1px;
-}
-.is-short .ns-clip-center {
-  inset: 0;
-  flex-direction: row;
-  gap: 4px;
-  padding: 2px 4px;
-}
-.is-short .ns-clip-center strong {
-  font-size: 22px;
-}
-.is-short .ns-clip-center span {
-  width: 62px;
-  font-size: 11px;
-  white-space: nowrap;
-}
-.is-short .ns-clip-prev,
-.is-short .ns-clip-next,
-.is-short .ns-clip-shortcuts {
-  display: none;
-}
-.is-short .ns-application-menu {
-  top: 30px;
-  left: 106px;
-  right: 4px;
-  width: auto;
-  height: 32px;
-  display: flex;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  overflow-y: hidden;
-  touch-action: pan-x;
-  border: 0;
-  outline: 1px solid #111;
-  outline-offset: -1px;
-  z-index: 770;
-}
-.is-short .ns-application-menu > .ns-menu-title {
-  flex: 0 0 auto;
-  max-width: 120px;
-  height: 32px;
-}
-.is-short .ns-application-menu-item {
-  flex: 0 0 auto;
-  width: auto;
-  min-height: 32px;
-  padding: 3px 7px;
-}
-.is-short .ns-application-menu-item > span {
-  display: none;
-}
-.is-short.has-side-dock .ns-application-menu {
-  right: calc(var(--ns-dock-size) + 18px);
 }
 .is-short.has-side-dock .ns-dock {
   top: 30px;
@@ -1502,10 +1270,6 @@ select:disabled {
   overflow-x: hidden;
   overflow-y: auto;
 }
-.is-short.has-side-dock .ns-dock-menu {
-  width: var(--ns-dock-size);
-  height: 44px;
-}
 .is-short.has-side-dock .ns-miniwindow-shelf {
   bottom: 6px;
   left: 4px;
@@ -1520,9 +1284,6 @@ select:disabled {
   }
   .ns-button.ns-icon-button {
     min-width: 32px;
-  }
-  .ns-dock-tile > .ns-pixel-icon {
-    top: 5px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

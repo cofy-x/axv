@@ -6,20 +6,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
-	"path/filepath"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/coder/websocket"
 	"github.com/cofy-x/axv/apps/server/internal/vmwork"
 )
 
 const managedConversationMessage = "This AXV session keeps one Codex conversation. Use New Session in AXV to start another conversation."
-
-type contextRequest struct {
-	batchIDs       []string
-	method         string
-	expectedTurnID string
-}
 
 type protocolBridge struct {
 	manifest Manifest
@@ -37,7 +32,6 @@ type protocolBridge struct {
 	bufferBytes     int
 	deadline        <-chan time.Time
 	ready           bool
-	contextRequests map[string]contextRequest
 	vmWork          *vmwork.Context
 	vmWorkLoaded    bool
 	activity        *activityObserver
@@ -56,8 +50,7 @@ func newBridge(manifest Manifest, statePath string, stdin io.Writer, client *web
 		},
 		path: statePath, stdin: stdin, client: client,
 		pending: make(map[string]string), persistID: "axv-runner-persist-" + hex.EncodeToString(nonce),
-		contextRequests: make(map[string]contextRequest),
-		vmWork:          manifest.vmWork, vmWorkLoaded: manifest.VMContextPath == "" || manifest.vmWork != nil,
+		vmWork: manifest.vmWork, vmWorkLoaded: manifest.VMContextPath == "" || manifest.vmWork != nil,
 	}
 }
 
@@ -68,17 +61,11 @@ func (bridge *protocolBridge) fail(code string) error {
 	return ErrProtocol
 }
 
-func (bridge *protocolBridge) publishReady(ctx context.Context, threadID string) error {
+func (bridge *protocolBridge) publishReady(threadID string) error {
 	state := bridge.state
 	state.ThreadID = threadID
-	// Retain the verified provider identity even if queue publication fails.
+	// Keep the verified provider identity in the failure state if publication fails.
 	bridge.state.ThreadID = threadID
-	queue := ContextQueue{Directory: filepath.Dir(bridge.path), SessionID: bridge.manifest.SessionID, RunID: bridge.manifest.RunID, ThreadID: threadID}
-	if queue.Initialize(ctx) != nil {
-		return bridge.fail("codex_context_state_failed")
-	}
-	state.ContextVersion = 1
-	bridge.state.ContextVersion = 1
 	state.Status = StatusReady
 	state.ErrorCode = ""
 	if writeState(bridge.path, state) != nil {
@@ -212,7 +199,7 @@ func (bridge *protocolBridge) fromServer(ctx context.Context, raw []byte) error 
 		if !bridge.persisting || len(message.Error) != 0 || len(message.Result) == 0 {
 			return bridge.fail("codex_persist_failed")
 		}
-		if bridge.publishReady(ctx, bridge.candidateID) != nil {
+		if bridge.publishReady(bridge.candidateID) != nil {
 			return ErrUnavailable
 		}
 		bridge.persisting = false
@@ -237,30 +224,6 @@ func (bridge *protocolBridge) fromServer(ctx context.Context, raw []byte) error 
 	// A server approval request may reuse a client request's numeric ID. Only
 	// responses, never server requests or notifications, bind conversations.
 	if message.Method == "" {
-		if request := bridge.contextRequests[string(message.ID)]; len(request.batchIDs) > 0 {
-			delete(bridge.contextRequests, string(message.ID))
-			var response struct {
-				TurnID string `json:"turnId"`
-				Turn   struct {
-					ID string `json:"id"`
-				} `json:"turn"`
-			}
-			status, turnID := "unknown", ""
-			if len(message.Error) != 0 && string(message.Error) != "null" {
-				status = "failed"
-			} else if json.Unmarshal(message.Result, &response) == nil {
-				if request.method == "turn/steer" {
-					if contextIdentifier(response.TurnID) && response.TurnID == request.expectedTurnID {
-						status, turnID = "accepted", response.TurnID
-					}
-				} else if contextIdentifier(response.Turn.ID) {
-					status, turnID = "accepted", response.Turn.ID
-				}
-			}
-			if err := bridge.contextQueue().acknowledge(ctx, request.batchIDs, turnID, status); err != nil {
-				return bridge.fail("codex_context_state_failed")
-			}
-		}
 		method := bridge.pending[string(message.ID)]
 		delete(bridge.pending, string(message.ID))
 		if method == "thread/start" || method == "thread/resume" {
@@ -298,7 +261,7 @@ func (bridge *protocolBridge) fromServer(ctx context.Context, raw []byte) error 
 				})
 			}
 			if !bridge.ready {
-				if bridge.publishReady(ctx, threadID) != nil {
+				if bridge.publishReady(threadID) != nil {
 					return ErrUnavailable
 				}
 			}
@@ -311,13 +274,6 @@ func (bridge *protocolBridge) run(ctx context.Context, stdout io.Reader) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	defer bridge.client.CloseNow()
-	defer func() {
-		if bridge.ready {
-			cleanup, cancel := context.WithTimeout(context.Background(), time.Second)
-			defer cancel()
-			_ = bridge.contextQueue().Close(cleanup)
-		}
-	}()
 	serverReads := readMessages(ctx, stdout)
 	clientReads := make(chan wireRead, 1)
 	go func() {
@@ -361,13 +317,9 @@ func (bridge *protocolBridge) run(ctx context.Context, stdout io.Reader) error {
 	}
 }
 
-func (bridge *protocolBridge) contextQueue() ContextQueue {
-	return ContextQueue{Directory: filepath.Dir(bridge.path), SessionID: bridge.manifest.SessionID, RunID: bridge.manifest.RunID, ThreadID: bridge.state.ThreadID}
-}
-
 // The official TUI remains the only producer of turns. Preserve every original
-// turn override and input item, appending references only to its next actual
-// user message for this exact provider conversation.
+// turn override and input item. Append the bound VM context and Skill to actual
+// user messages for the verified conversation.
 func (bridge *protocolBridge) forwardTurn(ctx context.Context, raw []byte, message wireMessage) error {
 	var params map[string]json.RawMessage
 	var threadID string
@@ -380,34 +332,22 @@ func (bridge *protocolBridge) forwardTurn(ctx context.Context, raw []byte, messa
 		(len(params["toolOutput"]) != 0 && string(params["toolOutput"]) != "null") {
 		return writeRawMessage(bridge.stdin, raw)
 	}
-	expectedTurnID := ""
-	if message.Method == "turn/steer" &&
-		(json.Unmarshal(params["expectedTurnId"], &expectedTurnID) != nil || !contextIdentifier(expectedTurnID)) {
-		// An invalid steer is not a valid user submission. Let the provider
-		// reject it without consuming an attachment intended for real input.
-		return writeRawMessage(bridge.stdin, raw)
-	}
-	if _, exists := bridge.contextRequests[string(message.ID)]; exists {
-		return bridge.reject(ctx, message.ID)
+	if message.Method == "turn/steer" {
+		var expectedTurnID string
+		if json.Unmarshal(params["expectedTurnId"], &expectedTurnID) != nil || expectedTurnID == "" ||
+			len(expectedTurnID) > 128 || !utf8.ValidString(expectedTurnID) || strings.ContainsAny(expectedTurnID, "\x00\r\n") {
+			// Let the provider reject malformed steering requests.
+			return writeRawMessage(bridge.stdin, raw)
+		}
 	}
 	workInput, err := bridge.vmWorkInput()
 	if err != nil {
 		return bridge.fail("codex_vm_context_failed")
 	}
-	input = append(input, workInput...)
-	workOnly := append([]json.RawMessage(nil), input...)
-	documents, ids, err := bridge.contextQueue().claim(ctx)
-	if err != nil {
-		return bridge.fail("codex_context_state_failed")
-	}
-	if len(ids) == 0 && len(workInput) == 0 {
+	if len(workInput) == 0 {
 		return writeRawMessage(bridge.stdin, raw)
 	}
-	for _, document := range documents {
-		item, _ := json.Marshal(map[string]any{"type": "text", "text": contextText(document), "text_elements": []any{}})
-		input = append(input, item)
-	}
-	params["input"], _ = json.Marshal(input)
+	params["input"], _ = json.Marshal(append(input, workInput...))
 	var outer map[string]json.RawMessage
 	if json.Unmarshal(raw, &outer) != nil {
 		return bridge.fail("codex_protocol_error")
@@ -415,25 +355,8 @@ func (bridge *protocolBridge) forwardTurn(ctx context.Context, raw []byte, messa
 	outer["params"], _ = json.Marshal(params)
 	augmented, err := json.Marshal(outer)
 	if err != nil || len(augmented) >= maxMessageBytes {
-		if len(ids) > 0 {
-			if err := bridge.contextQueue().acknowledge(ctx, ids, "", "failed", "The combined message exceeded the Codex protocol limit. These snapshots were not submitted."); err != nil {
-				return bridge.fail("codex_context_state_failed")
-			}
-		}
-		if len(workInput) == 0 {
-			return writeRawMessage(bridge.stdin, raw)
-		}
-		params["input"], _ = json.Marshal(workOnly)
-		outer["params"], _ = json.Marshal(params)
-		augmented, err = json.Marshal(outer)
-		if err != nil || len(augmented) >= maxMessageBytes {
-			rejection, _ := json.Marshal(map[string]any{"id": message.ID, "error": map[string]any{"code": -32602, "message": "This message leaves no room for its VM project context. Reduce the input and submit it again."}})
-			return bridge.send(ctx, rejection)
-		}
-		return writeRawMessage(bridge.stdin, augmented)
-	}
-	if len(ids) > 0 {
-		bridge.contextRequests[string(message.ID)] = contextRequest{batchIDs: ids, method: message.Method, expectedTurnID: expectedTurnID}
+		rejection, _ := json.Marshal(map[string]any{"id": message.ID, "error": map[string]any{"code": -32602, "message": "This message leaves no room for its VM project context. Reduce the input and submit it again."}})
+		return bridge.send(ctx, rejection)
 	}
 	return writeRawMessage(bridge.stdin, augmented)
 }

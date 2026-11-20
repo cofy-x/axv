@@ -4,7 +4,6 @@ import type {
   DesktopLayout,
   DesktopIcon,
   DesktopWindow,
-  MenuGroup,
   Point,
   Size,
   WindowParams,
@@ -13,8 +12,10 @@ import type {
 } from './types';
 
 export const MENU_HEIGHT = 26;
+export const APPLICATION_MENU_TOP = MENU_HEIGHT + 4;
+export const APPLICATION_MENU_HEIGHT = 32;
 export const STRIP_HEIGHT = 76;
-export const DOCK_SIZE = 56;
+export const DOCK_SIZE = 52;
 export const DOCK_WIDTH = DOCK_SIZE + 12;
 export const DOCK_HEIGHT = DOCK_SIZE + 8;
 export const ICON_SIZE = { width: 80, height: 76 };
@@ -32,30 +33,6 @@ export function desktopLayoutMode(viewport: Size) {
   };
 }
 
-/** Applications replace matching menus and insert additional menus after their preceding contribution. */
-export function mergeMenuGroups(
-  defaults: MenuGroup[],
-  contributions: MenuGroup[],
-): MenuGroup[] {
-  const groups = [...defaults];
-  let insertion = Math.max(
-    0,
-    groups.findIndex((group) => group.id === 'window'),
-  );
-  if (!insertion) insertion = groups.length;
-  for (const group of contributions) {
-    const existing = groups.findIndex((candidate) => candidate.id === group.id);
-    if (existing >= 0) {
-      groups[existing] = group;
-      insertion = existing + 1;
-    } else {
-      groups.splice(insertion, 0, group);
-      insertion += 1;
-    }
-  }
-  return groups;
-}
-
 export function windowIdentity(
   app: AppDefinition,
   params: WindowParams = {},
@@ -68,9 +45,9 @@ export function windowWorkArea(
   viewport: Viewport,
   hasMiniwindows: boolean,
 ): Bounds {
-  const { mobile, short, sideDock } = desktopLayoutMode(viewport);
+  const { sideDock } = desktopLayoutMode(viewport);
   const x = 4;
-  const y = short ? 64 : mobile ? 90 : MENU_HEIGHT + 2;
+  const y = APPLICATION_MENU_TOP + APPLICATION_MENU_HEIGHT + 2;
   const right = sideDock ? DOCK_WIDTH : 4;
   const bottom =
     (sideDock ? 8 : DOCK_HEIGHT) + (hasMiniwindows ? STRIP_HEIGHT : 0);
@@ -344,27 +321,30 @@ export function overviewTransform(
   bounds: Bounds,
   index: number,
   count: number,
-  viewport: Size,
+  workArea: Bounds,
 ): string {
-  const columns = Math.max(
-    1,
-    Math.ceil(Math.sqrt((count * viewport.width) / viewport.height)),
+  const columns = Math.min(
+    count,
+    Math.ceil(Math.sqrt((count * workArea.width) / workArea.height)),
   );
   const rows = Math.ceil(count / columns);
-  const cellWidth = (viewport.width - 24) / columns;
-  const cellHeight = (viewport.height - 80) / rows;
+  const cellWidth = workArea.width / columns;
+  const cellHeight = workArea.height / rows;
+  const gap = Math.min(20, cellWidth / 4, cellHeight / 4);
   const scale = Math.min(
-    (cellWidth - 20) / bounds.width,
-    (cellHeight - 20) / bounds.height,
+    (cellWidth - gap) / bounds.width,
+    (cellHeight - gap) / bounds.height,
     1,
   );
   const x =
-    12 + (index % columns) * cellWidth + (cellWidth - bounds.width * scale) / 2;
+    workArea.x +
+    (index % columns) * cellWidth +
+    (cellWidth - bounds.width * scale) / 2;
   const y =
-    34 +
+    workArea.y +
     Math.floor(index / columns) * cellHeight +
     (cellHeight - bounds.height * scale) / 2;
-  return `translate(${Math.round(x - bounds.x)}px, ${Math.round(y - bounds.y)}px) scale(${Math.max(0.1, scale)})`;
+  return `translate(${x - bounds.x}px, ${y - bounds.y}px) scale(${scale})`;
 }
 
 /** Membership does not control mounting: hidden windows keep their component identity. */
@@ -381,16 +361,21 @@ export function minimizedWindows(
   );
 }
 
+export const DEFAULT_WORKSPACE_COUNT = 4;
+
 export function defaultWorkspaces(): Workspace[] {
-  return ['Workspace', 'Development', 'Documents', 'Studio'].map(
-    (name, index) => ({
-      id: `workspace-${index + 1}`,
-      name,
-      order: [],
-      activeWindowId: null,
-      clip: [],
-    }),
-  );
+  return Array.from({ length: DEFAULT_WORKSPACE_COUNT }, (_, index) => ({
+    id: `workspace-${index + 1}`,
+    name: '',
+    order: [],
+    activeWindowId: null,
+    clip: [],
+  }));
+}
+
+export function workspaceLabel(workspace: Workspace, index: number): string {
+  const label = `Workspace ${index + 1}`;
+  return workspace.name ? `${label} · ${workspace.name}` : label;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -419,9 +404,7 @@ export function validAppId(value: unknown): value is string {
 export function isApplicationLauncher(
   icon: DesktopIcon,
 ): icon is DesktopIcon & { appId: string } {
-  return (
-    icon.applicationLauncher === true && validAppId(icon.appId) && !icon.isTrash
-  );
+  return icon.applicationLauncher === true && validAppId(icon.appId);
 }
 
 /** A stored choice takes precedence over host launchers and late application defaults. */
@@ -471,7 +454,6 @@ export function desktopApplicationIcons(
     return [
       {
         ...icon,
-        trashable: false,
         onOpen: icon.onOpen ?? (() => launchApp(icon.appId)),
         ...(!app || app.unavailable !== undefined || app.launchable === false
           ? { status: { label: 'Unavailable', tone: 'warning' as const } }
@@ -496,7 +478,6 @@ export function desktopApplicationIcons(
       applicationLauncher: true,
       label: app?.title ?? appId,
       icon: app?.icon ?? 'document',
-      trashable: false,
       onOpen: () => launchApp(appId),
       ...(!app || app.unavailable !== undefined || app.launchable === false
         ? { status: { label: 'Unavailable', tone: 'warning' as const } }
@@ -602,7 +583,8 @@ export function sanitizeLayout(
     }
     workspaces.push({
       id: workspace.id,
-      name: String(workspace.name || 'Workspace').slice(0, 40),
+      name:
+        typeof workspace.name === 'string' ? workspace.name.slice(0, 40) : '',
       order: Array.isArray(workspace.order)
         ? workspace.order.filter((id): id is string => typeof id === 'string')
         : [],
@@ -694,36 +676,6 @@ export function sanitizeLayout(
     if (!dock.some((entry) => entry.appId === win.appId))
       dock.push({ appId: win.appId, pinned: false });
   }
-  const pinnedMenus: DesktopLayout['pinnedMenus'] = [];
-  for (const item of raw.version === 2 && Array.isArray(raw.pinnedMenus)
-    ? raw.pinnedMenus.slice(0, 12)
-    : []) {
-    const menu = record(item);
-    const position = point(menu);
-    if (
-      !position ||
-      typeof menu.id !== 'string' ||
-      pinnedMenus.some((m) => m.id === menu.id) ||
-      !['desktop', 'application', 'window'].includes(String(menu.kind))
-    )
-      continue;
-    if (
-      menu.kind !== 'desktop' &&
-      !windows.some((win) => win.id === menu.ownerWindowId)
-    )
-      continue;
-    pinnedMenus.push({
-      ...position,
-      id: menu.id,
-      kind: menu.kind as 'desktop' | 'application' | 'window',
-      title: String(menu.title || 'Menu'),
-      ownerWindowId:
-        menu.kind !== 'desktop' && typeof menu.ownerWindowId === 'string'
-          ? menu.ownerWindowId
-          : undefined,
-      groupId: typeof menu.groupId === 'string' ? menu.groupId : undefined,
-    });
-  }
   const iconPositions = (value: unknown): Record<string, Point> =>
     Object.fromEntries(
       Object.entries(record(value)).flatMap(([id, value]) => {
@@ -745,8 +697,6 @@ export function sanitizeLayout(
     workspaces,
     currentWorkspaceId,
     dock,
-    pinnedMenus,
-    clipPosition: point(raw.clipPosition) ?? { x: 10, y: 42 },
     activeWindowId: workspaces.find((w) => w.id === currentWorkspaceId)!
       .activeWindowId,
   };
@@ -839,10 +789,5 @@ export function reconcileWorkspaceWindows(
     activeWindowId:
       workspaces.find((workspace) => workspace.id === layout.currentWorkspaceId)
         ?.activeWindowId ?? null,
-    pinnedMenus: layout.pinnedMenus.filter(
-      (menu) =>
-        !menu.ownerWindowId ||
-        layout.windows.some((win) => win.id === menu.ownerWindowId),
-    ),
   };
 }

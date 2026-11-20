@@ -40,7 +40,7 @@ func TestOpaqueExtensionRequestsCannotReachAnyDesktopAPI(t *testing.T) {
 	defer extensionsStore.Close()
 	extensions.New(extensionsStore).Register(app)
 	h := newHandler(app, terminals, agents)
-	for _, path := range []string{"/api/runtime", "/api/entries", "/api/terminal/info", "/api/host/codex/info", "/api/extensions", "/api/project-previews/project-one"} {
+	for _, path := range []string{"/api/runtime", "/api/bootstrap", "/api/terminal/info", "/api/host/codex/info", "/api/extensions", "/api/project-previews/project-one"} {
 		for _, origin := range []string{"null", ""} {
 			r := httptest.NewRequest("GET", "http://localhost:3001"+path, nil)
 			r.RemoteAddr = "127.0.0.1:1234"
@@ -57,7 +57,7 @@ func TestOpaqueExtensionRequestsCannotReachAnyDesktopAPI(t *testing.T) {
 		}
 	}
 	for _, site := range []string{"same-site", "cross-site"} {
-		r := httptest.NewRequest("GET", "http://localhost:3001/api/entries", nil)
+		r := httptest.NewRequest("GET", "http://localhost:3001/api/bootstrap", nil)
 		r.RemoteAddr = "127.0.0.1:1234"
 		r.Header.Set("Sec-Fetch-Site", site)
 		w := httptest.NewRecorder()

@@ -6,6 +6,7 @@ import {
   expect,
   menuItem,
   persistedLayout,
+  pinDockApplication,
   test,
 } from './helpers';
 import { showApplicationOnDesktop } from './desktop-application-helpers';
@@ -636,27 +637,19 @@ test('Preferences and optional Dock launchers share the Tailscale panel without 
     const frame = await panel(page).boundingBox();
     const dock = await page.locator('.ns-dock').boundingBox();
     expect(frame && dock).toBeTruthy();
-    const dockIcon = await dockEntry(page, 'remote-access')
-      .locator('.ns-dock-tile svg')
-      .boundingBox();
-    const options = dockEntry(page, 'remote-access').locator(
-      '.ns-dock-options',
+    const tile = dockEntry(page, 'remote-access').locator('.ns-dock-tile');
+    await tile.scrollIntoViewIfNeeded();
+    await expect(tile.locator('.ns-pixel-icon')).toBeInViewport();
+    expect(await bounds(tile)).toMatchObject({ width: 52, height: 52 });
+    const compact = touch || viewport.width < 600;
+    const management = page.getByRole('button', {
+      name: compact ? 'Dock menu' : 'Add application to Dock',
+      exact: true,
+    });
+    await expect(management).toBeInViewport();
+    expect(await bounds(management)).toMatchObject(
+      compact ? { width: 52, height: 52 } : { width: 52, height: 23 },
     );
-    expect(dockIcon).toBeTruthy();
-    if (await options.isVisible()) {
-      const dockOptions = await bounds(options);
-      expect(dockIcon!.y + dockIcon!.height).toBeLessThanOrEqual(dockOptions.y);
-    } else {
-      const management = page.getByRole('button', {
-        name: 'Dock menu',
-        exact: true,
-      });
-      await expect(management).toBeInViewport();
-      const target = await bounds(management);
-      expect(target.width).toBeGreaterThanOrEqual(44);
-      expect(target.height).toBeGreaterThanOrEqual(44);
-      expect((await bounds(dockEntry(page, 'remote-access'))).width).toBe(56);
-    }
     if (viewport.width < 600)
       expect(frame!.y + frame!.height).toBeLessThanOrEqual(dock!.y);
     else expect(frame!.x + frame!.width).toBeLessThanOrEqual(dock!.x);
@@ -664,19 +657,7 @@ test('Preferences and optional Dock launchers share the Tailscale panel without 
   await choose(panel(page).getByRole('button', { name: /^Close / }), touch);
   await choose(preferences.getByRole('button', { name: /^Close / }), touch);
   await expect(dockEntry(page, 'remote-access')).toHaveCount(0);
-  const add = page.getByRole('button', {
-    name: 'Add application to Dock',
-    exact: true,
-  });
-  if (await add.isVisible()) await choose(add, touch);
-  else {
-    await choose(
-      page.getByRole('button', { name: 'Dock menu', exact: true }),
-      touch,
-    );
-    await choose(menuItem(page, 'Add application'), touch);
-  }
-  await choose(menuItem(page, 'Tailscale'), touch);
+  await pinDockApplication(page, 'Tailscale', touch);
   await expect(dockEntry(page, 'remote-access')).toBeVisible();
   await expect
     .poll(async () =>
@@ -697,16 +678,16 @@ test('Preferences and optional Dock launchers share the Tailscale panel without 
   await expect(dockEntry(page, 'remote-access')).toBeVisible();
 });
 
-test('desktop Tailscale launcher opens one panel and stays outside document deletion', async ({
+test('desktop Tailscale launcher opens one panel and ignores Delete', async ({
   page,
 }, info) => {
   const touch = info.project.use.hasTouch === true;
   let connectionReads = 0;
-  const documentWrites: string[] = [];
+  const remoteWrites: string[] = [];
   page.on('request', (request) => {
     const path = new URL(request.url()).pathname;
-    if (path.startsWith('/api/entries') && request.method() !== 'GET')
-      documentWrites.push(`${request.method()} ${path}`);
+    if (path === '/api/remote' && request.method() !== 'GET')
+      remoteWrites.push(`${request.method()} ${path}`);
   });
   await page.route('**/api/connection', (route) => {
     connectionReads++;
@@ -714,15 +695,9 @@ test('desktop Tailscale launcher opens one panel and stays outside document dele
   });
   await page.reload();
   await showApplicationOnDesktop(page, 'Tailscale', touch);
-  for (const app of ['files', 'welcome']) {
-    await activate(page, page.locator(`[data-app-id="${app}"]`));
-    await choose(
-      page
-        .locator(`[data-app-id="${app}"]`)
-        .getByRole('button', { name: /^Close / }),
-      touch,
-    );
-  }
+  const welcome = page.locator('[data-app-id="welcome"]');
+  await activate(page, welcome);
+  await choose(welcome.getByRole('button', { name: /^Close / }), touch);
   const canvas = page.getByRole('group', { name: 'Desktop icons' });
   const launcher = canvas.getByRole('button', {
     name: 'Tailscale',
@@ -750,7 +725,7 @@ test('desktop Tailscale launcher opens one panel and stays outside document dele
   await page.keyboard.press('Delete');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(launcher).toBeVisible();
-  expect(documentWrites).toEqual([]);
+  expect(remoteWrites).toEqual([]);
   await page.keyboard.press('Enter');
   await expect(panel(page)).toBeVisible();
   await expect(panel(page)).toHaveAttribute(
@@ -773,5 +748,5 @@ test('desktop Tailscale launcher opens one panel and stays outside document dele
   await expect(panel(page)).toHaveAttribute('data-window-id', id!);
   await expect(panel(page)).toHaveCount(1);
   await expect(launcher).toBeAttached();
-  expect(documentWrites).toEqual([]);
+  expect(remoteWrites).toEqual([]);
 });

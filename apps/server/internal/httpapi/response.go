@@ -39,16 +39,8 @@ func fail(w http.ResponseWriter, err error) {
 // remain internal failures until their public response has been defined here.
 func storageErrorStatus(code string) int {
 	switch code {
-	case "invalid_name", "invalid_parent", "invalid_kind", "invalid_content",
-		"folder_cycle", "not_editable", "invalid_text", "invalid_wallpaper",
-		"invalid_client", "invalid_layout":
+	case "invalid_wallpaper", "invalid_client", "invalid_layout":
 		return http.StatusBadRequest
-	case "not_found":
-		return http.StatusNotFound
-	case "name_conflict", "unavailable", "revision_conflict", "system_entry", "not_trashed":
-		return http.StatusConflict
-	case "text_too_large", "file_too_large":
-		return http.StatusRequestEntityTooLarge
 	default:
 		return http.StatusInternalServerError
 	}

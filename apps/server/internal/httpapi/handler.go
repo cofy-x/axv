@@ -11,49 +11,33 @@ import (
 	"github.com/cofy-x/axv/apps/server/internal/storage"
 )
 
-type API struct{ store *storage.Store }
-
 func New(store *storage.Store, ui http.Handler) http.Handler {
-	a := &API{store: store}
 	mux := http.NewServeMux()
 	register := func(pattern string, handler http.HandlerFunc) {
-		mux.HandleFunc(pattern, a.bound(handler, pattern == "GET /api/entries/{id}/content"))
+		mux.HandleFunc(pattern, bindDatabase(store, handler))
 	}
-	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
+	health := func(w http.ResponseWriter, r *http.Request) {
 		if err := store.Ping(r.Context()); err != nil {
 			fail(w, err)
 			return
 		}
 		write(w, http.StatusOK, map[string]string{"status": "ok"})
+	}
+	boundHealth := bindDatabase(store, health)
+	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
+		// Launchers probe before bootstrap. A mounted desktop probes the
+		// database captured when its page opened.
+		query, err := url.ParseQuery(r.URL.RawQuery)
+		if err != nil || query.Has("databaseId") || len(r.Header.Values(httpaccess.DatabaseIdentityHeader)) != 0 {
+			boundHealth(w, r)
+			return
+		}
+		health(w, r)
 	})
 	mux.HandleFunc("GET /api/bootstrap", func(w http.ResponseWriter, r *http.Request) {
 		b, err := store.Bootstrap(r.Context(), r.URL.Query().Get("clientId"))
 		respond(w, b, err)
 	})
-	register("GET /api/entries", func(w http.ResponseWriter, r *http.Request) {
-		entries, err := store.List(r.Context())
-		respond(w, map[string]any{"entries": entries}, err)
-	})
-	register("POST /api/entries", a.create)
-	register("GET /api/entries/{id}", a.get)
-	register("PATCH /api/entries/{id}", a.update)
-	register("GET /api/entries/{id}/content", a.content)
-	register("POST /api/entries/{id}/duplicate", a.duplicate)
-	register("POST /api/entries/{id}/trash", func(w http.ResponseWriter, r *http.Request) {
-		entry, err := store.Trash(r.Context(), r.PathValue("id"))
-		respond(w, map[string]any{"entry": entry}, err)
-	})
-	register("POST /api/entries/{id}/restore", func(w http.ResponseWriter, r *http.Request) {
-		entry, err := store.Restore(r.Context(), r.PathValue("id"))
-		respond(w, map[string]any{"entry": entry}, err)
-	})
-	register("DELETE /api/entries/{id}", func(w http.ResponseWriter, r *http.Request) {
-		respond(w, map[string]bool{"ok": true}, store.Delete(r.Context(), r.PathValue("id")))
-	})
-	register("DELETE /api/trash", func(w http.ResponseWriter, r *http.Request) {
-		respond(w, map[string]bool{"ok": true}, store.EmptyTrash(r.Context()))
-	})
-	register("POST /api/import", a.importFiles)
 	register("PUT /api/preferences", func(w http.ResponseWriter, r *http.Request) {
 		var p storage.Preferences
 		if !decode(w, r, &p) {
@@ -95,14 +79,14 @@ func New(store *storage.Store, ui http.Handler) http.Handler {
 	})
 }
 
-func (a *API) bound(next http.HandlerFunc, allowQuery bool) http.HandlerFunc {
+func bindDatabase(store *storage.Store, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		identity, err := a.store.DatabaseID(r.Context())
+		identity, err := store.DatabaseID(r.Context())
 		if err != nil {
 			fail(w, err)
 			return
 		}
-		if httpaccess.RequireDatabaseIdentity(w, r, identity, allowQuery) {
+		if httpaccess.RequireDatabaseIdentity(w, r, identity, false) {
 			next(w, r)
 		}
 	}

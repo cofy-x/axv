@@ -341,11 +341,6 @@
 .project-preview-heading > strong {
   flex-shrink: 0;
 }
-.project-source {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font: 12px/1.5 var(--ns-mono);
-}
 .project-error,
 .project-feedback {
   margin: 0;

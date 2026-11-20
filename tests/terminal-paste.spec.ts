@@ -3,7 +3,7 @@ import type {
   Page,
   WebSocket as PlaywrightWebSocket,
 } from '@playwright/test';
-import { expect, menuItem, test } from './helpers';
+import { activate, expect, menuItem, test } from './helpers';
 import {
   applicationMenu,
   openTerminal,
@@ -397,38 +397,34 @@ test('Paste text preserves edits after a rejected send and disables Send after d
   expect(sent(traffic[0]!)).toBe('');
 });
 
-test('a fixed Edit menu pastes into its owner while another terminal stays active', async ({
+test('the Edit menu pastes only into the selected Host shell', async ({
   page,
-  isMobile,
+  hasTouch,
 }) => {
-  test.skip(isMobile, 'Fixed menu placement is covered at desktop dimensions.');
   const traffic = recordInput(page, '/api/terminal');
-  const first = await openTerminal(page);
-  const firstID = await first.getAttribute('data-window-id');
-  await applicationMenu(page, 'Edit');
-  await page
-    .getByRole('button', { name: 'Pin Edit menu', exact: true })
-    .click();
-  const pinned = page.locator(
-    `.ns-pinned-menu[data-owner-window-id="${firstID}"]`,
-  );
-  await applicationMenu(page, 'File');
-  await menuItem(page, 'New Terminal Window').click();
+  const first = await openTerminal(page, hasTouch);
+  await applicationMenu(page, 'File', hasTouch);
+  await choose(menuItem(page, 'New Terminal Window'), hasTouch);
   const second = page.locator('[data-app-id="terminal"]').last();
   await expect(second.getByTestId('terminal-status')).toHaveAttribute(
     'data-state',
     'connected',
   );
-  await mockClipboard(page, 'resolved', '# owner clipboard');
-  await pinned.getByRole('menuitem', { name: 'Paste', exact: true }).click();
+  await mockClipboard(page, 'delayed');
+  await activate(page, first, hasTouch);
+  await applicationMenu(page, 'Edit', hasTouch);
+  await choose(menuItem(page, 'Paste'), hasTouch);
+  await expectClipboardRead(page);
+  await activate(page, second, hasTouch);
+  await resolveClipboard(page, '# owner clipboard');
   await expect.poll(() => sent(traffic[0]!)).toBe('# owner clipboard');
   expect(sent(traffic[1]!)).toBe('');
   await expect(second).toHaveClass(/is-active/);
   await expect(first.getByLabel('Host terminal input')).not.toBeFocused();
 
-  await pinned
-    .getByRole('menuitem', { name: 'Paste text', exact: true })
-    .click();
+  await activate(page, first, hasTouch);
+  await applicationMenu(page, 'Edit', hasTouch);
+  await choose(menuItem(page, 'Paste text'), hasTouch);
   const dialog = pasteDialog(page);
   await expect(dialog.locator('strong')).toHaveText(
     (await first.getAttribute('aria-label'))!,
@@ -436,12 +432,18 @@ test('a fixed Edit menu pastes into its owner while another terminal stays activ
   await dialog
     .getByRole('textbox', { name: 'Text to paste', exact: true })
     .fill(' ✓🙂');
-  await dialog.getByRole('button', { name: 'Send', exact: true }).click();
+  await choose(
+    dialog.getByRole('button', { name: 'Send', exact: true }),
+    hasTouch,
+  );
   await expect.poll(() => sent(traffic[0]!)).toBe('# owner clipboard ✓🙂');
   expect(sent(traffic[1]!)).toBe('');
-  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-  await expect(second).toHaveClass(/is-active/);
-  await expect(first.getByLabel('Host terminal input')).not.toBeFocused();
+  await choose(
+    dialog.getByRole('button', { name: 'Close', exact: true }),
+    hasTouch,
+  );
+  await expect(first).toHaveClass(/is-active/);
+  await expect(second.getByLabel('Host terminal input')).not.toBeFocused();
 });
 
 codexTest(

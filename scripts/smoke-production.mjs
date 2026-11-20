@@ -1,7 +1,7 @@
 import { initializeTestTemp } from './test-temp.mjs';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
-import { access, readdir, readFile } from 'node:fs/promises';
+import { access, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { createCodexFixture } from './codex-fixture.mjs';
 import { createShellEnvironment } from './shell-fixture.mjs';
@@ -992,7 +992,7 @@ try {
     assert.equal(bytes.readUInt32BE(16), size);
     assert.equal(bytes.readUInt32BE(20), size);
   }
-  const oldClient = await fetch(`${first.base}/api/entries`, {
+  const oldClient = await fetch(`${first.base}/api/projects`, {
     signal: AbortSignal.timeout(10_000),
   });
   assert.equal(oldClient.status, 428);
@@ -1001,37 +1001,34 @@ try {
   assert.ok(asset, 'Production HTML must reference a bundled script.');
   assert.equal((await fetchBounded(`${first.base}${asset}`)).status, 200);
   assert.equal(
-    (await fetchBounded(`${first.base}/desktop/documents`)).status,
+    (await fetchBounded(`${first.base}/desktop/workbench`)).status,
     200,
   );
   const terminal = await terminalSmoke(first.base);
   const persistentCodex = await codexSmoke(first.base);
   const initial = await json(first.base, '/bootstrap?clientId=smoke-browser');
   assert.ok(initial.databaseId);
-  const { entry: folder } = await json(first.base, '/entries', 'POST', {
-    parentId: 'documents',
-    name: 'Production folder',
-    kind: 'folder',
-  });
-  const { entry: original } = await json(first.base, '/entries', 'POST', {
-    parentId: 'documents',
-    name: 'Production smoke.txt',
-    kind: 'file',
-    content: 'Persisted through a restart.',
-  });
-  const { entry } = await json(first.base, `/entries/${original.id}`, 'PATCH', {
-    parentId: folder.id,
-    name: 'Moved smoke.txt',
-    revision: original.revision,
-  });
-  await json(first.base, '/entries/desktop-note/trash', 'POST');
+  const rootPath = join(dir, 'host-project');
+  const file = 'README.md';
+  const fileContent = 'Host project source.\n';
+  await mkdir(rootPath);
+  await writeFile(join(rootPath, file), fileContent);
+  const { project: registeredProject } = await json(
+    first.base,
+    '/projects',
+    'POST',
+    {
+      rootPath,
+    },
+  );
+  assert.ok(registeredProject.id);
   const preferences = {
     wallpaper: 'dither',
     iconSnap: false,
     clock24Hour: false,
   };
   await json(first.base, '/preferences', 'PUT', preferences);
-  const windowId = `notes:${entry.id}`;
+  const windowId = `project-files:${registeredProject.id}`;
   const layout = {
     version: 2,
     currentWorkspaceId: 'workspace-2',
@@ -1040,9 +1037,9 @@ try {
     windows: [
       {
         id: windowId,
-        appId: 'notes',
-        title: entry.name,
-        params: { entryId: entry.id },
+        appId: 'project-files',
+        title: registeredProject.name,
+        params: { projectId: registeredProject.id },
         workspaceId: 'workspace-2',
         sticky: false,
         minimized: false,
@@ -1055,10 +1052,10 @@ try {
         viewState: {},
       },
       {
-        id: 'files:documents',
-        appId: 'files',
-        title: 'Documents',
-        params: { folderId: 'documents' },
+        id: 'welcome:main',
+        appId: 'welcome',
+        title: 'Welcome',
+        params: {},
         workspaceId: 'workspace-1',
         sticky: true,
         minimized: true,
@@ -1068,12 +1065,12 @@ try {
         height: 420,
         shaded: false,
         zoomed: false,
-        viewState: { path: ['documents', folder.id], selected: [entry.id] },
+        viewState: {},
       },
       {
-        id: 'inspector:main',
-        appId: 'inspector',
-        title: 'Inspector',
+        id: 'appearance:main',
+        appId: 'appearance',
+        title: 'Preferences',
         params: {},
         workspaceId: 'workspace-2',
         sticky: false,
@@ -1084,43 +1081,32 @@ try {
         height: 400,
         shaded: false,
         zoomed: false,
-        viewState: { pinnedEntryId: entry.id },
+        viewState: {},
       },
     ],
     workspaces: Array.from({ length: 4 }, (_, index) => ({
       id: `workspace-${index + 1}`,
-      name: index === 1 ? 'Writing' : `Workspace ${index + 1}`,
+      name: index === 1 ? 'Development' : `Workspace ${index + 1}`,
       order:
         index === 1
-          ? [windowId, 'inspector:main', 'files:documents']
-          : ['files:documents'],
+          ? [windowId, 'appearance:main', 'welcome:main']
+          : ['welcome:main'],
       activeWindowId: index === 1 ? windowId : null,
       clip:
         index === 1
           ? [
               {
                 id: 'favorite',
-                appId: 'notes',
-                title: entry.name,
-                params: { entryId: entry.id },
+                appId: 'project-files',
+                title: registeredProject.name,
+                params: { projectId: registeredProject.id },
               },
             ]
           : [],
     })),
     dock: [
-      { appId: 'files', pinned: true },
-      { appId: 'notes', pinned: true },
-    ],
-    pinnedMenus: [
-      {
-        id: 'saved-menu',
-        kind: 'application',
-        groupId: 'file',
-        ownerWindowId: windowId,
-        x: 8,
-        y: 160,
-        title: 'Text Editor — File',
-      },
+      { appId: 'project-files', pinned: true },
+      { appId: 'appearance', pinned: true },
     ],
   };
   await json(first.base, '/layout', 'PUT', {
@@ -1190,10 +1176,12 @@ try {
     !(await readdir(dir)).includes('ignored-data'),
     'Explicit flags must override environment configuration.',
   );
-  const saved = await json(second.base, `/entries/${entry.id}`);
-  assert.equal(saved.content, 'Persisted through a restart.');
-  assert.equal(saved.entry.parentId, folder.id);
-  assert.equal(saved.entry.name, 'Moved smoke.txt');
+  const saved = await json(
+    second.base,
+    `/projects/${registeredProject.id}/file?path=${file}`,
+  );
+  assert.equal(saved.content, fileContent);
+  assert.equal(saved.projectId, registeredProject.id);
   const recovered = await json(
     second.base,
     '/bootstrap?clientId=smoke-browser',
@@ -1201,20 +1189,13 @@ try {
   assert.equal(recovered.databaseId, initial.databaseId);
   assert.deepEqual(recovered.preferences, preferences);
   assert.deepEqual(recovered.layout, layout);
-  assert.ok(
-    recovered.entries.find((item) => item.id === 'desktop-note')?.trashedAt,
-  );
   const other = await json(second.base, '/bootstrap?clientId=another-browser');
   assert.equal(other.layout, null, 'Client layouts must remain isolated.');
-  await json(second.base, '/entries/desktop-note/restore', 'POST');
-  const restored = await json(second.base, '/entries/desktop-note');
-  assert.ok(!restored.entry.trashedAt);
-  const download = await (
-    await fetchBounded(
-      `${second.base}/api/entries/${entry.id}/content?download=1`,
-    )
-  ).text();
-  assert.equal(download, saved.content);
+  const download = await fetchBounded(
+    `${second.base}/api/projects/${registeredProject.id}/download?path=${file}`,
+  );
+  assert.equal(download.status, 200);
+  assert.equal(await download.text(), fileContent);
   if (terminal) {
     const restarted = await connectTerminal(second.base);
     if (process.platform !== 'win32')
@@ -1234,7 +1215,7 @@ try {
         'next-password',
         'survives-restart',
         'production-pty-ready',
-        'Persisted through a restart.',
+        fileContent.trim(),
       ],
     },
   );
@@ -1251,7 +1232,7 @@ try {
     );
   await codex?.verifyIsolation();
   console.log(
-    'Production smoke passed: CLI help/version/errors, disabled Tailscale and Cloudflare status and CLI identity without node or connector state, local-only remote controls and strict mutation input, isolated global configuration, flag precedence, dynamic ports, listener failure, graceful shutdown with active PTYs, host shell input/output/resize/interrupt/session limits/restart, Host Codex workspace/project/tmux identity/redacted proxy diagnostics/environment refresh/idempotent creation and continuation/multiple clients/detach/reattach/session isolation/metadata/recent projects/termination/process and exact-event activity review persistence across service restart/approval resolution/history context in a new process/old-run isolation, embedded UI, independent cwd, database identity, files, trash, preferences, workspaces, Dock, Clip, panels, and client layouts survive restart.',
+    'Production smoke passed: CLI help/version/errors, disabled Tailscale and Cloudflare status and CLI identity without node or connector state, local-only remote controls and strict mutation input, isolated global configuration, flag precedence, dynamic ports, listener failure, graceful shutdown with active PTYs, host shell input/output/resize/interrupt/session limits/restart, Host Codex workspace/project/tmux identity/redacted proxy diagnostics/environment refresh/idempotent creation and continuation/multiple clients/detach/reattach/session isolation/metadata/recent projects/termination/process and exact-event activity review persistence across service restart/approval resolution/history context in a new process/old-run isolation, embedded UI, independent cwd, database identity, host project access, preferences, workspace shortcuts, Dock, utility windows, and isolated client layouts across restart.',
   );
 } catch (error) {
   console.error('Production smoke failed:', error);

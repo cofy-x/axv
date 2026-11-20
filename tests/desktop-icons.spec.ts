@@ -1,11 +1,8 @@
 import type { Locator, Page } from '@playwright/test';
 import {
-  activate,
   bounds,
-  createEntry,
-  editorWindow,
   expect,
-  filesWindow,
+  launch,
   menuItem,
   persistedLayout,
   test,
@@ -16,16 +13,11 @@ import { preparationCheckFixture } from './machines-preparation-fixture';
 import type { Machine } from '../apps/dashboard/src/features/machines/api';
 
 async function showDesktop(page: Page) {
-  await activate(page, filesWindow(page));
-  await filesWindow(page)
-    .getByRole('button', { name: /^Close / })
-    .click();
   await page
     .locator('[data-app-id="welcome"]')
     .getByRole('button', { name: /^Close / })
     .click();
   await expect(page.locator('[data-window-id]')).toHaveCount(0);
-  await expect(page.locator('[data-icon-id="system:documents"]')).toBeVisible();
 }
 
 async function desktopVMHost(page: Page) {
@@ -200,7 +192,7 @@ async function expectIconsInArea(page: Page) {
   return area;
 }
 
-test('VM desktop icons retain identity, expose status and stay outside document deletion', async ({
+test('VM desktop icons retain identity, expose status and remain read-only', async ({
   page,
   request,
 }, info) => {
@@ -231,20 +223,6 @@ test('VM desktop icons retain identity, expose status and stay outside document 
   await page.keyboard.press('Delete');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(icon).toBeVisible();
-  const start = await bounds(icon);
-  const recycler = canvas.getByRole('button', {
-    name: 'Recycler',
-    exact: true,
-  });
-  const target = await bounds(recycler);
-  await page.mouse.move(start.x + start.width / 2, start.y + 16);
-  await page.mouse.down();
-  await page.mouse.move(target.x + target.width / 2, target.y + 16, {
-    steps: 8,
-  });
-  await expect(recycler).not.toHaveClass(/is-trash-target/);
-  await page.mouse.move(start.x + start.width / 2, start.y + 16, { steps: 8 });
-  await page.mouse.up();
   const id = (await icon.getAttribute('data-icon-id'))!;
   await dragBy(page, icon, -100, 0);
   const position = await bounds(icon);
@@ -347,6 +325,8 @@ test('desktop icons use the available right edge and avoid menus, Dock and miniw
   page,
 }, info) => {
   await showDesktop(page);
+  await showApplicationOnDesktop(page, 'Project Files');
+  await showApplicationOnDesktop(page, 'Virtual Machines');
   for (const viewport of [
     { width: 1440, height: 900 },
     { width: 1024, height: 768 },
@@ -364,8 +344,9 @@ test('desktop icons use the available right edge and avoid menus, Dock and miniw
     } else expect(area.x + area.width).toBeLessThan(dock.x);
     await captureWorkArea(page, info, 'desktop-icons');
   }
-  await page.locator('[data-icon-id="system:documents"]').dblclick();
-  await filesWindow(page)
+  await launch(page, 'project-files');
+  await page
+    .locator('[data-app-id="project-files"]')
     .getByRole('button', { name: /^Miniaturize / })
     .click();
   const area = await expectIconsInArea(page);
@@ -380,14 +361,15 @@ test('compact dragging and cleanup persist independently of wide desktop positio
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await showDesktop(page);
-  const icon = page.locator('[data-icon-id="system:computer"]');
+  await showApplicationOnDesktop(page, 'Project Files');
+  const icon = page.locator('[data-icon-id="system:project-files"]');
   await cleanUp(page);
   await dragBy(page, icon, -160, 16);
   const wide = await bounds(icon);
   await expect
     .poll(
       async () =>
-        (await persistedLayout(page, request))?.icons['system:computer'],
+        (await persistedLayout(page, request))?.icons['system:project-files'],
     )
     .toEqual({ x: wide.x, y: wide.y });
   const savedWide = (await persistedLayout(page, request)).icons;
@@ -403,7 +385,9 @@ test('compact dragging and cleanup persist independently of wide desktop positio
   await expect
     .poll(
       async () =>
-        (await persistedLayout(page, request))?.compactIcons['system:computer'],
+        (await persistedLayout(page, request))?.compactIcons[
+          'system:project-files'
+        ],
     )
     .toEqual({ x: compact.x, y: compact.y });
   expect((await persistedLayout(page, request)).icons).toEqual(savedWide);
@@ -421,17 +405,22 @@ test('overflow icons stay scrollable and open through pointer or touch', async (
   isMobile,
   browserName,
 }, info) => {
-  let document;
-  for (let index = 0; index < 20; index++)
-    document = await createEntry(
-      request,
-      `E2E Desktop ${String(index).padStart(2, '0')}.txt`,
-      'file',
-      'desktop',
-    );
+  const state = await desktopVMHost(page);
   await page.setViewportSize({ width: 390, height: 420 });
-  await page.reload();
-  await showDesktop(page);
+  const machine = state.machines[0]!;
+  state.machines = Array.from({ length: 20 }, (_, index) => {
+    const number = String(index).padStart(2, '0');
+    return {
+      ...machine,
+      id: `desktop-vm-${number}`,
+      spec: { ...machine.spec, name: `Overflow VM ${number}` },
+    };
+  });
+  const icon = page.getByRole('button', {
+    name: 'Overflow VM 19 — Stopped',
+    exact: true,
+  });
+  await expect(icon).toBeVisible();
   const canvas = page.getByRole('group', { name: 'Desktop icons' });
   expect(
     await canvas.evaluate(
@@ -468,7 +457,6 @@ test('overflow icons stay scrollable and open through pointer or touch', async (
     await page.mouse.move(x, visibleArea.y + 40);
     await page.mouse.wheel(0, 400);
   }
-  const icon = page.locator(`[data-icon-id="${document!.id}"]`);
   // Playwright does not expose swipe or wheel input in mobile WebKit.
   // Verify its native pan policy, scroll range and touch activation instead.
   if (isMobile && browserName === 'webkit') {
@@ -490,5 +478,7 @@ test('overflow icons stay scrollable and open through pointer or touch', async (
     await icon.tap();
     await icon.tap();
   } else await icon.dblclick();
-  await expect(editorWindow(page, document!.id)).toBeVisible();
+  await expect(page.locator('[data-app-id="machine-inspector"]')).toContainText(
+    'Overflow VM 19',
+  );
 });

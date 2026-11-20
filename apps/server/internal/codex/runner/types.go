@@ -51,12 +51,11 @@ type Manifest struct {
 // State publishes provider readiness separately from the final Exit proof.
 // Ready means the exact conversation identity has been durably recorded.
 type State struct {
-	RunID          string `json:"runId"`
-	ThreadID       string `json:"threadId,omitempty"`
-	HistoryHome    string `json:"historyHome"`
-	Status         string `json:"status"`
-	ErrorCode      string `json:"errorCode,omitempty"`
-	ContextVersion int    `json:"contextVersion,omitempty"`
+	RunID       string `json:"runId"`
+	ThreadID    string `json:"threadId,omitempty"`
+	HistoryHome string `json:"historyHome"`
+	Status      string `json:"status"`
+	ErrorCode   string `json:"errorCode,omitempty"`
 }
 
 func readManifest(path string) (Manifest, error) {
@@ -150,7 +149,6 @@ func writeFailure(path string, fallback State, code string) {
 		if json.Unmarshal(data, &current) == nil && current.RunID == fallback.RunID &&
 			current.HistoryHome == fallback.HistoryHome && threadIDPattern.MatchString(current.ThreadID) {
 			fallback.ThreadID = current.ThreadID
-			fallback.ContextVersion = current.ContextVersion
 		}
 	}
 	fallback.Status, fallback.ErrorCode = StatusFailed, code

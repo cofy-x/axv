@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import type { PointerEvent } from 'react';
 import { inWorkspace, overviewTransform, visibleBounds } from '../model';
 import type {
@@ -5,7 +6,6 @@ import type {
   Bounds,
   DesktopAPI,
   DesktopWindow,
-  Size,
 } from '../types';
 import { createWindowMenu } from './menus';
 import { UnavailableApplication } from './applications';
@@ -16,7 +16,6 @@ interface WindowFrameProps {
   app: AppDefinition;
   index: number;
   api: DesktopAPI;
-  viewport: Size;
   workArea: Bounds;
   mobile: boolean;
   overview: boolean;
@@ -38,7 +37,6 @@ export function WindowFrame({
   app,
   index,
   api,
-  viewport,
   workArea,
   mobile,
   overview,
@@ -58,11 +56,15 @@ export function WindowFrame({
   const hidden = !overview && (!visible || (mobile && !active));
   const shaded = win.shaded && !overview;
   const Content = app.component;
-  const menu = (point: { x: number; y: number }) =>
-    api.contextMenu(createWindowMenu(win, api), point, {
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const menu = (point: { x: number; y: number }) => {
+    menuButton.current?.focus({ preventScroll: true });
+    api.contextMenu(createWindowMenu(win, api, app), point, {
       title: 'Window',
-      pin: { kind: 'window', ownerWindowId: win.id, title: 'Window' },
+      ownerWindowId: win.id,
+      ownerArea: 'titlebar',
     });
+  };
   return (
     <section
       data-window-id={win.id}
@@ -88,7 +90,7 @@ export function WindowFrame({
         visibility: hidden ? 'hidden' : undefined,
         pointerEvents: hidden ? 'none' : undefined,
         transform: overview
-          ? overviewTransform(bounds, index, api.windows.length, viewport)
+          ? overviewTransform(bounds, index, api.windows.length, workArea)
           : undefined,
       }}
       onPointerDownCapture={() => {
@@ -97,6 +99,8 @@ export function WindowFrame({
     >
       <div
         className="ns-window-titlebar"
+        inert={overview || undefined}
+        aria-hidden={overview || undefined}
         onPointerDown={(event) => {
           if (!(event.target as HTMLElement).closest('button'))
             beginWindowGesture(event, win);
@@ -120,13 +124,13 @@ export function WindowFrame({
           <WindowControlIcon icon="minimize" />
         </button>
         <button
+          ref={menuButton}
           type="button"
           className="ns-window-menu"
           aria-label={`Window menu for ${win.title}`}
           title={`Window menu for ${win.title}`}
           aria-haspopup="menu"
           onClick={(event) => {
-            event.currentTarget.focus();
             const rect = event.currentTarget.getBoundingClientRect();
             menu({ x: rect.left, y: rect.bottom });
           }}
@@ -167,8 +171,8 @@ export function WindowFrame({
       </div>
       <div
         className="ns-window-content"
-        inert={shaded || undefined}
-        aria-hidden={shaded || undefined}
+        inert={shaded || overview || undefined}
+        aria-hidden={shaded || overview || undefined}
         style={{
           // Reserve the unshaded body size at the current control size so
           // shading does not collapse app layout or reset nested scroll areas.

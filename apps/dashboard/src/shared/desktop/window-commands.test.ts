@@ -33,34 +33,36 @@ describe('window command scope', () => {
     expect(changed).toHaveBeenCalled();
     unsubscribe();
     changed.mockClear();
-    commands.register('b', 'save', handler);
+    commands.register('b', 'terminal:copy', handler);
     expect(changed).not.toHaveBeenCalled();
   });
 
   it('targets only the requested live window and desktop instance', async () => {
     const commands = createWindowCommands();
     const otherDesktop = createWindowCommands();
-    const saveA = vi.fn(async () => true);
-    const saveB = vi.fn(async () => false);
-    const unregister = commands.register('a', 'save', saveA);
-    commands.register('b', 'save', saveB);
-    await expect(commands.execute('a', 'save')).resolves.toBe(true);
-    expect(saveA).toHaveBeenCalledTimes(1);
-    expect(saveB).not.toHaveBeenCalled();
-    await expect(otherDesktop.execute('a', 'save')).resolves.toBe(false);
+    const copyA = vi.fn(async () => true);
+    const copyB = vi.fn(async () => false);
+    const unregister = commands.register('a', 'terminal:copy', copyA);
+    commands.register('b', 'terminal:copy', copyB);
+    await expect(commands.execute('a', 'terminal:copy')).resolves.toBe(true);
+    expect(copyA).toHaveBeenCalledTimes(1);
+    expect(copyB).not.toHaveBeenCalled();
+    await expect(otherDesktop.execute('a', 'terminal:copy')).resolves.toBe(
+      false,
+    );
     unregister();
-    await expect(commands.execute('a', 'save')).resolves.toBe(false);
-    await expect(commands.execute('b', 'save')).resolves.toBe(false);
-    expect(saveB).toHaveBeenCalledTimes(1);
+    await expect(commands.execute('a', 'terminal:copy')).resolves.toBe(false);
+    await expect(commands.execute('b', 'terminal:copy')).resolves.toBe(false);
+    expect(copyB).toHaveBeenCalledTimes(1);
   });
 
   it('does not remove a replacement handler when an older registration cleans up', async () => {
     const commands = createWindowCommands();
-    const obsolete = commands.register('a', 'save', async () => false);
+    const obsolete = commands.register('a', 'terminal:copy', async () => false);
     const latest = vi.fn(async () => true);
-    commands.register('a', 'save', latest);
+    commands.register('a', 'terminal:copy', latest);
     obsolete();
-    await expect(commands.execute('a', 'save')).resolves.toBe(true);
+    await expect(commands.execute('a', 'terminal:copy')).resolves.toBe(true);
     expect(latest).toHaveBeenCalledTimes(1);
   });
 });

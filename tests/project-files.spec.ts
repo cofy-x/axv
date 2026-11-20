@@ -1,19 +1,20 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { Locator, Page } from '@playwright/test';
 import {
-  activate,
-  createEntry,
-  editorWindow,
+  actionMenu,
   expect,
-  filesWindow,
+  expectedDownloadFilename,
   menuItem,
-  openDocument,
-  readContent,
   test,
 } from './helpers';
-import type { Entry } from './helpers';
-import { openDocumentTask } from './document-workflow-helpers';
+import { choose } from './codex-helpers';
+import {
+  codeEditor,
+  copyEditorText,
+  expectEditorText,
+} from './code-editor-helpers';
 
 const hostId = 'launcher-host';
 const volumeId = '11111111-1111-4111-8111-111111111111';
@@ -137,6 +138,33 @@ async function openLauncher(page: Page) {
   await menuItem(page, 'Applications').click();
   await menuItem(page, 'Project Files').click();
   return page.locator('[data-window-id="project-files:projects"]');
+}
+
+async function openRegisteredHostProject(
+  page: Page,
+  rootPath: string,
+  touch: boolean,
+) {
+  const launcher = await openLauncher(page);
+  await launcher
+    .getByLabel('Host project directory', { exact: true })
+    .fill(rootPath);
+  const registration = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/api/projects' &&
+      response.request().method() === 'POST',
+  );
+  await choose(
+    launcher.getByRole('button', { name: 'Open', exact: true }),
+    touch,
+  );
+  const response = await registration;
+  expect(response.ok(), await response.text()).toBeTruthy();
+  const { project } = (await response.json()) as { project: { id: string } };
+  return {
+    project,
+    browser: page.locator(`[data-window-id="project-files:${project.id}"]`),
+  };
 }
 
 async function expectOnlyLauncherCode(page: Page) {
@@ -315,12 +343,8 @@ test('closing the host launcher keeps a completed registration without reopening
     !projectPath,
     'Host projects require the isolated POSIX workspace.',
   );
-  const entry = await createEntry(request, 'E2E Registration owner draft.txt');
-  await page.reload();
-  const editor = await openDocument(page, entry);
-  const text = editor.getByRole('textbox', { name: 'Document text' });
-  const draft = 'Keep the other document draft and focus.';
-  await text.fill(draft);
+  const welcome = page.locator('[data-app-id="welcome"]');
+  const codex = welcome.getByRole('button', { name: 'Codex', exact: true });
   const launcher = await openLauncher(page);
   await launcher
     .getByLabel('Host project directory', { exact: true })
@@ -353,8 +377,7 @@ test('closing the host launcher keeps a completed registration without reopening
     if (hasTouch) await close.tap();
     else await close.click();
     await expect(launcher).toHaveCount(0);
-    await activate(page, editor);
-    await text.focus();
+    await codex.focus();
     release();
     await (await finished).finished();
     // Settle the completed fetch and any mistakenly launched view before
@@ -366,248 +389,250 @@ test('closing the host launcher keeps a completed registration without reopening
       expect.objectContaining(committedProject!),
     );
     await expect(page.locator('[data-app-id="project-files"]')).toHaveCount(0);
-    await expect(text).toBeFocused();
-    await expect(text).toHaveValue(draft);
-    expect(await readContent(request, entry.id)).toBe('Initial text');
+    await expect(codex).toBeFocused();
   } finally {
     release();
     await page.unroute(endpoint);
   }
 });
 
-test('exporting a new file transfers focus from a hidden source to the mounted preview', async ({
+test('host source highlighting remains read-only and treats HTML as literal text', async ({
   page,
-  request,
   hasTouch,
-}, testInfo) => {
+}) => {
   const projectPath = process.env.E2E_CODEX_PROJECT || '';
   test.skip(
     !projectPath,
     'Host projects require the isolated POSIX workspace.',
   );
-  await page.setViewportSize({ width: 390, height: 844 });
-  const entry = await createEntry(
-    request,
-    'E2E Export focus.md',
-    'file',
-    'documents',
-    '# Export focus\n\nSynthetic preview content.',
-  );
-  const registered = await request.post('/api/projects', {
-    headers: { Origin: process.env.E2E_BASE_URL! },
-    data: { rootPath: projectPath },
-  });
-  expect(registered.ok(), await registered.text()).toBeTruthy();
-  const { project } = (await registered.json()) as { project: { id: string } };
-  await page.reload();
-  const editor = await openDocument(page, entry, hasTouch);
-  const panel = await openDocumentTask(page, editor, 'export', hasTouch);
-  const destination = panel.getByRole('combobox', {
-    name: 'Destination project',
-    exact: true,
-  });
-  await destination.selectOption(project.id);
-  const path = panel.getByLabel('New file path', { exact: true });
-  const exportButton = panel
-    .getByRole('group', { name: 'Saved version actions', exact: true })
-    .getByRole('button', { name: 'Export', exact: true });
-  await path.fill(`focus-initial-${entry.id}.md`);
-  if (hasTouch) await exportButton.tap();
-  else await exportButton.click();
-  const browser = page.locator(
-    `[data-window-id="project-files:${project.id}"]`,
-  );
-  const preview = browser.getByRole('region', { name: 'Project file preview' });
-  await expect(
-    preview.getByRole('heading', { name: 'Export focus' }),
-  ).toBeVisible();
-  // Keep the mounted viewer's saved desktop focus neutral, so only its own
-  // file-opening effect can transfer focus to the next preview.
-  await browser.focus();
-  await expect(browser).toBeFocused();
-  await activate(page, panel, hasTouch);
-  await path.fill(`focus-next-${entry.id}.md`);
-  const source = panel.locator('summary').filter({ hasText: /^Preview$/ });
-  let release = () => {};
-  const pending = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  let committed = false;
-  const endpoint = `**/api/projects/${project.id}/export`;
-  await page.route(endpoint, async (route) => {
-    const response = await route.fetch();
-    committed = true;
-    await pending;
-    await route.fulfill({ response });
+  const suffix = randomUUID();
+  const samples = [
+    {
+      name: `readonly-${suffix}.ts`,
+      content: [
+        '// Host source is displayed without running it.',
+        'export const markup = \'<script>globalThis.axvHostSourceExecuted = true</script><img src="/axv-host-source-probe" onerror="globalThis.axvHostSourceExecuted = true">\';',
+        'export const enabled: boolean = true;',
+        '',
+      ].join('\n'),
+      highlighted: true,
+    },
+    {
+      name: `readonly-${suffix}.axvtext`,
+      content:
+        '<script>globalThis.axvHostSourceExecuted = true</script>\nUnknown extension: keep this source as plain text.\n',
+      highlighted: false,
+    },
+  ];
+  const paths = samples.map((sample) => join(projectPath, sample.name));
+  const createdPaths: string[] = [];
+  const probeRequests: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/axv-host-source-probe')
+      probeRequests.push(request.url());
   });
   try {
-    if (hasTouch) await exportButton.tap();
-    else await exportButton.click();
-    await expect.poll(() => committed).toBe(true);
-    // This native control stays enabled while export is pending. Keep focus
-    // there until the outgoing window becomes inert during result activation.
-    await source.focus();
-    await expect(source).toBeFocused();
-    release();
-    await expect(panel).toBeHidden();
-    await expect(browser).toHaveClass(/is-active/);
-    await expect(preview).toContainText(`focus-next-${entry.id}.md`);
-    await expect(preview).toBeFocused();
-    const screenshot = testInfo.outputPath('export-focus-preview.png');
-    await browser.screenshot({ path: screenshot });
-    await testInfo.attach('Exported project preview focus', {
-      path: screenshot,
-      contentType: 'image/png',
-    });
-    await source.evaluate((element) => (element as HTMLElement).focus());
-    await expect(source).not.toBeFocused();
-    await expect(
-      editor.getByRole('textbox', {
-        name: 'Document text',
-        includeHidden: true,
-      }),
-    ).toHaveValue('# Export focus\n\nSynthetic preview content.');
+    for (const [index, sample] of samples.entries()) {
+      await writeFile(paths[index], sample.content, { flag: 'wx' });
+      createdPaths.push(paths[index]);
+    }
+    const { browser } = await openRegisteredHostProject(
+      page,
+      projectPath,
+      hasTouch,
+    );
+    for (const [index, sample] of samples.entries()) {
+      if (index && hasTouch)
+        await choose(
+          browser.getByRole('button', { name: 'Back', exact: true }),
+          true,
+        );
+      await choose(
+        browser.getByRole('button', { name: sample.name, exact: true }),
+        hasTouch,
+      );
+      const source = codeEditor(browser, 'Project file source');
+      await expect(source).toBeVisible();
+      await expect(source).toHaveAttribute('aria-readonly', 'true');
+      await expectEditorText(source, sample.content);
+      expect(await copyEditorText(source)).toBe(sample.content);
+      if (sample.highlighted)
+        await expect
+          .poll(() =>
+            source
+              .locator('span')
+              .evaluateAll(
+                (spans) =>
+                  new Set(
+                    spans
+                      .filter((span) => span.textContent)
+                      .map((span) => getComputedStyle(span).color),
+                  ).size,
+              ),
+          )
+          .toBeGreaterThan(1);
+      await source.press('ControlOrMeta+End');
+      await source.pressSequentially('READ_ONLY_PROBE');
+      await expectEditorText(source, sample.content);
+      await expect(
+        browser
+          .getByRole('region', { name: 'Project file preview' })
+          .locator('script, img'),
+      ).toHaveCount(0);
+      expect(
+        await page.evaluate(() =>
+          Reflect.get(globalThis, 'axvHostSourceExecuted'),
+        ),
+      ).toBeUndefined();
+      expect(await readFile(paths[index])).toEqual(Buffer.from(sample.content));
+    }
+    expect(probeRequests).toEqual([]);
   } finally {
-    release();
-    await page.unroute(endpoint);
+    await Promise.all(createdPaths.map((path) => rm(path, { force: true })));
   }
 });
 
-for (const held of ['import', 'refresh'] as const) {
-  test(`closing a host copy owner during ${held} preserves the copy without opening Notes`, async ({
-    page,
-    request,
-    hasTouch,
-  }) => {
-    const projectPath = process.env.E2E_CODEX_PROJECT || '';
-    test.skip(
-      !projectPath,
-      'Host projects require the isolated POSIX workspace.',
+test('project download reports API failures inline and preserves the original file bytes', async ({
+  page,
+  browserName,
+  hasTouch,
+}) => {
+  const projectPath = process.env.E2E_CODEX_PROJECT || '';
+  test.skip(
+    !projectPath,
+    'Host projects require the isolated POSIX workspace.',
+  );
+  const path = `download-${randomUUID()}.md`;
+  const fixture = join(projectPath, path);
+  const content = '# Original project file\n\nRECOVERED_ORIGINAL';
+  const expectedFilename = expectedDownloadFilename(path, browserName);
+  await writeFile(fixture, content, { flag: 'wx' });
+  try {
+    const { browser, project } = await openRegisteredHostProject(
+      page,
+      projectPath,
+      hasTouch,
     );
-    const entry = await createEntry(
-      request,
-      `E2E Copy ${held} owner draft.txt`,
+    await choose(
+      browser
+        .locator('.project-directory')
+        .getByRole('button', { name: path, exact: true }),
+      hasTouch,
     );
-    await page.reload();
-    const editor = await openDocument(page, entry);
-    const text = editor.getByRole('textbox', { name: 'Document text' });
-    const draft = `Keep the other draft while ${held} completes.`;
-    await text.fill(draft);
-    const sourceName = `E2E copied-${held}-${entry.id}.txt`;
-    const source = `The acknowledged ${held} copy must remain available.`;
-    await writeFile(join(projectPath, sourceName), source);
-    const launcher = await openLauncher(page);
-    await launcher
-      .getByLabel('Host project directory', { exact: true })
-      .fill(projectPath);
-    const opened = page.waitForResponse(
-      (response) =>
-        new URL(response.url()).pathname === '/api/projects' &&
-        response.request().method() === 'POST',
+    await expect(
+      browser.getByRole('heading', { name: 'Original project file' }),
+    ).toBeVisible();
+    const originalURL = page.url();
+    let downloads = 0;
+    page.on('download', () => downloads++);
+    await page.route(
+      `**/api/projects/${project.id}/download?*`,
+      async (route) => {
+        await route.fulfill({
+          status: 409,
+          json: {
+            code: 'file_changed',
+            error:
+              'This file changed before the download. Refresh and try again.',
+          },
+        });
+      },
+      { times: 1 },
     );
-    const open = launcher.getByRole('button', { name: 'Open', exact: true });
-    if (hasTouch) await open.tap();
-    else await open.click();
-    const openedResponse = await opened;
-    expect(openedResponse.ok()).toBeTruthy();
-    const { project } = (await openedResponse.json()) as {
-      project: { id: string };
-    };
-    const browser = page.locator(
-      `[data-window-id="project-files:${project.id}"]`,
+    const more = browser.getByRole('button', {
+      name: 'More project actions',
+      exact: true,
+    });
+    await actionMenu(
+      page,
+      browser,
+      'More project actions',
+      'Download',
+      hasTouch,
     );
+    await expect(browser.getByRole('alert')).toHaveText(
+      'This file changed before the download. Refresh and try again.',
+    );
+    await expect(page).toHaveURL(originalURL);
     await expect(browser).toBeVisible();
-    const selected = browser.getByRole('button', {
-      name: sourceName,
+    await expect(more).toBeEnabled();
+    expect(downloads).toBe(0);
+    await choose(more, hasTouch);
+    const downloadItem = page
+      .locator('.ns-menu-layer')
+      .getByRole('menuitem', { name: 'Download', exact: true });
+    await expect(downloadItem).toBeEnabled();
+    const downloaded = page.waitForEvent('download');
+    await choose(downloadItem, hasTouch);
+    const download = await downloaded;
+    expect(download.suggestedFilename()).toBe(expectedFilename);
+    const saved = await download.path();
+    expect(saved).not.toBeNull();
+    expect(await readFile(saved!)).toEqual(Buffer.from(content));
+    expect(downloads).toBe(1);
+    await expect(page).toHaveURL(originalURL);
+    await expect(browser.getByRole('alert')).toHaveCount(0);
+
+    await page.route(`**/api/projects/${project.id}/file?*`, async (route) => {
+      await route.fulfill({
+        status: 415,
+        json: {
+          code: 'unsupported_file',
+          error: 'This file cannot be previewed.',
+        },
+      });
+    });
+    await choose(
+      browser.getByRole('button', { name: 'Refresh', exact: true }),
+      hasTouch,
+    );
+    await expect(browser.getByRole('alert')).toHaveText(
+      'This file cannot be previewed.',
+    );
+    const fallbackDownload = browser.getByRole('button', {
+      name: 'Download',
       exact: true,
     });
-    if (hasTouch) await selected.tap();
-    else await selected.click();
-    const copy = browser.getByRole('button', {
-      name: 'Copy to Documents',
-      exact: true,
+    await expect(fallbackDownload).toBeInViewport();
+    const fallbackDownloaded = page.waitForEvent('download');
+    await choose(fallbackDownload, hasTouch);
+    const fallback = await fallbackDownloaded;
+    expect(fallback.suggestedFilename()).toBe(expectedFilename);
+    const fallbackPath = await fallback.path();
+    expect(fallbackPath).not.toBeNull();
+    expect(await readFile(fallbackPath!)).toEqual(Buffer.from(content));
+    expect(downloads).toBe(2);
+    await expect(browser.getByRole('alert')).toHaveText(
+      'This file cannot be previewed.',
+    );
+
+    await page.evaluate(() => {
+      const attempts: string[] = [];
+      Reflect.set(globalThis, 'closedProjectDownloadRequests', attempts);
+      const fetch = globalThis.fetch;
+      globalThis.fetch = (...args) => {
+        const input = args[0];
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.includes('/download?')) attempts.push(url);
+        return fetch(...args);
+      };
     });
-    await expect(copy).toBeEnabled();
-    let release = () => {};
-    const pending = new Promise<void>((resolve) => {
-      release = resolve;
+    await choose(more, hasTouch);
+    await expect(downloadItem).toBeVisible();
+    // Retain the menu while closing its owner to exercise the stale action.
+    await browser.locator('.ns-close').evaluate((button) => {
+      (button as HTMLButtonElement).click();
     });
-    let copied: Entry | undefined;
-    let requestId = '';
-    let refreshes = 0;
-    const importEndpoint = (url: URL) =>
-      url.pathname === `/api/projects/${project.id}/import`;
-    const refreshEndpoint = (url: URL) => url.pathname === '/api/entries';
-    await page.route(importEndpoint, async (route) => {
-      requestId = route.request().postDataJSON().requestId;
-      const response = await route.fetch();
-      expect(response.ok(), await response.text()).toBeTruthy();
-      copied = (await response.json()).entry;
-      if (held === 'import') await pending;
-      await route.fulfill({ response });
-    });
-    await page.route(refreshEndpoint, async (route) => {
-      const response = await route.fetch();
-      expect(response.ok(), await response.text()).toBeTruthy();
-      refreshes++;
-      if (held === 'refresh') await pending;
-      await route.fulfill({ response });
-    });
-    try {
-      if (hasTouch) await copy.tap();
-      else await copy.click();
-      await expect
-        .poll(() => (held === 'import' ? copied?.id : refreshes))
-        .toBeTruthy();
-      const close = browser.getByRole('button', { name: /^Close / });
-      if (hasTouch) await close.tap();
-      else await close.click();
-      await expect(browser).toHaveCount(0);
-      await activate(page, editor);
-      await text.focus();
-      release();
-      const copiedEntry = copied!;
-      // The shared list update is the completion barrier after both awaited
-      // operations, and proves refresh still runs when the owner has closed.
-      await expect(
-        filesWindow(page).getByRole('option', {
-          name: copiedEntry.name,
-          exact: true,
-          includeHidden: true,
-        }),
-      ).toHaveCount(1);
-      expect(refreshes).toBe(1);
-      expect(await readContent(request, copiedEntry.id)).toBe(source);
-      await expect
-        .poll(() =>
-          page.evaluate(
-            ({ projectId, completedId }) => {
-              const key = Object.keys(sessionStorage).find(
-                (key) =>
-                  key.startsWith('axv-requests:') &&
-                  key.endsWith(`:project-import:${projectId}`),
-              );
-              if (!key)
-                throw new Error(
-                  'The transfer identity record was not created.',
-                );
-              return Object.values(
-                JSON.parse(sessionStorage.getItem(key)!),
-              ).includes(completedId);
-            },
-            { projectId: project.id, completedId: requestId },
-          ),
-        )
-        .toBe(false);
-      await expect(editorWindow(page, copiedEntry.id)).toHaveCount(0);
-      await expect(browser).toHaveCount(0);
-      await expect(text).toBeFocused();
-      await expect(text).toHaveValue(draft);
-      expect(await readContent(request, entry.id)).toBe('Initial text');
-    } finally {
-      release();
-      await page.unroute(importEndpoint);
-      await page.unroute(refreshEndpoint);
-    }
-  });
-}
+    await expect(browser).toHaveCount(0);
+    await choose(downloadItem, hasTouch);
+    await expect(page.locator('.ns-menu-layer')).toHaveCount(0);
+    expect(
+      await page.evaluate(() =>
+        Reflect.get(globalThis, 'closedProjectDownloadRequests'),
+      ),
+    ).toEqual([]);
+    expect(downloads).toBe(2);
+  } finally {
+    await rm(fixture, { force: true });
+  }
+});

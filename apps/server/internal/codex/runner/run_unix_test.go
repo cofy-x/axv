@@ -490,7 +490,7 @@ func TestRunKeepsConversationOwnershipUntilServerStops(t *testing.T) {
 	if lock != nil {
 		lock.Close()
 	}
-	if !contextLockContended(err) {
+	if !ownershipLockContended(err) {
 		t.Fatalf("ownership released before provider exit: %v", err)
 	}
 	if proof, err := ReadExit(firstDir, "first"); proof != nil || err != nil {

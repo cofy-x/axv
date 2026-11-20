@@ -1,10 +1,14 @@
-import { isApplicationLauncher, mergeMenuGroups } from '../model';
+import {
+  DEFAULT_WORKSPACE_COUNT,
+  isApplicationLauncher,
+  workspaceLabel,
+} from '../model';
 import type {
+  AppDefinition,
   DesktopAPI,
   DesktopProps,
   DesktopWindow,
   ClipShortcut,
-  MenuGroup,
   MenuItem,
 } from '../types';
 import { resolveApplication } from './applications';
@@ -20,22 +24,22 @@ export function showClock(api: DesktopAPI) {
   });
 }
 
-export function createClipShortcutMenu(
+function createClipShortcutMenu(
   props: DesktopProps,
   api: DesktopAPI,
   shortcut: ClipShortcut,
 ): MenuItem[] {
+  const app = resolveApplication(props.apps, shortcut.appId);
+  const bound = Object.keys(shortcut.params).length > 0;
   const available =
-    resolveApplication(props.apps, shortcut.appId).unavailable === undefined &&
-    props.isShortcutAvailable?.(shortcut) !== false;
+    app.unavailable === undefined && (bound || app.launchable !== false);
   return [
     {
       label: 'Open',
       disabled: !available,
       action: () => {
         if (!available) return;
-        if (Object.keys(shortcut.params).length)
-          api.openApp(shortcut.appId, shortcut.params);
+        if (bound) api.openApp(shortcut.appId, shortcut.params);
         else api.launchApp(shortcut.appId);
       },
     },
@@ -46,21 +50,34 @@ export function createClipShortcutMenu(
   ];
 }
 
-/** Workspace switching and shortcuts share the Clip menu. */
-export function createClipMenu(
-  props: DesktopProps,
-  api: DesktopAPI,
-): MenuItem[] {
+function canSaveWindowShortcut(window: DesktopWindow, app: AppDefinition) {
+  return app.launchable !== false || Object.keys(window.params).length > 0;
+}
+
+function createWorkspaceMenu(props: DesktopProps, api: DesktopAPI): MenuItem[] {
   const workspace = api.workspaces.find(
     (item) => item.id === api.currentWorkspaceId,
   )!;
+  const extraWorkspaces = api.workspaces.slice(DEFAULT_WORKSPACE_COUNT);
+  const active = api.windows.find((item) => item.id === api.activeWindowId);
+  const canSaveActive =
+    !!active &&
+    canSaveWindowShortcut(active, resolveApplication(props.apps, active.appId));
   return [
-    ...api.workspaces.map((item, index) => ({
-      label: `${index + 1}  ${item.name}`,
-      checked: item.id === workspace.id,
-      action: () => api.switchWorkspace(item.id),
-    })),
-    { separator: true },
+    {
+      label: 'Rename Workspace',
+      action: () => {
+        void api
+          .dialog({
+            title: 'Rename Workspace',
+            message: 'Leave the name blank to use the workspace number.',
+            input: { label: 'Workspace name', value: workspace.name },
+          })
+          .then((result) => {
+            if (result) api.renameWorkspace(workspace.id, result.value);
+          });
+      },
+    },
     ...(workspace.clip.length
       ? [
           {
@@ -72,20 +89,6 @@ export function createClipMenu(
           },
         ]
       : []),
-    {
-      label: 'Rename Workspace',
-      action: () => {
-        void api
-          .dialog({
-            title: 'Rename Workspace',
-            input: { label: 'Workspace name', value: workspace.name },
-          })
-          .then((result) => {
-            if (result?.value.trim())
-              api.renameWorkspace(workspace.id, result.value);
-          });
-      },
-    },
     {
       label: 'Add Application Shortcut',
       children: props.apps
@@ -102,17 +105,29 @@ export function createClipMenu(
     },
     {
       label: 'Add Active Window',
-      disabled: !api.activeWindowId,
+      disabled: !canSaveActive,
       action: () => {
-        const win = api.windows.find((item) => item.id === api.activeWindowId);
-        if (win)
+        if (canSaveActive)
           api.addClipShortcut({
-            appId: win.appId,
-            title: win.title,
-            params: win.params,
+            appId: active.appId,
+            title: active.title,
+            params: active.params,
           });
       },
     },
+    ...(extraWorkspaces.length
+      ? [
+          { separator: true },
+          {
+            label: 'Switch Workspace',
+            children: extraWorkspaces.map((item, index) => ({
+              label: workspaceLabel(item, index + DEFAULT_WORKSPACE_COUNT),
+              checked: item.id === workspace.id,
+              action: () => api.switchWorkspace(item.id),
+            })),
+          },
+        ]
+      : []),
   ];
 }
 
@@ -131,6 +146,7 @@ function openSelectedIcons(
 export function createWindowMenu(
   win: DesktopWindow,
   api: DesktopAPI,
+  app: AppDefinition,
 ): MenuItem[] {
   return [
     {
@@ -149,8 +165,8 @@ export function createWindowMenu(
     { separator: true },
     {
       label: 'Move to Workspace',
-      children: api.workspaces.map((workspace) => ({
-        label: workspace.name,
+      children: api.workspaces.map((workspace, index) => ({
+        label: workspaceLabel(workspace, index),
         checked: win.workspaceId === workspace.id && !win.sticky,
         action: () => api.moveWindow(win.id, workspace.id),
       })),
@@ -160,15 +176,19 @@ export function createWindowMenu(
       checked: win.sticky,
       action: () => api.setWindowSticky(win.id, !win.sticky),
     },
-    {
-      label: 'Add to Clip',
-      action: () =>
-        api.addClipShortcut({
-          appId: win.appId,
-          params: win.params,
-          title: win.title.replace(/ \*$/, ''),
-        }),
-    },
+    ...(canSaveWindowShortcut(win, app)
+      ? [
+          {
+            label: 'Add Workspace Shortcut',
+            action: () =>
+              api.addClipShortcut({
+                appId: win.appId,
+                params: win.params,
+                title: win.title.replace(/ \*$/, ''),
+              }),
+          },
+        ]
+      : []),
     { separator: true },
     {
       label: 'Close Window',
@@ -220,11 +240,7 @@ export function createDesktopContextMenu(
     },
     {
       label: 'Workspaces',
-      children: api.workspaces.map((workspace) => ({
-        label: workspace.name,
-        checked: workspace.id === api.currentWorkspaceId,
-        action: () => api.switchWorkspace(workspace.id),
-      })),
+      children: createWorkspaceMenu(props, api),
     },
     {
       label: 'Windows',
@@ -250,87 +266,18 @@ export function createDesktopContextMenu(
   ];
 }
 
-/** Supply an explicit owner when reconstructing a pinned application menu. */
-export function createDesktopMenus(
-  props: DesktopProps,
-  api: DesktopAPI,
-  selection: string[],
-  ownerWindowId: string | null = api.activeWindowId,
-): { groups: MenuGroup[]; windowItems: MenuItem[] } {
-  const activeWindow = api.windows.find((win) => win.id === ownerWindowId);
-  const activeApp = props.apps.find((app) => app.id === activeWindow?.appId);
-  const windowItems: MenuItem[] = [
-    ...(activeWindow ? createWindowMenu(activeWindow, api) : []),
-    ...(activeWindow ? [{ separator: true }] : []),
-    {
-      label: 'Show All Windows',
-      disabled: !api.windows.length,
-      action: api.showAllWindows,
-    },
-    ...api.windows.map((win) => ({
-      id: win.id,
-      label: win.title,
-      checked: win.id === ownerWindowId,
-      action: () => api.focusWindow(win.id),
-    })),
-  ];
-  const defaults: MenuGroup[] = [
-    {
-      id: 'desktop',
-      label: 'Workspace',
-      items: createDesktopContextMenu(props, api, selection),
-    },
-    ...(!activeWindow
-      ? [
-          {
-            id: 'file',
-            label: 'File',
-            items: [
-              {
-                label: 'Open',
-                disabled: !selection.length,
-                action: () => openSelectedIcons(props, api, selection),
-              },
-            ],
-          },
-          {
-            id: 'view',
-            label: 'View',
-            items: [
-              { label: 'Arrange Icons', action: api.arrangeIcons },
-              {
-                label: 'Show All Windows',
-                disabled: !api.windows.length,
-                action: api.showAllWindows,
-              },
-            ],
-          },
-        ]
-      : []),
-    {
-      id: 'window',
-      label: 'Window',
-      items: windowItems,
-      applicationMenu: false,
-    },
-    ...(props.onHelp
-      ? [
-          {
-            id: 'help',
-            label: 'Help',
-            applicationMenu: false,
-            items: [{ label: props.helpLabel ?? 'Help', action: props.onHelp }],
-          },
-        ]
-      : []),
-  ];
-  return {
-    groups: mergeMenuGroups(
-      defaults,
-      activeWindow && activeApp?.unavailable === undefined && activeApp?.menu
-        ? activeApp.menu(activeWindow, api)
-        : [],
-    ).filter((group) => group.items.length > 0),
-    windowItems,
-  };
+export function createApplicationMenus(props: DesktopProps, api: DesktopAPI) {
+  const owner = api.windows.find((window) => window.id === api.activeWindowId);
+  if (!owner || owner.shaded) return;
+  const app = resolveApplication(props.apps, owner.appId);
+  if (app.unavailable !== undefined || !app.menu) return;
+  const groups = app
+    .menu(owner, api)
+    .filter(
+      (group) =>
+        group.id !== 'desktop' &&
+        group.applicationMenu !== false &&
+        group.items.some((item) => !item.separator),
+    );
+  if (groups.length) return { owner, title: app.title, groups };
 }

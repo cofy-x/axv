@@ -8,7 +8,7 @@ import (
 )
 
 func TestLocalListenerRejectsPublicPeersAndTunnelHostBeforeAllReads(t *testing.T) {
-	for _, path := range []string{"/", "/assets/app.js", "/api/bootstrap", "/api/entries", "/api/runtime"} {
+	for _, path := range []string{"/", "/assets/app.js", "/api/bootstrap", "/api/health", "/api/runtime"} {
 		for _, tc := range []struct {
 			host, peer string
 			want       int

@@ -37,7 +37,6 @@ import type {
   DialogResult,
   MenuItem,
   MenuOptions,
-  PinnedMenu,
   Point,
   WindowParams,
   WindowStateUpdate,
@@ -64,10 +63,10 @@ function menuOwnerAvailable(menu: MenuRequest, layout: DesktopLayout) {
   const owner = layout.windows.find((win) => win.id === id);
   return (
     !!owner &&
-    layout.activeWindowId === id &&
     !owner.minimized &&
-    !owner.shaded &&
     inWorkspace(owner, layout.currentWorkspaceId) &&
+    (menu.options?.ownerArea === 'titlebar' ||
+      (layout.activeWindowId === id && !owner.shaded)) &&
     (!menu.opener ||
       (menu.opener.isConnected &&
         !!menu.opener.getClientRects().length &&
@@ -337,10 +336,7 @@ export function useDesktopController(props: DesktopProps) {
         }),
       );
       setMenu((current) =>
-        current?.options?.ownerWindowId === id ||
-        current?.options?.pin?.ownerWindowId === id
-          ? null
-          : current,
+        current?.options?.ownerWindowId === id ? null : current,
       );
       return true;
     } finally {
@@ -374,7 +370,6 @@ export function useDesktopController(props: DesktopProps) {
   }, []);
   const renameWorkspace = useCallback((id: string, name: string) => {
     const clean = name.trim().slice(0, 40);
-    if (!clean) return;
     setLayout((current) => ({
       ...current,
       workspaces: current.workspaces.map((workspace) =>
@@ -640,34 +635,11 @@ export function useDesktopController(props: DesktopProps) {
     setDialogs(dialogsRef.current);
     dialogRequest.resolve(result);
   };
-  const pinMenu = (point: Point) => {
-    if (!menu?.options?.pin || !menuOwnerAvailable(menu, layout)) return;
-    const descriptor: PinnedMenu = {
-      ...menu.options.pin,
-      ...point,
-      id: crypto.randomUUID(),
-    };
-    setLayout((current) => ({
-      ...current,
-      pinnedMenus: [
-        ...current.pinnedMenus.filter(
-          (item) =>
-            !(
-              item.kind === descriptor.kind &&
-              item.groupId === descriptor.groupId &&
-              item.ownerWindowId === descriptor.ownerWindowId
-            ),
-        ),
-        descriptor,
-      ].slice(-12),
-    }));
-    dismissMenu();
-  };
   const resetLayout = async () => {
     const result = await dialog({
       title: 'Reset desktop layout?',
       message:
-        'The saved layout is unavailable. Reset only window, Dock, Clip and workspace positions? Your files and preferences will be kept.',
+        'The saved layout is unavailable. Reset windows, Dock, desktop icons and workspaces, including shortcuts? Your files and preferences will be kept.',
       buttons: [
         { label: 'Cancel', value: 'cancel', cancel: true },
         { label: 'Reset Layout', value: 'reset', default: true },
@@ -688,7 +660,6 @@ export function useDesktopController(props: DesktopProps) {
     setOverview,
     menu,
     dismissMenu,
-    pinMenu,
     dialogRequest,
     resolveDialog,
     api,

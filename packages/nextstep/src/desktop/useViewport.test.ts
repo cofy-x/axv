@@ -20,7 +20,7 @@ describe('visual desktop viewport', () => {
       x: 4,
       y: 64,
       width: 382,
-      height: 192,
+      height: 196,
     });
   });
 
@@ -31,9 +31,9 @@ describe('visual desktop viewport', () => {
     expect(desktopLayoutMode(viewportSize()).short).toBe(false);
     expect(windowWorkArea(viewportSize(), false)).toEqual({
       x: 4,
-      y: 90,
+      y: 64,
       width: 382,
-      height: 690,
+      height: 720,
     });
   });
 
@@ -46,9 +46,9 @@ describe('visual desktop viewport', () => {
     );
     expect(windowWorkArea(viewportSize(), false)).toEqual({
       x: 4,
-      y: 28,
-      width: 952,
-      height: 732,
+      y: 64,
+      width: 956,
+      height: 696,
     });
   });
 });

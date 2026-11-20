@@ -14,10 +14,6 @@ func (s *Store) Bootstrap(ctx context.Context, clientID string) (Bootstrap, erro
 		if err = tx.QueryRowContext(ctx, "SELECT value FROM settings WHERE key='databaseId'").Scan(&b.DatabaseID); err != nil {
 			return err
 		}
-		b.Entries, err = list(ctx, tx)
-		if err != nil {
-			return err
-		}
 		var raw string
 		if err = tx.QueryRowContext(ctx, "SELECT value FROM settings WHERE key='preferences'").Scan(&raw); err != nil {
 			return err
@@ -34,9 +30,9 @@ func (s *Store) Bootstrap(ctx context.Context, clientID string) (Bootstrap, erro
 		}
 		var layout map[string]json.RawMessage
 		if len(raw) > 256<<10 || json.Unmarshal([]byte(raw), &layout) != nil || layout == nil {
-			// Keep the damaged row for explicit recovery; it must not prevent files
-			// from loading or be silently overwritten by the default desktop.
-			b.LayoutError = "The saved layout cannot be read. Reset the layout to save a new desktop; your files are unchanged."
+			// Keep the damaged row for explicit recovery; it must not prevent the desktop
+			// from opening or be silently overwritten by the default desktop.
+			b.LayoutError = "The saved layout cannot be read. Reset the layout to save a new desktop."
 			return nil
 		}
 		b.Layout = json.RawMessage(raw)

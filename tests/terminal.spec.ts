@@ -2,6 +2,7 @@ import type { WebSocket } from '@playwright/test';
 import {
   activate,
   expect,
+  expectCurrentWorkspace,
   menuItem,
   switchWorkspace,
   test,
@@ -83,7 +84,7 @@ test('Terminal streams ANSI and control bytes, interrupts jobs, and explicitly s
   await marker(terminal, 'fresh-shell');
 });
 
-test('Terminal windows and pinned menus keep independent shell ownership and close guards', async ({
+test('Terminal windows and their menus keep independent shell ownership and close guards', async ({
   page,
 }) => {
   test.skip(
@@ -96,13 +97,6 @@ test('Terminal windows and pinned menus keep independent shell ownership and clo
   const firstID = await first.getAttribute('data-window-id');
   await run(first, 'export NEXTSTEP_E2E_SESSION=first');
   await marker(first, 'first-shell-output');
-  await applicationMenu(page, 'Edit');
-  await page
-    .getByRole('button', { name: 'Pin Edit menu', exact: true })
-    .click();
-  const pinned = page.locator(
-    `.ns-pinned-menu[data-owner-window-id="${firstID}"]`,
-  );
   await applicationMenu(page, 'File');
   await menuItem(page, 'New Terminal Window').click();
   const secondID = await page
@@ -120,9 +114,12 @@ test('Terminal windows and pinned menus keep independent shell ownership and clo
     'printf "session=%s\\n" "${NEXTSTEP_E2E_SESSION:-independent}"',
   );
   await expect(output(second)).toContainText('session=independent');
-  await pinned.getByRole('menuitem', { name: 'Clear', exact: true }).click();
+  await activate(page, first);
+  await applicationMenu(page, 'Edit');
+  await menuItem(page, 'Clear').click();
   await expect(output(first)).not.toContainText('first-shell-output');
   await expect(output(second)).toContainText('session=independent');
+  await activate(page, second);
   await second.getByRole('button', { name: /^Close Terminal/ }).click();
   const dialog = page.getByRole('dialog', { name: 'End host shell?' });
   await expect(
@@ -145,7 +142,7 @@ test('Terminal windows and pinned menus keep independent shell ownership and clo
   await dialog
     .getByRole('button', { name: 'End Session', exact: true })
     .click();
-  await expect(pinned).toHaveCount(0);
+  await expect(first).toHaveCount(0);
 });
 
 test('Terminal remains mounted through shade, miniature, workspace and sticky transitions', async ({
@@ -269,11 +266,9 @@ test('Terminal yields desktop navigation and blocks shell input behind a modal',
   await page.keyboard.press('Control+a');
   await page.keyboard.press('Control+c');
   await page.keyboard.press('Alt+2');
-  await expect(
-    page.getByRole('button', { name: /^Workspace 1:/ }),
-  ).toBeVisible();
   expect(frames).toHaveLength(before);
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expectCurrentWorkspace(page, 1);
   await expect(input).toBeFocused();
   await page.keyboard.type(`printf '${encoded('modal-preserved-shell')}\\n'`);
   await page.keyboard.press('Enter');

@@ -2,18 +2,20 @@ import type { Locator, Page } from '@playwright/test';
 import {
   activate,
   bounds,
-  createEntry,
   expect,
-  filesWindow,
+  expectCurrentWorkspace,
+  launch,
   menuItem,
   persistedLayout,
+  switchWorkspace,
   test,
+  windowAction,
   windowMenu,
 } from './helpers';
 import { captureWorkArea, expectRect, rect } from './work-area-helpers';
 
-const fullArea = { x: 4, y: 28, width: 1368, height: 864 };
-const reservedArea = { ...fullArea, height: 788 };
+const fullArea = { x: 4, y: 64, width: 1372, height: 828 };
+const reservedArea = { ...fullArea, height: 752 };
 
 async function dragBy(page: Page, window: Locator, dx: number, dy: number) {
   const title = await bounds(window.locator('.ns-window-title'));
@@ -25,64 +27,31 @@ async function dragBy(page: Page, window: Locator, dx: number, dy: number) {
   await page.mouse.up();
 }
 
-test('Inspector opens beside its source and retains a user position when reopened or restored', async ({
-  page,
-  request,
-}) => {
-  const entry = await createEntry(request, 'E2E Inspector placement.txt');
-  await page.reload();
-  const files = filesWindow(page);
-  await files.getByRole('option', { name: entry.name, exact: true }).click();
-  const source = await bounds(files);
-  await files.getByRole('button', { name: 'Inspect', exact: true }).click();
-  const inspector = page.locator('[data-app-id="inspector"]');
-  await expect(inspector.getByTestId('inspector-name')).toHaveText(entry.name);
-  const first = await bounds(inspector);
-  expect(first.x).toBe(source.x + source.width + 12);
-  expect(first.y).toBe(source.y);
-  await dragBy(page, inspector, -120, 50);
-  const moved = { ...first, x: first.x - 120, y: first.y + 50 };
-  await expectRect(inspector, moved);
-  await activate(page, files);
-  await files.getByRole('button', { name: 'Inspect', exact: true }).click();
-  await expectRect(inspector, moved);
-  await expect
-    .poll(async () => {
-      const saved = (await persistedLayout(page, request)).windows.find(
-        (win: { appId: string }) => win.appId === 'inspector',
-      );
-      return saved && rect(saved);
-    })
-    .toEqual(moved);
-  await page.reload();
-  await expectRect(inspector, moved);
-  await expect(inspector.getByTestId('inspector-name')).toHaveText(entry.name);
-});
-
 test('work area keeps drag, resize and maximize edges consistent without changing saved normal bounds', async ({
   page,
   request,
 }, info) => {
-  const files = filesWindow(page);
+  await launch(page, 'project-files');
+  const project = page.locator('[data-app-id="project-files"]');
   const welcome = page.locator('[data-app-id="welcome"]');
-  await activate(page, files);
-  const initial = await bounds(files);
-  const title = await bounds(files.locator('.ns-window-title'));
+  await activate(page, project);
+  const initial = await bounds(project);
+  const title = await bounds(project.locator('.ns-window-title'));
   await dragBy(
     page,
-    files,
+    project,
     1438 - title.x - title.width / 2,
     898 - title.y - title.height / 2,
   );
-  await expectRect(files, {
+  await expectRect(project, {
     ...initial,
-    x: 1372 - initial.width,
+    x: fullArea.x + fullArea.width - initial.width,
     y: 892 - initial.height,
   });
-  const atEdge = await bounds(files);
-  await dragBy(page, files, 60 - atEdge.x, 120 - atEdge.y);
-  await expectRect(files, { ...initial, x: 60, y: 120 });
-  const corner = await bounds(files.locator('[data-resize="se"]'));
+  const atEdge = await bounds(project);
+  await dragBy(page, project, 60 - atEdge.x, 120 - atEdge.y);
+  await expectRect(project, { ...initial, x: 60, y: 120 });
+  const corner = await bounds(project.locator('[data-resize="se"]'));
   await page.mouse.move(
     corner.x + corner.width / 2,
     corner.y + corner.height / 2,
@@ -91,44 +60,49 @@ test('work area keeps drag, resize and maximize edges consistent without changin
   await page.mouse.move(1438, 898, { steps: 8 });
   await page.mouse.up();
   // Resizing a lower edge must preserve the opposite top and left edges.
-  const normal = { x: 60, y: 120, width: 1312, height: 772 };
-  await expectRect(files, normal);
-  const savedFiles = async () =>
+  const normal = { x: 60, y: 120, width: 1316, height: 772 };
+  await expectRect(project, normal);
+  const savedProject = async () =>
     (await persistedLayout(page, request))?.windows.find(
-      (window: { id: string }) => window.id === 'files:documents',
+      (window: { id: string }) => window.id === 'project-files:projects',
     );
   await expect
     .poll(async () => {
-      const saved = await savedFiles();
+      const saved = await savedProject();
       return saved && rect(saved);
     })
     .toEqual(normal);
-  await files.getByRole('button', { name: /^Maximize / }).click();
-  await expectRect(files, fullArea);
+  await project.getByRole('button', { name: /^Maximize / }).click();
+  await expectRect(project, fullArea);
   await captureWorkArea(page, info, 'without-reserve');
   await activate(page, welcome);
   await welcome.getByRole('button', { name: /^Miniaturize / }).click();
-  await expectRect(files, reservedArea);
+  await expectRect(project, reservedArea);
   await expect(
     page.getByRole('button', { name: 'Restore Welcome', exact: true }),
   ).toBeVisible();
   await expect
-    .poll(async () => (await savedFiles())?.restoreBounds)
+    .poll(async () => (await savedProject())?.restoreBounds)
     .toEqual(normal);
   await captureWorkArea(page, info, 'with-miniwindow');
   await page
     .getByRole('button', { name: 'Restore Welcome', exact: true })
     .click();
-  await expectRect(files, fullArea);
-  await activate(page, files);
-  await files.getByRole('button', { name: /^Restore / }).click();
-  await expectRect(files, normal);
+  await expectRect(project, fullArea);
+  await activate(page, project);
+  await project.getByRole('button', { name: /^Restore / }).click();
+  await expectRect(project, normal);
 
   // A temporary shelf clamp changes only the rendered rectangle, including
   // after the layout containing the minimized window has reached the server.
   await activate(page, welcome);
   await welcome.getByRole('button', { name: /^Miniaturize / }).click();
-  await expectRect(files, { ...normal, y: 44 });
+  const clamped = {
+    ...normal,
+    y: reservedArea.y,
+    height: reservedArea.height,
+  };
+  await expectRect(project, clamped);
   await expect
     .poll(
       async () =>
@@ -137,70 +111,56 @@ test('work area keeps drag, resize and maximize edges consistent without changin
         )?.minimized,
     )
     .toBe(true);
-  expect(rect(await savedFiles())).toEqual(normal);
+  expect(rect(await savedProject())).toEqual(normal);
   await page.reload();
-  await expectRect(filesWindow(page), { ...normal, y: 44 });
+  await expectRect(project, clamped);
   await page
     .getByRole('button', { name: 'Restore Welcome', exact: true })
     .click();
-  await activate(page, files);
-  await expectRect(files, normal);
+  await activate(page, project);
+  await expectRect(project, normal);
   await page.setViewportSize({ width: 390, height: 844 });
-  await expectRect(files, { x: 4, y: 90, width: 382, height: 690 });
-  await expect(files.getByRole('button', { name: /^Close / })).toBeInViewport();
+  await expectRect(project, { x: 4, y: 64, width: 382, height: 720 });
+  await expect(
+    project.getByRole('button', { name: /^Close / }),
+  ).toBeInViewport();
   await page.setViewportSize({ width: 1440, height: 900 });
-  await expectRect(files, normal);
-  expect(rect(await savedFiles())).toEqual(normal);
+  await expectRect(project, normal);
+  expect(rect(await savedProject())).toEqual(normal);
 });
 
 test('work area reserves only current-workspace miniwindows, includes sticky ones and releases on close', async ({
   page,
 }) => {
-  const files = filesWindow(page);
+  await launch(page, 'project-files');
+  const project = page.locator('[data-app-id="project-files"]');
   const welcome = page.locator('[data-app-id="welcome"]');
-  const switchWorkspace = async (index: number) => {
-    // A maximized window covers the desktop Clip; its keyboard equivalent stays available.
-    await page.keyboard.press(`Alt+${index}`);
-    await expect(
-      page.getByRole('button', { name: new RegExp(`^Workspace ${index}: `) }),
-    ).toBeVisible();
-  };
-  await windowMenu(page, files);
+  await windowMenu(page, project);
   await menuItem(page, 'All Workspaces').click();
-  await files.getByRole('button', { name: /^Maximize / }).click();
-  await expectRect(files, fullArea);
+  await project.getByRole('button', { name: /^Maximize / }).click();
+  await expectRect(project, fullArea);
   await activate(page, welcome);
-  const welcomeId = await welcome.getAttribute('data-window-id');
-  await windowMenu(page, welcome);
-  await page
-    .getByRole('button', { name: 'Pin Window menu', exact: true })
-    .click();
-  const pinned = page.locator(
-    `.ns-pinned-menu[data-owner-window-id="${welcomeId}"]`,
-  );
-  await pinned
-    .getByRole('menuitem', { name: 'Miniaturize', exact: true })
-    .click();
-  await expectRect(files, reservedArea);
-  await switchWorkspace(2);
-  await expectRect(files, fullArea);
+  await windowAction(page, welcome, 'Miniaturize');
+  await expectRect(project, reservedArea);
+  await page.keyboard.press('Alt+2');
+  await expectCurrentWorkspace(page, 2);
+  await expectRect(project, fullArea);
   await expect(page.locator('.ns-miniwindow-shelf button')).toHaveCount(0);
-  await switchWorkspace(1);
-  await expectRect(files, reservedArea);
-  // The fixed menu stays bound to its minimized owner while another window is active.
-  await pinned
-    .getByRole('menuitemcheckbox', { name: 'All Workspaces', exact: true })
-    .click();
-  await switchWorkspace(2);
-  await expectRect(files, reservedArea);
-  await expect(
-    page.getByRole('button', { name: 'Restore Welcome', exact: true }),
-  ).toBeVisible();
-  await pinned
-    .getByRole('menuitem', { name: 'Close Window', exact: true })
-    .click();
+  await switchWorkspace(page, 1);
+  await expectRect(project, reservedArea);
+  const restore = page.getByRole('button', {
+    name: 'Restore Welcome',
+    exact: true,
+  });
+  await restore.click();
+  await windowAction(page, welcome, 'All Workspaces');
+  await windowAction(page, welcome, 'Miniaturize');
+  await switchWorkspace(page, 2);
+  await expectRect(project, reservedArea);
+  await expect(restore).toBeVisible();
+  await restore.click();
+  await windowAction(page, welcome, 'Close Window');
   await expect(welcome).toHaveCount(0);
-  await expect(pinned).toHaveCount(0);
   await expect(page.locator('.ns-miniwindow-shelf button')).toHaveCount(0);
-  await expectRect(files, fullArea);
+  await expectRect(project, fullArea);
 });

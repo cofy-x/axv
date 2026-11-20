@@ -52,7 +52,6 @@ describe('VM desktop projections', () => {
     expect(machineDesktopId({ ...machine, hostId: 'host-two' })).not.toBe(
       original.id,
     );
-    expect(changed.trashable).not.toBe(true);
   });
 
   it('opens only the exact inspector target and never creates a terminal or starts a VM', () => {

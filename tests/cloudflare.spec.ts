@@ -161,15 +161,12 @@ test('an enabled Cloudflare desktop icon opens one utility without polling while
   });
   await page.reload();
   await showApplicationOnDesktop(page, 'Cloudflare', touch);
-  for (const app of ['files', 'welcome']) {
-    await activate(page, page.locator(`[data-app-id="${app}"]`));
-    await choose(
-      page
-        .locator(`[data-app-id="${app}"]`)
-        .getByRole('button', { name: /^Close / }),
-      touch,
-    );
-  }
+  await choose(
+    page
+      .locator('[data-app-id="welcome"]')
+      .getByRole('button', { name: /^Close / }),
+    touch,
+  );
   const canvas = page.getByRole('group', { name: 'Desktop icons' });
   const launcher = canvas.getByRole('button', {
     name: 'Cloudflare',

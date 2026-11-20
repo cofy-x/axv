@@ -4,7 +4,6 @@ import {
   requestDesktopBlob,
   desktopDatabase,
 } from '../../shared/api/desktop';
-import type { Entry } from '../../filesystem/types';
 
 export interface Project {
   id: string;
@@ -27,7 +26,6 @@ export interface ProjectContent {
   path: string;
   name: string;
   content: string;
-  sha256: string;
   size: number;
 }
 
@@ -74,29 +72,4 @@ export const projectsAPI = {
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   },
-  import: (
-    id: string,
-    values: {
-      requestId: string;
-      path: string;
-      sha256: string;
-      parentId?: string;
-    },
-  ) =>
-    request<{ entry: Entry }>(`/projects/${id}/import`, {
-      method: 'POST',
-      body: JSON.stringify(values),
-    }),
-  export: (
-    id: string,
-    values: {
-      requestId: string;
-      snapshotId: string;
-      path: string;
-    },
-  ) =>
-    request<{ path: string; sha256: string }>(`/projects/${id}/export`, {
-      method: 'POST',
-      body: JSON.stringify(values),
-    }),
 };

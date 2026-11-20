@@ -2,6 +2,7 @@ import type { ComponentType, ReactNode } from 'react';
 
 export type IconName =
   | 'computer'
+  | 'welcome-door'
   | 'folder'
   | 'project'
   | 'document'
@@ -17,11 +18,17 @@ export type IconName =
   | 'mesh-network'
   | 'virtual-machines'
   | 'virtual-machine'
+  | 'new-virtual-machine'
+  | 'virtual-machine-inspector'
   | 'info'
+  | 'notification-bell'
+  | 'sliders'
+  | 'document-return'
   | 'save'
   | 'inspector'
   | 'workspace'
   | 'terminal'
+  | 'guest-terminal'
   | 'companion'
   | 'clock';
 
@@ -54,18 +61,11 @@ export interface ClipShortcut {
 
 export interface Workspace {
   id: string;
+  /** An empty name uses the workspace's number as its label. */
   name: string;
   order: string[];
   activeWindowId: string | null;
   clip: ClipShortcut[];
-}
-
-export interface PinnedMenu extends Point {
-  id: string;
-  kind: 'desktop' | 'application' | 'window';
-  groupId?: string;
-  ownerWindowId?: string;
-  title: string;
 }
 
 export interface NextstepLayout {
@@ -79,17 +79,16 @@ export interface NextstepLayout {
   workspaces: Workspace[];
   currentWorkspaceId: string;
   dock: { appId: string; pinned: boolean }[];
-  pinnedMenus: PinnedMenu[];
-  clipPosition?: Point;
 }
 
 export type DesktopLayout = NextstepLayout;
 
 export interface MenuOptions {
   title?: string;
-  pin?: Omit<PinnedMenu, 'id' | 'x' | 'y'>;
-  /** A content menu is valid only while this window remains interactive. */
+  /** Bind commands to their original window while its menu is available. */
   ownerWindowId?: string;
+  /** Title-bar commands also apply to visible folded or inactive windows. */
+  ownerArea?: 'titlebar';
   align?: 'start' | 'end';
   width?: 'wide';
 }
@@ -210,8 +209,6 @@ export interface DesktopIcon {
   /** A pure application launcher, independent of resource icons opening the same application. */
   applicationLauncher?: boolean;
   params?: WindowParams;
-  isTrash?: boolean;
-  trashable?: boolean;
   status?: {
     label: string;
     tone: 'neutral' | 'success' | 'warning' | 'error';
@@ -229,12 +226,11 @@ export interface DesktopProps {
   /** Order fresh-layout pinned entries without replacing a saved Dock. */
   initialDockOrder?: string[];
   initialWindows?: { appId: string; params?: WindowParams; title?: string }[];
+  workspaceMenuIcon?: ReactNode;
   onLayoutChange?: (layout: DesktopLayout) => void;
-  onTrashIcons?: (ids: string[]) => void;
   onDesktopMenu?: (ids: string[], desktop: DesktopAPI) => MenuItem[];
   wallpaper?: 'slate' | 'dither' | 'solid';
   clock24Hour?: boolean;
-  isShortcutAvailable?: (shortcut: ClipShortcut) => boolean;
   iconSnap?: boolean;
   connectionStatus?: 'connected' | 'connecting' | 'offline';
   /** Host-owned status content, kept clear of the Dock and blocked by transient UI. */

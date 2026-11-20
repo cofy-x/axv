@@ -132,18 +132,6 @@ func serviceOperations(manager *Manager) map[string]func(context.Context) error 
 		"info":     func(ctx context.Context) error { _, err := manager.Info(ctx); return err },
 		"list":     func(ctx context.Context) error { _, err := manager.List(ctx); return err },
 		"projects": func(ctx context.Context) error { _, err := manager.Projects(ctx); return err },
-		"context list": func(ctx context.Context) error {
-			_, err := manager.ContextBatches(ctx, "conversation", "run")
-			return err
-		},
-		"context queue": func(ctx context.Context) error {
-			_, err := manager.QueueContext(ctx, "conversation", "run", ContextInput{RequestID: "context-request", SnapshotIDs: []string{"snapshot"}})
-			return err
-		},
-		"context cancel": func(ctx context.Context) error {
-			_, err := manager.CancelContext(ctx, "conversation", "run", "batch")
-			return err
-		},
 		"create": func(ctx context.Context) error {
 			_, err := manager.Create(ctx, StartInput{RequestID: "new-service-request"})
 			return err

@@ -35,7 +35,7 @@ export function createMachinesApp(commands: WindowCommands): AppDefinition {
 export const createMachineApp: AppDefinition = {
   id: 'machine-create',
   title: 'New VM',
-  icon: 'virtual-machine',
+  icon: 'new-virtual-machine',
   component: CreateMachine,
   launchable: false,
   windowKey: () => 'main',
@@ -46,7 +46,7 @@ export const createMachineApp: AppDefinition = {
 export const machineInspectorApp: AppDefinition = {
   id: 'machine-inspector',
   title: 'VM Inspector',
-  icon: 'virtual-machine',
+  icon: 'virtual-machine-inspector',
   component: MachineInspector,
   launchable: false,
   kind: 'panel',
@@ -85,7 +85,7 @@ export function createGuestTerminalApp(
   return {
     id: 'guest-terminal',
     title: 'Guest Terminal',
-    icon: 'terminal',
+    icon: 'guest-terminal',
     component: GuestTerminalApp,
     launchable: false,
     windowKey: (params) =>

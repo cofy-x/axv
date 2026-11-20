@@ -22,11 +22,10 @@ Choose the row for the behavior being changed. The primary reference owns the me
 | --- | --- | --- |
 | Applications, windows, menus, workspaces or layout | [Desktop implementation map](desktop.md#implementation-map) | [Desktop state API](api/desktop.md) for serialized state |
 | Installed applications, packages, sandbox sessions or private app data | [Installed application API](api/extensions.md) | [Desktop architecture](desktop.md) for catalog and mounted windows; [extension storage](storage.md#installed-application-storage) for database ownership |
-| Virtual documents, saves, revisions or recovery | [Document implementation map](storage.md#implementation-map) | [Files API](api/files.md); [database identity](api/desktop.md#database-identity-and-local-recovery) for browser recovery |
-| Project browsing, links, snapshots or copies | [Storage ownership](storage.md#references-snapshots-and-project-exchange) | [Project files and exchange API](api/project-files.md) |
+| Host project browsing and registration | [Project root access](storage.md#project-root-access) | [Host project files API](api/project-files.md) |
 | Host shells or project terminals | [Terminal ownership](desktop.md#terminal-sessions) | [Host Terminal API](api/host-terminal.md) |
 | Shared host directory selection | [Host directories API](api/host-directories.md) | The consuming Terminal, Codex or Project Files reference |
-| Codex conversations, runs or document delivery | [Codex implementation map](codex.md#implementation-map) | [Host Codex API](api/host-codex.md) |
+| Codex conversations and runs | [Codex implementation map](codex.md#implementation-map) | [Host Codex API](api/host-codex.md) |
 | VM project Codex sessions or bound AXV Skill tools | [VM work context](codex.md#vm-project-work-context) | [Bound tools](startup.md#bound-vm-project-tools-for-codex), [VM project contract](api/compute.md#vm-projects) and [project task contract](api/compute.md#vm-project-tasks) |
 | VMs, volumes, images or guest execution | [VM implementation map](vm-platform.md#implementation-map) | [Compute API](api/compute.md), [Guest API](api/guest.md), [VM CLI](startup.md#vm-command-line) or [image recipes](../images/guest/README.md), according to the changed boundary |
 | VM projects, retained-volume bindings or guest project files | [VM projects](vm-platform.md#vm-projects) | [Compute project API](api/compute.md#vm-projects), [guest file enforcement](api/guest.md#project-file-protocol), [VM project CLI](startup.md#vm-project-files); [product constraints](product.md#vm-project-workspace-constraints) for scope |
@@ -64,7 +63,7 @@ Each fact has one owner. Another page may state the consequence its reader needs
 
 | Owner | Keep here |
 | --- | --- |
-| [Project README](../README.md) | Product overview and desktop preview, current capability and native-validation status, pinned toolchain summary and quickstart |
+| [Project README](../README.md) | Product overview, current capability and native-validation status, pinned toolchain summary and quickstart |
 | [AGENTS.md](../AGENTS.md) | Repository-wide working rules and brief high-risk guardrails |
 | [Contributing](../CONTRIBUTING.md) | AXV contribution workflow and links to organization expectations |
 | [Support](../SUPPORT.md) | Public support channels, report context and diagnostic redaction |
@@ -74,7 +73,7 @@ Each fact has one owner. Another page may state the consequence its reader needs
 | [Product direction](product.md) | Identity, rationale, settled direction and open product decisions |
 | [Architecture overview](architecture.md) | Component dependencies, identity boundaries and cross-service lifetimes |
 | [Desktop architecture](desktop.md) | Application registration, mounted windows, menu ownership, layout persistence and Host Terminal ownership |
-| [Document storage](storage.md) | Saves, draft recovery, snapshot/exchange mechanisms, database baseline and transactional initialization |
+| [Desktop storage](storage.md) | Desktop database baseline, browser recovery identity and registered host projects |
 | [Host Codex architecture](codex.md) | Provider integration, process/run ownership, reconciliation and delivery persistence |
 | [VM architecture](vm-platform.md) | Host/guest ownership, durable compute state, preparation and provider mechanisms |
 | [API reference](api/README.md) | Routes, fields, protocol limits, errors, access checks and caller retry/lifecycle obligations |
@@ -106,5 +105,5 @@ Keep the structure small:
 - Use descriptive headings, relative links, tables for comparable values and Mermaid for relationships. Examples must match current interfaces.
 - Use the repository's Releases page for download navigation and relative documentation links for setup. Keep exact tags and asset URLs in reproducible recipes, compatibility constraints and release evidence. Select application and Guest assets explicitly from their shared catalog; required toolchain and runtime pins remain intentional.
 - Link provider pricing, quotas and account eligibility to authoritative pages. Keep limits required by a workflow and configured or tested versions exact; record dated observations in task/PR evidence.
-- Keep the README preview focused on a representative desktop scene with Welcome and a real Codex introduction, with space for desktop icon labels. Keep provider update notices, startup tips and version/model banners outside the capture using settings scoped to the demo. Refresh the image when AXV's main layout or workflow changes; provider patch releases alone do not require a new screenshot.
-- Keep plans, audit findings, historical counts and validation diaries in task/PR history. References describe current behavior; product owns intent, and the README owns status. Seeded samples are user documents, not release notes.
+- For main desktop layout or workflow changes, attach sanitized visual evidence to the pull request. Use a representative desktop scene with Welcome and Codex, leaving room for icon labels. Keep provider update notices, startup tips and version/model banners outside the capture using settings scoped to the demo. Keep screenshots out of commits.
+- Keep plans, audit findings, historical counts and validation diaries in task/PR history. References describe current behavior; product owns intent, and the README owns status.

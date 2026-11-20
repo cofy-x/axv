@@ -67,10 +67,6 @@
   border-bottom: 0;
   padding-block: 6px;
 }
-.files-app,
-.notes-app,
-.trash-app,
-.image-app,
 .settings-app,
 .gallery-app {
   display: flex;
@@ -82,22 +78,6 @@
 .gallery-app > .app-pad {
   overflow: auto;
   flex: 1;
-}
-.files-app .ns-status,
-.notes-app .ns-status {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-}
-.empty-folder {
-  text-align: center;
-  margin: auto;
-  padding: 28px 20px;
-  color: #666;
-  font-size: var(--ns-font-size-secondary);
-}
-.empty-folder p {
-  margin: 10px 0 0;
 }
 .app-empty-state {
   display: flex;

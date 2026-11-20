@@ -1,13 +1,8 @@
 import { createHash } from 'node:crypto';
 import type { Locator, Page } from '@playwright/test';
-import {
-  createEntry,
-  expect,
-  menuItem,
-  openDocument,
-  readContent,
-  test,
-} from './helpers';
+import { expect, menuItem, test } from './helpers';
+import { expectEditorText } from './code-editor-helpers';
+import { openVMEditorFixture } from './vm-editor-fixture';
 import type { PushSnapshot } from '../apps/dashboard/src/features/notifications/webpush';
 import type {
   NotificationEvent,
@@ -552,25 +547,20 @@ test('browser unsubscribe works while AXV is unreachable and preserves identity 
   await expect.poll(() => state.snapshot.subscriptions.length).toBe(0);
 });
 
-test('a verified push click opens the exact notification without navigation or replacing a dirty document', async ({
+test('a verified push click opens the exact notification without navigation or replacing a VM draft', async ({
   page,
-  request,
 }, info) => {
-  const entry = await createEntry(
-    request,
-    'E2E push dirty document.md',
-    'file',
-    'documents',
-    'Saved before notification',
-  );
   const touch = info.project.use.hasTouch === true,
     state = await fixture(page);
   await open(page, touch);
   await subscribe(page, touch);
-  const editor = await openDocument(page, entry, touch);
-  const input = editor.getByRole('textbox', {
-    name: 'Document text',
-    exact: true,
+  const {
+    window: editor,
+    editor: input,
+    saved,
+  } = await openVMEditorFixture(page, {
+    touch,
+    content: 'Saved before notification',
   });
   await input.fill('Unsaved while work continues');
   await input.evaluate((element) =>
@@ -620,16 +610,10 @@ test('a verified push click opens the exact notification without navigation or r
   ).toBeVisible();
   expect(page.url()).toBe(originalUrl);
   await expect(editor).toHaveAttribute('data-push-mount-witness', 'original');
-  const retainedInput = editor.locator('textarea[aria-label="Document text"]');
-  await expect(retainedInput).toHaveAttribute(
-    'data-push-input-witness',
-    'original',
-  );
-  await expect(retainedInput).toHaveValue('Unsaved while work continues');
-  await expect(retainedInput).not.toBeFocused();
-  expect(await readContent(request, entry.id)).toBe(
-    'Saved before notification',
-  );
+  await expect(input).toHaveAttribute('data-push-input-witness', 'original');
+  await expectEditorText(input, 'Unsaved while work continues');
+  await expect(input).not.toBeFocused();
+  expect(saved()).toBe('Saved before notification');
 });
 
 test('a click retained during bootstrap opens its exact original event after the desktop becomes ready', async ({

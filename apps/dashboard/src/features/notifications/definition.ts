@@ -12,7 +12,7 @@ const NotificationWork = deferWindow(() =>
 export const notificationsApp: AppDefinition = {
   id: 'notifications',
   title: 'Notifications',
-  icon: 'info',
+  icon: 'notification-bell',
   kind: 'panel',
   launchable: true,
   defaultPinned: false,
@@ -26,7 +26,7 @@ export const notificationsApp: AppDefinition = {
 export const notificationWorkApp: AppDefinition = {
   id: 'notification-work',
   title: 'Original work',
-  icon: 'info',
+  icon: 'document-return',
   kind: 'panel',
   launchable: false,
   windowKey: (params) => `${params.storeId}:${params.notificationId}`,

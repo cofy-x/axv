@@ -62,20 +62,20 @@ test('recent projects open by keyboard and close when their owner stops being in
       manager.getByRole('button', { name: 'Recent Projects', exact: true }),
       touch,
     );
-    await page
-      .locator('.ns-window[data-app-id="files"]')
-      .dispatchEvent('pointerdown', {
-        pointerType: 'mouse',
-        pointerId: 1,
-        button: 0,
-        buttons: 1,
-      });
-    await expect(
-      page.getByRole('menu', { name: 'Recent Projects', exact: true }),
-    ).toHaveCount(0);
-    await expect(page.locator('.ns-window[data-app-id="files"]')).toHaveClass(
-      /is-active/,
-    );
+    const menu = page.getByRole('menu', {
+      name: 'Recent Projects',
+      exact: true,
+    });
+    await expect(menu).toBeVisible();
+    const welcome = page.locator('[data-window-id="welcome:main"]');
+    await welcome.dispatchEvent('pointerdown', {
+      pointerType: 'mouse',
+      pointerId: 1,
+      button: 0,
+      buttons: 1,
+    });
+    await expect(menu).toHaveCount(0);
+    await expect(welcome).toHaveClass(/is-active/);
   } finally {
     await page.unrouteAll({ behavior: 'wait' });
   }
@@ -471,11 +471,18 @@ test('recent project menus keep long names, root paths and keyboard selections r
     });
     await page.setViewportSize({ width: 320, height: 568 });
     await expect(menu).toBeFocused();
-    await expect.poll(async () => (await menu.boundingBox())!.width).toBe(304);
-    const bounds = (await menu.boundingBox())!;
-    expect(bounds.x).toBeGreaterThanOrEqual(8);
-    expect(bounds.x + bounds.width).toBeLessThanOrEqual(312);
-    expect(bounds.y + bounds.height).toBeLessThanOrEqual(568);
+    await expect
+      .poll(async () => {
+        const bounds = await menu.boundingBox();
+        return (
+          bounds && {
+            width: bounds.width,
+            fitsHorizontally: bounds.x >= 8 && bounds.x + bounds.width <= 312,
+            fitsVertically: bounds.y + bounds.height <= 568,
+          }
+        );
+      })
+      .toEqual({ width: 304, fitsHorizontally: true, fitsVertically: true });
     await page.keyboard.press('End');
     await expect(last.locator('.ns-menu-label')).toBeInViewport({ ratio: 1 });
     await page.keyboard.press('Enter');

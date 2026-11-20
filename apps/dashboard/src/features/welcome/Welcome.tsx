@@ -58,11 +58,6 @@ export function Welcome({ desktop, window }: AppWindowProps) {
           ))}
         </div>
         <div className="welcome-tools" aria-label="Desktop tools">
-          <Button
-            onClick={() => desktop.openApp('files', { folderId: 'documents' })}
-          >
-            Documents
-          </Button>
           <Button onClick={() => desktop.launchApp('terminal')}>
             Terminal
           </Button>
@@ -173,11 +168,11 @@ export function About() {
         <dd>cofy-x</dd>
       </dl>
       <p className="fine-print">
-        Documents, notification history and desktop layout live on the AXV host.
-        Project files stay in their host directories or VM volumes. Browser
-        recovery copies stay on this device. VM project GitHub review uses
-        explicitly configured guest credentials. Browser push is opt-in and
-        requires this device’s notification permission.
+        Notification history and desktop layout live on the AXV host. Project
+        files stay in their host directories or VM volumes. Browser recovery
+        copies stay on this device. VM project GitHub review uses explicitly
+        configured guest credentials. Browser push is opt-in and requires this
+        device’s notification permission.
       </p>
     </div>
   );

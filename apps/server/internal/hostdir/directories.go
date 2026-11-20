@@ -1,4 +1,4 @@
-// Package hostdir owns local host-directory selection, separately from virtual documents.
+// Package hostdir owns local host-directory selection.
 package hostdir
 
 import (

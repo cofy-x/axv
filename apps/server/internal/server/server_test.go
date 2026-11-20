@@ -44,7 +44,7 @@ func TestRoutesRetainOriginChecksAndRejectFraming(t *testing.T) {
 		status                               int
 	}{
 		{"UI", "GET", "/", "", "desktop UI", http.StatusOK},
-		{"UI deep link", "GET", "/files/documents", "", "desktop UI", http.StatusOK},
+		{"UI deep link", "GET", "/desktop", "", "desktop UI", http.StatusOK},
 		{"health", "GET", "/api/health", "", `"status":"ok"`, http.StatusOK},
 		{"terminal missing origin", "GET", "/api/terminal", "", "terminal_forbidden", http.StatusForbidden},
 		{"terminal cross origin", "GET", "/api/terminal", "http://localhost:9999", "terminal_forbidden", http.StatusForbidden},
@@ -60,7 +60,7 @@ func TestRoutesRetainOriginChecksAndRejectFraming(t *testing.T) {
 		{"compute cross origin", "GET", "/api/compute/info", "https://example.com", "compute_forbidden", http.StatusForbidden},
 		{"compute create missing origin", "POST", "/api/compute/machines", "", "compute_forbidden", http.StatusForbidden},
 		{"compute origin query delimiter", "GET", "/api/compute/info", "http://localhost:3001?", "compute_forbidden", http.StatusForbidden},
-		{"VFS cross origin", "POST", "/api/entries", "https://example.com", "invalid_origin", http.StatusForbidden},
+		{"preferences cross origin", "PUT", "/api/preferences", "https://example.com", "invalid_origin", http.StatusForbidden},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := httptest.NewRequest(tc.method, tc.path, nil)

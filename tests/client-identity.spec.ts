@@ -1,15 +1,6 @@
 import { expect, test as base } from '@playwright/test';
 import type { Page, TestInfo } from '@playwright/test';
-import type { DraftRecord } from '../apps/dashboard/src/shared/drafts/storage';
-import {
-  createEntry,
-  editorWindow,
-  filesWindow,
-  openDocument,
-  persistedLayout,
-  readContent,
-  test as desktopTest,
-} from './helpers';
+import { launch, persistedLayout, test as desktopTest } from './helpers';
 import { monitorRuntimeErrors } from './runtime-errors';
 
 type RuntimeMonitor = Awaited<ReturnType<typeof monitorRuntimeErrors>>;
@@ -417,44 +408,14 @@ test('clearing only the browser identity does not recreate it from a confirmed r
   }
 });
 
-async function draftsFor(page: Page, entryId: string) {
-  return page.evaluate(
-    (id) =>
-      new Promise<DraftRecord[]>((resolve, reject) => {
-        const opening = indexedDB.open('nextstep-drafts', 1);
-        opening.onerror = () => reject(opening.error);
-        opening.onsuccess = () => {
-          const db = opening.result;
-          const transaction = db.transaction('drafts', 'readonly');
-          const request = transaction.objectStore('drafts').getAll();
-          transaction.oncomplete = () => {
-            db.close();
-            resolve(
-              (request.result as DraftRecord[]).filter(
-                (record) => record.entryId === id,
-              ),
-            );
-          };
-          transaction.onabort = () => {
-            db.close();
-            reject(transaction.error);
-          };
-        };
-      }),
-    entryId,
-  );
+async function projectFolder(page: Page) {
+  await launch(page, 'project-files');
+  return page.getByRole('textbox', { name: 'Host project directory' });
 }
 
 desktopTest(
-  'independent browser contexts recover separate unsaved drafts for the same document',
+  'independent browser contexts restore separate desktop layouts',
   async ({ page, request, browser }, info) => {
-    const entry = await createEntry(
-      request,
-      'E2E Independent client drafts.txt',
-    );
-    await page.reload();
-    const first = await openDocument(page, entry);
-    const firstText = first.getByRole('textbox', { name: 'Document text' });
     const independent = await browser.newContext({
       baseURL: info.project.use.baseURL,
     });
@@ -462,13 +423,7 @@ desktopTest(
     const runtime = await monitorRuntimeErrors(other);
     try {
       await other.goto('/');
-      await other
-        .locator('[data-app-id="welcome"]')
-        .getByRole('button', { name: 'Documents', exact: true })
-        .click();
-      await expect(filesWindow(other)).toBeVisible();
-      const second = await openDocument(other, entry);
-      const secondText = second.getByRole('textbox', { name: 'Document text' });
+      await expect(other.locator('[data-app-id="welcome"]')).toBeVisible();
       const clients = await Promise.all(
         [page, other].map((candidate) =>
           candidate.evaluate(() => localStorage.getItem('nextstep-browser-id')),
@@ -478,88 +433,30 @@ desktopTest(
       expect(clients[1]).toBeTruthy();
       expect(clients[1]).not.toBe(clients[0]);
 
-      await firstText.fill('Unsaved text in the original browser container.');
-      await expect(first).toContainText('Local recovery copy up to date');
-      await secondText.fill('Independent unsaved text in the other container.');
-      await expect(second).toContainText('Local recovery copy up to date');
-      const originals = await Promise.all(
-        [page, other].map(async (candidate, index) => {
-          const records = await draftsFor(candidate, entry.id);
-          expect(records).toHaveLength(1);
-          expect(records[0]).toMatchObject({
-            clientId: clients[index],
-            entryId: entry.id,
-            baseRevision: entry.revision,
-          });
-          await expect
-            .poll(async () =>
-              (await persistedLayout(candidate, request))?.windows.some(
-                (window: { id: string }) => window.id === `notes:${entry.id}`,
-              ),
-            )
-            .toBe(true);
-          return records[0]!;
-        }),
+      await launch(page, 'project-files');
+      await launch(other, 'appearance');
+      await expect
+        .poll(async () => {
+          const [left, right] = await Promise.all(
+            [page, other].map((candidate) =>
+              persistedLayout(candidate, request),
+            ),
+          );
+          return [left, right].map((layout) =>
+            layout?.windows.map((window: { appId: string }) => window.appId),
+          );
+        })
+        .toEqual([
+          ['welcome', 'project-files'],
+          ['welcome', 'appearance'],
+        ]);
+      await Promise.all([page.reload(), other.reload()]);
+      await expect(page.locator('[data-app-id="project-files"]')).toBeVisible();
+      await expect(page.locator('[data-app-id="appearance"]')).toHaveCount(0);
+      await expect(other.locator('[data-app-id="appearance"]')).toBeVisible();
+      await expect(other.locator('[data-app-id="project-files"]')).toHaveCount(
+        0,
       );
-      expect(originals[0]!.databaseId).toBe(originals[1]!.databaseId);
-      expect(originals[0]!.draftId).not.toBe(originals[1]!.draftId);
-      expect(originals[0]!.key).not.toBe(originals[1]!.key);
-      await expect(first.getByTestId('save-status')).toHaveText(
-        'Unsaved changes',
-      );
-      await expect(second.getByTestId('save-status')).toHaveText(
-        'Unsaved changes',
-      );
-
-      page.once('dialog', (dialog) => dialog.accept());
-      await page.reload();
-      await editorWindow(page, entry.id)
-        .getByRole('button', { name: 'Restore Draft', exact: true })
-        .click();
-      await expect(firstText).toHaveValue(originals[0]!.text);
-      await expect(first.getByTestId('save-status')).toHaveText(
-        'Recovered draft — not saved',
-      );
-      await expect(secondText).toHaveValue(originals[1]!.text);
-      await expect(second.getByTestId('save-status')).toHaveText(
-        'Unsaved changes',
-      );
-      await firstText.fill(
-        'Newer typing stays in the original browser container.',
-      );
-      await expect(first).toContainText('Local recovery copy up to date');
-
-      other.once('dialog', (dialog) => dialog.accept());
-      await other.reload();
-      await editorWindow(other, entry.id)
-        .getByRole('button', { name: 'Restore Draft', exact: true })
-        .click();
-      await expect(secondText).toHaveValue(originals[1]!.text);
-      await expect(firstText).toHaveValue(
-        'Newer typing stays in the original browser container.',
-      );
-      await expect(first.getByTestId('save-status')).toHaveText(
-        'Unsaved changes',
-      );
-      await expect(second.getByTestId('save-status')).toHaveText(
-        'Recovered draft — not saved',
-      );
-      for (const [index, candidate] of [page, other].entries()) {
-        const records = await draftsFor(candidate, entry.id);
-        expect(records).toHaveLength(1);
-        expect(records[0]).toMatchObject({
-          key: originals[index]!.key,
-          clientId: clients[index],
-          databaseId: originals[index]!.databaseId,
-          draftId: originals[index]!.draftId,
-          baseRevision: entry.revision,
-          text:
-            index === 0
-              ? 'Newer typing stays in the original browser container.'
-              : originals[1]!.text,
-        });
-      }
-      expect(await readContent(request, entry.id)).toBe('Initial text');
     } finally {
       await independent.close();
       await verifyRuntime(runtime, info);
@@ -569,28 +466,17 @@ desktopTest(
 
 for (const change of ['remove', 'replace'] as const) {
   desktopTest(
-    `another tab can ${change} stored identity without remounting or moving an open draft`,
-    async ({ page, request, context }, info) => {
-      const entry = await createEntry(
-        request,
-        `E2E ${change} browser identity.txt`,
+    `another tab can ${change} stored identity while the original work and layout stay bound`,
+    async ({ page, context }, info) => {
+      const folder = await projectFolder(page);
+      const originalPath = '/example/original-folder';
+      await folder.fill(originalPath);
+      const browserId = await page.evaluate(() =>
+        localStorage.getItem('nextstep-browser-id'),
       );
-      await page.reload();
-      const editor = await openDocument(page, entry);
-      const text = editor.getByRole('textbox', { name: 'Document text' });
-      await text.fill('Original unsaved text remains in this editor.');
-      await expect(editor).toContainText('Local recovery copy up to date');
-      const original = (await draftsFor(page, entry.id))[0]!;
-      expect(original.text).toBe(
-        'Original unsaved text remains in this editor.',
-      );
-      const element = await text.elementHandle();
+      expect(browserId).toBeTruthy();
+      const element = await folder.elementHandle();
       expect(element).not.toBeNull();
-      const sessionPointers = await page.evaluate(() =>
-        Object.entries(sessionStorage).filter(([key]) =>
-          key.startsWith('["nextstep-editor",'),
-        ),
-      );
       const bootstraps: string[] = [];
       page.on('request', (request) => {
         if (new URL(request.url()).pathname === '/api/bootstrap')
@@ -610,43 +496,34 @@ for (const change of ['remove', 'replace'] as const) {
           'Browser storage changed or is unavailable',
         );
         expect(await element!.evaluate((node) => node.isConnected)).toBe(true);
-        await expect(text).toHaveValue(original.text);
-        await text.fill('Newer typing still belongs to the original identity.');
-        await expect
-          .poll(async () => (await draftsFor(page, entry.id))[0]?.text)
-          .toBe('Newer typing still belongs to the original identity.');
-        const retained = await draftsFor(page, entry.id);
-        expect(retained).toHaveLength(1);
-        expect(retained[0]).toMatchObject({
-          key: original.key,
-          draftId: original.draftId,
-          clientId: original.clientId,
-          databaseId: original.databaseId,
-          baseRevision: original.baseRevision,
-        });
+        await expect(folder).toHaveValue(originalPath);
+        const newPath = '/example/newer-folder';
+        await folder.fill(newPath);
         const savingLayout = page.waitForRequest(
           (request) =>
             new URL(request.url()).pathname === '/api/layout' &&
-            request.method() === 'PUT',
+            request.method() === 'PUT' &&
+            request
+              .postDataJSON()
+              .layout.windows.some(
+                (window: { appId: string; zoomed: boolean }) =>
+                  window.appId === 'project-files' && window.zoomed,
+              ),
         );
-        await editor.getByRole('button', { name: /^Maximize / }).click();
+        await page
+          .locator('[data-app-id="project-files"]')
+          .getByRole('button', { name: /^Maximize / })
+          .click();
         const layout = await savingLayout;
-        expect(layout.postDataJSON().clientId).toBe(original.clientId);
+        expect(layout.postDataJSON().clientId).toBe(browserId);
         expect(await element!.evaluate((node) => node.isConnected)).toBe(true);
-        expect(
-          await page.evaluate(() =>
-            Object.entries(sessionStorage).filter(([key]) =>
-              key.startsWith('["nextstep-editor",'),
-            ),
-          ),
-        ).toEqual(sessionPointers);
+        await expect(folder).toHaveValue(newPath);
         expect(
           await page.evaluate(() =>
             localStorage.getItem('nextstep-browser-id'),
           ),
         ).toBe(change === 'remove' ? null : 'replacement-browser');
         expect(bootstraps).toEqual([]);
-        expect(await readContent(request, entry.id)).toBe('Initial text');
       } finally {
         await other.close();
         await verifyRuntime(runtime, info);

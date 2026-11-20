@@ -190,17 +190,17 @@ func TestAuthenticatedCloudflareContextSharesFeaturesAndRetainsLocalBoundaries(t
 			t.Fatalf("authenticated %s: HTTP %d: %s", tc.path, w.Code, w.Body.String())
 		}
 	}
-	body := `{"parentId":"documents","name":"Cloudflare document.txt","kind":"file","content":"explicit remote snapshot"}`
-	if w := request(http.MethodPost, "/api/entries", body, true); w.Code != http.StatusCreated {
-		t.Fatalf("authorized document save failed: %d %s", w.Code, w.Body.String())
+	body := `{"wallpaper":"solid","iconSnap":true,"clock24Hour":false}`
+	if w := request(http.MethodPut, "/api/preferences", body, true); w.Code != http.StatusOK {
+		t.Fatalf("authorized preference save failed: %d %s", w.Code, w.Body.String())
 	}
-	r := httptest.NewRequest(http.MethodGet, "http://localhost:3001/api/entries", nil)
+	r := httptest.NewRequest(http.MethodGet, "http://localhost:3001/api/bootstrap?clientId=cf-browser", nil)
 	r.Header.Set(httpaccess.DatabaseIdentityHeader, manager.DatabaseID())
 	r.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
 	shared.ServeHTTP(w, r)
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "Cloudflare document.txt") {
-		t.Fatalf("local desktop did not see committed snapshot: %d %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"wallpaper":"solid"`) {
+		t.Fatalf("local desktop did not see committed preferences: %d %s", w.Code, w.Body.String())
 	}
 	for _, tc := range []struct{ method, path, code string }{
 		{http.MethodGet, "/api/cloudflare/status", "cloudflare_local_only"},

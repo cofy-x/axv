@@ -1,5 +1,4 @@
 export type WindowCommand =
-  | 'save'
   | 'terminal:new-session'
   | 'terminal:copy'
   | 'terminal:paste'
@@ -22,7 +21,6 @@ export type WindowCommand =
   | 'codex:archive'
   | 'codex:unarchive'
   | 'codex:terminal'
-  | 'codex:attachments'
   | 'codex:project-files'
   | 'codex:tasks'
   | 'codex:new-session'

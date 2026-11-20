@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import { PixelIcon, WindowControlIcon } from '../controls';
+import { PixelIcon } from '../controls';
 import type {
   AppDefinition,
   DesktopAPI,
   DesktopLayout,
   DesktopProps,
   MenuItem,
-  Point,
 } from '../types';
 import { usePointerGesture } from './usePointerGesture';
 import { resolveApplication } from './applications';
@@ -21,7 +20,7 @@ interface DockProps {
   setLayout: Dispatch<SetStateAction<DesktopLayout>>;
 }
 
-/** Application launchers live here; document miniwindows have their own shelf. */
+/** Application launchers live here. Minimized windows have their own shelf. */
 export function Dock({ props, layout, api, setLayout, compact }: DockProps) {
   const [now, setNow] = useState(() => new Date());
   const [dragged, setDragged] = useState<string | null>(null);
@@ -63,6 +62,8 @@ export function Dock({ props, layout, api, setLayout, compact }: DockProps) {
     const index = apps.findIndex((item) => item.id === app.id);
     const pinned =
       layout.dock.find((entry) => entry.appId === app.id)?.pinned ?? false;
+    const shown = api.isApplicationOnDesktop(app.id);
+    const launchable = app.launchable !== false;
     return [
       {
         label: windows.length ? 'Activate Application' : 'Launch Application',
@@ -74,20 +75,24 @@ export function Dock({ props, layout, api, setLayout, compact }: DockProps) {
         action: () => api.focusWindow(win.id),
       })),
       { separator: true },
-      {
-        label: 'Keep in Dock',
-        checked: pinned,
-        action: () => setPinned(app.id, !pinned),
-      },
-      {
-        label: 'Show on Desktop',
-        checked: api.isApplicationOnDesktop(app.id),
-        action: () =>
-          api.showDesktopApplication(
-            app.id,
-            !api.isApplicationOnDesktop(app.id),
-          ),
-      },
+      ...(launchable || pinned
+        ? [
+            {
+              label: 'Keep in Dock',
+              checked: pinned,
+              action: () => setPinned(app.id, !pinned),
+            },
+          ]
+        : []),
+      ...(launchable || shown
+        ? [
+            {
+              label: 'Show on Desktop',
+              checked: shown,
+              action: () => api.showDesktopApplication(app.id, !shown),
+            },
+          ]
+        : []),
       {
         label: 'Move Earlier',
         disabled: index <= 0,
@@ -111,11 +116,19 @@ export function Dock({ props, layout, api, setLayout, compact }: DockProps) {
             }));
         },
       },
-      {
-        label: 'Add to Clip',
-        action: () =>
-          api.addClipShortcut({ appId: app.id, title: app.title, params: {} }),
-      },
+      ...(launchable
+        ? [
+            {
+              label: 'Add Workspace Shortcut',
+              action: () =>
+                api.addClipShortcut({
+                  appId: app.id,
+                  title: app.title,
+                  params: {},
+                }),
+            },
+          ]
+        : []),
     ];
   };
   const addItems: MenuItem[] = props.apps
@@ -127,18 +140,26 @@ export function Dock({ props, layout, api, setLayout, compact }: DockProps) {
       ),
       action: () => setPinned(app.id, true),
     }));
-  const dockMenu: MenuItem[] = [
-    { label: 'Add application', children: addItems },
-    { separator: true },
-    ...apps.map((app) => ({ label: app.title, children: appMenu(app) })),
-  ];
-  const pointFor = (element: HTMLElement): Point => {
+  const controls: MenuItem[] = compact
+    ? [
+        { label: 'Add application', children: addItems },
+        { separator: true },
+        ...apps.map((app) => ({ label: app.title, children: appMenu(app) })),
+      ]
+    : addItems;
+  const controlsLabel = compact ? 'Dock menu' : 'Add application to Dock';
+  const openAppMenu = (app: AppDefinition, element: HTMLElement) => {
+    element.focus({ preventScroll: true });
     const rect = element.getBoundingClientRect();
-    return { x: rect.left - 220, y: rect.top };
+    api.contextMenu(
+      appMenu(app),
+      { x: rect.left, y: rect.top },
+      { title: app.title, align: 'end' },
+    );
   };
   return (
     <aside
-      className={`ns-dock ${compact ? 'is-compact' : ''}`}
+      className="ns-dock"
       aria-label="Application Dock"
       onPointerDownCapture={() => {
         suppressClick.current = null;
@@ -181,6 +202,8 @@ export function Dock({ props, layout, api, setLayout, compact }: DockProps) {
                 type="button"
                 className={`ns-dock-tile ${active ? 'is-active' : ''}`}
                 aria-label={`${app.title}${running ? ` · ${windows.length} running window${windows.length > 1 ? 's' : ''}` : ''}`}
+                aria-haspopup={windows.length > 1 ? 'menu' : undefined}
+                aria-keyshortcuts="Shift+F10 ContextMenu"
                 title={`${app.title}${app.unavailable !== undefined ? ' — unavailable' : ''}`}
                 onPointerDown={(event) => {
                   // Touch and pen keep native panning; their options menu orders entries.
@@ -221,87 +244,55 @@ export function Dock({ props, layout, api, setLayout, compact }: DockProps) {
                   const draggedApp = suppressClick.current;
                   suppressClick.current = null;
                   if (draggedApp === app.id && event.detail > 0) return;
-                  if (windows.length > 1)
-                    api.contextMenu(appMenu(app), pointFor(el), {
-                      title: app.title,
-                    });
+                  if (windows.length > 1) openAppMenu(app, el);
                   else api.launchApp(app.id);
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    event.key !== 'ContextMenu' &&
+                    !(event.shiftKey && event.key === 'F10')
+                  )
+                    return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  openAppMenu(app, event.currentTarget);
                 }}
                 onContextMenu={(event) => {
                   event.preventDefault();
-                  event.currentTarget.focus();
-                  api.contextMenu(appMenu(app), pointFor(event.currentTarget), {
-                    title: app.title,
-                  });
+                  openAppMenu(app, event.currentTarget);
                 }}
               >
-                <PixelIcon name={app.icon} size={36} />
-                <span className="ns-dock-running" aria-hidden="true">
-                  {running ? '●' : ''}
-                </span>
+                <PixelIcon name={app.icon} size={34} />
+                {running && (
+                  <span className="ns-dock-running" aria-hidden="true" />
+                )}
                 {windows.length > 1 && (
                   <span className="ns-dock-count" aria-hidden="true">
                     {windows.length}
                   </span>
                 )}
               </button>
-              {!compact && (
-                <button
-                  type="button"
-                  className="ns-dock-options"
-                  aria-label={`${app.title} Dock options`}
-                  title={`${app.title} Dock options`}
-                  aria-haspopup="menu"
-                  onClick={(event) =>
-                    api.contextMenu(
-                      appMenu(app),
-                      pointFor(event.currentTarget),
-                      {
-                        title: app.title,
-                      },
-                    )
-                  }
-                >
-                  <WindowControlIcon icon="menu" />
-                </button>
-              )}
             </div>
           );
         })}
-        {!compact && (
-          <button
-            type="button"
-            className="ns-dock-add"
-            aria-label="Add application to Dock"
-            title="Add application to Dock"
-            aria-haspopup="menu"
-            onClick={(event) =>
-              api.contextMenu(addItems, pointFor(event.currentTarget), {
-                title: 'Add to Dock',
-              })
-            }
-          >
-            +
-          </button>
-        )}
       </div>
-      {compact && (
-        <button
-          type="button"
-          className="ns-dock-menu"
-          aria-label="Dock menu"
-          title="Dock menu"
-          aria-haspopup="menu"
-          onClick={(event) => {
-            event.currentTarget.focus({ preventScroll: true });
-            const rect = event.currentTarget.getBoundingClientRect();
-            api.contextMenu(
-              dockMenu,
-              { x: rect.right, y: rect.top },
-              { title: 'Dock', align: 'end' },
-            );
-          }}
-        >
+      <button
+        type="button"
+        className={compact ? 'ns-dock-menu' : 'ns-dock-add'}
+        aria-label={controlsLabel}
+        title={controlsLabel}
+        aria-haspopup="menu"
+        onClick={(event) => {
+          event.currentTarget.focus({ preventScroll: true });
+          const rect = event.currentTarget.getBoundingClientRect();
+          api.contextMenu(
+            controls,
+            { x: rect.right, y: rect.top },
+            { title: compact ? 'Dock' : 'Add to Dock', align: 'end' },
+          );
+        }}
+      >
+        {compact ? (
           <svg
             width="18"
             height="18"
@@ -312,8 +303,10 @@ export function Dock({ props, layout, api, setLayout, compact }: DockProps) {
           >
             <path d="M2 7h2v2H2zM7 7h2v2H7zM12 7h2v2h-2z" />
           </svg>
-        </button>
-      )}
+        ) : (
+          '+'
+        )}
+      </button>
     </aside>
   );
 }

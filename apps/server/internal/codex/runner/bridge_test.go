@@ -184,6 +184,21 @@ func TestNewConversationPersistsBeforeForwardingIdentity(t *testing.T) {
 	if got := harness.receive(t).Method; got != "thread/status/changed" {
 		t.Fatalf("buffered notification = %q", got)
 	}
+	for index, method := range []string{"turn/start", "turn/steer"} {
+		params := map[string]any{
+			"threadId": testThreadID, "expectedTurnId": "active-turn",
+			"input": []any{map[string]string{"type": "text", "text": "Inspect the host project"}},
+		}
+		if method == "turn/start" {
+			delete(params, "expectedTurnId")
+			params["model"] = "user-model"
+		}
+		harness.send(t, map[string]any{"id": index + 2, "method": method, "params": params})
+		want, _ := json.Marshal(params)
+		if got := harness.upstreamMessage(t); got.Method != method || string(got.Params) != string(want) {
+			t.Fatalf("host turn input changed: %+v", got)
+		}
+	}
 }
 
 func TestManagedConversationRejectsIdentityChanges(t *testing.T) {
@@ -261,12 +276,12 @@ func TestResumeRejectsWrongReturnedIdentityAndPreservesKnownIdentity(t *testing.
 
 func TestWriteFailurePreservesOnlyMatchingDurableIdentity(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
-	ready := State{RunID: "run", HistoryHome: "/history", ThreadID: testThreadID, Status: StatusReady, ContextVersion: 1}
+	ready := State{RunID: "run", HistoryHome: "/history", ThreadID: testThreadID, Status: StatusReady}
 	if err := writeState(path, ready); err != nil {
 		t.Fatal(err)
 	}
 	writeFailure(path, State{RunID: "run", HistoryHome: "/history"}, "codex_runtime_failed")
-	if got := stateAt(t, path); got.ThreadID != testThreadID || got.Status != StatusFailed || got.ContextVersion != 1 {
+	if got := stateAt(t, path); got.ThreadID != testThreadID || got.Status != StatusFailed {
 		t.Fatalf("lost confirmed identity: %+v", got)
 	}
 	writeFailure(path, State{RunID: "next-run", HistoryHome: "/history"}, "codex_start_failed")

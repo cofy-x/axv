@@ -6,10 +6,10 @@ import type {
   DesktopProps,
   DesktopWindow,
 } from '../types';
+import { resolveApplication } from './applications';
 import {
   createDesktopContextMenu,
-  createDesktopMenus,
-  createClipMenu,
+  createApplicationMenus,
   createWindowMenu,
 } from './menus';
 
@@ -92,9 +92,12 @@ describe('host-independent desktop commands', () => {
       icons: [],
       onAppearance: vi.fn(),
     };
-    const workspaces = createClipMenu(props, api);
-    workspaces.find((item) => item.label?.startsWith('2  '))!.action?.();
-    expect(api.switchWorkspace).toHaveBeenCalledExactlyOnceWith('workspace-2');
+    const workspaces = createDesktopContextMenu(props, api, []).find(
+      (item) => item.label === 'Workspaces',
+    )!.children!;
+    expect(workspaces.some((item) => item.label === 'Switch Workspace')).toBe(
+      false,
+    );
     const shortcuts = workspaces.find(
       (item) => item.label === 'Shortcuts',
     )!.children!;
@@ -132,11 +135,81 @@ describe('host-independent desktop commands', () => {
       'workspace-1',
       'Renamed',
     );
+    vi.mocked(api.dialog).mockResolvedValueOnce({ button: 'ok', value: '' });
+    workspaces.find((item) => item.label === 'Rename Workspace')!.action?.();
+    await Promise.resolve();
+    expect(api.renameWorkspace).toHaveBeenLastCalledWith('workspace-1', '');
   });
 
-  it('launches and removes application shortcuts without invoking file or host desktop actions', () => {
+  it('offers a switch command for saved workspaces beyond the numbered controls', () => {
     const api = desktopAPI();
-    const custom = vi.fn(() => [{ label: 'Trash' }]);
+    api.workspaces.push({
+      id: 'saved-extra',
+      name: 'Sandbox',
+      order: [],
+      activeWindowId: null,
+      clip: [],
+    });
+    const workspaces = createDesktopContextMenu(
+      { apps: [], icons: [] },
+      api,
+      [],
+    ).find((item) => item.label === 'Workspaces')!.children!;
+    const extras = workspaces.find(
+      (item) => item.label === 'Switch Workspace',
+    )!.children!;
+    expect(extras.map((item) => item.label)).toEqual(['Workspace 5 · Sandbox']);
+    extras[0].action?.();
+    expect(api.switchWorkspace).toHaveBeenCalledExactlyOnceWith('saved-extra');
+  });
+
+  it('saves contextual window shortcuts only when they address a target', () => {
+    const api = desktopAPI();
+    const contextual = app('editor', false);
+    const unbound = { ...win('unbound'), params: {} };
+    const bound = win('bound');
+    const props: DesktopProps = { apps: [contextual], icons: [] };
+    api.windows = [unbound, bound];
+    api.activeWindowId = unbound.id;
+    api.workspaces[0].clip = [unbound, bound].map((window) => ({
+      id: window.id,
+      title: window.title,
+      appId: window.appId,
+      params: window.params,
+    }));
+    const workspace = createDesktopContextMenu(props, api, []).find(
+      (item) => item.label === 'Workspaces',
+    )!.children!;
+    expect(
+      workspace.find((item) => item.label === 'Add Active Window')?.disabled,
+    ).toBe(true);
+    expect(createWindowMenu(unbound, api, contextual)).not.toContainEqual(
+      expect.objectContaining({ label: 'Add Workspace Shortcut' }),
+    );
+    const shortcuts = workspace.find(
+      (item) => item.label === 'Shortcuts',
+    )!.children!;
+    expect(shortcuts[0].children![0].disabled).toBe(true);
+    shortcuts[0].children![1].action?.();
+    expect(api.removeClipShortcut).toHaveBeenCalledExactlyOnceWith(unbound.id);
+    shortcuts[1].children![0].action?.();
+    expect(api.openApp).toHaveBeenCalledExactlyOnceWith(
+      bound.appId,
+      bound.params,
+    );
+    createWindowMenu(bound, api, contextual)
+      .find((item) => item.label === 'Add Workspace Shortcut')
+      ?.action?.();
+    expect(api.addClipShortcut).toHaveBeenCalledExactlyOnceWith({
+      appId: bound.appId,
+      params: bound.params,
+      title: bound.title,
+    });
+  });
+
+  it('launches and removes application shortcuts without invoking host resource actions', () => {
+    const api = desktopAPI();
+    const custom = vi.fn(() => [{ label: 'Inspect' }]);
     const props: DesktopProps = {
       apps: [app('example')],
       icons: [
@@ -149,7 +222,6 @@ describe('host-independent desktop commands', () => {
         },
       ],
       onDesktopMenu: custom,
-      onTrashIcons: vi.fn(),
     };
     const menu = createDesktopContextMenu(props, api, ['application:example']);
     expect(menu.map((item) => item.label)).toEqual([
@@ -165,13 +237,12 @@ describe('host-independent desktop commands', () => {
       false,
     );
     expect(custom).not.toHaveBeenCalled();
-    expect(props.onTrashIcons).not.toHaveBeenCalled();
   });
 
   it('preserves a host launcher action and refuses to remove mixed resource selections as shortcuts', () => {
     const api = desktopAPI();
     const onOpen = vi.fn();
-    const custom = vi.fn(() => [{ label: 'Trash' }]);
+    const custom = vi.fn(() => [{ label: 'Inspect' }]);
     const props: DesktopProps = {
       apps: [app('example')],
       icons: [
@@ -227,7 +298,7 @@ describe('host-independent desktop commands', () => {
     expect(api.launchApp).toHaveBeenCalledWith('inventory');
     expect(api.openApp).not.toHaveBeenCalled();
   });
-  it('keeps host custom file menu actions and forwards icons by identity', () => {
+  it('keeps host custom menu actions and forwards resource icons by identity', () => {
     const api = desktopAPI();
     const onOpen = vi.fn();
     const props: DesktopProps = {
@@ -252,12 +323,12 @@ describe('host-independent desktop commands', () => {
       ]),
     ).toEqual([]);
   });
-  it('pins commands to their original owner after active focus changes', () => {
+  it('uses the exact active window for application commands', () => {
     const api = desktopAPI();
     const a = win('a');
     const b = win('b');
     api.windows = [a, b];
-    api.activeWindowId = b.id;
+    api.activeWindowId = a.id;
     const invoke = vi.fn();
     const editor: AppDefinition = {
       ...app('editor'),
@@ -270,24 +341,29 @@ describe('host-independent desktop commands', () => {
       ],
     };
     const props: DesktopProps = { apps: [editor], icons: [] };
-    createDesktopMenus(props, api, [], a.id)
+    createApplicationMenus(props, api)!
       .groups.find((group) => group.id === 'file')!
       .items[0].action?.();
     expect(invoke).toHaveBeenCalledExactlyOnceWith(a.id);
+    api.activeWindowId = b.id;
+    createApplicationMenus(props, api)!.groups[0].items[0].action?.();
+    expect(invoke).toHaveBeenLastCalledWith(b.id);
   });
   it('distinguishes document actions, app launchers, and workspace membership', () => {
     const api = desktopAPI();
     const a = win('a');
-    const items = createWindowMenu(a, api);
+    api.workspaces[1].name = 'Sandbox';
+    const items = createWindowMenu(a, api, app('editor'));
     items.find((item) => item.label === 'Miniaturize')!.action?.();
     expect(api.minimizeWindow).toHaveBeenCalledWith(a.id);
     items
       .find((item) => item.label === 'Move to Workspace')!
-      .children![1].action?.();
+      .children!.find((item) => item.label === 'Workspace 2 · Sandbox')!
+      .action?.();
     expect(api.moveWindow).toHaveBeenCalledWith(a.id, 'workspace-2');
     items.find((item) => item.label === 'All Workspaces')!.action?.();
     expect(api.setWindowSticky).toHaveBeenCalledWith(a.id, true);
-    items.find((item) => item.label === 'Add to Clip')!.action?.();
+    items.find((item) => item.label === 'Add Workspace Shortcut')!.action?.();
     expect(api.addClipShortcut).toHaveBeenCalledWith({
       appId: 'editor',
       params: { entry: 'a' },
@@ -304,54 +380,52 @@ describe('host-independent desktop commands', () => {
       [],
       [{ ...app('editor'), unavailable: 'Disabled', menu }],
     ]) {
-      const groups = createDesktopMenus(
-        { apps, icons: [] },
-        api,
-        [],
-        original.id,
-      ).groups;
-      groups
-        .find((group) => group.id === 'window')!
-        .items.find((item) => item.label === 'Close Window')!
+      expect(createApplicationMenus({ apps, icons: [] }, api)).toBeUndefined();
+      createWindowMenu(original, api, resolveApplication(apps, original.appId))
+        .find((item) => item.label === 'Close Window')!
         .action?.();
       expect(api.closeWindow).toHaveBeenLastCalledWith(original.id);
     }
     expect(menu).not.toHaveBeenCalled();
   });
-  it('lets the active application own its menus without desktop File or View commands', () => {
+  it('shows only nonempty menus supplied by the exact active application', () => {
     const api = desktopAPI();
     const owner = win('a');
     api.windows = [owner];
     api.activeWindowId = owner.id;
+    const session = {
+      id: 'session',
+      label: 'Session',
+      items: [{ label: 'Reconnect' }],
+    };
     const editor = {
       ...app('editor'),
       menu: () => [
-        { id: 'session', label: 'Session', items: [{ label: 'Reconnect' }] },
+        session,
         { id: 'unused', label: 'Unused', items: [] },
+        { id: 'separator', label: 'Separator', items: [{ separator: true }] },
+        {
+          id: 'hidden',
+          label: 'Hidden',
+          items: [{ label: 'Hidden command' }],
+          applicationMenu: false,
+        },
       ],
     };
-    const groups = createDesktopMenus(
-      { apps: [editor], icons: [] },
-      api,
-      [],
-    ).groups;
-    expect(groups.map((group) => group.id)).toEqual([
-      'desktop',
-      'session',
-      'window',
-    ]);
-    expect(groups.find((group) => group.id === 'window')?.applicationMenu).toBe(
-      false,
-    );
-    const workspace = createDesktopMenus(
-      { apps: [editor], icons: [] },
-      api,
-      [],
-      null,
-    ).groups;
-    expect(workspace.find((group) => group.id === 'view')?.items[0].label).toBe(
-      'Arrange Icons',
-    );
+    const props = { apps: [editor], icons: [] };
+    expect(createApplicationMenus(props, api)).toEqual({
+      owner,
+      title: 'editor',
+      groups: [session],
+    });
+    api.windows = [{ ...owner, shaded: true }];
+    expect(createApplicationMenus(props, api)).toBeUndefined();
+    api.activeWindowId = null;
+    expect(createApplicationMenus(props, api)).toBeUndefined();
+    createDesktopContextMenu(props, api, [])
+      .find((item) => item.label === 'Arrange Icons')!
+      .action?.();
+    expect(api.arrangeIcons).toHaveBeenCalledOnce();
   });
   it('keeps shared help in the workspace while allowing an application-specific guide', () => {
     const api = desktopAPI();
@@ -369,21 +443,16 @@ describe('host-independent desktop commands', () => {
       (item) => item.label === 'Welcome',
     )!.action!();
     expect(onHelp).toHaveBeenCalledOnce();
-    expect(
-      createDesktopMenus(props, api, []).groups.find(
-        (group) => group.id === 'help',
-      )!.applicationMenu,
-    ).toBe(false);
+    expect(createApplicationMenus(props, api)).toBeUndefined();
     const guide = {
       id: 'help',
       label: 'Editor Guide',
       items: [{ label: 'Editing help' }],
     };
-    const groups = createDesktopMenus(
+    const menus = createApplicationMenus(
       { ...props, apps: [{ ...app('editor'), menu: () => [guide] }] },
       api,
-      [],
-    ).groups;
-    expect(groups.find((group) => group.id === 'help')).toEqual(guide);
+    );
+    expect(menus?.groups).toEqual([guide]);
   });
 });

@@ -4,6 +4,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,7 +55,7 @@ func AcquireOwnership(ctx context.Context, path string) (*os.File, error) {
 			}
 			return lock, nil
 		}
-		if !contextLockContended(err) {
+		if !ownershipLockContended(err) {
 			return nil, ErrUnavailable
 		}
 		select {
@@ -63,6 +64,10 @@ func AcquireOwnership(ctx context.Context, path string) (*os.File, error) {
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
+}
+
+func ownershipLockContended(err error) bool {
+	return errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN)
 }
 
 func ownershipPrivate(info os.FileInfo) bool {

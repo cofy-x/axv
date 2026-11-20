@@ -4,20 +4,15 @@ import type { APIRequestContext, Locator, Page, Route } from '@playwright/test';
 import type { DesktopLayout } from '@cofy-x/axv-nextstep';
 import {
   activate,
-  createEntry,
-  editorWindow,
   expect,
-  filesWindow,
   menuItem,
-  openDocument,
   persistedLayout,
-  readContent,
-  switchWorkspace,
   windowAction,
   test,
 } from './helpers';
 import { openCodexManager, test as codexTest } from './codex-helpers';
 import { codeEditor, expectEditorText } from './code-editor-helpers';
+import { openVMEditorFixture } from './vm-editor-fixture';
 
 interface BundleChunk {
   fileName: string;
@@ -66,23 +61,6 @@ async function launchTerminal(page: Page, touch: boolean) {
   await choose(menuItem(page, 'Applications'), touch);
   await choose(menuItem(page, 'Terminal'), touch);
   const window = page.locator('[data-app-id="terminal"]').last();
-  await expect(window).toBeVisible();
-  return window;
-}
-
-async function openPendingDocument(
-  page: Page,
-  entry: { id: string; name: string },
-  touch: boolean,
-) {
-  const files = filesWindow(page);
-  await activate(page, files);
-  await choose(
-    files.getByRole('option', { name: entry.name, exact: true }),
-    touch,
-  );
-  await choose(files.getByRole('button', { name: 'Open', exact: true }), touch);
-  const window = editorWindow(page, entry.id);
   await expect(window).toBeVisible();
   return window;
 }
@@ -267,9 +245,10 @@ test('closing a loading window cannot start a shell or revive the cancelled wind
     await expect(page.locator('[data-app-id="terminal"]')).toHaveCount(1);
     expect(sockets).toHaveLength(1);
     expect(gate.requests()).toBe(1);
-    await activate(page, filesWindow(page));
+    const welcome = page.locator('[data-app-id="welcome"]');
+    await activate(page, welcome, hasTouch);
     await expect(
-      filesWindow(page).getByRole('button', { name: 'Open', exact: true }),
+      welcome.getByRole('button', { name: 'Project Files', exact: true }),
     ).toBeVisible();
   } finally {
     gate.release();
@@ -557,28 +536,25 @@ test('a restored guest terminal preserves desktop focus and its recorded binding
   }
 });
 
-test('a failed module retries without reloading or replacing an existing document draft', async ({
+test('a failed module retries without reloading or replacing an existing VM draft', async ({
   page,
-  request,
   hasTouch,
 }) => {
   test.skip(process.platform === 'win32', 'Host shells require POSIX here.');
   const source = 'Saved document baseline';
-  const entry = await createEntry(
-    request,
-    'E2E Lazy loading draft.txt',
-    'file',
-    'documents',
-    source,
-  );
-  await page.reload();
-  const editor = await openDocument(page, entry);
-  const text = editor.getByRole('textbox', { name: 'Document text' });
+  const {
+    window: editor,
+    editor: text,
+    saved,
+  } = await openVMEditorFixture(page, {
+    touch: hasTouch,
+    content: source,
+  });
   await text.fill('Protected draft');
   await text.press('End');
   await page.keyboard.insertText(' appended');
   const draft = 'Protected draft appended';
-  await expect(text).toHaveValue(draft);
+  await expectEditorText(text, draft);
   await text.evaluate((element) => {
     element.dataset.mountProbe = 'original-draft-editor';
   });
@@ -621,145 +597,36 @@ test('a failed module retries without reloading or replacing an existing documen
       documentOrigin,
     );
 
-    const added = await createEntry(request, 'E2E Registry refresh.txt');
-    await activate(page, filesWindow(page));
-    await choose(
-      filesWindow(page).getByRole('button', {
-        name: 'More file actions',
-        exact: true,
-      }),
-      hasTouch,
-    );
-    await choose(menuItem(page, 'Refresh Folder'), hasTouch);
-    await expect(
-      filesWindow(page).getByRole('option', {
-        name: added.name,
-        exact: true,
-      }),
-    ).toBeVisible();
-    await activate(page, editor);
+    await activate(page, editor, hasTouch);
     await expect(text).toHaveAttribute(
       'data-mount-probe',
       'original-draft-editor',
     );
-    await expect(text).toHaveValue(draft);
+    await expectEditorText(text, draft);
     await text.press('ControlOrMeta+z');
-    await expect(text).not.toHaveValue(draft);
+
     await text.press('ControlOrMeta+Shift+z');
-    await expect(text).toHaveValue(draft);
-    await expect(editor.getByTestId('save-status')).toHaveText(
-      'Unsaved changes',
-    );
-    expect(await readContent(request, entry.id)).toBe(source);
+    await expectEditorText(text, draft);
+    await expect(
+      editor.getByRole('status').filter({ hasText: ' · Unsaved changes' }),
+    ).toBeVisible();
+    expect(saved()).toBe(source);
   } finally {
     await page.unroute(asset, handler);
   }
 });
 
-test('concurrent document windows share loading while hidden views retain their identity and cannot take focus', async ({
-  page,
-  request,
-  hasTouch,
-}) => {
-  const first = await createEntry(
-    request,
-    'E2E Concurrent first.txt',
-    'file',
-    'documents',
-    'First saved content',
-  );
-  const second = await createEntry(
-    request,
-    'E2E Concurrent second.txt',
-    'file',
-    'documents',
-    'Second saved content',
-  );
-  await page.reload();
-  const asset = routeAsset(await featureAsset('notes/Notes.tsx'));
-  const gate = moduleGate();
-  await page.route(asset, gate.handler);
-  try {
-    const firstWindow = await openPendingDocument(page, first, hasTouch);
-    await expect(firstWindow.getByRole('status')).toHaveText('Loading…');
-    const secondWindow = await openPendingDocument(page, second, hasTouch);
-    await expect(secondWindow.getByRole('status')).toHaveText('Loading…');
-    await expect.poll(gate.requests).toBe(1);
-    await switchWorkspace(page, 2);
-    const desktopControl = page.getByRole('button', {
-      name: 'Workspace menu',
-      exact: true,
-    });
-    await desktopControl.focus();
-    gate.release();
-    const firstText = firstWindow.locator(
-      'textarea[aria-label="Document text"]',
-    );
-    const secondText = secondWindow.locator(
-      'textarea[aria-label="Document text"]',
-    );
-    await expect(firstText).toHaveValue('First saved content');
-    await expect(secondText).toHaveValue('Second saved content');
-    await expect(firstWindow).toBeHidden();
-    await expect(secondWindow).toBeHidden();
-    await expect(firstWindow).toHaveAttribute('inert', '');
-    await expect(secondWindow).toHaveAttribute('inert', '');
-    await expect(desktopControl).toBeFocused();
-    await firstText.evaluate((element) => element.focus());
-    await expect(firstText).not.toBeFocused();
-    await expect(desktopControl).toBeFocused();
-    expect(gate.requests()).toBe(1);
-
-    await switchWorkspace(page, 1);
-    await activate(page, firstWindow);
-    await expect(firstText).toBeEnabled();
-    await firstText.fill('First independent draft');
-    await firstText.evaluate((element) => {
-      element.dataset.mountProbe = 'first-document';
-    });
-    await activate(page, secondWindow);
-    await expect(secondText).toBeEnabled();
-    await secondText.fill('Second independent draft');
-    await secondText.evaluate((element) => {
-      element.dataset.mountProbe = 'second-document';
-    });
-    await switchWorkspace(page, 2);
-    await switchWorkspace(page, 1);
-    await activate(page, firstWindow);
-    await expect(firstText).toHaveValue('First independent draft');
-    await expect(firstText).toHaveAttribute(
-      'data-mount-probe',
-      'first-document',
-    );
-    await activate(page, secondWindow);
-    await expect(secondText).toHaveValue('Second independent draft');
-    await expect(secondText).toHaveAttribute(
-      'data-mount-probe',
-      'second-document',
-    );
-    expect(await readContent(request, first.id)).toBe('First saved content');
-    expect(await readContent(request, second.id)).toBe('Second saved content');
-  } finally {
-    gate.release();
-    await page.unroute(asset, gate.handler);
-  }
-});
-
 test('persistent module failures retain recovery guidance and let other windows save their work', async ({
   page,
-  request,
   hasTouch,
 }, testInfo) => {
-  const entry = await createEntry(
-    request,
-    'E2E Module failure recovery.txt',
-    'file',
-    'documents',
-    'Original saved content',
-  );
-  await page.reload();
-  const editor = await openDocument(page, entry);
-  const text = editor.getByRole('textbox', { name: 'Document text' });
+  const {
+    window: editor,
+    editor: text,
+    saved,
+  } = await openVMEditorFixture(page, {
+    touch: hasTouch,
+  });
   const draft = 'Keep this draft until I explicitly save.';
   await text.fill(draft);
   await text.evaluate((element) => {
@@ -819,15 +686,17 @@ test('persistent module failures retain recovery guidance and let other windows 
       path: testInfo.outputPath('feature-load-failure.png'),
     });
 
-    await activate(page, editor);
+    await activate(page, editor, hasTouch);
     await expect(text).toHaveAttribute('data-mount-probe', 'recovery-editor');
-    await expect(text).toHaveValue(draft);
+    await expectEditorText(text, draft);
     await choose(
       editor.getByRole('button', { name: 'Save', exact: true }),
       hasTouch,
     );
-    await expect(editor.getByTestId('save-status')).toHaveText('Saved');
-    expect(await readContent(request, entry.id)).toBe(draft);
+    await expect(
+      editor.getByText('Saved in VM.', { exact: true }),
+    ).toBeVisible();
+    expect(saved()).toBe(draft);
     expect(await page.evaluate(() => performance.timeOrigin)).toBe(
       documentOrigin,
     );

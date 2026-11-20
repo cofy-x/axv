@@ -1,44 +1,31 @@
-import { readFile } from 'node:fs/promises';
 import {
-  actionMenu,
   activate,
   bounds,
-  createEntry,
+  expectCurrentWorkspace,
   dockEntry,
-  editorWindow,
-  entries,
   expect,
-  expectedDownloadFilename,
-  filesWindow,
   launch,
   menuItem,
-  nameDialog,
-  newFileItem,
   openDockOptions,
-  openDocument,
+  openWorkspaceControls,
+  openWorkspaceShortcutMenu,
   persistedLayout,
-  readContent,
+  pinDockApplication,
   switchWorkspace,
   test,
   windowMenu,
+  workspaceButton,
 } from './helpers';
+import { applicationMenu } from './desktop-application-helpers';
 
 test.describe('fresh desktop defaults', () => {
-  test.use({ initialApp: 'welcome' });
-
   test('Welcome starts alone and preserves chosen windows and Dock pins after reload', async ({
     page,
     request,
   }) => {
     const welcome = page.locator('[data-app-id="welcome"]');
-    const coreApplications = [
-      'codex',
-      'machines',
-      'project-files',
-      'terminal',
-      'files',
-      'notes',
-    ];
+    const projects = page.locator('[data-window-id="project-files:projects"]');
+    const coreApplications = ['codex', 'machines', 'project-files', 'terminal'];
     const dockOrder = () =>
       page
         .locator('.ns-dock [data-dock-app]')
@@ -46,8 +33,36 @@ test.describe('fresh desktop defaults', () => {
           items.map((item) => item.getAttribute('data-dock-app')),
         );
     await expect(page.locator('[data-window-id]')).toHaveCount(1);
-    await expect(filesWindow(page)).toHaveCount(0);
+    await expect(projects).toHaveCount(0);
     await expect(welcome).toHaveClass(/is-active/);
+    await expect(
+      page.getByRole('navigation', { name: 'Application menus' }),
+    ).toHaveCount(0);
+    const launcher = page.getByRole('button', {
+      name: 'Workspace menu',
+      exact: true,
+    });
+    expect(await bounds(launcher)).toMatchObject({ width: 30 });
+    await expect(launcher).toHaveText('');
+    const icon = launcher.locator('img');
+    await expect(icon).toHaveAttribute('src', '/favicon.svg');
+    expect(await bounds(icon)).toMatchObject({ width: 17, height: 17 });
+    await launcher.press('Enter');
+    await expect(
+      page.getByRole('menu', { name: 'Workspace', exact: true }),
+    ).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(launcher).toBeFocused();
+    for (const index of [1, 2, 3, 4]) {
+      const button = workspaceButton(page, index);
+      await expect(button).toHaveAccessibleName(`Workspace ${index}`);
+      await expect(button).toHaveText(String(index));
+      await expect(button).toHaveAttribute('aria-pressed', String(index === 1));
+    }
+    const workspaceMenu = await openWorkspaceControls(page);
+    await expect(menuItem(workspaceMenu, 'Rename Workspace')).toBeVisible();
+    await expect(menuItem(workspaceMenu, 'Switch Workspace')).toHaveCount(0);
+    await page.keyboard.press('Escape');
     const workApps = welcome.getByRole('group', { name: 'Work applications' });
     const codex = workApps.getByRole('button', { name: 'Codex', exact: true });
     await expect(codex).toBeInViewport();
@@ -66,8 +81,10 @@ test.describe('fresh desktop defaults', () => {
       0,
     );
     await expect(
-      page.locator('[data-icon-id="system:documents"]'),
-    ).toBeVisible();
+      welcome.getByRole('button', { name: 'Documents', exact: true }),
+    ).toHaveCount(0);
+    for (const id of ['system:computer', 'system:documents', 'system:trash'])
+      await expect(page.locator(`[data-icon-id="${id}"]`)).toHaveCount(0);
     await expect(dockEntry(page, 'codex')).toBeVisible();
     await expect(dockEntry(page, 'gallery')).toHaveCount(0);
     await expect.poll(dockOrder).toEqual([...coreApplications, 'welcome']);
@@ -101,20 +118,20 @@ test.describe('fresh desktop defaults', () => {
         ),
       )
       .toBe(false);
-    await welcome
-      .getByRole('button', { name: 'Documents', exact: true })
+    await workApps
+      .getByRole('button', { name: 'Project Files', exact: true })
       .click();
-    await expect(filesWindow(page)).toHaveClass(/is-active/);
+    await expect(projects).toHaveClass(/is-active/);
     await expect
       .poll(async () => (await persistedLayout(page, request))?.activeWindowId)
-      .toBe('files:documents');
+      .toBe('project-files:projects');
     const chosen = await persistedLayout(page, request);
-    const documentWindow = chosen.windows.find(
-      (window: { id: string }) => window.id === 'files:documents',
+    const projectWindow = chosen.windows.find(
+      (window: { id: string }) => window.id === 'project-files:projects',
     );
     await page.reload();
     await expect(page.locator('[data-window-id]')).toHaveCount(2);
-    await expect(filesWindow(page)).toHaveClass(/is-active/);
+    await expect(projects).toHaveClass(/is-active/);
     await expect(dockEntry(page, 'codex')).toHaveCount(0);
     await expect(page.locator('[data-icon-id="system:terminal"]')).toHaveCount(
       0,
@@ -125,12 +142,12 @@ test.describe('fresh desktop defaults', () => {
         const layout = await persistedLayout(page, request);
         return {
           dock: layout.dock,
-          document: layout.windows.find(
-            (window: { id: string }) => window.id === 'files:documents',
+          project: layout.windows.find(
+            (window: { id: string }) => window.id === 'project-files:projects',
           ),
         };
       })
-      .toEqual({ dock: chosen.dock, document: documentWindow });
+      .toEqual({ dock: chosen.dock, project: projectWindow });
   });
 });
 
@@ -138,9 +155,10 @@ test('windows drag, resize, shade, miniaturize and retain desktop geometry', asy
   page,
   request,
 }) => {
-  const files = filesWindow(page);
-  const initial = await bounds(files);
-  const title = await bounds(files.locator('.ns-window-title'));
+  await launch(page, 'project-files');
+  const projects = page.locator('[data-window-id="project-files:projects"]');
+  const initial = await bounds(projects);
+  const title = await bounds(projects.locator('.ns-window-title'));
   await page.mouse.move(title.x + title.width / 2, title.y + title.height / 2);
   await page.mouse.down();
   await page.mouse.move(
@@ -149,10 +167,10 @@ test('windows drag, resize, shade, miniaturize and retain desktop geometry', asy
     { steps: 8 },
   );
   await page.mouse.up();
-  const moved = await bounds(files);
+  const moved = await bounds(projects);
   expect(moved.x).toBeCloseTo(initial.x + 72, 0);
   expect(moved.y).toBeCloseTo(initial.y + 48, 0);
-  const corner = await bounds(files.locator('[data-resize="se"]'));
+  const corner = await bounds(projects.locator('[data-resize="se"]'));
   await page.mouse.move(
     corner.x + corner.width / 2,
     corner.y + corner.height / 2,
@@ -164,72 +182,103 @@ test('windows drag, resize, shade, miniaturize and retain desktop geometry', asy
     { steps: 8 },
   );
   await page.mouse.up();
-  const resized = await bounds(files);
+  const resized = await bounds(projects);
   expect(resized.width).toBeCloseTo(moved.width + 60, 0);
   expect(resized.height).toBeCloseTo(moved.height + 40, 0);
-  await files.getByRole('button', { name: /^Shade / }).click();
-  await expect(files).toHaveClass(/is-shaded/);
+  await projects.getByRole('button', { name: /^Shade / }).click();
+  await expect(projects).toHaveClass(/is-shaded/);
   await expect(
-    files.getByRole('button', { name: 'New', exact: true }),
+    projects.getByRole('button', { name: 'Choose Folder', exact: true }),
   ).toBeHidden();
-  await files.getByRole('button', { name: /^Unshade / }).click();
-  await expect.poll(() => bounds(files)).toEqual(resized);
-  await files.getByRole('button', { name: /^Maximize / }).click();
-  expect((await bounds(files)).width).toBeGreaterThan(resized.width);
-  await files.getByRole('button', { name: /^Restore / }).click();
-  await expect.poll(() => bounds(files)).toEqual(resized);
-  await files.getByRole('button', { name: /^Miniaturize / }).click();
-  await expect(files).toBeHidden();
+  await projects.getByRole('button', { name: /^Unshade / }).click();
+  await expect.poll(() => bounds(projects)).toEqual(resized);
+  await projects.getByRole('button', { name: /^Maximize / }).click();
+  expect((await bounds(projects)).width).toBeGreaterThan(resized.width);
+  await projects.getByRole('button', { name: /^Restore / }).click();
+  await expect.poll(() => bounds(projects)).toEqual(resized);
+  await projects.getByRole('button', { name: /^Miniaturize / }).click();
+  await expect(projects).toBeHidden();
   await expect(page.locator('.ns-miniwindow-shelf')).toBeVisible();
-  await activate(page, files);
-  await expect.poll(() => bounds(files)).toEqual(resized);
+  await activate(page, projects);
+  await expect.poll(() => bounds(projects)).toEqual(resized);
   await expect
     .poll(
       async () =>
         (await persistedLayout(page, request))?.windows.find(
-          (win: { id: string }) => win.id === 'files:documents',
+          (win: { id: string }) => win.id === 'project-files:projects',
         )?.width,
     )
     .toBe(resized.width);
   await page.reload();
-  await expect.poll(() => bounds(filesWindow(page))).toEqual(resized);
+  await expect.poll(() => bounds(projects)).toEqual(resized);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(
-    filesWindow(page).getByRole('button', { name: /^Close / }),
+    projects.getByRole('button', { name: /^Close / }),
   ).toBeInViewport();
   await page.setViewportSize({ width: 1440, height: 900 });
-  await expect.poll(() => bounds(filesWindow(page))).toEqual(resized);
+  await expect.poll(() => bounds(projects)).toEqual(resized);
 });
 
-test('Dock pinning, order, clock, running state and document selection persist', async ({
+test('Dock pinning, order, clock and running window selection persist', async ({
   page,
   request,
 }) => {
-  const a = await createEntry(request, 'E2E Dock A.txt');
-  const b = await createEntry(request, 'E2E Dock B.txt');
-  await page.reload();
-  const first = await openDocument(page, a);
-  const second = await openDocument(page, b);
+  const terminalEntry = dockEntry(page, 'terminal');
+  const terminalDock = terminalEntry.locator('.ns-dock-tile');
+  const running = terminalDock.locator('.ns-dock-running');
+  await expect(terminalEntry.getByRole('button')).toHaveCount(1);
+  await expect(running).toHaveCount(0);
+  expect(await bounds(terminalDock)).toMatchObject({ width: 52, height: 52 });
+  const clock = page.getByRole('button', {
+    name: 'Clock and date',
+    exact: true,
+  });
+  expect(await bounds(clock)).toMatchObject({ width: 52, height: 52 });
+  const addApplication = page.getByRole('button', {
+    name: 'Add application to Dock',
+    exact: true,
+  });
+  expect(await bounds(addApplication)).toMatchObject({ width: 52, height: 23 });
+  await expect(addApplication).toHaveText('+');
   await expect(
-    dockEntry(page, 'notes').locator('.ns-dock-tile'),
-  ).toHaveAttribute('aria-label', /2 running windows/);
-  await launch(page, 'notes');
-  await menuItem(page, a.name).click();
+    page.getByRole('button', { name: 'Dock menu', exact: true }),
+  ).toHaveCount(0);
+  await launch(page, 'terminal');
+  await applicationMenu(page, 'File');
+  await menuItem(page, 'New Terminal Window').click();
+  const first = page.locator('[data-app-id="terminal"][aria-label="Terminal"]');
+  const second = page.locator(
+    '[data-app-id="terminal"][aria-label="Terminal 2"]',
+  );
+  await expect(terminalDock).toHaveAttribute('aria-label', /2 running windows/);
+  await expect(terminalDock.locator('.ns-dock-count')).toHaveText('2');
+  const tileBox = await bounds(terminalDock);
+  const glyphBox = await bounds(terminalDock.locator('.ns-pixel-icon'));
+  const markerBox = await bounds(running);
+  expect(glyphBox.x + glyphBox.width / 2).toBeCloseTo(
+    tileBox.x + tileBox.width / 2,
+    0,
+  );
+  expect(glyphBox.y + glyphBox.height / 2).toBeCloseTo(
+    tileBox.y + tileBox.height / 2,
+    0,
+  );
+  expect(markerBox).toMatchObject({ width: 5, height: 5 });
+  expect(markerBox.x).toBeLessThan(glyphBox.x);
+  expect(markerBox.y).toBeLessThan(glyphBox.y);
+  await terminalDock.click();
+  await menuItem(page, 'Terminal').click();
   await expect(first).toHaveClass(/is-active/);
   await expect(second).toHaveCount(1);
   const gallery = dockEntry(page, 'gallery');
   await expect(gallery).toHaveCount(0);
-  await page
-    .getByRole('button', { name: 'Add application to Dock', exact: true })
-    .click();
-  await menuItem(page, 'Component Gallery').click();
-  await gallery.locator('.ns-dock-options').click();
-  await menuItem(page, 'Keep in Dock').click();
+  await pinDockApplication(page, 'Component Gallery');
+  await menuItem(
+    await openDockOptions(page, 'gallery'),
+    'Keep in Dock',
+  ).click();
   await expect(gallery).toHaveCount(0);
-  await page
-    .getByRole('button', { name: 'Add application to Dock', exact: true })
-    .click();
-  await menuItem(page, 'Component Gallery').click();
+  await pinDockApplication(page, 'Component Gallery');
   await expect(gallery).toBeVisible();
   const order = () =>
     page
@@ -238,8 +287,21 @@ test('Dock pinning, order, clock, running state and document selection persist',
         items.map((item) => (item as HTMLElement).dataset.dockApp),
       );
   const before = await order();
-  await gallery.locator('.ns-dock-options').click();
-  await menuItem(page, 'Move Earlier').click();
+  const galleryTile = gallery.locator('.ns-dock-tile');
+  const galleryMenu = page.getByRole('menu', {
+    name: 'Component Gallery',
+    exact: true,
+  });
+  for (const key of ['Shift+F10', 'ContextMenu']) {
+    await galleryTile.press(key);
+    await expect(menuItem(galleryMenu, 'Keep in Dock')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(galleryTile).toBeFocused();
+  }
+  await menuItem(
+    await openDockOptions(page, 'gallery'),
+    'Move Earlier',
+  ).click();
   let changed = await order();
   expect(changed.indexOf('gallery')).toBe(before.indexOf('gallery') - 1);
   const dragged = await bounds(gallery.locator('.ns-dock-tile'));
@@ -269,9 +331,7 @@ test('Dock pinning, order, clock, running state and document selection persist',
     .toEqual(changed);
   await page.reload();
   await expect.poll(order).toEqual(changed);
-  await page
-    .getByRole('button', { name: 'Clock and date', exact: true })
-    .click();
+  await clock.click();
   await expect(
     page.getByRole('dialog', { name: 'Clock', exact: true }),
   ).toContainText(String(new Date().getFullYear()));
@@ -284,10 +344,7 @@ test('Dock pinning, order, clock, running state and document selection persist',
 test('Dock drag cancellation and missing clicks do not consume later activation', async ({
   page,
 }) => {
-  await page
-    .getByRole('button', { name: 'Add application to Dock', exact: true })
-    .click();
-  await menuItem(page, 'Component Gallery').click();
+  await pinDockApplication(page, 'Component Gallery');
   const gallery = dockEntry(page, 'gallery');
   const tile = gallery.locator('.ns-dock-tile');
   const window = page.locator('[data-app-id="gallery"]');
@@ -341,351 +398,115 @@ test('Dock drag cancellation and missing clicks do not consume later activation'
   await expect(window).toBeVisible();
 });
 
-test('workspaces and Clip retain mounted drafts, focus, sticky windows and renamed layout', async ({
+test('workspaces retain mounted forms, focus, sticky windows and shortcuts across renaming', async ({
   page,
   request,
 }) => {
-  const entry = await createEntry(request, 'E2E Workspace draft.txt');
-  await page.reload();
-  const note = await openDocument(page, entry);
-  const text = note.locator('textarea[aria-label="Document text"]');
-  await text.fill('Draft across workspaces\n'.repeat(30));
-  await text.evaluate((element) => {
-    element.dataset.mountProbe = 'same-editor';
-    element.scrollTop = 100;
+  await launch(page, 'project-files');
+  const projects = page.locator('[data-window-id="project-files:projects"]');
+  const directory = projects.getByLabel('Host project directory', {
+    exact: true,
   });
-  const scrollTop = () => text.evaluate((element) => element.scrollTop);
-  await expect.poll(scrollTop).toBe(100);
-  await note.getByRole('button', { name: /^Shade / }).click();
-  await expect(text).toBeHidden();
-  await note.getByRole('button', { name: /^Unshade / }).click();
-  await expect.poll(scrollTop).toBe(100);
-  await note.getByRole('button', { name: /^Miniaturize / }).click();
-  await expect(note).toBeHidden();
-  await activate(page, note);
-  await expect.poll(scrollTop).toBe(100);
-  await windowMenu(page, note);
-  await menuItem(page, 'Add to Clip').click();
-  await expect(
-    page.getByRole('button', { name: `Clip: ${entry.name}`, exact: true }),
-  ).toBeVisible();
+  const draft = '/project/directory-not-yet-opened';
+  await directory.fill(draft);
+  await directory.press('Home');
+  await directory.press('Shift+End');
+  await directory.evaluate((element) => {
+    element.dataset.mountProbe = 'same-input';
+  });
+  const selection = () =>
+    directory.evaluate((element: HTMLInputElement) => [
+      element.selectionStart,
+      element.selectionEnd,
+    ]);
+  await projects.getByRole('button', { name: /^Shade / }).click();
+  await expect(directory).toBeHidden();
+  await projects.getByRole('button', { name: /^Unshade / }).click();
+  await expect.poll(selection).toEqual([0, draft.length]);
+  await projects.getByRole('button', { name: /^Miniaturize / }).click();
+  await expect(projects).toBeHidden();
+  await activate(page, projects);
+  await expect.poll(selection).toEqual([0, draft.length]);
+  await windowMenu(page, projects);
+  await menuItem(page, 'Add Workspace Shortcut').click();
+  await menuItem(
+    await openWorkspaceShortcutMenu(page, 'Project Files'),
+    'Open',
+  ).click();
+  await expect(projects).toHaveClass(/is-active/);
   await switchWorkspace(page, 2);
-  await expect(note).toBeHidden();
-  await expect(note).toHaveCount(1);
+  await expect(projects).toBeHidden();
+  await expect(projects).toHaveCount(1);
   expect(
-    await text.evaluate((element) => element.contains(document.activeElement)),
+    await directory.evaluate((element) =>
+      element.contains(document.activeElement),
+    ),
   ).toBe(false);
-  await expect(
-    page.getByRole('button', { name: `Clip: ${entry.name}`, exact: true }),
-  ).toHaveCount(0);
+  const secondControls = await openWorkspaceControls(page);
+  await expect(menuItem(secondControls, 'Shortcuts')).toHaveCount(0);
+  await page.keyboard.press('Escape');
   await switchWorkspace(page, 1);
-  await expect(text).toHaveAttribute('data-mount-probe', 'same-editor');
-  await expect(text).toHaveValue('Draft across workspaces\n'.repeat(30));
-  await expect.poll(scrollTop).toBe(100);
-  await windowMenu(page, note);
+  await expect(directory).toHaveAttribute('data-mount-probe', 'same-input');
+  await expect(directory).toHaveValue(draft);
+  await expect.poll(selection).toEqual([0, draft.length]);
+  await windowMenu(page, projects);
   await menuItem(page, 'Move to Workspace').hover();
-  await menuItem(page, 'Development').click();
-  await expect(note).toBeHidden();
+  await menuItem(page, 'Workspace 2').click();
+  await expect(projects).toBeHidden();
   await switchWorkspace(page, 2);
-  await expect(note).toBeVisible();
-  await windowMenu(page, note);
+  await expect(projects).toBeVisible();
+  await windowMenu(page, projects);
   await menuItem(page, 'All Workspaces').click();
   await switchWorkspace(page, 3);
-  await expect(note).toBeVisible();
-  await page.getByRole('button', { name: /^Workspace 3:/ }).click();
-  await menuItem(page, 'Rename Workspace').click();
+  await expect(projects).toBeVisible();
+  const thirdControls = await openWorkspaceControls(page);
+  await menuItem(thirdControls, 'Rename Workspace').click();
   const dialog = page.getByRole('dialog', {
     name: 'Rename Workspace',
     exact: true,
   });
   await dialog
     .getByRole('textbox', { name: 'Workspace name', exact: true })
-    .fill('E2E Writing');
+    .fill('E2E Projects');
   await dialog.getByRole('button', { name: 'OK', exact: true }).click();
-  await expect(
-    page.getByRole('button', { name: 'Workspace 3: E2E Writing', exact: true }),
-  ).toBeVisible();
+  const renamed = workspaceButton(page, 3);
+  await expect(renamed).toBeVisible();
+  await expect(renamed).toHaveText('3');
+  await expect(renamed).toHaveAccessibleName('Workspace 3 · E2E Projects');
   await expect
     .poll(
       async () => (await persistedLayout(page, request))?.workspaces[2].name,
     )
-    .toBe('E2E Writing');
-  expect(await readContent(request, entry.id)).toBe('Initial text');
-});
-
-test('columns, Inspector and file import/edit/move/recycle/download share one filesystem', async ({
-  page,
-  request,
-  browserName,
-}) => {
-  const files = filesWindow(page);
-  await newFileItem(page, files, 'New Folder');
-  await nameDialog(page, 'E2E Projects');
-  await files
-    .getByRole('option', { name: 'E2E Projects', exact: true })
-    .click();
-  await expect(
-    files.getByRole('listbox', { name: 'E2E Projects column', exact: true }),
-  ).toBeVisible();
-  await files.getByLabel('Import files', { exact: true }).setInputFiles({
-    name: 'E2E Imported.txt',
-    mimeType: 'text/plain',
-    buffer: Buffer.from('Imported bytes.\n'),
-  });
-  const imported = files.getByRole('option', {
-    name: 'E2E Imported.txt',
+    .toBe('E2E Projects');
+  await page.reload();
+  await expect(renamed).toHaveAccessibleName('Workspace 3 · E2E Projects');
+  await menuItem(await openWorkspaceControls(page), 'Rename Workspace').click();
+  const name = dialog.getByRole('textbox', {
+    name: 'Workspace name',
     exact: true,
   });
-  await expect(imported).toBeVisible();
-  await imported.click();
-  await files.getByRole('button', { name: 'Inspect', exact: true }).click();
-  const inspector = page.locator('[data-app-id="inspector"]');
-  await expect(inspector).toContainText('E2E Imported.txt');
-  const pin = inspector.getByRole('button', { name: 'Pin', exact: true });
-  await expect(pin).toHaveAttribute('aria-pressed', 'false');
-  await pin.click();
-  await expect(pin).toHaveAttribute('aria-pressed', 'true');
-  await expect(inspector).toContainText('Pinned');
-  await activate(page, files);
-  await files
-    .getByRole('option', { name: 'E2E Projects', exact: true })
-    .click();
-  await expect(inspector.getByTestId('inspector-name')).toHaveText(
-    'E2E Imported.txt',
-  );
-  await activate(page, inspector);
-  await pin.click();
-  await expect(pin).toHaveAttribute('aria-pressed', 'false');
-  await expect(inspector).toContainText('Follows selection');
-  await expect(inspector.getByTestId('inspector-name')).toHaveText(
-    'E2E Projects',
-  );
-  await activate(page, files);
-  await imported.click();
-  await expect(inspector.getByTestId('inspector-name')).toHaveText(
-    'E2E Imported.txt',
-  );
-  await activate(page, inspector);
-  await pin.click();
-  await expect(pin).toHaveAttribute('aria-pressed', 'true');
-  await activate(page, files);
-  await files.getByRole('button', { name: 'Open', exact: true }).click();
-  const importedEntry = (await entries(request)).find(
-    (entry) => entry.name === 'E2E Imported.txt',
-  )!;
-  const note = editorWindow(page, importedEntry.id);
-  await note
-    .getByRole('textbox', { name: 'Document text' })
-    .fill('Edited through the shared filesystem.\n第二行。');
-  await note
-    .getByRole('textbox', { name: 'Document text' })
-    .press('ControlOrMeta+s');
-  await expect(note.getByTestId('save-status')).toHaveText('Saved');
-  await activate(page, files);
-  await actionMenu(page, files, 'More file actions', 'Rename');
-  await nameDialog(page, 'E2E Final.txt');
-  await expect(note).toHaveAttribute('aria-label', 'E2E Final.txt');
-  await expect(inspector).toContainText('E2E Final.txt');
-  await files
-    .getByRole('option', { name: 'E2E Final.txt', exact: true })
-    .click();
-  await activate(page, inspector);
-  await actionMenu(page, inspector, 'More inspector actions', 'Move');
-  const move = page.getByRole('dialog');
-  await move.getByRole('combobox').selectOption('documents');
-  await move.getByRole('button', { name: 'Move', exact: true }).click();
+  await expect(name).toBeFocused();
+  await expect(name).toHaveValue('E2E Projects');
+  await name.fill('');
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Workspace menu', exact: true }),
+  ).toBeFocused();
+  await expect(renamed).toHaveAccessibleName('Workspace 3 · E2E Projects');
+  await menuItem(await openWorkspaceControls(page), 'Rename Workspace').click();
+  await name.fill('');
+  await dialog.getByRole('button', { name: 'OK', exact: true }).click();
+  await expect(renamed).toHaveAccessibleName('Workspace 3');
+  await switchWorkspace(page, 1);
+  await menuItem(
+    await openWorkspaceShortcutMenu(page, 'Project Files'),
+    'Remove Shortcut',
+  ).click();
   await expect
     .poll(
-      async () =>
-        (await entries(request)).find((entry) => entry.id === importedEntry.id)
-          ?.parentId,
+      async () => (await persistedLayout(page, request))?.workspaces[0].clip,
     )
-    .toBe('documents');
-  await expect(inspector.getByTestId('inspector-path')).not.toContainText(
-    'E2E Projects',
-  );
-  await activate(page, files);
-  await files.getByRole('button', { name: 'Documents', exact: true }).click();
-  await files
-    .getByRole('option', { name: 'E2E Final.txt', exact: true })
-    .click();
-  await actionMenu(page, files, 'More file actions', 'Recycle');
-  await expect(inspector).toContainText(/Recycler|deleted|unavailable/);
-  await launch(page, 'trash');
-  const recycler = page.locator('[data-app-id="trash"]');
-  await recycler.getByRole('option', { name: /E2E Final\.txt/ }).click();
-  await recycler.getByRole('button', { name: 'Restore', exact: true }).click();
-  await activate(page, files);
-  await files
-    .getByRole('option', { name: 'E2E Final.txt', exact: true })
-    .click();
-  const downloadPromise = page.waitForEvent('download');
-  await activate(page, inspector);
-  await actionMenu(page, inspector, 'More inspector actions', 'Download');
-  const download = await downloadPromise;
-  expect(download.suggestedFilename()).toBe(
-    expectedDownloadFilename('E2E Final.txt', browserName),
-  );
-  expect((await readFile((await download.path())!)).toString()).toBe(
-    'Edited through the shared filesystem.\n第二行。',
-  );
-  await expect(inspector).toContainText('E2E Final.txt');
-});
-
-test('revision conflicts preserve local text and save a separate copy', async ({
-  page,
-  request,
-}) => {
-  const entry = await createEntry(request, 'E2E Conflict.txt');
-  await page.reload();
-  const note = await openDocument(page, entry);
-  const editor = note.getByRole('textbox', { name: 'Document text' });
-  const newerRevision = note.getByText(
-    /^The saved document changed elsewhere\./,
-  );
-  const draft = 'My local draft stays intact';
-  await expect(editor).toHaveValue('Initial text');
-  expect(
-    (
-      await request.patch(`/api/entries/${entry.id}`, {
-        data: { revision: entry.revision, content: 'Remote saved text' },
-      })
-    ).ok(),
-  ).toBeTruthy();
-  await editor.fill(draft);
-  await page.evaluate(() => globalThis.dispatchEvent(new Event('focus')));
-  await expect(newerRevision).toBeVisible();
-  const conflictingSave = page.waitForResponse(
-    (response) =>
-      response.url().endsWith(`/api/entries/${entry.id}`) &&
-      response.request().method() === 'PATCH',
-  );
-  await editor.press('ControlOrMeta+s');
-  const rejected = await conflictingSave;
-  expect(rejected.status()).toBe(409);
-  expect((await rejected.json()).code).toBe('revision_conflict');
-  expect(rejected.request().postDataJSON()).toEqual({
-    content: draft,
-    revision: entry.revision,
-  });
-  await expect(note.getByTestId('save-status')).toHaveText(
-    'Another window changed this document',
-  );
-  await expect(editor).toHaveValue(draft);
-  await note
-    .getByRole('button', { name: 'More document actions', exact: true })
-    .click();
-  await menuItem(page, 'Save Copy').click();
-  const copyCreated = page.waitForResponse(
-    (response) =>
-      response.url().endsWith('/api/entries') &&
-      response.request().method() === 'POST',
-  );
-  await nameDialog(page, 'E2E Preserved.txt');
-  const response = await copyCreated;
-  expect(response.ok()).toBeTruthy();
-  const copy = (await response.json()).entry;
-  expect(copy.name).toBe('E2E Preserved.txt');
-  await expect(
-    editorWindow(page, copy.id).getByRole('textbox', { name: 'Document text' }),
-  ).toHaveValue(draft);
-  expect(await readContent(request, entry.id)).toBe('Remote saved text');
-  await activate(page, note);
-  await note
-    .getByRole('button', { name: 'More document actions', exact: true })
-    .click();
-  await menuItem(page, 'Reload').click();
-  await page
-    .getByRole('dialog', { name: 'Load the saved document?', exact: true })
-    .getByRole('button', { name: 'Load Saved', exact: true })
-    .click();
-  await expect(editor).toHaveValue('Remote saved text');
-  await expect(note.getByTestId('save-status')).toHaveText('Saved');
-  await expect(newerRevision).toHaveCount(0);
-});
-
-test('failed saves, cancel/discard protection and local recovery preserve drafts', async ({
-  page,
-  request,
-}) => {
-  const entry = await createEntry(request, 'E2E Recovery.txt');
-  await page.reload();
-  const note = await openDocument(page, entry);
-  const editor = note.getByRole('textbox', { name: 'Document text' });
-  const endpoint = `**/api/entries/${entry.id}`;
-  await page.route(endpoint, (route) =>
-    route.request().method() === 'PATCH'
-      ? route.abort('failed')
-      : route.continue(),
-  );
-  await editor.fill('This draft survives a network failure and reload.');
-  await editor.press('ControlOrMeta+s');
-  await expect(note.getByTestId('save-status')).toHaveText(
-    'Not saved — your draft is still here',
-  );
-  await expect(note).toContainText('Local recovery copy up to date');
-  await note.getByRole('button', { name: /^Close / }).click();
-  const dialog = page.getByRole('dialog', {
-    name: 'Save changes?',
-    exact: true,
-  });
-  await expect(
-    dialog.getByRole('button', { name: 'Save', exact: true }),
-  ).toBeFocused();
-  await dialog.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(dialog).toBeHidden();
-  await expect(note.getByTestId('save-status')).toHaveText(
-    'Not saved — your draft is still here',
-  );
-  await note.getByRole('button', { name: /^Close / }).click();
-  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-  await expect(editor).toHaveValue(
-    'This draft survives a network failure and reload.',
-  );
-  page.once('dialog', (event) => event.accept());
-  await page.reload();
-  await expect(editorWindow(page, entry.id)).toContainText(
-    'A local recovery copy is available.',
-  );
-  await expect(
-    editorWindow(page, entry.id).getByRole('textbox', {
-      name: 'Document text',
-    }),
-  ).toBeDisabled();
-  await editorWindow(page, entry.id)
-    .getByRole('button', { name: 'Restore Draft', exact: true })
-    .click();
-  await expect(
-    editorWindow(page, entry.id).getByRole('textbox', {
-      name: 'Document text',
-    }),
-  ).toHaveValue('This draft survives a network failure and reload.');
-  await expect(editorWindow(page, entry.id)).toContainText(
-    'Recovered a local draft',
-  );
-  expect(await readContent(request, entry.id)).toBe('Initial text');
-  await page.unroute(endpoint);
-  await editorWindow(page, entry.id)
-    .getByRole('textbox', { name: 'Document text' })
-    .press('ControlOrMeta+s');
-  await expect(
-    editorWindow(page, entry.id).getByTestId('save-status'),
-  ).toHaveText('Saved');
-  await editorWindow(page, entry.id)
-    .getByRole('textbox', { name: 'Document text' })
-    .fill('Discard only this later draft');
-  await editorWindow(page, entry.id)
-    .getByRole('button', { name: /^Close / })
-    .click();
-  await page
-    .getByRole('dialog', { name: 'Save changes?', exact: true })
-    .getByRole('button', { name: 'Discard', exact: true })
-    .click();
-  await expect(editorWindow(page, entry.id)).toHaveCount(0);
-  const reopened = await openDocument(page, entry);
-  await expect(
-    reopened.getByRole('textbox', { name: 'Document text' }),
-  ).toHaveValue('This draft survives a network failure and reload.');
+    .toEqual([]);
 });
 
 test('keyboard menus skip disabled items and modal dialogs restore focus', async ({
@@ -795,130 +616,142 @@ test('preferences persist and browser clients keep independent layouts', async (
   try {
     const other = await independent.newPage();
     await other.goto('/');
-    await expect(
-      other.getByRole('button', { name: /^Workspace 1:/ }),
-    ).toBeVisible();
+    await expectCurrentWorkspace(other, 1);
     await expect(other.locator('.ns-desktop')).toHaveClass(/dither/);
   } finally {
     await independent.close();
   }
   await page.reload();
-  await expect(
-    page.getByRole('button', { name: /^Workspace 4:/ }),
-  ).toBeVisible();
+  await expectCurrentWorkspace(page, 4);
   await expect(page.locator('.ns-desktop')).toHaveClass(/dither/);
 });
 
-test('a pinned application menu saves its owner after focus changes and closes with it', async ({
+test('the application menu stays accessible above a maximized window and controls the selected owner', async ({
+  page,
+}) => {
+  await launch(page, 'terminal');
+  const first = page.locator('[data-app-id="terminal"][aria-label="Terminal"]');
+  await first.getByRole('button', { name: /^Maximize / }).click();
+  const menus = page.getByRole('navigation', { name: 'Application menus' });
+  expect(await bounds(menus)).toMatchObject({ x: 4, y: 30, height: 32 });
+  const file = menus.getByRole('button', { name: 'File', exact: true });
+  const fileBounds = await bounds(file);
+  expect(fileBounds.y + fileBounds.height).toBeLessThanOrEqual(
+    (await bounds(first)).y,
+  );
+  await file.click();
+  const fileMenu = page.getByRole('menu', { name: 'File', exact: true });
+  expect((await bounds(fileMenu)).y).toBeGreaterThanOrEqual(
+    fileBounds.y + fileBounds.height,
+  );
+  await expect(
+    fileMenu.getByRole('button', { name: /^Pin .* menu$/ }),
+  ).toHaveCount(0);
+  await menuItem(fileMenu, 'New Terminal Window').click();
+  const second = page.locator(
+    '[data-app-id="terminal"][aria-label="Terminal 2"]',
+  );
+  await expect(second).toHaveClass(/is-active/);
+  await expect(fileMenu).toHaveCount(0);
+  await activate(page, first);
+  await file.click();
+  await menuItem(fileMenu, 'Close Window').click();
+  await page
+    .getByRole('dialog', { name: 'End host shell?', exact: true })
+    .getByRole('button', { name: 'End Session', exact: true })
+    .click();
+  await expect(first).toHaveCount(0);
+  await expect(fileMenu).toHaveCount(0);
+  await expect(second).toHaveClass(/is-active/);
+});
+
+test('saved names and extra workspaces restore without obsolete floating menus', async ({
   page,
   request,
 }) => {
-  const a = await createEntry(request, 'E2E Owner A.txt');
-  const b = await createEntry(request, 'E2E Owner B.txt');
-  await page.reload();
-  const first = await openDocument(page, a);
-  await first
-    .getByRole('textbox', { name: 'Document text' })
-    .fill('Saved through the pinned menu for A.');
-  await page
-    .getByRole('navigation', { name: 'Application menus' })
-    .getByRole('button', { name: 'File', exact: true })
-    .click();
-  await page
-    .getByRole('button', { name: 'Pin File menu', exact: true })
-    .click();
-  const pinned = page.locator(
-    `.ns-pinned-menu[data-owner-window-id="notes:${a.id}"]`,
-  );
-  await expect(pinned).toBeVisible();
-  const pinnedTitle = await bounds(pinned.locator('.ns-menu-title'));
-  await page.mouse.move(pinnedTitle.x + 40, pinnedTitle.y + 10);
-  await page.mouse.down();
-  await page.mouse.move(1100, 210, { steps: 6 });
-  await page.mouse.up();
-  const second = await openDocument(page, b);
-  await second
-    .getByRole('textbox', { name: 'Document text' })
-    .fill('B stays an unsaved draft.');
-  await pinned.getByRole('menuitem', { name: 'Save', exact: true }).click();
-  await expect(first.getByTestId('save-status')).toHaveText('Saved');
-  await expect(second.getByTestId('save-status')).toHaveText('Unsaved changes');
-  expect(await readContent(request, a.id)).toBe(
-    'Saved through the pinned menu for A.',
-  );
-  expect(await readContent(request, b.id)).toBe('Initial text');
-  await pinned
-    .getByRole('menuitem', { name: 'Close Window', exact: true })
-    .click();
-  await expect(first).toHaveCount(0);
-  await expect(pinned).toHaveCount(0);
-  await expect(
-    second.getByRole('textbox', { name: 'Document text' }),
-  ).toHaveValue('B stays an unsaved draft.');
-});
-
-test('image previews and file-size errors use real imported data', async ({
-  page,
-}) => {
-  const files = filesWindow(page);
-  const png = Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a0V8AAAAASUVORK5CYII=',
-    'base64',
-  );
-  await files.getByLabel('Import files', { exact: true }).setInputFiles({
-    name: 'E2E Pixel.png',
-    mimeType: 'image/png',
-    buffer: png,
-  });
-  await files
-    .getByRole('option', { name: 'E2E Pixel.png', exact: true })
-    .click();
-  await files.getByRole('button', { name: 'Inspect', exact: true }).click();
-  const inspector = page.locator('[data-app-id="inspector"]');
-  const preview = inspector.getByRole('img', {
-    name: 'Preview of E2E Pixel.png',
-    exact: true,
-  });
-  await expect(preview).toBeVisible();
   await expect
-    .poll(() =>
-      preview.evaluate((image) => (image as HTMLImageElement).naturalWidth),
-    )
-    .toBe(1);
-  await activate(page, files);
-  await files.getByLabel('Import files', { exact: true }).setInputFiles({
-    name: 'E2E Too Big.bin',
-    mimeType: 'application/octet-stream',
-    buffer: Buffer.alloc(10 * 1024 * 1024 + 1),
+    .poll(async () => (await persistedLayout(page, request))?.version)
+    .toBe(2);
+  const saved = await persistedLayout(page, request);
+  const clientId = await page.evaluate(() =>
+    localStorage.getItem('nextstep-browser-id'),
+  );
+  saved.workspaces[1].name = 'Development';
+  saved.workspaces.push({
+    id: 'workspace-lab',
+    name: 'QA Lab',
+    order: [],
+    activeWindowId: null,
+    clip: [],
   });
-  const dialog = page.getByRole('dialog', {
-    name: 'Action failed',
+  saved.pinnedMenus = [
+    {
+      id: 'old-workspace-panel',
+      kind: 'desktop',
+      title: 'Workspace',
+      x: 10,
+      y: 100,
+    },
+  ];
+  const stored = await request.put('/api/layout', {
+    data: { clientId, layout: saved },
+  });
+  expect(stored.ok()).toBeTruthy();
+  await page.reload();
+
+  await expect(workspaceButton(page, 2)).toHaveAccessibleName(
+    'Workspace 2 · Development',
+  );
+  await expectCurrentWorkspace(page, 1);
+  await expect(workspaceButton(page, 5)).toHaveCount(0);
+  await expect(page.locator('.ns-pinned-menu')).toHaveCount(0);
+  const workspaces = await openWorkspaceControls(page);
+  await menuItem(workspaces, 'Switch Workspace').click();
+  const extra = page.getByRole('menu', {
+    name: 'Switch Workspace',
     exact: true,
   });
-  await expect(dialog).toContainText('10 MiB');
-  await dialog.getByRole('button', { name: 'OK', exact: true }).click();
-  await expect(
-    files.getByRole('option', { name: 'E2E Too Big.bin', exact: true }),
-  ).toHaveCount(0);
+  await menuItem(extra, 'Workspace 5 · QA Lab').click();
+  await expectCurrentWorkspace(page, 5);
+  await expect(workspaceButton(page, 5)).toHaveText('5');
+  const welcome = page.locator('[data-app-id="welcome"]');
+  await expect(welcome).toBeHidden();
+  await expect
+    .poll(async () => {
+      const layout = await persistedLayout(page, request);
+      return {
+        workspaceId: layout?.currentWorkspaceId,
+        retiredPanels: layout?.pinnedMenus,
+      };
+    })
+    .toEqual({
+      workspaceId: 'workspace-lab',
+      retiredPanels: undefined,
+    });
+  await switchWorkspace(page, 1);
+  await expect(welcome).toBeVisible();
 });
 
 test('future layout recovery resets only desktop state after confirmation', async ({
   page,
   request,
 }) => {
-  const entry = await createEntry(
-    request,
-    'E2E Keep my data.txt',
-    'file',
-    'documents',
-    'Files must survive layout recovery.',
-  );
   await expect
     .poll(async () => (await persistedLayout(page, request))?.version)
     .toBe(2);
   const clientId = await page.evaluate(() =>
     localStorage.getItem('nextstep-browser-id'),
   );
+  const otherClientId = `${clientId}-independent`;
+  const otherLayout = {
+    version: 999,
+    windows: [],
+    currentWorkspaceId: 'workspace-3',
+  };
+  const storedOther = await request.put('/api/layout', {
+    data: { clientId: otherClientId, layout: otherLayout },
+  });
+  expect(storedOther.ok()).toBeTruthy();
   const response = await request.put('/api/layout', {
     data: { clientId, layout: { version: 999, windows: [] } },
   });
@@ -942,83 +775,9 @@ test('future layout recovery resets only desktop state after confirmation', asyn
   await expect
     .poll(async () => (await persistedLayout(page, request))?.version)
     .toBe(2);
-  expect(await readContent(request, entry.id)).toBe(
-    'Files must survive layout recovery.',
+  const independent = await request.get(
+    `/api/bootstrap?clientId=${encodeURIComponent(otherClientId)}`,
   );
+  expect(independent.ok()).toBeTruthy();
+  expect((await independent.json()).layout).toEqual(otherLayout);
 });
-
-for (const duplicate of [false, true]) {
-  test(`${duplicate ? 'duplicated tabs' : 'two tabs'} recover their own unsaved drafts for the same document`, async ({
-    page,
-    request,
-  }) => {
-    const entry = await createEntry(request, 'E2E Separate tab drafts.txt');
-    await page.reload();
-    const first = await openDocument(page, entry);
-    await expect
-      .poll(async () =>
-        (await persistedLayout(page, request))?.windows.some(
-          (win: { id: string }) => win.id === `notes:${entry.id}`,
-        ),
-      )
-      .toBe(true);
-    const other = duplicate
-      ? await (async () => {
-          const popup = page.waitForEvent('popup');
-          // A same-origin popup inherits the opener's sessionStorage, matching
-          // the draft-identity collision caused by duplicating a browser tab.
-          await page.evaluate(() => window.open('/', '_blank'));
-          return popup;
-        })()
-      : await page.context().newPage();
-    const otherErrors: string[] = [];
-    other.on('pageerror', (error) => otherErrors.push(error.message));
-    try {
-      if (!duplicate) await other.goto('/');
-      const second = editorWindow(other, entry.id);
-      await expect(
-        second.getByRole('textbox', { name: 'Document text' }),
-      ).toBeEnabled();
-      await page.bringToFront();
-      await first
-        .getByRole('textbox', { name: 'Document text' })
-        .fill('Unsaved text belonging only to the first tab.');
-      await expect(
-        first.getByRole('textbox', { name: 'Document text' }),
-      ).toHaveValue('Unsaved text belonging only to the first tab.');
-      await other.bringToFront();
-      await second
-        .getByRole('textbox', { name: 'Document text' })
-        .fill('A different unsaved draft in the second tab.');
-      await expect(
-        second.getByRole('textbox', { name: 'Document text' }),
-      ).toHaveValue('A different unsaved draft in the second tab.');
-      await expect(first).toContainText('Local recovery copy up to date');
-      await expect(second).toContainText('Local recovery copy up to date');
-      page.once('dialog', (dialog) => dialog.accept());
-      await page.reload();
-      await editorWindow(page, entry.id)
-        .getByRole('button', { name: 'Restore Draft', exact: true })
-        .click();
-      await expect(
-        editorWindow(page, entry.id).getByRole('textbox', {
-          name: 'Document text',
-        }),
-      ).toHaveValue('Unsaved text belonging only to the first tab.');
-      other.once('dialog', (dialog) => dialog.accept());
-      await other.reload();
-      await editorWindow(other, entry.id)
-        .getByRole('button', { name: 'Restore Draft', exact: true })
-        .click();
-      await expect(
-        editorWindow(other, entry.id).getByRole('textbox', {
-          name: 'Document text',
-        }),
-      ).toHaveValue('A different unsaved draft in the second tab.');
-      expect(await readContent(request, entry.id)).toBe('Initial text');
-      expect(otherErrors).toEqual([]);
-    } finally {
-      await other.close();
-    }
-  });
-}
