@@ -39,7 +39,7 @@ export const createMachineApp: AppDefinition = {
   component: CreateMachine,
   launchable: false,
   windowKey: () => 'main',
-  defaultSize: { width: 470, height: 600 },
+  defaultSize: { width: 470, height: 400 },
   minSize: { width: 320, height: 350 },
 };
 
@@ -61,6 +61,7 @@ export const machineInspectorApp: AppDefinition = {
 export function guestTerminalSessionMenu(
   commands: WindowCommands,
   windowId: string,
+  { compact = false }: { compact?: boolean } = {},
 ): MenuItem[] {
   const command = (label: string, id: WindowCommand): MenuItem => ({
     label,
@@ -73,7 +74,7 @@ export function guestTerminalSessionMenu(
     command('Clear', 'terminal:clear'),
     command('Details', 'terminal:details'),
     command('Paste text', 'terminal:paste-text'),
-    command('Reconnect', 'guest-terminal:reconnect'),
+    ...(compact ? [] : [command('Reconnect', 'guest-terminal:reconnect')]),
     { separator: true },
     command('End Session', 'guest-terminal:end'),
   ];

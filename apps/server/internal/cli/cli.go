@@ -15,6 +15,7 @@ import (
 	"github.com/cofy-x/axv/apps/server/internal/app"
 	"github.com/cofy-x/axv/apps/server/internal/codex/runner"
 	computehost "github.com/cofy-x/axv/apps/server/internal/compute/host"
+	"github.com/cofy-x/axv/apps/server/internal/compute/hostinstall"
 	"github.com/cofy-x/axv/apps/server/internal/daemon"
 	"github.com/cofy-x/axv/apps/server/internal/guest"
 	"github.com/cofy-x/axv/apps/server/internal/profile"
@@ -137,6 +138,25 @@ func newRoot(version string) *cobra.Command {
 		return computehost.Run(hostConfig, cmd.OutOrStdout())
 	}}
 	host.Flags().StringVar(&hostConfig, "config", "", "absolute host configuration JSON path (required)")
+	var checkHost bool
+	var socketGroup string
+	installHost := &cobra.Command{Use: "install-service", Short: "Install Firecracker and the default VM image, then start the Linux host service", Args: arguments(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error {
+		if err := nonemptyFlags(cmd, "socket-group"); err != nil {
+			return err
+		}
+		return hostinstall.Run(cmd.Context(), checkHost, socketGroup, cmd.OutOrStdout())
+	}}
+	installHost.Flags().BoolVar(&checkHost, "check", false, "check this host without downloading, installing or starting the service")
+	installHost.Flags().StringVar(&socketGroup, "socket-group", "", "explicitly grant VM control to all members of this existing group (name or GID)")
+	var imageHostID string
+	installImage := &cobra.Command{Use: "install-image", Short: "Install the default image on an existing AXV Linux host service", Args: arguments(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error {
+		if err := nonemptyFlags(cmd, "host-id"); err != nil {
+			return err
+		}
+		return hostinstall.InstallImage(cmd.Context(), imageHostID, cmd.OutOrStdout())
+	}}
+	installImage.Flags().StringVar(&imageHostID, "host-id", "", "require the verified host ID from Virtual Machines")
+	host.AddCommand(installHost, installImage)
 	root.AddCommand(host)
 	guestOptions := guest.Options{ConfigPath: "/etc/axv/guest.json", Listen: "vsock"}
 	guestCmd := &cobra.Command{Use: "guest", Short: "Run the Linux guest service", Args: arguments(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error {

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { Fragment, useCallback, useId, useRef, useState } from 'react';
 import {
   Button,
   Checkbox,
@@ -13,6 +13,7 @@ import { integer, nameError, resourceBusy } from './form-state';
 import { OperationFeedback, RequestDetails } from './OperationFeedback';
 import { computeStore } from './compute-store';
 import { OperationRequest, operationError } from './operation-requests';
+import { humanize } from './presentation';
 import type { useCompute } from './useCompute';
 import { isProjectBackup, volumeActionAllowed } from './volume-policy';
 import type { VolumePolicyAction } from './volume-policy';
@@ -40,16 +41,33 @@ type VolumeEditor = {
 export function VolumeManager({
   data,
   desktop,
+  windowId,
   onShowActivity,
 }: {
   data: ReturnType<typeof useCompute>;
   desktop: DesktopAPI;
+  windowId: string;
   onShowActivity?: (id: string) => void;
 }) {
   const [selectedId, setSelected] = useState('');
   const [selectedHost, setSelectedHost] = useState('');
   const [editor, setEditor] = useState<VolumeEditor>();
   const [attachId, setAttach] = useState('');
+  const [attachment, setAttachment] = useState('');
+  const attachmentId = useId();
+  const reveal = useCallback((element: HTMLElement | null) => {
+    element?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, []);
+  const revealAttachment = useCallback(
+    (element: HTMLDivElement | null) => {
+      if (!element) return;
+      reveal(element);
+      element
+        .querySelector<HTMLSelectElement>('select:not(:disabled)')
+        ?.focus({ preventScroll: true });
+    },
+    [reveal],
+  );
   const [busy, setBusy] = useState(false);
   const [lastChanges, setLastChanges] = useState<Record<string, VolumeChange>>(
     {},
@@ -89,6 +107,10 @@ export function VolumeManager({
       ? data.volumes.find((volume) => volume.id === selectedId)
       : undefined;
   const resourceKey = (id: string, host = hostId) => JSON.stringify([host, id]);
+  const selectedKey = selected && resourceKey(selected.id);
+  const attachOpen = !!selectedKey && attachment === selectedKey;
+  const showAttach =
+    selected && !selected.machineId && volumeActionAllowed(selected, 'attach');
   const attached = data.machines.find(
     (machine) => machine.id === selected?.machineId,
   );
@@ -98,17 +120,22 @@ export function VolumeManager({
   const availableProvider = data.info?.providers?.find(
     (item) => item.available && item.volumes,
   );
+  const createsVolumesWithVMs =
+    !availableProvider &&
+    data.info?.providers?.some(
+      (item) => item.provider === 'firecracker' && item.persistentVolumes,
+    );
   const locked = busy || !!requests.pending;
-  const selectedBusy =
-    !selected ||
-    !['ready', 'failed'].includes(selected.status) ||
+  const volumeBusy = (volume: Volume) =>
+    !['ready', 'failed'].includes(volume.status) ||
     resourceBusy(
       data.operations,
-      selected.id,
-      selected.machineId,
-      selected.pendingMachineId,
+      volume.id,
+      volume.machineId,
+      volume.pendingMachineId,
     );
-  const disabled = locked || !!data.error || selectedBusy || !!editor;
+  const writesBlocked = locked || !!data.error || !!editor;
+  const disabled = writesBlocked || !selected || volumeBusy(selected);
   const supported = provider?.available && provider.volumes;
   const stopped =
     !selected?.machineId ||
@@ -123,9 +150,15 @@ export function VolumeManager({
     volumeActionAllowed(selected, action) &&
     (selected?.status === 'ready' ||
       selected?.pendingAction === `${action}-volume`);
+  const canDelete = (volume: Volume) =>
+    !writesBlocked &&
+    !volumeBusy(volume) &&
+    !volume.machineId &&
+    !volume.pendingMachineId;
+  const showRowActions = createsVolumesWithVMs && data.volumes.some(canDelete);
   const menuEnabled = (action: VolumeMenuAction) =>
     action === 'delete'
-      ? !disabled && !selected?.machineId && !selected?.pendingMachineId
+      ? !!selected && canDelete(selected)
       : action === 'detach'
         ? canAction(action) && !!attached && stopped
         : canAction(action) && (action !== 'resize' || stopped);
@@ -277,6 +310,11 @@ export function VolumeManager({
           [resourceKey(originalInput.volume.id, originalInput.binding.hostId)]:
             originalInput.change,
         }));
+      if (
+        originalInput?.kind === 'action' &&
+        originalInput.change.action === 'attach'
+      )
+        setAttachment('');
       if (result.volume) {
         setSelected(result.volume.id);
         setSelectedHost(originalInput.binding.hostId || '');
@@ -331,8 +369,7 @@ export function VolumeManager({
     }
   }
 
-  async function confirmAction(action: 'delete' | 'detach') {
-    if (!selected) return;
+  async function confirmAction(action: 'delete' | 'detach', volume: Volume) {
     const answer = await desktop.dialog({
       title:
         action === 'delete'
@@ -340,7 +377,7 @@ export function VolumeManager({
           : 'Detach project volume?',
       message:
         action === 'delete'
-          ? `Permanently delete “${selected.name || selected.id}” and all of its files?`
+          ? `Permanently delete “${volume.name || volume.id}” and all of its files?`
           : `Detach this disk from “${attached?.spec.name}”? Its data stays on the volume. The VM needs a project volume before it can start again.`,
       buttons: [
         { label: 'Cancel', value: 'cancel', default: true, cancel: true },
@@ -353,117 +390,67 @@ export function VolumeManager({
     if (answer?.button !== 'continue') return;
     if (action === 'delete')
       await run(
-        { kind: 'delete', volume: selected, binding: { hostId } },
-        `Delete “${selected.name}”`,
+        { kind: 'delete', volume, binding: { hostId } },
+        `Delete “${volume.name}”`,
       );
     else if (attached)
       await run(
         {
           kind: 'action',
           binding: { hostId },
-          volume: selected,
+          volume,
           change: {
             action: 'detach',
             machineId: attached.id,
             machineRevision: attached.revision,
           },
         },
-        `Detach “${selected.name}”`,
+        `Detach “${volume.name}”`,
       );
   }
 
-  const current = useRef({
+  const actions = {
     hostId,
     selected,
-    menuEnabled,
-    openEditor,
-    confirmAction,
-  });
-  current.current = {
-    hostId,
-    selected,
+    volumes: data.volumes,
+    canDelete,
     menuEnabled,
     openEditor,
     confirmAction,
   };
+  const current = useRef(actions);
+  current.current = actions;
 
-  return (
-    <div>
-      <div className="app-toolbar machines-toolbar">
-        <Button
-          disabled={locked || !!editor || !!data.error || !availableProvider}
-          onClick={() => openEditor('create')}
-        >
-          New Volume
-        </Button>
-        <div className="machines-resource-actions">
-          <Button
-            disabled={
-              disabled ||
-              !supported ||
-              !selected ||
-              !volumeActionAllowed(selected, 'copy') ||
-              selected?.status !== 'ready' ||
-              !stopped ||
-              !!selected?.pendingSizeGiB
-            }
-            onClick={() => openEditor('copy')}
-          >
-            Copy
-          </Button>
-          <IconButton
-            icon="more"
-            label="More volume actions"
-            aria-haspopup="menu"
-            disabled={!selected}
-            onClick={(event) => {
-              if (!selected) return;
-              const targetHost = hostId;
-              const targetId = selected.id;
-              const rect = event.currentTarget.getBoundingClientRect();
-              const invoke = (action: VolumeMenuAction) => {
-                const latest = current.current;
-                if (
-                  latest.hostId !== targetHost ||
-                  latest.selected?.id !== targetId ||
-                  !latest.menuEnabled(action)
-                )
-                  return;
-                if (action === 'delete' || action === 'detach')
-                  void latest.confirmAction(action);
-                else latest.openEditor(action);
-              };
-              desktop.contextMenu(
-                [
-                  {
-                    label: 'Rename',
-                    disabled: !menuEnabled('rename'),
-                    action: () => invoke('rename'),
-                  },
-                  {
-                    label: 'Grow',
-                    disabled: !menuEnabled('resize'),
-                    action: () => invoke('resize'),
-                  },
-                  {
-                    label: 'Detach',
-                    disabled: !menuEnabled('detach'),
-                    action: () => invoke('detach'),
-                  },
-                  { separator: true },
-                  {
-                    label: 'Delete',
-                    disabled: !menuEnabled('delete'),
-                    action: () => invoke('delete'),
-                  },
-                ],
-                { x: rect.left, y: rect.bottom },
-                { title: selected.name || selected.id },
-              );
-            }}
-          />
-        </div>
-      </div>
+  function openVolumeActions(anchor: HTMLButtonElement, volume: Volume) {
+    const rect = anchor.getBoundingClientRect();
+    desktop.contextMenu(
+      [
+        {
+          label: 'Delete…',
+          action: () => {
+            const latest = current.current;
+            const target = latest.volumes.find((item) => item.id === volume.id);
+            if (
+              latest.hostId === hostId &&
+              target &&
+              target.revision === volume.revision &&
+              latest.canDelete(target)
+            )
+              void latest.confirmAction('delete', target);
+          },
+        },
+      ],
+      { x: rect.right, y: rect.bottom },
+      {
+        ownerWindowId: windowId,
+        align: 'end',
+        title: volume.name || volume.id,
+      },
+    );
+  }
+
+  const volumeFeedback = (
+    <>
       {error && (
         <p className="machines-error" role="alert">
           {error}
@@ -497,36 +484,119 @@ export function VolumeManager({
           />
         </div>
       )}
-      {!availableProvider && (
-        <p className="machines-form-help">
-          {data.info
-            ? 'An available provider with project-volume support is required to create storage.'
-            : 'Checking host storage support…'}
-        </p>
-      )}
-      {selected && !supported && (
+    </>
+  );
+  const selection = selected && !createsVolumesWithVMs && (
+    <>
+      <div className="machines-volume-controls">
+        {showAttach && (
+          <Button
+            aria-label={
+              attachOpen
+                ? `Close attachment picker for ${selected.name || selected.id}`
+                : `Attach ${selected.name || selected.id}`
+            }
+            aria-expanded={attachOpen}
+            aria-controls={attachOpen ? attachmentId : undefined}
+            disabled={!attachOpen && !canAction('attach')}
+            onClick={() => {
+              setAttach('');
+              setAttachment(attachOpen ? '' : resourceKey(selected.id));
+            }}
+          >
+            {attachOpen ? 'Close' : 'Attach'}
+          </Button>
+        )}
+        <Button
+          disabled={
+            disabled ||
+            !supported ||
+            !volumeActionAllowed(selected, 'copy') ||
+            selected.status !== 'ready' ||
+            !stopped ||
+            !!selected.pendingSizeGiB
+          }
+          onClick={() => openEditor('copy')}
+        >
+          Copy
+        </Button>
+        <IconButton
+          icon="more"
+          label="More volume actions"
+          aria-haspopup="menu"
+          onClick={(event) => {
+            const targetHost = hostId;
+            const targetId = selected.id;
+            const rect = event.currentTarget.getBoundingClientRect();
+            const invoke = (action: VolumeMenuAction) => {
+              const latest = current.current;
+              if (
+                latest.hostId !== targetHost ||
+                latest.selected?.id !== targetId ||
+                !latest.menuEnabled(action)
+              )
+                return;
+              if (action === 'delete' || action === 'detach')
+                void latest.confirmAction(action, latest.selected);
+              else latest.openEditor(action);
+            };
+            desktop.contextMenu(
+              [
+                {
+                  label: 'Rename',
+                  disabled: !menuEnabled('rename'),
+                  action: () => invoke('rename'),
+                },
+                {
+                  label: 'Grow',
+                  disabled: !menuEnabled('resize'),
+                  action: () => invoke('resize'),
+                },
+                {
+                  label: 'Detach',
+                  disabled: !menuEnabled('detach'),
+                  action: () => invoke('detach'),
+                },
+                { separator: true },
+                {
+                  label: 'Delete',
+                  disabled: !menuEnabled('delete'),
+                  action: () => invoke('delete'),
+                },
+              ],
+              { x: rect.left, y: rect.bottom },
+              {
+                ownerWindowId: windowId,
+                title: selected.name || selected.id,
+              },
+            );
+          }}
+        />
+      </div>
+      {volumeFeedback}
+      {!supported && (
         <p className="machines-warning">
           {provider?.reason ||
             'This provider is unavailable or does not support volume changes.'}
         </p>
       )}
-      {selected && !stopped && (
+      {!stopped && (
         <p className="machines-form-help">
           Stop the attached VM and finish its pending configuration before
           copying, growing or detaching this volume.
         </p>
       )}
-      {selected && isProjectBackup(selected) && (
+      {isProjectBackup(selected) && (
         <p className="machines-form-help">
           Restore this backup in Project Files to use its files in a VM.
         </p>
       )}
-      {selected?.restoredFrom && (
+      {selected.restoredFrom && (
         <p className="machines-form-help">
           Use Project Files to back up this working volume.
         </p>
       )}
-      {selected?.status === 'failed' && (
+      {selected.status === 'failed' && (
         <p className="machines-warning">
           {selected.pendingAction === 'create-volume' ||
           selected.pendingAction === 'copy-volume'
@@ -534,8 +604,112 @@ export function VolumeManager({
             : `Retry the failed ${selected.pendingAction?.replace('-volume', '') || 'volume'} action. Other changes remain unavailable until it is resolved.`}
         </p>
       )}
+      <div className="machines-volume-retention">
+        <Checkbox
+          label="Keep this volume after VM deletion"
+          checked={selected.retain}
+          disabled={
+            !canAction('retain') || attached?.spec.kind === 'development'
+          }
+          onChange={(event) => openEditor('retain', event.target.checked)}
+        />
+        {selected.status === 'failed' &&
+          selected.pendingAction === 'retain-volume' && (
+            <Button
+              disabled={!canAction('retain')}
+              onClick={() => openEditor('retain')}
+            >
+              Retry Retention
+            </Button>
+          )}
+      </div>
+      {showAttach && attachOpen && (
+        <div
+          className="machines-form machines-volume-attachment"
+          id={attachmentId}
+          ref={revealAttachment}
+        >
+          {!eligible.length && !targetId ? (
+            <p className="machines-form-help">
+              No compatible stopped VM without a project volume.
+            </p>
+          ) : (
+            <fieldset disabled={!canAction('attach')}>
+              <legend>Attach to a stopped VM</legend>
+              <Select
+                label="VM without a project volume"
+                value={targetId}
+                disabled={!!selected.pendingMachineId}
+                onChange={(event) => setAttach(event.target.value)}
+              >
+                <option value="">Choose a compatible stopped VM</option>
+                {targetId && !attachTarget && (
+                  <option value={targetId}>Selected VM unavailable</option>
+                )}
+                {eligible.map((machine) => (
+                  <option key={machine.id} value={machine.id}>
+                    {machine.spec.name}
+                  </option>
+                ))}
+              </Select>
+              {targetId && !attachTarget && (
+                <p className="machines-warning">
+                  The selected VM is no longer eligible. A pending attachment
+                  must be retried against its original VM after that VM is
+                  stopped and available.
+                </p>
+              )}
+              <Button
+                disabled={!attachTarget}
+                onClick={() => {
+                  if (attachTarget)
+                    void run(
+                      {
+                        kind: 'action',
+                        binding: { hostId },
+                        volume: selected,
+                        change: {
+                          action: 'attach',
+                          machineId: attachTarget.id,
+                          machineRevision: attachTarget.revision,
+                        },
+                      },
+                      `Attach “${selected.name}” to “${attachTarget.spec.name}”`,
+                    );
+                }}
+              >
+                Attach
+              </Button>
+            </fieldset>
+          )}
+        </div>
+      )}
+    </>
+  );
+
+  return (
+    <div>
+      {!createsVolumesWithVMs && (
+        <div className="app-toolbar machines-toolbar">
+          <Button
+            disabled={locked || !!editor || !!data.error || !availableProvider}
+            onClick={() => openEditor('create')}
+          >
+            New Volume
+          </Button>
+        </div>
+      )}
+      {!selection && volumeFeedback}
+      {!availableProvider && !createsVolumesWithVMs && (
+        <p className="machines-message">
+          {data.info
+            ? 'An available provider with project-volume support is required to create storage.'
+            : 'Checking host storage support…'}
+        </p>
+      )}
       {editor && (
         <form
+          ref={reveal}
           className="app-pad machines-form machines-volume-editor"
           onSubmit={(event) => {
             event.preventDefault();
@@ -625,164 +799,148 @@ export function VolumeManager({
           </fieldset>
         </form>
       )}
-      <table className="machines-table">
-        <thead>
-          <tr>
-            <th>Project volume</th>
-            <th>Size / state</th>
-            <th>Attachment</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.volumes.map((volume) => (
-            <tr key={volume.id} data-selected={selected?.id === volume.id}>
-              <td>
-                <button
-                  className="machines-select"
-                  aria-pressed={selected?.id === volume.id}
-                  onClick={() => {
-                    setSelected(volume.id);
-                    setSelectedHost(hostId);
-                    setAttach('');
-                  }}
-                >
-                  {volume.name || volume.id}
-                </button>
-                <details>
-                  <summary>Details</summary>
-                  <code>{volume.id}</code>
-                  {volume.backup && (
-                    <small>Source volume: {volume.backup.sourceVolumeId}</small>
-                  )}
-                  {volume.restoredFrom && (
-                    <small>Restored from backup: {volume.restoredFrom}</small>
-                  )}
-                </details>
-                {isProjectBackup(volume) && <small>Immutable backup</small>}
-                {volume.restoredFrom && <small>Restored working volume</small>}
-                <small>
-                  {volume.retain ? 'Retained' : 'Delete with attached VM'}
-                </small>
-              </td>
-              <td>
-                {volume.sizeGiB} GiB<small>{volume.status}</small>
-                {volume.pendingSizeGiB && (
-                  <small>Pending {volume.pendingSizeGiB} GiB</small>
-                )}
-                {volume.transientGiB && (
-                  <small>
-                    {volume.transientGiB} GiB reserved for temporary copies
-                  </small>
-                )}
-                {volume.reason && (
-                  <small className="machines-failure">{volume.reason}</small>
-                )}
-                {volume.status === 'failed' && volume.pendingMachineId && (
-                  <small>
-                    Retry the pending attachment before deleting this volume or
-                    VM.
-                  </small>
-                )}
-              </td>
-              <td>
-                {volume.machineId
-                  ? data.machines.find(
-                      (machine) => machine.id === volume.machineId,
-                    )?.spec.name || volume.machineId
-                  : 'Detached'}
-              </td>
-            </tr>
-          ))}
-          {!data.volumes.length && (
+      {data.volumes.length ? (
+        <table className="machines-table machines-inventory-table">
+          <colgroup>
+            <col />
+            <col className="machines-inventory-secondary-column" />
+            {showRowActions && (
+              <col className="machines-volume-actions-column" />
+            )}
+          </colgroup>
+          <thead>
             <tr>
-              <td colSpan={3}>No project volumes.</td>
+              <th scope="col">Project volume</th>
+              <th scope="col">Attached to</th>
+              {showRowActions && <th scope="col" aria-label="Volume actions" />}
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {data.volumes.map((volume) => {
+              const backup = isProjectBackup(volume);
+              const sourceId =
+                volume.restoredFrom || volume.backup?.sourceVolumeId;
+              const sourceName = sourceId
+                ? data.volumes.find((item) => item.id === sourceId)?.name
+                : undefined;
+              const machineName = data.machines.find(
+                (machine) => machine.id === volume.machineId,
+              )?.spec.name;
+              return (
+                <Fragment key={volume.id}>
+                  <tr data-selected={selected === volume}>
+                    <td>
+                      {createsVolumesWithVMs ? (
+                        <strong>{volume.name || volume.id}</strong>
+                      ) : (
+                        <button
+                          className="machines-select"
+                          aria-pressed={selected?.id === volume.id}
+                          onClick={() => {
+                            if (selected === volume) return;
+                            setSelected(volume.id);
+                            setSelectedHost(hostId);
+                            setAttach('');
+                            setAttachment('');
+                          }}
+                        >
+                          {volume.name || volume.id}
+                        </button>
+                      )}
+                      <small>
+                        {volume.sizeGiB} GiB ·{' '}
+                        <span>
+                          {backup
+                            ? 'Immutable backup'
+                            : volume.retain
+                              ? 'Retained'
+                              : 'Delete with VM'}
+                        </span>
+                      </small>
+                      {backup && sourceName && (
+                        <small>Backup of {sourceName}</small>
+                      )}
+                      {backup && createsVolumesWithVMs && !data.error && (
+                        <small>Restore in Project Files</small>
+                      )}
+                      {volume.restoredFrom && (
+                        <small>
+                          {sourceName
+                            ? `Restored from ${sourceName}`
+                            : 'Restored working volume'}
+                        </small>
+                      )}
+                      {volume.status !== 'ready' && (
+                        <small>{humanize(volume.status)}</small>
+                      )}
+                      {volume.pendingSizeGiB && (
+                        <small>Pending {volume.pendingSizeGiB} GiB</small>
+                      )}
+                      {volume.transientGiB && (
+                        <small>
+                          {volume.transientGiB} GiB reserved for temporary
+                          copies
+                        </small>
+                      )}
+                      {volume.reason && (
+                        <small className="machines-failure">
+                          {volume.reason}
+                        </small>
+                      )}
+                      {volume.status === 'failed' &&
+                        volume.pendingMachineId && (
+                          <small>
+                            Retry the pending attachment before deleting this
+                            volume or VM.
+                          </small>
+                        )}
+                    </td>
+                    <td>
+                      {backup
+                        ? '—'
+                        : machineName || volume.machineId || 'Detached'}
+                    </td>
+                    {showRowActions && (
+                      <td className="machines-inventory-action machines-volume-actions-cell">
+                        {canDelete(volume) && (
+                          <IconButton
+                            icon="more"
+                            label={`Volume actions for ${volume.name || volume.id}`}
+                            aria-haspopup="menu"
+                            onClick={(event) =>
+                              openVolumeActions(event.currentTarget, volume)
+                            }
+                          />
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                  {selected === volume && selection && (
+                    <tr ref={reveal} className="machines-volume-selection">
+                      <td colSpan={2}>{selection}</td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      ) : (
+        !editor && (
+          <div className="machines-empty">
+            <h2>No project volumes yet</h2>
+            {createsVolumesWithVMs && (
+              <p>AXV creates a project volume with your first VM.</p>
+            )}
+          </div>
+        )
+      )}
       {selectedId && !selected && (
         <p className="machines-warning">
           The selected volume is no longer present. Select another volume
           explicitly.
         </p>
       )}
-      {selected && (
-        <div className="app-pad">
-          <Checkbox
-            label="Keep this volume after VM deletion"
-            checked={selected.retain}
-            disabled={
-              !canAction('retain') || attached?.spec.kind === 'development'
-            }
-            onChange={(event) => openEditor('retain', event.target.checked)}
-          />
-          {selected.status === 'failed' &&
-            selected.pendingAction === 'retain-volume' && (
-              <Button
-                disabled={!canAction('retain')}
-                onClick={() => openEditor('retain')}
-              >
-                Retry Retention
-              </Button>
-            )}
-        </div>
-      )}
-      {selected && !selected.machineId && (
-        <div className="app-pad machines-form">
-          <fieldset disabled={!canAction('attach')}>
-            <legend>Attach to a stopped VM</legend>
-            <Select
-              label="VM without a project volume"
-              value={targetId}
-              disabled={!!selected.pendingMachineId}
-              onChange={(event) => setAttach(event.target.value)}
-            >
-              <option value="">Choose a compatible stopped VM</option>
-              {targetId && !attachTarget && (
-                <option value={targetId}>Selected VM unavailable</option>
-              )}
-              {eligible.map((machine) => (
-                <option key={machine.id} value={machine.id}>
-                  {machine.spec.name}
-                </option>
-              ))}
-            </Select>
-            {targetId && !attachTarget && (
-              <p className="machines-warning">
-                The selected VM is no longer eligible. A pending attachment must
-                be retried against its original VM after that VM is stopped and
-                available.
-              </p>
-            )}
-            <Button
-              disabled={!attachTarget}
-              onClick={() => {
-                if (attachTarget)
-                  void run(
-                    {
-                      kind: 'action',
-                      binding: { hostId },
-                      volume: selected,
-                      change: {
-                        action: 'attach',
-                        machineId: attachTarget.id,
-                        machineRevision: attachTarget.revision,
-                      },
-                    },
-                    `Attach “${selected.name}” to “${attachTarget.spec.name}”`,
-                  );
-              }}
-            >
-              Attach
-            </Button>
-          </fieldset>
-        </div>
-      )}
-      <p className="app-pad machines-form-help">
-        A project volume attaches to one VM at a time. Development VMs require
-        retained storage. Keeping a working volume after VM deletion does not
-        create a separate backup.
-      </p>
     </div>
   );
 }

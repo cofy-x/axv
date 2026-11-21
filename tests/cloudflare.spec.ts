@@ -785,10 +785,11 @@ test('Preferences opens the same Cloudflare utility and controls fit desktop and
     preferences.getByText('Preferences', { exact: true }),
   ).toHaveCount(1);
   expect(reads).toBe(0);
-  const remoteAccess = preferences.getByRole('group', {
-    name: 'Remote access',
-    exact: true,
-  });
+  const group = (name: string) =>
+    preferences.getByRole('group', { name, exact: true });
+  const wallpaper = group('Wallpaper');
+  const desktop = group('Desktop');
+  const remoteAccess = group('Remote access');
   const tailscaleButton = remoteAccess.getByRole('button', {
     name: 'Open Tailscale',
     exact: true,
@@ -797,32 +798,53 @@ test('Preferences opens the same Cloudflare utility and controls fit desktop and
     name: 'Open Cloudflare',
     exact: true,
   });
-  const notificationsButton = preferences.getByRole('button', {
+  const notificationsButton = group('Notifications').getByRole('button', {
     name: 'Open Notifications',
     exact: true,
   });
   await expect(tailscaleButton).toHaveText('Open Tailscale');
   await expect(cloudflareButton).toHaveText('Open Cloudflare');
-  await expect(notificationsButton).toHaveText('Open Notifications');
-  if (!touch) {
-    const frame = await bounds(preferences);
-    expect(frame.width).toBe(440);
-    expect(frame.height).toBe(500);
-    const content = preferences.locator('.app-pad');
-    const area = await bounds(content);
-    expect(await content.evaluate((element) => element.scrollTop)).toBe(0);
-    const group = await bounds(remoteAccess);
-    expect(group.y).toBeGreaterThanOrEqual(area.y);
-    expect(group.y + group.height).toBeLessThanOrEqual(area.y + area.height);
-    for (const button of [
+  await expect(notificationsButton).toHaveText('Open');
+  for (const viewport of [
+    { width: 742, height: 852 },
+    { width: 320, height: 568 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect(preferences).toBeInViewport({ ratio: 1 });
+    await expect(preferences.getByRole('status')).toBeHidden();
+    let previousBottom = 0;
+    for (const name of [
+      'Wallpaper',
+      'Desktop',
+      'Remote access',
+      'Notifications',
+    ]) {
+      const section = group(name);
+      await expect(
+        section.getByRole('heading', { name, exact: true }),
+      ).toBeInViewport({ ratio: 1 });
+      await expect(section).toBeInViewport({ ratio: 1 });
+      const rect = await bounds(section);
+      expect(rect.y).toBeGreaterThanOrEqual(previousBottom);
+      previousBottom = rect.y + rect.height;
+    }
+    for (const control of [
+      ...['Slate', 'Dither', 'Solid Gray'].map((name) =>
+        wallpaper.getByRole('button', { name, exact: true }),
+      ),
+      ...['Snap icons to grid', '24-hour clock'].map((name) =>
+        desktop.getByRole('checkbox', { name, exact: true }),
+      ),
+      desktop.getByRole('button', { name: 'Arrange Icons', exact: true }),
       tailscaleButton,
       cloudflareButton,
       notificationsButton,
-    ]) {
-      const rect = await bounds(button);
-      expect(rect.y).toBeGreaterThanOrEqual(area.y);
-      expect(rect.y + rect.height).toBeLessThanOrEqual(area.y + area.height);
-    }
+    ])
+      await expect(control).toBeInViewport({ ratio: 1 });
+    const name = `${viewport.width}x${viewport.height}-preferences`;
+    const path = info.outputPath(`${name}.png`);
+    await page.screenshot({ path });
+    await info.attach(name, { path, contentType: 'image/png' });
   }
   await choose(tailscaleButton, touch);
   const tailscale = page.locator('[data-app-id="remote-access"]');

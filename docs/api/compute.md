@@ -74,13 +74,15 @@ The browser gateway uses `/api/compute`. Host routes use `/v1` on the private ho
 | `loggingError` | Optional current desktop-log write failure; events fall back to the desktop stderr until writing recovers |
 | `requiredLimaVersion`, `automaticSetupSupported` | Pinned Lima release and macOS automatic preparation support |
 | `configurationSource` | Profile settings or a read-only environment override |
-| `preparation` | The same preparation checks, defaults and current/latest task snapshot returned by the check endpoint, without its transport instance ID |
+| `preparation` | The preparation checks, defaults and current/latest task snapshot. The check endpoint adds its transport `instanceId` and optional `localService` diagnostic. |
 | `availableActions` | Currently applicable `review`, `retry` and `cancel` actions; the task and plan endpoints still validate each action |
 | `runtime` | Coordinator snapshot: `state`, `mode`, `generation`, `readOnly`, optional `hostId`, `code`, `error` |
 
-Runtime state is `not_configured`, `starting`, `ready` or `failed`. This cheap snapshot does not launch a process or trigger an expensive provider probe. A configured host is activated in the background after the desktop listener starts. Readiness requires recovered host state, matching protocol/configuration/identity, an available provider and a usable native image. Environment overrides are read-only in the wizard.
+Runtime state is `not_configured`, `starting`, `ready` or `failed`. This cheap snapshot does not launch a process or trigger an expensive provider probe. A configured host is activated in the background after the desktop listener starts. Readiness requires recovered host state, matching protocol/configuration/identity and an available provider. An external Firecracker service can connect with an empty catalog so the administrator can register the first image. Managed preparation and VM creation require a usable native image. Environment overrides are read-only in the wizard.
 
 A gateway binding captures one verified socket, host identity and configuration fingerprint. New socket connections verify that identity before forwarding the application request, including a WebSocket upgrade. An in-flight request retains its original binding; old connections are never redirected to a replacement service.
+
+The default Linux image installer records the previous and updated configuration fingerprints, host identity and image ID in an administrator-owned file before restarting the service. The desktop advances its existing binding only when the same host reports that exact updated configuration and the expected image is available. During a recent recorded reload, a failed inventory read can return `503 image_reload` so the browser can wait while preserving the previous inventory.
 
 ## Environment preparation
 
@@ -88,9 +90,17 @@ These routes operate independently of the compute host and compute database. The
 
 The check response includes `platform`, `arch`, `configured`, `configurationSource`, optional `lockedReason`, `automaticSetupSupported`, `cacheHome`, `officialImageAvailable`, `requiredLimaVersion`, `defaults`, `checks`, and optional `activeJob`/`latestJob`. Checks contain `id`, `label`, `status` (`ready`, `needed`, `blocked`) and `detail`. Background dependency diagnostics are cached; polling check does not install or download anything.
 
+On unlocked, unconfigured Linux without an active task, the check also reports `localService` with `socket`, `status` (`missing`, `permission_denied`, `unavailable`, `ready`) and `detail`. It checks the standard socket and may discover a different socket from the administrator's standard configuration file. This diagnostic is advisory. The connection plan checks the selected socket and binds its identity again before committing.
+
+When the standard socket is missing, a bounded, cached read of the default `axv-host.service` systemd unit can add `localService.systemdState` (`not_installed`, `inactive`, `failed`, `active`). A missing standard socket and an unreadable regular host configuration can occur together. In that case the response keeps `permission_denied` and the configuration error alongside a known unit state. A missing custom socket, denied socket access, or an inconclusive supervisor check omits `systemdState`.
+
+For a profile using the unlocked default Linux amd64 installer-managed service, the check can report `defaultImageId`. This advertises the separate administrator command to install the default Guest. Manual reconnection after an unconfirmed restart uses the existing preparation plan and job endpoints.
+
 `POST /preparation/plan` accepts optional `storageRoot`, `limaHome`, `cpus`, `memoryMiB`, `diskGiB`, `machines`, `socket`, `hostConfig`, `imageSource` and `imageBundle`. Paths refer to the AXV deployment machine. Missing values use the returned defaults. `imageSource` is `ubuntu-base`, `bundle` (local manifest path) or `official` (enhanced AXV release); `imageBundle` alone explicitly selects the bundle source. [Setup policy](../startup.md#first-time-macos-setup) owns the default source and preparation choices. Unpublished official releases produce a `release_pending` plan blocker. The plan validates new storage ownership, path lengths, prerequisites and capacity values. Existing configuration retains its provider pins, storage and budgets; this API does not migrate existing storage or upgrade a provider. Linux accepts an existing administrator-managed local service configuration or Unix socket and does not install Firecracker or request elevated privileges.
 
 The response contains `id`, `createdAt`, `expiresAt`, `platform`, `arch`, `provider`, `cacheHome`, normalized `request`, `actions`, `downloads`, `checks`, `canStart`, `configPath`, `hostConfigPath` and `activation`. Downloads expose `id`, `name`, selected `url`, optional `originUrl`, pinned `sha256`, `bytes` (zero if unknown), `cached`, `cacheState` (`missing`, `partial`, `ready`, `in_use`) and `cachePath`. A cache hit means full content verification, not mere existence. `activation` is `ready` in the desktop or `configured` for the offline CLI. Reviewing creates a plan, not a running task; clients must display the concrete changes and obtain confirmation before starting.
+
+A blocked Linux socket probe includes an optional check `code` of `missing`, `permission_denied` or `unavailable`. Clients can use it to offer troubleshooting for the exact reviewed connection.
 
 `POST /preparation/jobs` accepts `{ requestId, planId, confirmed: true }`. A start request binds its ID to the exact reviewed plan. Expired, blocked or stale plans cannot start. A duplicate request with the same payload returns the existing task; reusing its ID with another payload returns `409 request_conflict`. Only one task may be active per profile.
 

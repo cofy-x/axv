@@ -14,51 +14,21 @@
   gap: 7px;
 }
 
+.terminal-app .shell-toolbar {
+  flex-wrap: nowrap;
+}
+
+.shell-toolbar > .ns-button,
+.shell-toolbar > svg {
+  flex-shrink: 0;
+}
+
 .terminal-toolbar .toolbar-caption {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.terminal-host-info {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 3px 12px;
-  padding: 5px 8px;
-  border-bottom: 1px solid var(--ns-shadow);
-  background: var(--ns-light);
-  box-shadow: inset 0 1px #fff;
-  font-size: 11px;
-  line-height: 1.3;
-}
-
-.terminal-host-info code {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  margin-left: auto;
-  font: 11px var(--ns-mono);
-}
-
-.terminal-project-info {
-  flex-shrink: 0;
-}
-
-.terminal-project-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.terminal-project-info > .ns-button {
-  flex-shrink: 0;
-  margin-left: auto;
 }
 
 .terminal-details code {
@@ -105,10 +75,4 @@
   justify-content: space-between;
   gap: 10px;
   flex-shrink: 0;
-}
-
-@media (max-width: 599px) {
-  .terminal-host-info {
-    font-size: 10px;
-  }
 }

@@ -7,7 +7,7 @@ export function machineDesktopId(machine: Pick<Machine, 'hostId' | 'id'>) {
 }
 
 export function openMachineInspector(desktop: DesktopAPI, machine: Machine) {
-  desktop.openApp(
+  return desktop.openApp(
     'machine-inspector',
     { hostId: machine.hostId, machineId: machine.id },
     { title: `${machine.spec.name} — Inspector` },

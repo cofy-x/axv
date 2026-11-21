@@ -1,6 +1,7 @@
 import { useId } from 'react';
 import { Button, IconButton, PixelIcon } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
+import { openRemoteAccessPreferences } from '../appearance/definition';
 
 export function Welcome({ desktop, window }: AppWindowProps) {
   const linkDescriptions = useId();
@@ -26,18 +27,28 @@ export function Welcome({ desktop, window }: AppWindowProps) {
               icon: 'companion' as const,
               name: 'Codex',
               text: 'Start or resume coding sessions.',
+              open: () => desktop.openApp('codex'),
             },
             {
               app: 'machines',
               icon: 'virtual-machines' as const,
               name: 'Virtual Machines',
               text: 'Create and manage development VMs.',
+              open: () => desktop.openApp('machines'),
             },
             {
               app: 'project-files',
               icon: 'project' as const,
               name: 'Project Files',
               text: 'Browse host and VM project files.',
+              open: () => desktop.openApp('project-files'),
+            },
+            {
+              app: 'terminal',
+              icon: 'terminal' as const,
+              name: 'Terminal',
+              text: 'Open a shell on the AXV host.',
+              open: () => desktop.launchApp('terminal'),
             },
           ].map((link) => (
             <button
@@ -45,7 +56,7 @@ export function Welcome({ desktop, window }: AppWindowProps) {
               className="welcome-link"
               aria-label={link.name}
               aria-describedby={`${linkDescriptions}-${link.app}`}
-              onClick={() => desktop.openApp(link.app)}
+              onClick={link.open}
             >
               <PixelIcon name={link.icon} size={40} />
               <span>
@@ -57,50 +68,6 @@ export function Welcome({ desktop, window }: AppWindowProps) {
             </button>
           ))}
         </div>
-        <div className="welcome-tools" aria-label="Desktop tools">
-          <Button onClick={() => desktop.launchApp('terminal')}>
-            Terminal
-          </Button>
-          <Button onClick={() => desktop.openApp('applications')}>
-            Applications
-          </Button>
-        </div>
-        <details className="welcome-remote">
-          <summary>Connect from another device</summary>
-          <p>
-            Set up private access with Tailscale, or browser access with
-            Cloudflare. Configure access on the AXV host before connecting.
-            Optional browser push or Pocket Alert notifications can link back to
-            the original work.
-          </p>
-          <div className="welcome-tools">
-            <Button onClick={() => desktop.openApp('remote-access')}>
-              Tailscale
-            </Button>
-            <Button onClick={() => desktop.openApp('cloudflare')}>
-              Cloudflare
-            </Button>
-            <Button onClick={() => desktop.openApp('notifications')}>
-              Notifications
-            </Button>
-          </div>
-        </details>
-        <details className="welcome-remote">
-          <summary>Install AXV</summary>
-          <dl className="welcome-install-steps">
-            <dt>Desktop</dt>
-            <dd>
-              In Chrome or Edge, choose the install option in the browser menu.
-            </dd>
-            <dt>iPhone Safari</dt>
-            <dd>
-              Open AXV’s Tailscale HTTPS address, then choose{' '}
-              <strong>Share → Add to Home Screen</strong>. Keep{' '}
-              <strong>Open as Web App</strong> on if shown.
-            </dd>
-          </dl>
-          <p>AXV must stay online. Unsaved drafts are not transferred.</p>
-        </details>
       </div>
       <div className="app-toolbar welcome-footer">
         <IconButton
@@ -111,6 +78,40 @@ export function Welcome({ desktop, window }: AppWindowProps) {
             const rect = event.currentTarget.getBoundingClientRect();
             desktop.contextMenu(
               [
+                {
+                  label: 'Application Manager',
+                  action: () => {
+                    desktop.openApp('applications');
+                  },
+                },
+                {
+                  label: 'Browser installation guide',
+                  action: () => {
+                    void desktop.dialog({
+                      title: 'Browser installation guide',
+                      message: (
+                        <div className="welcome-install-guide">
+                          <p>Open the stable AXV address you plan to keep.</p>
+                          <p>
+                            <strong>Desktop</strong> — In Chrome or Edge, choose
+                            the install option in the browser menu.
+                          </p>
+                          <p>
+                            <strong>iPhone Safari</strong> — Open AXV’s
+                            Tailscale HTTPS address, then choose{' '}
+                            <strong>Share → Add to Home Screen</strong>. Keep{' '}
+                            <strong>Open as Web App</strong> on if shown.
+                          </p>
+                          <p>
+                            Keep AXV running and reachable. Unsaved drafts stay
+                            in the browser that created them.
+                          </p>
+                        </div>
+                      ),
+                      buttons: [{ label: 'OK', value: 'ok', default: true }],
+                    });
+                  },
+                },
                 {
                   label: 'Developer Tools',
                   children: [
@@ -136,10 +137,13 @@ export function Welcome({ desktop, window }: AppWindowProps) {
                 },
               ],
               { x: rect.left, y: rect.bottom },
-              { title: 'Welcome' },
+              { title: 'Welcome', ownerWindowId: window.id },
             );
           }}
         />
+        <Button onClick={() => openRemoteAccessPreferences(desktop)}>
+          Remote access
+        </Button>
         <Button primary onClick={() => void desktop.closeWindow(window.id)}>
           Show Desktop
         </Button>

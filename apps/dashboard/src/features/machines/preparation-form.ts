@@ -1,6 +1,8 @@
 import type { PreparationRequest } from './api';
 import { integer } from './form-state';
 
+export const defaultFirecrackerSocket = '/run/axv-host/control.sock';
+
 export interface PreparationDraft {
   imageSource: 'official' | 'bundle' | 'ubuntu-base';
   imageBundle: string;
@@ -32,7 +34,7 @@ export function preparationDraft(
     connection:
       defaults.socket && !defaults.hostConfig ? 'socket' : 'configuration',
     hostConfig: defaults.hostConfig || '/etc/axv/host.json',
-    socket: defaults.socket || '/run/axv-host/control.sock',
+    socket: defaults.socket || defaultFirecrackerSocket,
   };
 }
 

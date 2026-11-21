@@ -18,8 +18,14 @@ const projectWindow = (page: Page) =>
     `[data-window-id="project-files:vm:${project.hostId}:${project.id}"]`,
   );
 
-async function fixture(page: Page, loseBackup = false, holdOperation = false) {
+async function fixture(
+  page: Page,
+  loseBackup = false,
+  holdOperation = false,
+  sourceRunning = false,
+) {
   const submissions: unknown[] = [];
+  const stopRequests: unknown[] = [];
   const operationRequests = new Map<string, string>();
   const operation = (id: string, requestId: string) => {
     operationRequests.set(id, requestId);
@@ -39,9 +45,9 @@ async function fixture(page: Page, loseBackup = false, holdOperation = false) {
     id: 'source-vm',
     hostId: project.hostId,
     revision: 5,
-    status: 'stopped',
-    desired: 'stopped',
-    ready: false,
+    status: sourceRunning ? 'running' : 'stopped',
+    desired: sourceRunning ? 'running' : 'stopped',
+    ready: sourceRunning,
     guestState: 'stopped',
     guestCapabilities: ['project-files', 'project-restore'],
     createdAt: project.createdAt,
@@ -115,6 +121,20 @@ async function fixture(page: Page, loseBackup = false, holdOperation = false) {
               ? restored.id
               : undefined,
       });
+    }
+    if (path === `/api/compute/machines/${machine.id}/actions`) {
+      const body = req.postDataJSON();
+      stopRequests.push(body);
+      expect(body).toMatchObject({
+        action: 'stop',
+        revision: machine.revision,
+      });
+      machine.status = machine.desired = 'stopped';
+      machine.ready = false;
+      return json(
+        { machine, operation: operation('stop-op', body.requestId) },
+        202,
+      );
     }
     if (path === '/api/compute/machines') {
       if (req.method() === 'POST') {
@@ -215,6 +235,7 @@ async function fixture(page: Page, loseBackup = false, holdOperation = false) {
   });
   return {
     submissions,
+    stopRequests,
     complete: () => {
       holdOperation = false;
     },
@@ -235,6 +256,50 @@ async function open(page: Page) {
     .click();
   return projectWindow(page).locator('.vm-project-backups');
 }
+
+test(
+  'backups confirm before stopping the original VM',
+  { tag: '@vm-ui' },
+  async ({ page }, info) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const state = await fixture(page, false, false, true);
+    const panel = await open(page);
+    const stop = panel.getByRole('button', { name: 'Stop VM', exact: true });
+    const confirmation = page.getByRole('dialog', {
+      name: 'Stop VM?',
+      exact: true,
+    });
+    await stop.click();
+    await expect(confirmation).toContainText(
+      'Stop “Source VM”? Guest sessions end. Project data remains on disk.',
+    );
+    const cancel = confirmation.getByRole('button', {
+      name: 'Cancel',
+      exact: true,
+    });
+    await expect(cancel).toBeFocused();
+    const path = info.outputPath('backup-stop-confirmation-390.png');
+    await page.screenshot({ path });
+    await info.attach('backup-stop-confirmation-390', {
+      path,
+      contentType: 'image/png',
+    });
+    await cancel.click();
+    await expect(confirmation).toHaveCount(0);
+    expect(state.stopRequests).toEqual([]);
+
+    await stop.click();
+    await confirmation
+      .getByRole('button', { name: 'Stop VM', exact: true })
+      .click();
+    await expect(
+      panel.getByText('Source VM · stopped', { exact: true }),
+    ).toBeVisible();
+    expect(state.stopRequests).toEqual([
+      { action: 'stop', revision: 5, requestId: expect.any(String) },
+    ]);
+  },
+);
 
 test('offline backup recovery retains its exact payload and restores a new project on narrow screens', async ({
   page,

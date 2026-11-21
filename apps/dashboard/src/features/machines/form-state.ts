@@ -65,11 +65,27 @@ export function creationDefaults(info?: HostInfo) {
   };
 }
 
-export function resourceBusy(
+export function creationImages(info?: HostInfo) {
+  return (
+    info?.images?.filter(
+      (image) =>
+        (!image.status ||
+          image.status === 'ready' ||
+          image.status === 'configured') &&
+        (!info.hostArch || image.arch === info.hostArch) &&
+        info.providers?.some(
+          (provider) =>
+            provider.provider === image.provider && provider.available,
+        ),
+    ) ?? []
+  );
+}
+
+export function activeResourceOperation(
   operations: Operation[],
   ...ids: (string | undefined)[]
 ) {
-  return operations.some(
+  return operations.find(
     (operation) =>
       ['queued', 'running'].includes(operation.status) &&
       ids.some(
@@ -81,6 +97,13 @@ export function resourceBusy(
             operation.locks?.includes(id)),
       ),
   );
+}
+
+export function resourceBusy(
+  operations: Operation[],
+  ...ids: (string | undefined)[]
+) {
+  return !!activeResourceOperation(operations, ...ids);
 }
 
 export interface ConfigurationDraft {

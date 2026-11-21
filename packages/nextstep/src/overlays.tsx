@@ -377,7 +377,7 @@ export function DialogOverlay({
       >
         <div className="ns-dialog-header">{options.title}</div>
         <div className="ns-dialog-main">
-          <PixelIcon name="info" />
+          {options.showIcon !== false && <PixelIcon name="info" />}
           <div className="ns-dialog-copy">
             {options.message && (
               <div className="ns-dialog-message">{options.message}</div>

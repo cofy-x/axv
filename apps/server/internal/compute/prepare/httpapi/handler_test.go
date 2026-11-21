@@ -35,7 +35,7 @@ func (f *fakePreparation) record(ctx context.Context, method, id string, input a
 	f.ctx, f.called, f.id, f.input = ctx, method, id, input
 }
 
-func (f *fakePreparation) Check(ctx context.Context) (prepare.Check, error) {
+func (f *fakePreparation) CheckWithLocalService(ctx context.Context) (prepare.Check, error) {
 	f.record(ctx, "check", "", nil)
 	return f.check, f.err
 }
@@ -113,6 +113,29 @@ func TestCheckExposesInstanceAndStableDirectShape(t *testing.T) {
 	}
 	if response.Header().Get("Cache-Control") != "no-store" {
 		t.Fatal("missing no-store")
+	}
+}
+
+func TestDefaultLinuxSocketStatusUsesGuardedCheck(t *testing.T) {
+	wanted := prepare.LocalServiceCheck{Status: "missing", Socket: "/run/axv-host/control.sock", Detail: "No socket found."}
+	service := &fakePreparation{check: prepare.Check{LocalService: &wanted}}
+	handler := New(service, "test-instance")
+	remote := request(http.MethodGet, "check", "")
+	remote.RemoteAddr = "192.0.2.3:4000"
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, remote)
+	if response.Code != http.StatusForbidden || service.called != "" {
+		t.Fatalf("remote check reached preparation: %d %s", response.Code, service.called)
+	}
+
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request(http.MethodGet, "check", ""))
+	var check prepare.Check
+	if err := json.Unmarshal(response.Body.Bytes(), &check); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusOK || check.LocalService == nil || *check.LocalService != wanted {
+		t.Fatalf("missing diagnostic in %d: %s", response.Code, response.Body.String())
 	}
 }
 

@@ -1,0 +1,39 @@
+.machine-diagnostics .info-list {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  column-gap: 10px;
+}
+
+.machine-diagnostics .info-list dt {
+  overflow-wrap: anywhere;
+}
+
+.machine-diagnostics > details,
+.machine-diagnostics > .ns-field-label {
+  margin-block-start: 12px;
+}
+
+.machine-diagnostics > details > .info-list {
+  margin-block-start: 8px;
+}
+
+@media (max-width: 420px) {
+  .ns-dialog-main:has(.machine-diagnostics) {
+    padding: 12px 14px 4px;
+  }
+
+  .ns-dialog-main:has(.machine-diagnostics) .ns-dialog-message {
+    margin-block-end: 4px;
+  }
+
+  .ns-dialog:has(.machine-diagnostics) > .ns-dialog-actions {
+    padding: 4px 14px 12px;
+  }
+
+  .machine-diagnostics .info-list {
+    row-gap: 5px;
+  }
+
+  .machine-diagnostics code {
+    word-break: break-all;
+  }
+}

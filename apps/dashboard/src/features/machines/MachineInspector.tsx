@@ -1,23 +1,48 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { Button, IconButton, PixelIcon, StatusBar } from '@cofy-x/axv-nextstep';
+import { Button, IconButton, PixelIcon } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { machinesApi } from './api';
 import type { GuestTerminal } from './api';
 import { useCompute } from './useCompute';
-import { RequestDetails } from './OperationFeedback';
-import { guestTerminalRequests, openGuestTerminal } from './open-terminal';
+import { RequestDetails, VMOperationNotice } from './OperationFeedback';
+import {
+  currentGuestTerminalTarget,
+  guestTerminalLabel,
+  guestTerminalRequests,
+  openGuestTerminal,
+} from './open-terminal';
 import { computeStore } from './compute-store';
-import { MachineActions } from './MachineActions';
+import { MachineActions, MachineExpiry } from './MachineActions';
 import { MachineSettings } from './MachineSettings';
 import {
+  activeVMOperation,
   confirmVMAction,
   machineActionRequests,
   machineActionReason,
 } from './lifecycle';
 import type { VMAction } from './lifecycle';
-import { guestTerminalReason, humanize, machineGuidance } from './presentation';
+import {
+  guestTerminalReason,
+  humanize,
+  latestVMFailure,
+  machineGuidance,
+  machineTransition,
+  operationPhase,
+} from './presentation';
 
-export function MachineInspector({ desktop, window }: AppWindowProps) {
+function showGuestTerminals(details: HTMLDetailsElement | null) {
+  if (!details) return;
+  details.open = true;
+  details.querySelector('summary')?.focus();
+}
+
+export function MachineInspector({
+  desktop,
+  window,
+  visible,
+  interactive,
+}: AppWindowProps) {
+  const { setTitle, updateWindowState } = desktop;
   const data = useCompute();
   const id = window.params.machineId || '';
   const hostId = window.params.hostId || '';
@@ -28,29 +53,59 @@ export function MachineInspector({ desktop, window }: AppWindowProps) {
   const machine = snapshot.machines.find(
     (item) => !!hostId && item.id === id && item.hostId === hostId,
   );
+  const name = machine?.spec.name;
+  useEffect(() => {
+    if (name) setTitle(window.id, `${name} — Inspector`);
+  }, [name, setTitle, window.id]);
   const connected = !!hostId && data.info?.hostId === hostId && !data.error;
   const terminalReason = !connected
     ? 'Reconnect to the original host before opening a guest terminal.'
     : guestTerminalReason(machine);
   const ready = !!machine && !terminalReason;
-  const [terminals, setTerminals] = useState<GuestTerminal[]>([]);
+  const [terminalInventory, setTerminalInventory] = useState<{
+    scope: string;
+    terminals: GuestTerminal[];
+    error?: string;
+  }>();
+  const terminalDetails = useRef<HTMLDetailsElement>(null);
   const [error, setError] = useState('');
-  const [terminalError, setTerminalError] = useState('');
-  const [terminalLoading, setTerminalLoading] = useState(false);
   const [terminalRefresh, setTerminalRefresh] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [operationId, setOperationId] = useState('');
   const pending = useSyncExternalStore(machineActionRequests.subscribe, () =>
     machineActionRequests.getPending(hostId, id),
   );
-  const active =
-    busy ||
-    !!pending ||
-    snapshot.operations.some(
-      (op) =>
-        (op.machineId === id || op.locks?.includes(id)) &&
-        ['queued', 'running'].includes(op.status),
+  const activeOperation =
+    machine && activeVMOperation(machine, snapshot.operations);
+  const transition =
+    machine &&
+    machineTransition(
+      machine,
+      activeOperation,
+      pending && !pending.uncertain ? pending.action : undefined,
     );
+  const active = busy || !!pending || !!transition;
+  const failure =
+    machine && !transition
+      ? latestVMFailure(machine, snapshot.operations)
+      : undefined;
+  const notice = activeOperation || failure;
+  const terminalScope =
+    ready && !transition && visible !== false
+      ? JSON.stringify([
+          hostId,
+          id,
+          machine?.revision,
+          data.environment?.runtime?.generation,
+        ])
+      : '';
+  const roster =
+    terminalScope && terminalInventory?.scope === terminalScope
+      ? terminalInventory
+      : undefined;
+  const terminals = roster?.terminals ?? [];
+  const liveTerminals = terminals.filter(
+    (session) => session.status === 'running',
+  );
   const provider = snapshot.info?.providers?.find(
     (item) => item.provider === machine?.spec.provider,
   );
@@ -76,12 +131,15 @@ export function MachineInspector({ desktop, window }: AppWindowProps) {
                 snapshot.volumes,
                 provider,
               );
-  const guidance = machine
-    ? !connected
-      ? 'Reconnect to the original host before changing this VM.'
-      : (machine.status === 'stopped' ? reason('start') : undefined) ||
-        machineGuidance(machine, snapshot.operations)
-    : undefined;
+  const guidance =
+    machine &&
+    connected &&
+    !transition &&
+    !pending &&
+    (!failure || machine.status === 'unknown')
+      ? (machine.status === 'stopped' ? reason('start') : undefined) ||
+        machineGuidance(machine)
+      : undefined;
 
   async function lifecycle(action: VMAction, retry = false) {
     const target = retry ? pending?.machine : machine;
@@ -100,8 +158,7 @@ export function MachineInspector({ desktop, window }: AppWindowProps) {
     setError('');
     try {
       const result = await machineActionRequests.execute(target, action);
-      setOperationId(result.operation.id);
-      data.refresh();
+      computeStore.receiveMachineOperation(result.machine, result.operation);
     } catch (error) {
       setError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -110,15 +167,16 @@ export function MachineInspector({ desktop, window }: AppWindowProps) {
   }
 
   async function newTerminal() {
-    if (!machine || !ready || active) return;
+    const target = currentGuestTerminalTarget({ id, hostId });
+    if (!target || !ready || active) return;
     setBusy(true);
     setError('');
     try {
       const session = await guestTerminalRequests.execute(
-        machine.id,
-        machine.hostId,
+        target.id,
+        target.hostId,
       );
-      openGuestTerminal(desktop, machine, session);
+      openGuestTerminal(desktop, target, session);
       setTerminalRefresh((value) => value + 1);
     } catch (error) {
       setError(error instanceof Error ? error.message : String(error));
@@ -127,8 +185,38 @@ export function MachineInspector({ desktop, window }: AppWindowProps) {
     }
   }
 
+  function openSession(session: GuestTerminal) {
+    const target = currentGuestTerminalTarget({ id, hostId });
+    if (!target || target.revision !== machine?.revision || !roster || active)
+      return;
+    openGuestTerminal(desktop, target, session);
+  }
+
+  function resumeTerminal() {
+    if (liveTerminals.length === 1) {
+      openSession(liveTerminals[0]);
+    } else showGuestTerminals(terminalDetails.current);
+  }
+
+  const revealGuestTerminals = window.viewState.revealGuestTerminals === true;
   useEffect(() => {
-    if (!ready) return;
+    if (!revealGuestTerminals || interactive === false || !roster) return;
+    if (terminals.length) showGuestTerminals(terminalDetails.current);
+    updateWindowState(window.id, { revealGuestTerminals: false });
+  }, [
+    revealGuestTerminals,
+    interactive,
+    roster,
+    terminals.length,
+    updateWindowState,
+    window.id,
+  ]);
+
+  useEffect(() => {
+    if (!terminalScope) {
+      setTerminalInventory(undefined);
+      return;
+    }
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
     let abort: AbortController;
@@ -136,22 +224,27 @@ export function MachineInspector({ desktop, window }: AppWindowProps) {
     async function load() {
       abort = new AbortController();
       const timeout = setTimeout(() => abort.abort(), 15000);
-      setTerminalLoading(true);
       try {
         const result = await machinesApi.terminals(id, hostId, abort.signal);
-        if (!disposed) {
-          setTerminals(result.terminals);
-          setTerminalError('');
-        }
+        if (!disposed)
+          setTerminalInventory({
+            scope: terminalScope,
+            terminals: [...result.terminals].sort(
+              (a, b) =>
+                (a.sequence ?? 0) - (b.sequence ?? 0) ||
+                a.id.localeCompare(b.id),
+            ),
+          });
       } catch (error) {
         if (!disposed)
-          setTerminalError(
-            error instanceof Error ? error.message : String(error),
-          );
+          setTerminalInventory({
+            scope: terminalScope,
+            terminals: [],
+            error: error instanceof Error ? error.message : String(error),
+          });
       } finally {
         clearTimeout(timeout);
         if (!disposed) {
-          setTerminalLoading(false);
           timer = setTimeout(() => void load(), 5000);
         }
       }
@@ -163,11 +256,18 @@ export function MachineInspector({ desktop, window }: AppWindowProps) {
       abort?.abort();
       clearTimeout(timer);
     };
-  }, [id, hostId, ready, terminalRefresh]);
+  }, [id, hostId, terminalScope, terminalRefresh]);
 
-  function showActivity() {
+  function showActivity(operationId: string) {
+    if (computeStore.getSnapshot().info?.hostId !== hostId) return;
     const managerId = desktop.openApp('machines');
-    desktop.updateWindowState(managerId, { vmTab: 'operations', operationId });
+    desktop.updateWindowState(managerId, {
+      vmTab: 'operations',
+      vmEnvironment: false,
+      operationId,
+      operationHostId: hostId,
+      revealActivity: true,
+    });
   }
 
   return (
@@ -190,7 +290,7 @@ export function MachineInspector({ desktop, window }: AppWindowProps) {
           />
         </div>
       </div>
-      <div className="app-pad machines-scroll">
+      <div className="app-pad machines-scroll machines-inspector-body">
         {data.error && (
           <p className="machines-error" role="alert">
             VM service unavailable. {data.error} Showing the last known VM
@@ -228,132 +328,113 @@ export function MachineInspector({ desktop, window }: AppWindowProps) {
               <div className="machines-inspector-identity">
                 <PixelIcon name="virtual-machine" size={48} />
                 <div>
-                  <span className="machines-eyebrow">
-                    {humanize(machine.spec.kind)} VM · {machine.spec.provider}
-                  </span>
-                  <h2>{machine.spec.name}</h2>
-                  <p>
-                    <strong>{humanize(machine.status)}</strong> ·{' '}
-                    {machine.guestState === 'not-installed'
-                      ? 'Guest not installed'
-                      : machine.guestState === 'incompatible'
-                        ? 'Guest incompatible'
-                        : machine.ready
-                          ? 'Guest ready'
-                          : 'Guest unavailable'}
-                  </p>
+                  <h2 aria-live="polite">
+                    {transition || humanize(machine.status)}
+                  </h2>
+                  <MachineExpiry expiresAt={machine.expiresAt} />
                 </div>
               </div>
             </header>
             <div className="machines-inspector-actions">
               <MachineActions
                 desktop={desktop}
+                windowId={window.id}
                 machine={machine}
                 reason={reason}
+                transition={transition}
                 terminalReason={
                   active ? 'Wait for the current VM operation.' : terminalReason
                 }
+                terminalLabel={
+                  !roster || roster.error ? 'New Terminal' : undefined
+                }
                 onAction={(action) => void lifecycle(action)}
                 onTerminal={() => void newTerminal()}
+                onResume={liveTerminals.length ? resumeTerminal : undefined}
               />
             </div>
-            {machine.guestReason && (
-              <p className="machines-form-help">{machine.guestReason}</p>
-            )}
-            {machine.reason && (
-              <p className="machines-error">{machine.reason}</p>
-            )}
-            {guidance && guidance !== machine.reason && (
-              <p className="machines-form-help">{guidance}</p>
-            )}
+            {!transition &&
+              machine.reason &&
+              !(failure && machine.status === 'unknown') &&
+              machine.reason !== (failure?.error || guidance) && (
+                <p className="machines-error">{machine.reason}</p>
+              )}
+            {guidance && <p className="machines-form-help">{guidance}</p>}
             {error && (
               <p className="machines-error" role="alert">
                 {error}
               </p>
             )}
-            {operationId && (
-              <div className="machines-operation-feedback" role="status">
-                <span>
-                  {(() => {
-                    const op = data.operations.find(
-                      (item) => item.id === operationId,
-                    );
-                    return op
-                      ? `${humanize(op.action)} · ${humanize(op.status)}`
-                      : 'Operation accepted.';
-                  })()}
-                </span>
-                <Button onClick={showActivity}>View Activity</Button>
-              </div>
+            {notice && (
+              <VMOperationNotice
+                className="machines-inspector-notice"
+                operation={notice}
+                onShowActivity={connected ? showActivity : undefined}
+              />
             )}
-            <dl className="info-list machines-details">
-              <dt>Resources</dt>
-              <dd>
-                {machine.spec.resources.cpus} CPU ·{' '}
-                {machine.spec.resources.memoryMiB} MiB memory
-              </dd>
-              <dt>Storage</dt>
-              <dd>
-                {machine.spec.resources.diskGiB} GiB root ·{' '}
-                {machine.spec.projectGiB} GiB project
-              </dd>
-              <dt>Project volume</dt>
-              <dd>{volume?.name || machine.spec.volumeId || 'Detached'}</dd>
-              <dt>Retention</dt>
-              <dd>
-                {machine.spec.retainVolume
-                  ? 'Keep project volume after deletion'
-                  : 'Delete project volume with VM'}
-              </dd>
-              <dt>Expiry</dt>
-              <dd>
-                {machine.expiresAt
-                  ? new Date(machine.expiresAt).toLocaleString()
-                  : 'No expiry'}
-              </dd>
-            </dl>
-            <details className="machines-technical">
+            {roster?.error && (
+              <p className="machines-error" role="alert">
+                Guest terminals could not be listed. {roster.error}
+              </p>
+            )}
+            <details
+              ref={terminalDetails}
+              hidden={!terminals.length}
+              inert={!terminals.length}
+              className="machines-technical"
+            >
               <summary>Guest terminals</summary>
               <p className="fine-print">
                 Closing a terminal window detaches it. Stopping the VM ends its
                 running sessions.
               </p>
-              {ready && terminalError && (
-                <p className="machines-error" role="alert">
-                  {terminalError}
-                </p>
-              )}
-              {!ready ? (
-                <p>
-                  {data.error
-                    ? 'Reconnect to the host to list guest terminals.'
-                    : terminalReason}
-                </p>
-              ) : terminals.length ? (
-                terminals.map((session) => (
+              {terminals.map((session) => {
+                const title = guestTerminalLabel(session);
+                const running = session.status === 'running';
+                const label = running ? 'Resume' : 'Open';
+                return (
                   <div key={session.id} className="machines-session">
-                    <code>{session.id.slice(0, 12)}</code>
-                    <span>{humanize(session.status)}</span>
+                    <div>
+                      <strong>{title}</strong>
+                      {!running && <span> · {humanize(session.status)}</span>}
+                    </div>
                     <Button
-                      disabled={active || !!terminalError || terminalLoading}
-                      onClick={() =>
-                        openGuestTerminal(desktop, machine, session)
-                      }
+                      disabled={active}
+                      aria-label={`${label} ${title}`}
+                      onClick={() => openSession(session)}
                     >
-                      Open
+                      {label}
                     </Button>
                   </div>
-                ))
-              ) : (
-                <p>
-                  {terminalLoading
-                    ? 'Loading guest terminals…'
-                    : 'No terminals in this guest boot.'}
-                </p>
-              )}
+                );
+              })}
             </details>
             <details className="machines-technical">
               <summary>Configuration</summary>
+              <dl className="info-list machines-details">
+                <dt>VM type</dt>
+                <dd>{humanize(machine.spec.kind)}</dd>
+                <dt>Provider</dt>
+                <dd>{humanize(machine.spec.provider)}</dd>
+                <dt>Resources</dt>
+                <dd>
+                  {machine.spec.resources.cpus} CPU ·{' '}
+                  {machine.spec.resources.memoryMiB} MiB memory
+                </dd>
+                <dt>Storage</dt>
+                <dd>
+                  {machine.spec.resources.diskGiB} GiB root ·{' '}
+                  {machine.spec.projectGiB} GiB project
+                </dd>
+                <dt>Project volume</dt>
+                <dd>{volume?.name || machine.spec.volumeId || 'Detached'}</dd>
+                <dt>Retention</dt>
+                <dd>
+                  {machine.spec.retainVolume
+                    ? 'Keep project volume after deletion'
+                    : 'Delete project volume with VM'}
+                </dd>
+              </dl>
               <MachineSettings
                 key={machine.id}
                 machine={machine}
@@ -368,15 +449,18 @@ export function MachineInspector({ desktop, window }: AppWindowProps) {
             <details className="machines-technical">
               <summary>Recent operations</summary>
               {recent.length ? (
-                recent.map((op) => (
-                  <p key={op.id}>
-                    {humanize(op.action)} · {humanize(op.status)}
-                    {op.phase && ` · ${humanize(op.phase)}`}
-                    {op.error && (
-                      <span className="machines-failure"> — {op.error}</span>
-                    )}
-                  </p>
-                ))
+                recent.map((op) => {
+                  const phase = operationPhase(op);
+                  return (
+                    <p key={op.id}>
+                      {humanize(op.action)} · {humanize(op.status)}
+                      {phase && ` · ${phase}`}
+                      {op.error && (
+                        <span className="machines-failure"> — {op.error}</span>
+                      )}
+                    </p>
+                  );
+                })
               ) : (
                 <p>No operations for this VM yet.</p>
               )}
@@ -400,6 +484,12 @@ export function MachineInspector({ desktop, window }: AppWindowProps) {
                 <dd>
                   <code>{machine.spec.imageId}</code>
                 </dd>
+                {machine.reason && (
+                  <>
+                    <dt>Provider observation</dt>
+                    <dd>{machine.reason}</dd>
+                  </>
+                )}
               </dl>
             </details>
           </>
@@ -428,11 +518,6 @@ export function MachineInspector({ desktop, window }: AppWindowProps) {
           </div>
         )}
       </div>
-      <StatusBar>
-        {machine
-          ? `${machine.spec.name} · ${!connected ? 'Unavailable' : humanize(machine.status)}`
-          : 'VM Inspector'}
-      </StatusBar>
     </div>
   );
 }

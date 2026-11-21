@@ -7,16 +7,21 @@ import type {
   PreparationPlan,
   PreparationRequest,
 } from '../apps/dashboard/src/features/machines/api';
-import { expect, launch, menuItem, test } from './helpers';
+import { activate, bounds, expect, launch, menuItem, test } from './helpers';
 import { applicationMenu } from './desktop-application-helpers';
 import { preparationCheckFixture } from './machines-preparation-fixture';
+import { refreshMachines } from './machines-helpers';
 
 interface PreparationFixture {
   check: PreparationCheck;
+  executablePath?: string;
   job?: PreparationJob;
   plan?: PreparationPlan;
   runtimeError?: string;
   unavailableProviders?: HostInfo['providers'];
+  hostInfo?: Partial<HostInfo>;
+  hostError?: 'image_reload' | 'host_unavailable';
+  generation?: number;
   ready: boolean;
   blocked: boolean;
   loseStartResponse: boolean;
@@ -60,6 +65,10 @@ function makePlan(
   request: PreparationRequest,
 ): PreparationPlan {
   const linux = state.check.platform === 'linux';
+  const missingSocket =
+    state.blocked &&
+    state.check.localService?.status === 'missing' &&
+    request.socket === state.check.localService.socket;
   return {
     cacheHome: '/test/shared-cache',
     id: `plan-${state.writes.length}`,
@@ -115,12 +124,15 @@ function makePlan(
           ],
     checks: [
       {
-        id: 'service',
+        id: linux ? 'local_service' : 'service',
+        ...(missingSocket && { code: 'missing' }),
         label: linux ? 'Local service connection' : 'Storage and runtime',
         status: state.blocked ? 'blocked' : 'ready',
-        detail: state.blocked
-          ? 'Permission denied opening the local service socket. Ask the administrator to grant this user access.'
-          : 'The reviewed preparation can proceed.',
+        detail: missingSocket
+          ? 'No listener is present on the selected socket.'
+          : state.blocked
+            ? 'Permission denied opening the local service socket. Ask the administrator to grant this user access.'
+            : 'The reviewed preparation can proceed.',
       },
     ],
     canStart: !state.blocked,
@@ -216,6 +228,21 @@ async function host(page: Page, state: PreparationFixture) {
         throw new Error(`Unexpected preparation mutation ${method} ${path}`);
       return;
     }
+    if (
+      state.hostError &&
+      ['/info', '/machines', '/volumes', '/operations', '/images'].includes(
+        path,
+      )
+    ) {
+      await route.fulfill({
+        status: 503,
+        json: {
+          code: state.hostError,
+          error: 'The VM service temporarily stopped serving inventory.',
+        },
+      });
+      return;
+    }
     let value: unknown;
     if (path === '/preparation/check') {
       state.checks++;
@@ -234,7 +261,8 @@ async function host(page: Page, state: PreparationFixture) {
         configured: state.check.configured,
         configPath: '/test/axv/config.json',
         profileHome: '/test/axv',
-        executablePath: '/test/bin/axv',
+        logPath: '/test/axv/logs/daemon.log',
+        executablePath: state.executablePath ?? '/test/bin/axv',
         requiredLimaVersion: '2.2.1',
         automaticSetupSupported: state.check.automaticSetupSupported,
         runtime: {
@@ -247,7 +275,8 @@ async function host(page: Page, state: PreparationFixture) {
                 : 'not_configured',
           error: state.runtimeError,
           mode: state.check.platform === 'linux' ? 'external' : 'local',
-          generation: 1,
+          hostId: state.hostInfo?.hostId,
+          generation: state.generation ?? 1,
           readOnly: false,
         },
       } satisfies ComputeEnvironment;
@@ -295,6 +324,7 @@ async function host(page: Page, state: PreparationFixture) {
               },
             ]
           : [],
+        ...state.hostInfo,
       } satisfies HostInfo;
     else if (path === '/machines') value = { machines: [] };
     else if (path === '/volumes') value = { volumes: [] };
@@ -327,6 +357,24 @@ async function capture(page: Page, info: TestInfo, name: string) {
   await info.attach(name, { path, contentType: 'image/png' });
 }
 
+async function recordCopiedText(page: Page, rejectWrites = false) {
+  await page.evaluate((rejectWrites) => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: async (value: string) => {
+          if (rejectWrites)
+            throw new DOMException('Clipboard write denied', 'NotAllowedError');
+          document.documentElement.dataset.vmClipboard = value;
+        },
+        readText: async () =>
+          document.documentElement.dataset.vmClipboard ?? '',
+      },
+    });
+  }, rejectWrites);
+  return page.locator('html');
+}
+
 async function reviewMac(manager: Locator) {
   await manager.getByRole('button', { name: 'Review', exact: true }).click();
   await expect(
@@ -342,8 +390,18 @@ test('unconfigured VM menus keep setup visible and unavailable views disabled', 
   await expect(
     manager.getByRole('heading', { name: 'Enable virtual machines' }),
   ).toBeVisible();
+  await expect(manager.locator('.machines-toolbar')).toHaveCount(0);
+  const steps = manager.getByRole('list', { name: 'Setup steps', exact: true });
+  await expect(steps.getByRole('listitem')).toHaveText([
+    '1. Settings',
+    '2. Review',
+    '3. Prepare',
+  ]);
+  await expect(steps.locator('[aria-current="step"]')).toHaveText(
+    '1. Settings',
+  );
   await applicationMenu(page, 'View', hasTouch);
-  await expect(menuItem(page, 'Environment')).toHaveAttribute(
+  await expect(menuItem(page, 'VM Host')).toHaveAttribute(
     'aria-checked',
     'true',
   );
@@ -354,7 +412,7 @@ test('unconfigured VM menus keep setup visible and unavailable views disabled', 
       'false',
     );
   }
-  await menuItem(page, 'Environment').click();
+  await menuItem(page, 'VM Host').click();
   await expect(
     manager.getByRole('heading', { name: 'Enable virtual machines' }),
   ).toBeVisible();
@@ -488,7 +546,7 @@ test('macOS preparation reviews before changes, preserves drafts and resumes one
     steps: state.job!.steps.map((step) => ({ ...step, status: 'succeeded' })),
   };
   await expect(
-    manager.getByRole('heading', { name: 'VM environment ready' }),
+    manager.getByRole('heading', { name: 'VM service connected' }),
   ).toBeVisible();
   await expect(
     manager.getByRole('button', { name: 'New VM', exact: true }),
@@ -498,7 +556,7 @@ test('macOS preparation reviews before changes, preserves drafts and resumes one
   await expect(
     page
       .locator('[data-window-id="machine-create:main"]')
-      .getByRole('button', { name: 'Create', exact: true }),
+      .getByRole('button', { name: 'Create & Start', exact: true }),
   ).toBeEnabled();
 });
 
@@ -547,64 +605,659 @@ test('lost start responses retain the exact request and cancellation only affect
   ).toHaveValue('/test/axv/compute');
 });
 
-test('Linux diagnoses local access before connecting an administrator-managed service', async ({
-  page,
-}, info) => {
-  const state = fixture('linux');
-  state.blocked = true;
-  const manager = await host(page, state);
-  await expect(
-    manager.getByText('Linux · arm64', { exact: true }),
-  ).toBeVisible();
-  await expect(
-    manager.getByLabel('VM storage directory', { exact: true }),
-  ).toHaveCount(0);
-  await manager
-    .getByRole('combobox', { name: 'Read connection from', exact: true })
-    .selectOption('socket');
-  await manager
-    .getByLabel('Local service socket', { exact: true })
-    .fill('/run/team/axv-control.sock');
-  await manager.getByRole('button', { name: 'Review', exact: true }).click();
-  expect(state.writes).toHaveLength(1);
-  expect(state.writes[0]!.body).toEqual({
-    socket: '/run/team/axv-control.sock',
-  });
-  await expect(
-    manager.getByText('Permission denied opening the local service socket.', {
-      exact: false,
-    }),
-  ).toBeVisible();
-  await expect(
-    manager.getByRole('button', { name: 'Connect', exact: true }),
-  ).toBeDisabled();
-  await expect(
-    manager.getByText('No downloads are required for this plan.', {
+test(
+  'Linux diagnoses local access before connecting an administrator-managed service',
+  { tag: '@vm-ui' },
+  async ({ page, hasTouch }, info) => {
+    const state = fixture('linux');
+    const socket = '/run/axv-host/control.sock';
+    state.check.localService = {
+      status: 'missing',
+      socket,
+      detail: 'No listener is present on the default socket.',
+    };
+    await page.setViewportSize({ width: 320, height: 568 });
+    const clipboard = await recordCopiedText(page);
+    const manager = await host(page, state);
+    const choose = (control: Locator) =>
+      hasTouch ? control.tap() : control.click();
+    const heading = manager.getByRole('heading', { level: 2 });
+    await expect(heading).toHaveText('Check the VM service');
+    await expect(heading).toBeInViewport();
+    await expect(manager.getByText(socket, { exact: true })).toHaveCount(0);
+    await expect(
+      manager.getByRole('list', { name: 'Setup steps', exact: true }),
+    ).toHaveCount(0);
+    await expect(manager.locator('.machines-toolbar')).toHaveCount(0);
+    await expect(
+      manager.getByLabel('VM storage directory', { exact: true }),
+    ).toHaveCount(0);
+    const edit = manager.getByRole('button', {
+      name: 'Edit connection',
       exact: true,
-    }),
-  ).toBeVisible();
-  await expect(
-    manager
-      .locator('dt')
-      .filter({ hasText: /^(VM storage|Lima state|Resource limits)$/ }),
-  ).toHaveCount(0);
-  await capture(page, info, 'preparation-linux-permissions');
-  state.blocked = false;
-  await manager
-    .getByRole('button', { name: 'Refresh Review', exact: true })
-    .click();
-  await expect(
-    manager.getByRole('button', { name: 'Connect', exact: true }),
-  ).toBeEnabled();
-  await manager.getByRole('button', { name: 'Connect', exact: true }).click();
-  await expect(
-    manager.getByRole('heading', { name: 'Preparing virtual machines' }),
-  ).toBeVisible();
-  expect(
-    state.writes.filter((write) => write.path === '/preparation/jobs'),
-  ).toHaveLength(1);
-  expect(state.plan!.downloads).toEqual([]);
-});
+    });
+    const source = manager.getByRole('combobox', {
+      name: 'Read connection from',
+      exact: true,
+    });
+    const checkConnection = manager.getByRole('button', {
+      name: 'Check connection',
+      exact: true,
+    });
+    const connect = manager.getByRole('button', {
+      name: 'Connect',
+      exact: true,
+    });
+    const command = 'systemctl status axv-host.service --no-pager';
+    const copyCommand = manager.getByRole('button', {
+      name: 'Copy command',
+      exact: true,
+    });
+    const openTerminal = manager.getByRole('button', {
+      name: 'Copy & Open Terminal',
+      exact: true,
+    });
+    const diagnostics = manager.getByRole('button', {
+      name: 'Diagnostics',
+      exact: true,
+    });
+    await expect(edit).toBeInViewport();
+    await expect(checkConnection).toBeInViewport();
+    await expect(source).toBeHidden();
+    await expect(
+      manager.getByText('Technical details', { exact: true }),
+    ).toHaveCount(0);
+    await expect(manager.getByText(command, { exact: true })).toBeInViewport();
+    await expect(openTerminal).toBeEnabled();
+    await expect(
+      manager.getByRole('link', { name: 'Linux VM setup guide', exact: true }),
+    ).toBeVisible();
+    expect(state.writes).toEqual([]);
+    await capture(page, info, 'preparation-linux-default-connection');
+    await choose(copyCommand);
+    await expect(clipboard).toHaveAttribute('data-vm-clipboard', command);
+
+    await diagnostics.press('Enter');
+    const diagnosticDialog = page.getByRole('dialog', {
+      name: 'VM Diagnostics',
+      exact: true,
+    });
+    await expect(
+      diagnosticDialog.locator('.ns-dialog-main > .ns-pixel-icon'),
+    ).toHaveCount(0);
+    await expect(
+      diagnosticDialog.getByText(socket, { exact: true }),
+    ).toBeVisible();
+    await expect(diagnosticDialog).toContainText('/test/axv/config.json');
+    await expect(diagnosticDialog).toContainText('/test/axv/logs/daemon.log');
+    const copyDiagnostics = diagnosticDialog.getByRole('button', {
+      name: 'Copy diagnostics',
+      exact: true,
+    });
+    await expect(copyDiagnostics).toBeInViewport({ ratio: 1 });
+    await expect(
+      diagnosticDialog.getByRole('button', { name: 'Close', exact: true }),
+    ).toBeInViewport({ ratio: 1 });
+    await capture(page, info, 'preparation-linux-diagnostics');
+    await choose(copyDiagnostics);
+    await expect(clipboard).toHaveAttribute(
+      'data-vm-clipboard',
+      /\/test\/axv\/logs\/daemon\.log/,
+    );
+    await page.keyboard.press('Escape');
+    await expect(diagnosticDialog).toBeHidden();
+    await expect(diagnostics).toBeFocused();
+    expect(state.writes).toEqual([]);
+
+    const previousChecks = state.checks;
+    state.check.localService = {
+      status: 'ready',
+      socket,
+      detail: 'The default Firecracker service is available.',
+    };
+    await refreshMachines(page, hasTouch);
+    const ready = manager.getByRole('heading', {
+      name: 'Firecracker service detected',
+    });
+    await expect(ready).toBeInViewport();
+    await expect(ready).toHaveAttribute('aria-live', 'polite');
+    await expect(connect).toBeInViewport({ ratio: 1 });
+    await expect(edit).toBeInViewport({ ratio: 1 });
+    await expect(diagnostics).toBeInViewport({ ratio: 1 });
+    const [statusBox, connectBox, editBox, diagnosticsBox] = await Promise.all([
+      bounds(ready),
+      bounds(connect),
+      bounds(edit),
+      bounds(diagnostics),
+    ]);
+    expect(connectBox.y).toBeGreaterThan(statusBox.y + statusBox.height);
+    expect(Math.min(editBox.y, diagnosticsBox.y)).toBeGreaterThan(
+      connectBox.y + connectBox.height,
+    );
+    await expect(manager.getByText(socket, { exact: true })).toHaveCount(0);
+    await expect(
+      manager.getByText('Linux · arm64', { exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      manager.getByText(state.check.localService.detail, { exact: true }),
+    ).toHaveCount(0);
+    await capture(page, info, 'preparation-linux-ready');
+    await choose(diagnostics);
+    await expect(
+      diagnosticDialog.getByText(socket, { exact: true }),
+    ).toBeVisible();
+    await diagnosticDialog
+      .getByRole('button', { name: 'Close', exact: true })
+      .click();
+    await expect(diagnostics).toBeFocused();
+    await expect(copyCommand).toHaveCount(0);
+    await expect(openTerminal).toHaveCount(0);
+    expect(state.checks).toBeGreaterThan(previousChecks);
+    expect(state.writes).toEqual([]);
+
+    await expect(connect).toBeEnabled();
+    await expect(checkConnection).toHaveCount(0);
+
+    const cancel = manager.getByRole('button', { name: 'Cancel', exact: true });
+    await edit.press('Enter');
+    await expect(source).toBeFocused();
+    await expect(manager.getByText(socket, { exact: true })).toHaveCount(0);
+    await source.selectOption('configuration');
+    await expect(
+      manager.getByLabel('Local service configuration', { exact: true }),
+    ).toHaveValue('/etc/axv/host.json');
+    await expect(connect).toHaveCount(0);
+    await choose(cancel);
+    await expect(source).toBeHidden();
+    await expect(edit).toBeFocused();
+    await expect(manager.getByText(socket, { exact: true })).toHaveCount(0);
+    await expect(connect).toBeEnabled();
+    expect(state.writes).toHaveLength(0);
+
+    await choose(edit);
+    await source.selectOption('socket');
+    const customSocket = '/run/team/axv-control.sock';
+    const socketInput = manager.getByLabel('Local service socket', {
+      exact: true,
+    });
+    await socketInput.fill(customSocket);
+    await expect(connect).toHaveCount(0);
+    const beforeCustomCheck = state.checks;
+    state.check.localService = {
+      status: 'missing',
+      socket,
+      detail: 'No listener is present on the default socket.',
+    };
+    await refreshMachines(page, hasTouch);
+    await expect.poll(() => state.checks).toBeGreaterThan(beforeCustomCheck);
+    await expect(socketInput).toHaveValue(customSocket);
+    state.blocked = true;
+    await choose(checkConnection);
+    await expect.poll(() => state.writes.length).toBe(1);
+    expect(state.writes[0]!.path).toBe('/preparation/plan');
+    expect(state.writes[0]!.body).toEqual({ socket: customSocket });
+    await expect(
+      manager.getByText('Permission denied opening the local service socket.', {
+        exact: false,
+      }),
+    ).toBeVisible();
+    await expect(source).toBeHidden();
+    await expect(manager.getByText(customSocket, { exact: true })).toHaveCount(
+      1,
+    );
+    await expect(copyCommand).toHaveCount(0);
+    await expect(openTerminal).toHaveCount(0);
+    await expect(connect).toHaveCount(0);
+    await expect(
+      manager.getByRole('heading', { name: 'Downloads', exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      manager
+        .locator('dt')
+        .filter({ hasText: /^(VM storage|Lima state|Resource limits)$/ }),
+    ).toHaveCount(0);
+    await capture(page, info, 'preparation-linux-permissions');
+    state.blocked = false;
+    await choose(checkConnection);
+    await expect(connect).toBeEnabled();
+    expect(
+      state.writes.filter((write) => write.path === '/preparation/jobs'),
+    ).toHaveLength(0);
+    await choose(connect);
+    await expect(
+      manager.getByRole('heading', {
+        name: 'Connecting VM service',
+        exact: true,
+      }),
+    ).toBeVisible();
+    expect(
+      state.writes.filter((write) => write.path === '/preparation/jobs'),
+    ).toMatchObject([{ body: { planId: state.plan!.id } }]);
+    expect(state.plan!.downloads).toEqual([]);
+  },
+);
+
+test(
+  'Linux VM setup guides the host owner from the detected unit state back to the connection check',
+  { tag: '@vm-ui' },
+  async ({ page, hasTouch }, info) => {
+    await page.setViewportSize(
+      hasTouch ? { width: 390, height: 844 } : { width: 1180, height: 820 },
+    );
+    const state = fixture('linux');
+    state.executablePath = "/test/AXV's build!/one\\two/axv";
+    const socket = '/run/axv-host/control.sock';
+    state.check.localService = {
+      socket,
+      status: 'missing',
+      systemdState: 'not_installed',
+      detail: 'No listener is present on the default socket.',
+    };
+    const terminalInputs: Buffer[][] = [];
+    await page.route('**/api/terminal/info', (route) =>
+      route.fulfill({ json: { supported: true, shell: '/bin/sh' } }),
+    );
+    await page.routeWebSocket(
+      (url) => url.pathname === '/api/terminal',
+      (connection) => {
+        const input: Buffer[] = [];
+        terminalInputs.push(input);
+        connection.onMessage((frame) => {
+          if (Buffer.isBuffer(frame)) input.push(frame);
+        });
+        connection.send(JSON.stringify({ ready: true }));
+      },
+    );
+
+    await launch(page, 'terminal');
+    const terminals = page.locator('[data-app-id="terminal"]');
+    await expect(terminals.getByTestId('terminal-status')).toHaveAttribute(
+      'data-state',
+      'connected',
+    );
+    await expect(
+      terminals.getByText('VM service setup', { exact: true }),
+    ).toHaveCount(0);
+    const clipboard = await recordCopiedText(page);
+    const manager = await host(page, state);
+    const choose = (control: Locator) =>
+      hasTouch ? control.tap() : control.click();
+    const copyAndOpen = manager.getByRole('button', {
+      name: 'Copy & Open Terminal',
+      exact: true,
+    });
+    const openWithoutCopy = manager.getByRole('button', {
+      name: 'Open Host Terminal',
+      exact: true,
+    });
+    const copy = manager.getByRole('button', {
+      name: 'Copy command',
+      exact: true,
+    });
+    const startCommand = 'sudo systemctl start axv-host.service';
+    const installCommand = String.raw`sudo '/test/AXV'\''s build'\!'/one'\\'two/axv' host install-service`;
+    const statusCommand = 'systemctl status axv-host.service --no-pager';
+    const start = manager.getByText(startCommand, { exact: true });
+    const status = manager.getByText(statusCommand, { exact: true });
+    const setupGuide = manager.getByRole('link', {
+      name: 'Linux VM setup guide',
+    });
+    const checkConnection = manager.getByRole('button', {
+      name: 'Check connection',
+      exact: true,
+    });
+    const inputs = () =>
+      terminalInputs.map((input) => Buffer.concat(input).toString());
+
+    const installInstruction =
+      'The command installs Firecracker and the default Guest image, then starts axv-host.service.';
+
+    async function openCleanShell(button: Locator) {
+      const previousInputs = inputs();
+      await choose(button);
+      await expect(terminals).toHaveCount(previousInputs.length + 1);
+      const shell = page.locator('[data-app-id="terminal"].is-active');
+      await expect(shell.getByTestId('terminal-status')).toHaveAttribute(
+        'data-state',
+        'connected',
+      );
+      await expect(
+        shell.getByText('VM service setup', { exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        shell.getByRole('link', { name: 'Linux VM setup guide' }),
+      ).toHaveCount(0);
+      await expect(
+        shell.getByRole('button', { name: 'Copy command', exact: true }),
+      ).toHaveCount(0);
+      await expect.poll(inputs).toEqual([...previousInputs, '']);
+      return shell;
+    }
+
+    async function pasteCopiedCommand(command: string) {
+      const previousInputs = inputs();
+      await clipboard.evaluate((root) =>
+        root.removeAttribute('data-vm-clipboard'),
+      );
+      const shell = await openCleanShell(copyAndOpen);
+      await expect(clipboard).toHaveAttribute('data-vm-clipboard', command);
+      await choose(shell.getByRole('button', { name: 'Paste', exact: true }));
+      await expect.poll(inputs).toEqual([...previousInputs, command]);
+      await activate(page, manager, hasTouch);
+    }
+
+    await expect(
+      manager.getByRole('heading', {
+        name: 'Install the VM service',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      manager.getByText(/built-in installer supports Linux amd64/),
+    ).toBeVisible();
+    await expect(copy).toHaveCount(0);
+    await expect(copyAndOpen).toHaveCount(0);
+
+    state.check.arch = 'amd64';
+    const runningExecutable = state.executablePath;
+    state.executablePath = '/test/newline\n/axv';
+    await refreshMachines(page, hasTouch);
+    await expect(
+      manager.getByText(/could not identify a usable path/),
+    ).toBeVisible();
+    await expect(copy).toHaveCount(0);
+    await expect(copyAndOpen).toHaveCount(0);
+    state.executablePath = runningExecutable;
+    await refreshMachines(page, hasTouch);
+    await expect(copyAndOpen).toBeVisible();
+    await expect(openWithoutCopy).toHaveCount(0);
+    await expect(setupGuide).toBeVisible();
+    await expect(copy).toBeEnabled();
+    await expect(
+      manager.getByText(installCommand, { exact: true }),
+    ).toBeVisible();
+    await expect(start).toHaveCount(0);
+    await expect(manager).toContainText(installInstruction);
+    await expect(status).toHaveCount(0);
+    await expect(manager.getByRole('heading', { level: 2 })).toHaveText(
+      'Install the VM service',
+    );
+    await expect(manager.getByText(socket, { exact: true })).toHaveCount(0);
+    await expect(checkConnection).toBeInViewport({ ratio: 1 });
+    await expect(copy).toBeInViewport({ ratio: 1 });
+    const connectionActions = manager.locator('.machines-connection-actions');
+    const [actionsBox, buttonBox] = await Promise.all([
+      connectionActions.boundingBox(),
+      checkConnection.boundingBox(),
+    ]);
+    expect(buttonBox!.y - actionsBox!.y).toBeGreaterThanOrEqual(8);
+    await capture(page, info, 'preparation-linux-install');
+    await choose(copy);
+    await expect(clipboard).toHaveAttribute(
+      'data-vm-clipboard',
+      installCommand,
+    );
+    await expect(manager).toHaveClass(/is-active/);
+    await expect(terminals).toHaveCount(1);
+    await expect(
+      manager.getByText(
+        'Command copied. Paste and run it in the host terminal.',
+        {
+          exact: true,
+        },
+      ),
+    ).toBeVisible();
+    await pasteCopiedCommand(installCommand);
+
+    const permission =
+      'The AXV desktop account cannot read /etc/axv/host.json.';
+    state.check.localService = {
+      socket,
+      status: 'permission_denied',
+      systemdState: 'inactive',
+      detail: permission,
+    };
+    await refreshMachines(page, hasTouch);
+    await expect(
+      manager.getByRole('heading', {
+        name: 'Start the VM service',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(start).toBeVisible();
+    await expect(manager.getByText(permission, { exact: true })).toBeVisible();
+    await expect(copy).toBeEnabled();
+    await expect(status).toHaveCount(0);
+    await pasteCopiedCommand(startCommand);
+    await expect(start).toBeVisible();
+
+    for (const [systemdState, headline] of [
+      ['failed', 'The VM service failed to start'],
+      ['active', 'Check the VM service socket'],
+    ] as const) {
+      state.check.localService = {
+        socket,
+        status: 'missing',
+        systemdState,
+        detail: 'No listener is present on the default socket.',
+      };
+      await refreshMachines(page, hasTouch);
+      await expect(
+        manager.getByRole('heading', { name: headline, exact: true }),
+      ).toBeVisible();
+      await expect(status).toBeVisible();
+      await expect(start).toHaveCount(0);
+      await expect(copy).toBeEnabled();
+    }
+    await pasteCopiedCommand(statusCommand);
+    await page.evaluate(() =>
+      navigator.clipboard.writeText('Previous clipboard'),
+    );
+    await recordCopiedText(page, true);
+    const beforeBlockedCopy = inputs();
+    await choose(copyAndOpen);
+    await expect(
+      manager.getByRole('alert').filter({ hasText: /copy/i }),
+    ).toBeVisible();
+    await expect(manager).toHaveClass(/is-active/);
+    await expect(terminals).toHaveCount(beforeBlockedCopy.length);
+    await expect(status).toHaveCSS('user-select', /^(text|all)$/);
+    await openCleanShell(openWithoutCopy);
+    await expect(clipboard).toHaveAttribute(
+      'data-vm-clipboard',
+      'Previous clipboard',
+    );
+    await activate(page, manager, hasTouch);
+    expect(state.writes).toHaveLength(0);
+    state.blocked = true;
+    await choose(checkConnection);
+    await expect(manager.getByText(/default socket is missing/)).toBeVisible();
+    state.check.localService = {
+      status: 'ready',
+      socket,
+      detail: 'Service detected.',
+    };
+    await refreshMachines(page, hasTouch);
+    await expect(
+      manager.getByRole('heading', {
+        name: 'Firecracker service detected',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await capture(page, info, 'preparation-linux-ready');
+    await expect(copyAndOpen).toHaveCount(0);
+    await expect(openWithoutCopy).toHaveCount(0);
+    state.blocked = false;
+    const connect = manager.getByRole('button', {
+      name: 'Connect',
+      exact: true,
+    });
+    if (hasTouch) await connect.tap();
+    else await connect.press('Enter');
+    await expect(
+      manager.getByRole('heading', { name: 'Connecting VM service' }),
+    ).toBeVisible();
+    await expect(copyAndOpen).toHaveCount(0);
+    expect(state.writes.map(({ path, body }) => ({ path, body }))).toEqual([
+      { path: '/preparation/plan', body: { socket } },
+      { path: '/preparation/plan', body: { socket } },
+      {
+        path: '/preparation/jobs',
+        body: {
+          planId: state.plan!.id,
+          confirmed: true,
+          requestId: expect.any(String),
+        },
+      },
+    ]);
+  },
+);
+
+for (const automatic of [true, false]) {
+  test(`default Firecracker image setup ${automatic ? 'recovers automatically after a planned restart' : 'offers explicit reconnection for an unconfirmed outage'}`, async ({
+    page,
+    hasTouch,
+  }, info) => {
+    const state = fixture('linux');
+    state.ready = true;
+    const hostId = 'host-' + 'a'.repeat(32);
+    const imageId = 'default-firecracker-amd64';
+    const socket = '/run/axv-host/control.sock';
+    Object.assign(state.check, {
+      configured: true,
+      arch: 'amd64',
+      defaultImageId: imageId,
+      defaults: { socket },
+    });
+    state.hostInfo = {
+      hostId,
+      hostArch: 'amd64',
+      defaults: creationDefaultsFixture('', 'firecracker'),
+      images: [],
+      providers: [
+        {
+          provider: 'firecracker',
+          available: true,
+          persistentVolumes: true,
+          snapshots: false,
+          guestExecution: true,
+          images: false,
+          volumes: false,
+        },
+      ],
+    };
+    const clipboard = await recordCopiedText(page);
+    const manager = await host(page, state);
+    const choose = (control: Locator) =>
+      hasTouch ? control.tap() : control.click();
+    await choose(manager.getByRole('button', { name: 'Volumes', exact: true }));
+    await expect(
+      manager.getByRole('heading', { name: 'No project volumes yet' }),
+    ).toBeVisible();
+    await expect(
+      manager.getByText('AXV creates a project volume with your first VM.'),
+    ).toBeVisible();
+    await expect(manager.getByRole('table')).toHaveCount(0);
+    await expect(
+      manager.getByRole('button', { name: 'New Volume', exact: true }),
+    ).toHaveCount(0);
+    await choose(
+      manager.getByRole('button', { name: 'Set Up VM Image', exact: true }),
+    );
+    await expect(
+      manager.getByRole('heading', { name: 'Install the default VM image' }),
+    ).toBeVisible();
+    const command = `sudo '/test/bin/axv' host install-image --host-id ${hostId}`;
+    await expect(manager.getByText(command, { exact: true })).toBeVisible();
+    await capture(page, info, 'vm-default-image-install');
+    await choose(
+      manager.getByRole('button', { name: 'Copy command', exact: true }),
+    );
+    await expect(clipboard).toHaveAttribute('data-vm-clipboard', command);
+    expect(state.writes).toHaveLength(0);
+
+    const reconnect = manager.getByRole('button', {
+      name: 'Reconnect to VM Host',
+      exact: true,
+    });
+    await expect(reconnect).toHaveCount(0);
+    state.hostError = automatic ? 'image_reload' : 'host_unavailable';
+    if (automatic) {
+      await expect(
+        manager.getByText('Reconnecting after the VM image installation…'),
+      ).toBeVisible();
+      await expect(manager.getByRole('alert')).toHaveCount(0);
+      await expect(reconnect).toHaveCount(0);
+      await expect(
+        manager.getByRole('button', { name: 'Copy command' }),
+      ).toHaveCount(0);
+    } else {
+      await expect(manager.getByRole('alert')).toContainText(
+        'The VM service temporarily stopped serving inventory.',
+      );
+      await choose(reconnect);
+      await expect.poll(() => state.job?.status).toBe('running');
+    }
+
+    const digest = 'a'.repeat(64);
+    state.hostInfo.defaults = creationDefaultsFixture(imageId, 'firecracker');
+    state.hostInfo.images = [
+      {
+        id: imageId,
+        name: 'Default AXV Guest',
+        arch: 'amd64',
+        provider: 'firecracker',
+        status: 'configured',
+        sha256: digest,
+      },
+    ];
+    state.hostError = undefined;
+    state.generation = 2;
+    if (state.job)
+      state.job = {
+        ...state.job,
+        status: 'succeeded',
+        revision: 3,
+        phase: 'ready',
+      };
+    const newVM = manager.getByRole('button', { name: 'New VM', exact: true });
+    await expect(newVM).toBeEnabled();
+    await expect(manager.getByRole('alert')).toHaveCount(0);
+    await choose(manager.getByRole('button', { name: 'Images', exact: true }));
+    await expect(
+      manager.getByRole('button', { name: 'More image actions' }),
+    ).toHaveCount(0);
+    await expect(manager.getByText(digest, { exact: true })).toHaveCount(0);
+    await choose(
+      manager.getByRole('button', {
+        name: 'Image details for Default AXV Guest',
+      }),
+    );
+    const details = page.getByRole('dialog', { name: 'Image Details' });
+    await expect(details.getByText(digest, { exact: true })).toBeVisible();
+    await choose(details.getByRole('button', { name: 'Close', exact: true }));
+    await choose(newVM);
+    const create = page.locator('[data-window-id="machine-create:main"]');
+    await expect(
+      create.getByText('Default AXV Guest', { exact: true }),
+    ).toBeVisible();
+    await create.getByText('Advanced', { exact: true }).click();
+    await expect(
+      create.getByRole('combobox', { name: 'Project volume', exact: true }),
+    ).toHaveValue('');
+    await expect(
+      create.getByRole('button', { name: 'Create & Start', exact: true }),
+    ).toBeEnabled();
+    if (automatic) expect(state.writes).toEqual([]);
+    else {
+      expect(state.writes.map(({ path }) => path)).toEqual([
+        '/preparation/plan',
+        '/preparation/jobs',
+      ]);
+      expect(state.writes[0]?.body).toEqual({ socket });
+    }
+  });
+}
 
 test('configured service review preserves existing locations and budgets', async ({
   page,
@@ -628,9 +1281,7 @@ test('configured service review preserves existing locations and budgets', async
     },
   ];
   const manager = await host(page, state);
-  await manager
-    .getByRole('button', { name: 'Environment', exact: true })
-    .click();
+  await manager.getByRole('button', { name: 'VM Host', exact: true }).click();
   const environment = manager.locator('.machines-environment');
   await expect(
     environment.getByText(state.runtimeError, { exact: true }),
@@ -722,18 +1373,81 @@ test('the real server exposes a read-only review before preparation is confirmed
   });
   await launch(page, 'machines');
   const manager = page.locator('[data-window-id="machines:main"]');
-  await manager.getByRole('button', { name: /^Review$/ }).click();
-  await expect(
-    manager.getByRole('heading', { name: 'Review VM preparation' }),
-  ).toBeVisible({ timeout: 30000 });
-  await expect(
-    manager.getByRole('heading', { name: 'Actions', exact: true }),
-  ).toBeVisible();
-  await expect(
-    manager.getByRole('button', {
-      name: /^(Prepare|Connect)$/,
-    }),
-  ).toBeVisible();
+  const linux = process.platform === 'linux';
+  if (linux) {
+    await manager.getByRole('button', { name: 'Edit connection' }).click();
+    await manager.getByLabel('Read connection from').selectOption('socket');
+    await manager
+      .getByLabel('Local service socket')
+      .fill('/run/axv-host/control.sock');
+  }
+  const review = manager.getByRole('button', {
+    name: linux ? 'Check connection' : 'Review',
+    exact: true,
+  });
+  const [response] = await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        new URL(response.url()).pathname === '/api/compute/preparation/plan',
+    ),
+    review.click(),
+  ]);
+  expect(response.ok()).toBe(true);
+  if (linux) {
+    const plan: PreparationPlan = await response.json();
+    const connect = manager.getByRole('button', {
+      name: 'Connect',
+      exact: true,
+    });
+    if (plan.canStart) {
+      await expect(connect).toBeEnabled();
+      await expect(
+        manager.getByText('Connection verified', { exact: true }),
+      ).toBeVisible();
+    } else {
+      const blocked = plan.checks.find((check) => check.status === 'blocked');
+      expect(blocked).toBeDefined();
+      if (
+        blocked!.id === 'local_service' &&
+        blocked!.code === 'missing' &&
+        plan.request.socket === '/run/axv-host/control.sock'
+      ) {
+        await expect(
+          manager.getByText(
+            'Connection checked. The default socket is missing.',
+            { exact: true },
+          ),
+        ).toBeVisible();
+        await manager
+          .getByRole('button', { name: 'Diagnostics', exact: true })
+          .click();
+        const dialog = page.getByRole('dialog', { name: 'VM Diagnostics' });
+        await expect(
+          dialog.getByText(blocked!.detail, { exact: true }),
+        ).toBeVisible();
+        await dialog
+          .getByRole('button', { name: 'Close', exact: true })
+          .click();
+      } else {
+        await expect(
+          manager.getByText(blocked!.detail, { exact: true }),
+        ).toBeVisible();
+      }
+      await expect(connect).toHaveCount(0);
+      await expect(review).toBeEnabled();
+    }
+  } else {
+    await expect(
+      manager.getByRole('heading', { name: 'Review VM preparation' }),
+    ).toBeVisible({ timeout: 30000 });
+    await expect(
+      manager.getByRole('heading', { name: 'Actions', exact: true }),
+    ).toBeVisible();
+    await expect(
+      manager.getByRole('button', { name: /^(Prepare|Connect)$/ }),
+    ).toBeVisible();
+  }
   expect(starts).toEqual([]);
 });
 
@@ -784,9 +1498,7 @@ test('an existing Linux service is connected without offering to start it', asyn
   state.check.configured = true;
   state.check.defaults = { socket: '/run/existing/axv-control.sock' };
   const manager = await host(page, state);
-  await manager
-    .getByRole('button', { name: 'Environment', exact: true })
-    .click();
+  await manager.getByRole('button', { name: 'VM Host', exact: true }).click();
   await manager.getByRole('button', { name: 'Review', exact: true }).click();
   expect(state.writes[0]!.body).toEqual(state.check.defaults);
   await expect(

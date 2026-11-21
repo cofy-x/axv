@@ -116,6 +116,8 @@ export interface MenuGroup {
 export interface DialogOptions {
   title: string;
   message?: ReactNode;
+  /** Show the dialog's information icon. Defaults to true. */
+  showIcon?: boolean;
   input?: { label: string; value?: string };
   buttons?: {
     label: string;

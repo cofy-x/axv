@@ -120,6 +120,7 @@ export interface PreparationRequest {
 
 export interface PreparationRequirement {
   id: string;
+  code?: string;
   label: string;
   status: 'ready' | 'needed' | 'blocked';
   detail: string;
@@ -189,8 +190,11 @@ export interface PreparationJob {
   plan: PreparationPlan;
 }
 
+export type HostUnitState = 'not_installed' | 'inactive' | 'failed' | 'active';
+
 export interface PreparationCheck {
   officialImageAvailable: boolean;
+  defaultImageId?: string;
   cacheHome: string;
   instanceId: string;
   platform: string;
@@ -202,6 +206,12 @@ export interface PreparationCheck {
   requiredLimaVersion: string;
   defaults: PreparationRequest;
   checks: PreparationRequirement[];
+  localService?: {
+    status: 'missing' | 'permission_denied' | 'unavailable' | 'ready';
+    systemdState?: HostUnitState;
+    socket: string;
+    detail: string;
+  };
   activeJob?: PreparationJob;
   latestJob?: PreparationJob;
 }
@@ -264,6 +274,7 @@ export interface GuestTerminal {
   id: string;
   bootId: string;
   status: string;
+  sequence?: number;
 }
 
 const base = '/compute';

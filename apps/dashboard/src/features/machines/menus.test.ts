@@ -68,15 +68,13 @@ describe('VM application menu ownership', () => {
         .every((item) => item.disabled),
     ).toBe(true);
     const view = groups.find((group) => group.id === 'view')!.items;
-    expect(view.find((item) => item.label === 'Environment')!.checked).toBe(
-      true,
-    );
+    expect(view.find((item) => item.label === 'VM Host')!.checked).toBe(true);
     view.find((item) => item.label === 'Volumes')!.action!();
     expect(desktop.updateWindowState).toHaveBeenCalledWith(owner.id, {
       vmTab: 'volumes',
       vmEnvironment: false,
     });
-    view.find((item) => item.label === 'Environment')!.action!();
+    view.find((item) => item.label === 'VM Host')!.action!();
     expect(desktop.updateWindowState).toHaveBeenLastCalledWith(owner.id, {
       vmEnvironment: false,
     });
@@ -92,9 +90,7 @@ describe('VM application menu ownership', () => {
       owner,
       desktop,
     ).find((group) => group.id === 'view')!.items;
-    expect(view.find((item) => item.label === 'Environment')!.checked).toBe(
-      true,
-    );
+    expect(view.find((item) => item.label === 'VM Host')!.checked).toBe(true);
     for (const label of ['VMs', 'Volumes', 'Images', 'Activity'])
       expect(view.find((item) => item.label === label)!.disabled).toBe(true);
   });

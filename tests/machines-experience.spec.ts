@@ -1,5 +1,6 @@
 import { preparationCheckFixture } from './machines-preparation-fixture';
 import { creationDefaultsFixture } from './machines-creation-fixture';
+import { refreshMachines } from './machines-helpers';
 import type { Locator, Page, TestInfo } from '@playwright/test';
 import type {
   ComputeEnvironment,
@@ -21,6 +22,7 @@ import {
 
 interface HostFixture {
   environment: ComputeEnvironment;
+  check?: Parameters<typeof preparationCheckFixture>[0];
   info: HostInfo;
   machines: Machine[];
   volumes: Volume[];
@@ -30,6 +32,7 @@ interface HostFixture {
   writes: string[];
   guestReads: string[];
   gate?: Promise<void>;
+  environmentGate?: Promise<void>;
 }
 
 function fixture(): HostFixture {
@@ -119,7 +122,7 @@ function fixture(): HostFixture {
   };
 }
 
-async function host(page: Page, state: HostFixture) {
+async function mockHost(page: Page, state: HostFixture) {
   await page.route('**/api/compute/**', async (route) => {
     const path = new URL(route.request().url()).pathname.replace(
       '/api/compute',
@@ -136,6 +139,7 @@ async function host(page: Page, state: HostFixture) {
     }
     if (['/environment', '/info', '/preparation/check'].includes(path))
       await state.gate;
+    if (path === '/environment') await state.environmentGate;
     if (state.offline && path !== '/environment') {
       await route.fulfill({
         status: 503,
@@ -148,6 +152,7 @@ async function host(page: Page, state: HostFixture) {
         platform: state.environment.platform,
         configured: state.environment.configured,
         automaticSetupSupported: state.environment.automaticSetupSupported,
+        ...state.check,
       }),
       '/environment': state.environment,
       '/info': state.info,
@@ -165,18 +170,12 @@ async function host(page: Page, state: HostFixture) {
       throw new Error(`Unexpected compute request ${method} ${path}`);
     await route.fulfill({ json: responses[path] });
   });
-  await launch(page, 'machines');
-  return page.locator('[data-window-id="machines:main"]');
 }
 
-async function refresh(manager: Locator) {
-  const button = manager.getByRole('button', {
-    name: 'Refresh',
-    exact: true,
-  });
-  await expect(button).toBeEnabled();
-  await button.click();
-  await expect(button).toBeEnabled();
+async function host(page: Page, state: HostFixture) {
+  await mockHost(page, state);
+  await launch(page, 'machines');
+  return page.locator('[data-window-id="machines:main"]');
 }
 
 async function captureSizes(
@@ -250,7 +249,12 @@ test('delayed discovery leads to platform-specific setup without showing prematu
     automaticSetupSupported: false,
     executablePath: '/temporary/build/server',
   };
-  await refresh(manager);
+  await refreshMachines(page);
+  const linuxHeading = manager.getByRole('heading', {
+    name: 'Connect VM service',
+    exact: true,
+  });
+  await expect(linuxHeading).toBeVisible();
   await expect(manager.getByRole('button', { name: 'This Mac' })).toHaveCount(
     0,
   );
@@ -261,25 +265,22 @@ test('delayed discovery leads to platform-specific setup without showing prematu
     manager.getByLabel('Host socket path', { exact: true }),
   ).toHaveCount(0);
   await expect(
-    manager.getByText(
-      'Connect to a local Firecracker/KVM service set up by an administrator.',
-      { exact: false },
-    ),
+    manager.getByText('/run/axv-host/control.sock', { exact: true }),
   ).toBeVisible();
   await expect(
-    manager.getByLabel('Local service configuration', { exact: true }),
-  ).toHaveValue('/etc/axv/host.json');
+    manager.getByRole('button', { name: 'Edit connection', exact: true }),
+  ).toBeVisible();
   await expect(
-    manager.getByRole('button', { name: 'Review', exact: true }),
+    manager.getByRole('button', { name: 'Check connection', exact: true }),
   ).toBeEnabled();
 
-  await captureSizes(page, info, heading, 'vm-linux-setup');
+  await captureSizes(page, info, linuxHeading, 'vm-linux-setup');
 
   state.environment = {
     ...state.environment,
     platform: 'windows',
   };
-  await refresh(manager);
+  await refreshMachines(page);
   await expect(
     manager.getByText('VM hosting requires macOS or Linux.', {
       exact: false,
@@ -291,69 +292,344 @@ test('delayed discovery leads to platform-specific setup without showing prematu
   expect(state.writes).toEqual([]);
 });
 
-test('empty hosts distinguish unavailable providers, missing images and configured images', async ({
+test(
+  'empty hosts distinguish unavailable providers, missing images and configured images',
+  { tag: '@vm-ui' },
+  async ({ page }, info) => {
+    const state = fixture();
+    const image = state.images[0]!;
+    state.machines = [];
+    state.volumes = [];
+    state.images = [];
+    state.info.images = [];
+    state.info.providers![0]!.available = false;
+    state.info.providers![0]!.reason = 'Install the required Lima release.';
+    const manager = await host(page, state);
+    const newVM = manager.getByRole('button', { name: 'New VM', exact: true });
+    await expect(
+      manager.getByRole('heading', { name: 'VM provider unavailable' }),
+    ).toBeVisible();
+    await expect(newVM).toBeDisabled();
+    await manager.getByRole('button', { name: 'View environment' }).click();
+    await expect(
+      manager.getByText('Install the required Lima release.', {
+        exact: false,
+      }),
+    ).toBeVisible();
+    await manager.getByRole('button', { name: 'VMs', exact: true }).click();
+
+    state.info.providers![0]!.available = true;
+    state.info.providers![0]!.reason = undefined;
+    await refreshMachines(page);
+    await expect(newVM).toBeDisabled();
+    await manager.getByRole('button', { name: 'Open Images' }).click();
+    await expect(
+      manager.getByText(
+        'No registered images. Add a verified Linux cloud image.',
+      ),
+    ).toBeVisible();
+    await expect(
+      manager.getByRole('button', { name: 'Add Image' }),
+    ).toBeEnabled();
+    await manager
+      .getByRole('button', { name: 'Activity', exact: true })
+      .click();
+    await expect(
+      manager.getByText('No activity yet.', { exact: false }),
+    ).toBeVisible();
+
+    state.images = [image];
+    state.info.images = [image];
+    await refreshMachines(page);
+    await manager.getByRole('button', { name: 'VMs', exact: true }).click();
+    const empty = manager.getByRole('heading', { name: 'No VMs yet' });
+    await expect(empty).toBeVisible();
+    await expect(manager.getByText(/Choose New VM to select/)).toHaveCount(0);
+    await expect(newVM).toHaveCount(1);
+    await expect(newVM).toBeEnabled();
+    await captureSizes(page, info, empty, 'vm-empty-state');
+    await newVM.click();
+    const create = page.locator('[data-window-id="machine-create:main"]');
+    await expect(create.getByText(image.name, { exact: true })).toBeVisible();
+    await expect(
+      create.getByRole('button', { name: 'Create & Start', exact: true }),
+    ).toBeEnabled();
+    expect(state.writes).toEqual([]);
+  },
+);
+
+test('Firecracker without a guest image directs users to host registration', async ({
   page,
-}) => {
+}, info) => {
   const state = fixture();
-  const image = state.images[0]!;
+  state.environment.platform = 'linux';
+  state.environment.automaticSetupSupported = false;
+  state.info.providers = [
+    { ...state.info.providers![0]!, provider: 'firecracker', images: false },
+  ];
+  state.info.defaults = creationDefaultsFixture('', 'firecracker');
+  state.info.images = [];
+  state.images = [];
   state.machines = [];
   state.volumes = [];
-  state.images = [];
-  state.info.images = [];
-  state.info.providers![0]!.available = false;
-  state.info.providers![0]!.reason = 'Install the required Lima release.';
   const manager = await host(page, state);
-  const newVM = manager.getByRole('button', { name: 'New VM', exact: true });
+  const heading = manager.getByRole('heading', {
+    name: 'Firecracker guest image required',
+    exact: true,
+  });
+  const guide = manager.getByRole('link', {
+    name: 'Linux VM setup guide',
+    exact: true,
+  });
+  await expect(heading).toBeVisible();
   await expect(
     manager.getByText(
-      'The VM provider needs attention before you can create a VM.',
+      'Ask the deployment host administrator to register a compatible Firecracker guest image.',
     ),
   ).toBeVisible();
-  await expect(newVM).toBeDisabled();
-  await manager.getByRole('button', { name: 'View environment' }).click();
+  await expect(guide).toBeVisible();
   await expect(
-    manager.getByText('Install the required Lima release.', {
-      exact: false,
+    manager.getByRole('button', { name: 'View environment', exact: true }),
+  ).toBeEnabled();
+  await expect(
+    manager.getByRole('button', { name: 'Open Images', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    manager.getByRole('button', { name: 'New VM', exact: true }),
+  ).toBeDisabled();
+  await captureSizes(page, info, heading, 'vm-firecracker-image-required');
+
+  await manager.getByRole('button', { name: 'Images', exact: true }).click();
+  await expect(
+    manager.getByText(
+      'The deployment host administrator registers Firecracker guest images in the VM host configuration.',
+    ),
+  ).toBeVisible();
+  await expect(
+    manager.getByText('No Firecracker guest images are registered.', {
+      exact: true,
     }),
   ).toBeVisible();
-  await manager.getByRole('button', { name: 'VMs', exact: true }).click();
-
-  state.info.providers![0]!.available = true;
-  state.info.providers![0]!.reason = undefined;
-  await refresh(manager);
-  await expect(newVM).toBeDisabled();
-  await manager.getByRole('button', { name: 'Open Images' }).click();
+  await expect(guide).toBeVisible();
   await expect(
-    manager.getByText(
-      'No registered images. Add a verified Linux cloud image.',
-    ),
-  ).toBeVisible();
-  await expect(
-    manager.getByRole('button', { name: 'Add Image' }),
-  ).toBeEnabled();
-  await manager.getByRole('button', { name: 'Activity', exact: true }).click();
-  await expect(
-    manager.getByText('No activity yet.', { exact: false }),
-  ).toBeVisible();
-
-  state.images = [image];
-  state.info.images = [image];
-  await refresh(manager);
-  await manager.getByRole('button', { name: 'VMs', exact: true }).click();
-  await expect(
-    manager.getByRole('heading', { name: 'Create your first VM' }),
-  ).toBeVisible();
-  await expect(newVM).toBeEnabled();
-  await newVM.click();
-  const create = page.locator('[data-window-id="machine-create:main"]');
-  await expect(
-    create.getByRole('combobox', { name: 'Image', exact: true }),
-  ).toHaveValue(image.id);
-  await expect(
-    create.getByRole('button', { name: 'Create', exact: true }),
-  ).toBeEnabled();
+    manager.getByRole('button', { name: 'Add Image', exact: true }),
+  ).toHaveCount(0);
   expect(state.writes).toEqual([]);
 });
+
+test(
+  'Firecracker inventories show backup sources and expose eligible actions',
+  { tag: '@vm-ui' },
+  async ({ page, hasTouch }, info) => {
+    const state = fixture();
+    Object.assign(state.environment, {
+      platform: 'linux',
+      automaticSetupSupported: false,
+    });
+    state.info.hostArch = 'amd64';
+    state.info.providers = [
+      {
+        ...state.info.providers![0]!,
+        provider: 'firecracker',
+        volumes: false,
+        images: false,
+      },
+    ];
+    const base = state.images[0]!;
+    Object.assign(base, { provider: 'firecracker', arch: 'amd64' });
+    state.images.push({
+      ...base,
+      id: 'workshop-image-id',
+      name: 'Workshop Guest',
+      sha256: 'b'.repeat(64),
+    });
+    state.info.images = state.images;
+    state.info.defaults = creationDefaultsFixture(base.id, 'firecracker');
+    for (const vm of state.machines) vm.spec.provider = 'firecracker';
+    for (const volume of state.volumes) volume.provider = 'firecracker';
+    const provenance: NonNullable<Volume['backup']> = {
+      hostId: state.info.hostId!,
+      sourceVolumeId: 'detached-workshop-volume-id',
+      sourceVolumeRevision: 1,
+      sourceMachineId: 'original-workshop-vm',
+      sourceMachineRevision: 1,
+      projects: [],
+      createdAt: '2026-10-16T00:00:00Z',
+    };
+    state.volumes.push({
+      ...state.volumes[0]!,
+      id: 'detached-workshop-volume-id',
+      name: 'Workshop storage',
+      machineId: undefined,
+      sizeGiB: 24,
+    });
+    const stored = state.volumes.at(-1)!;
+    state.volumes.push(
+      {
+        ...stored,
+        id: 'workshop-backup',
+        name: 'Workshop backup',
+        backup: provenance,
+      },
+      {
+        ...stored,
+        id: 'recovered-workshop',
+        name: 'Recovered workshop',
+        restoredFrom: 'workshop-backup',
+        backup: provenance,
+      },
+    );
+    state.operations = ['workshop-backup', 'recovered-workshop'].map(
+      (volumeId) => ({
+        id: `activity-${volumeId}`,
+        action: 'copy-volume',
+        machineId: '',
+        volumeId,
+        status: 'succeeded',
+        phase: 'complete',
+        createdAt: '2026-10-16T00:01:00Z',
+      }),
+    );
+    state.operations.push(
+      {
+        id: 'activity-start-failed',
+        action: 'start',
+        machineId: state.machines[0]!.id,
+        status: 'failed',
+        phase: 'start',
+        error: 'The guest failed to boot.',
+        createdAt: '2026-10-16T00:02:00Z',
+      },
+      {
+        id: 'activity-start-running',
+        action: 'start',
+        machineId: state.machines[1]!.id,
+        status: 'running',
+        phase: 'booting-vm',
+        createdAt: '2026-10-16T00:03:00Z',
+      },
+    );
+    const manager = await host(page, state);
+    await manager.getByRole('button', { name: 'Images', exact: true }).click();
+    await expect(
+      manager.getByRole('button', { name: 'Add Image' }),
+    ).toHaveCount(0);
+    await expect(
+      manager.getByRole('button', { name: 'More image actions' }),
+    ).toHaveCount(0);
+    const images = page.getByRole('dialog', { name: 'Image Details' });
+    await manager
+      .getByRole('button', { name: 'Image details for Ubuntu LTS' })
+      .click();
+    await expect(images).toContainText('Used by Build VM, Task VM.');
+    await expect(
+      images.locator('.ns-dialog-main > .ns-pixel-icon'),
+    ).toHaveCount(0);
+    await expect(images.getByRole('button', { name: 'Remove…' })).toHaveCount(
+      0,
+    );
+    await images.getByRole('button', { name: 'Close', exact: true }).click();
+    const workshopImage = manager.getByRole('button', {
+      name: 'Image details for Workshop Guest',
+    });
+    await workshopImage.click();
+    await expect(
+      images.getByText('workshop-image-id', { exact: true }),
+    ).toBeVisible();
+    await images.getByRole('button', { name: 'Remove…' }).click();
+    const removal = page.getByRole('dialog', { name: 'Remove image?' });
+    await expect(removal).toContainText(
+      'Remove “Workshop Guest” from the image catalog?',
+    );
+    await expect(
+      removal.locator('.ns-dialog-main > .ns-pixel-icon'),
+    ).toBeVisible();
+    await removal.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(workshopImage).toBeFocused();
+
+    await manager.getByRole('button', { name: 'Volumes', exact: true }).click();
+    await expect(
+      manager.getByRole('button', { name: 'Copy', exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      manager.getByRole('button', { name: 'More volume actions' }),
+    ).toHaveCount(0);
+    const workshopVolume = manager.getByRole('button', {
+      name: 'Volume actions for Workshop storage',
+      exact: true,
+    });
+    await expect(
+      manager.getByRole('row', {
+        name: /Workshop storage.*Detached/,
+      }),
+    ).toContainText('24 GiB');
+    await expect(manager.getByText('Backup of Workshop storage')).toBeVisible();
+    await expect(
+      manager.getByText('Restored from Workshop backup'),
+    ).toBeVisible();
+    const backupRow = manager.getByRole('row', {
+      name: /Workshop backup.*Immutable backup/,
+    });
+    await expect(backupRow).toContainText('Restore in Project Files');
+    await expect(
+      manager.getByText('Restore in Project Files', { exact: true }),
+    ).toHaveCount(1);
+    await expect(
+      manager.getByText(/Reuse compatible detached volumes/),
+    ).toHaveCount(0);
+    await captureSizes(page, info, backupRow, 'volume-action-context');
+    await expect(manager.getByText('detached-workshop-volume-id')).toHaveCount(
+      0,
+    );
+    await expect(
+      manager.getByRole('button', {
+        name: 'Volume actions for Build VM project',
+      }),
+    ).toHaveCount(0);
+    await actionMenu(
+      page,
+      manager,
+      'Volume actions for Workshop storage',
+      'Delete…',
+      hasTouch,
+    );
+    const deletion = page.getByRole('dialog', {
+      name: 'Delete project volume?',
+    });
+    await expect(deletion).toContainText(
+      'Permanently delete “Workshop storage”',
+    );
+    await deletion.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(workshopVolume).toBeFocused();
+
+    await manager
+      .getByRole('button', { name: 'Activity', exact: true })
+      .click();
+    const history = manager.getByRole('table');
+    await expect(
+      history.getByRole('row', {
+        name: /Back up volume.*Workshop backup.*Succeeded/,
+      }),
+    ).toBeVisible();
+    await expect(
+      history.getByRole('row', {
+        name: /Restore volume.*Recovered workshop.*Succeeded/,
+      }),
+    ).toBeVisible();
+    await expect(history.locator('summary')).toHaveCount(0);
+    await expect(history.getByText('Complete', { exact: true })).toHaveCount(0);
+    const failed = history.getByRole('row', {
+      name: /Start.*Build VM.*Failed/,
+    });
+    await expect(failed.getByText('Start', { exact: true })).toHaveCount(1);
+    await expect(failed).toContainText('The guest failed to boot.');
+    await expect(
+      history.getByText('Booting VM', { exact: true }),
+    ).toBeVisible();
+    await captureSizes(page, info, failed, 'activity-distinct-phases');
+    expect(state.writes).toEqual([]);
+  },
+);
 
 test('offline hosts keep inventory and image drafts while blocking changes', async ({
   page,
@@ -365,7 +641,7 @@ test('offline hosts keep inventory and image drafts while blocking changes', asy
     exact: true,
   });
   await row.click();
-  const start = manager.getByRole('button', { name: 'Start', exact: true });
+  const start = manager.getByRole('button', { name: 'Start VM', exact: true });
   await expect(start).toBeEnabled();
   await captureSizes(page, info, row, 'vm-selected-inventory');
   await manager.getByRole('button', { name: 'Images', exact: true }).click();
@@ -375,9 +651,9 @@ test('offline hosts keep inventory and image drafts while blocking changes', asy
   await manager.getByRole('button', { name: 'VMs', exact: true }).click();
 
   state.offline = true;
-  await refresh(manager);
+  await refreshMachines(page);
   await expect(manager.getByRole('alert')).toContainText(
-    'VM service unavailable.',
+    'Fixture host is offline.',
   );
   await expect(manager.getByRole('alert')).toContainText(
     'Showing the last known state',
@@ -390,12 +666,18 @@ test('offline hosts keep inventory and image drafts while blocking changes', asy
   await page.keyboard.press('Escape');
   await expect(
     manager.getByRole('button', { name: 'New VM', exact: true }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
+  await expect(
+    manager.locator('.machines-app > .machines-toolbar'),
+  ).toHaveCount(0);
+  await expect(
+    manager.getByRole('button', { name: 'VM Host', exact: true }),
+  ).toBeEnabled();
   await expect(
     manager.getByRole('button', { name: 'Inspect', exact: true }),
   ).toBeEnabled();
   await expect(
-    manager.getByRole('heading', { name: 'Create your first VM' }),
+    manager.getByRole('heading', { name: 'No VMs yet' }),
   ).toHaveCount(0);
 
   await manager.getByRole('button', { name: 'Images', exact: true }).click();
@@ -414,7 +696,9 @@ test('offline hosts keep inventory and image drafts while blocking changes', asy
   await page.keyboard.press('Escape');
 
   state.offline = false;
-  await refresh(manager);
+  await manager
+    .getByRole('button', { name: 'Retry connection', exact: true })
+    .click();
   await expect(manager.getByRole('alert')).toHaveCount(0);
   await expect(draft).toHaveValue('Offline image draft');
   await manager.getByRole('button', { name: 'VMs', exact: true }).click();
@@ -540,7 +824,7 @@ for (const resource of ['volume', 'image'] as const) {
         'deleting';
       await expect(
         manager.locator('tr').filter({ hasText: 'Current menu project' }),
-      ).toContainText('deleting');
+      ).toContainText('Deleting');
     } else {
       const original = state.machines[0];
       state.machines.push({
@@ -563,6 +847,191 @@ for (const resource of ['volume', 'image'] as const) {
   });
 }
 
+test(
+  'VM Host shows connection and slot usage for a launcher-managed service',
+  { tag: '@vm-ui' },
+  async ({ page }, info) => {
+    const state = fixture();
+    const profileSocket = '/run/profile-vm/control.sock';
+    const lockedReason = 'AXV_COMPUTE_SOCKET supplies this connection.';
+    state.environment = {
+      ...state.environment,
+      platform: 'linux',
+      configurationSource: 'environment',
+      runtime: {
+        state: 'ready',
+        mode: 'external',
+        readOnly: true,
+        hostId: state.info.hostId,
+        generation: 1,
+      },
+    };
+    state.check = {
+      configured: false,
+      configurationSource: 'environment',
+      lockedReason,
+    };
+    let releaseEnvironment!: () => void;
+    state.environmentGate = new Promise<void>((resolve) => {
+      releaseEnvironment = resolve;
+    });
+    const manager = page.getByRole('region', {
+      name: 'Virtual Machines',
+      exact: true,
+    });
+    const setup = manager.getByRole('region', { name: 'VM host', exact: true });
+    try {
+      await mockHost(page, state);
+      await page.reload();
+      await launch(page, 'machines');
+      await expect(
+        setup.getByRole('heading', { name: 'Connecting VM service' }),
+      ).toBeVisible();
+      await expect(
+        setup.getByText('/run/axv-host/control.sock', { exact: true }),
+      ).toHaveCount(0);
+      for (const name of ['Connect', 'Check connection', 'Edit connection'])
+        await expect(
+          setup.getByRole('button', { name, exact: true }),
+        ).toHaveCount(0);
+    } finally {
+      releaseEnvironment();
+    }
+    await expect(
+      manager.getByRole('button', { name: 'New VM', exact: true }),
+    ).toBeEnabled();
+    await expect(
+      manager.getByText('Capacity limits', { exact: true }),
+    ).toBeHidden();
+    await manager.getByRole('button', { name: 'VM Host', exact: true }).click();
+    const connected = setup.getByRole('heading', {
+      name: 'VM service connected',
+    });
+    await expect(connected).toBeVisible();
+    await expect(setup.getByText('8 GiB', { exact: true })).toBeVisible();
+    await expect(setup.getByText('100 GiB', { exact: true })).toBeVisible();
+    await expect(setup.getByText('2 of 8 used', { exact: true })).toBeVisible();
+    await expect(
+      setup.getByText('/run/axv-host/control.sock', { exact: true }),
+    ).toHaveCount(0);
+    for (const name of ['Connect', 'Check connection', 'Edit connection'])
+      await expect(
+        setup.getByRole('button', { name, exact: true }),
+      ).toHaveCount(0);
+    await captureSizes(page, info, connected, 'vm-launcher-connection');
+
+    state.check = {
+      ...state.check,
+      configured: true,
+      defaults: { socket: profileSocket },
+    };
+    await refreshMachines(page);
+    const diagnostics = setup.getByRole('button', { name: 'Diagnostics' });
+    await diagnostics.click();
+    const dialog = page.getByRole('dialog', { name: 'VM Diagnostics' });
+    await expect(dialog.getByText(lockedReason, { exact: true })).toBeVisible();
+    await expect(dialog.getByText(profileSocket, { exact: true })).toHaveCount(
+      0,
+    );
+    await dialog.getByText('Environment details', { exact: true }).click();
+    await expect(
+      dialog.locator('dt:text-is("VMs reserving CPU and memory") + dd'),
+    ).toHaveText('1');
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(diagnostics).toBeFocused();
+    expect(state.writes).toEqual([]);
+  },
+);
+
+test(
+  'Inspector shows one power state and the action for current guest readiness',
+  { tag: '@vm-ui' },
+  async ({ page }, info) => {
+    const state = fixture();
+    const manager = await host(page, state);
+    const tile = manager.getByRole('button', {
+      name: 'Build VM lima',
+      exact: true,
+    });
+    await expect(tile).toBeVisible();
+    const actions = manager.getByRole('group', { name: 'Selected VM actions' });
+    await expect(actions).toHaveCount(0);
+    await tile.click();
+    await expect(
+      actions.getByRole('button', { name: 'Start VM', exact: true }),
+    ).toBeEnabled();
+    await actions.getByRole('button', { name: 'Inspect', exact: true }).click();
+    const inspector = page.locator('[data-app-id="machine-inspector"]');
+    await expect(inspector).toHaveAttribute(
+      'aria-label',
+      'Build VM — Inspector',
+    );
+    await expect(
+      inspector.getByRole('heading', { name: 'Stopped', exact: true }),
+    ).toBeVisible();
+    await expect(inspector.getByText('Build VM', { exact: true })).toHaveCount(
+      0,
+    );
+    await expect(
+      inspector.getByText('Stopped', { exact: true }).filter({ visible: true }),
+    ).toHaveCount(1);
+    await expect(
+      inspector.getByText('Configuration', { exact: true }),
+    ).toHaveCount(1);
+    await expect(inspector.getByText('Provider', { exact: true })).toBeHidden();
+    await captureSizes(
+      page,
+      info,
+      inspector.getByRole('button', { name: 'Start VM', exact: true }),
+      'vm-inspector-stopped',
+    );
+
+    const id = await inspector.getAttribute('data-window-id');
+    const vm = state.machines[0]!;
+    vm.spec.name = 'Renamed VM';
+    vm.status = vm.desired = 'running';
+    const refresh = inspector.getByRole('button', {
+      name: 'Refresh',
+      exact: true,
+    });
+    await refresh.click();
+    await expect(inspector).toHaveAttribute(
+      'aria-label',
+      'Renamed VM — Inspector',
+    );
+    await expect(inspector).toHaveAttribute('data-window-id', id!);
+    await expect(
+      inspector.getByText('Waiting for the guest service.', { exact: true }),
+    ).toBeVisible();
+    await expect(
+      inspector.getByRole('button', { name: 'Open Terminal', exact: true }),
+    ).toHaveCount(0);
+    vm.ready = true;
+    vm.guestState = 'ready';
+    vm.guestCapabilities = ['terminals'];
+    await refresh.click();
+    const terminal = inspector.getByRole('button', {
+      name: 'Open Terminal',
+      exact: true,
+    });
+    await expect(terminal).toBeEnabled();
+    await expect(
+      inspector.getByText('Running', { exact: true }).filter({ visible: true }),
+    ).toHaveCount(1);
+    await expect(
+      inspector.getByText('Guest ready', { exact: false }),
+    ).toHaveCount(0);
+    await captureSizes(page, info, terminal, 'vm-inspector-ready');
+    await inspector.getByRole('button', { name: 'Stop', exact: true }).click();
+    const stop = page.getByRole('dialog', { name: 'Stop VM?' });
+    await expect(stop).toContainText(
+      'Guest sessions end. Project data remains on disk.',
+    );
+    await stop.getByRole('button', { name: 'Cancel', exact: true }).click();
+    expect(state.writes).toEqual([]);
+  },
+);
+
 test('current setup checks override retained inventory after host configuration is removed', async ({
   page,
 }) => {
@@ -576,12 +1045,10 @@ test('current setup checks override retained inventory after host configuration 
 
   state.environment.configured = false;
   state.info = { configured: false, reason: 'No host configured' };
-  await refresh(manager);
+  await refreshMachines(page);
   await expect(row).toBeVisible();
   await expect(manager.getByRole('alert')).toContainText('No host configured');
-  await manager
-    .getByRole('button', { name: 'Environment', exact: true })
-    .click();
+  await manager.getByRole('button', { name: 'VM Host', exact: true }).click();
   await expect(
     manager.getByRole('heading', { name: 'Enable virtual machines' }),
   ).toBeVisible();
@@ -618,7 +1085,7 @@ test('filtering a selected VM disables its actions without choosing another VM',
     }),
   ).toHaveCount(0);
   await expect(
-    manager.getByRole('button', { name: 'Start', exact: true }),
+    manager.getByRole('button', { name: 'Start VM', exact: true }),
   ).toBeEnabled();
   const search = manager.getByLabel('Search VMs', { exact: true });
   await search.fill('Task VM');
@@ -626,17 +1093,22 @@ test('filtering a selected VM disables its actions without choosing another VM',
   await expect(
     manager.getByRole('button', { name: 'Task VM lima', exact: true }),
   ).toHaveAttribute('aria-pressed', 'false');
-  for (const name of ['Start', 'Inspect', 'New Terminal', 'More VM actions']) {
+  for (const name of [
+    'Start VM',
+    'Inspect',
+    'Open Terminal',
+    'More VM actions',
+  ]) {
     await expect(
       manager.getByRole('button', { name, exact: true }),
-    ).toBeDisabled();
+    ).toHaveCount(0);
   }
   await search.fill('no matching VM');
   await expect(
     manager.getByRole('heading', { name: 'No VMs match your filters' }),
   ).toBeVisible();
   await expect(
-    manager.getByRole('heading', { name: 'Create your first VM' }),
+    manager.getByRole('heading', { name: 'No VMs yet' }),
   ).toHaveCount(0);
   await manager.getByRole('button', { name: 'Clear filters' }).click();
   await expect(row).toHaveAttribute('aria-pressed', 'true');
@@ -646,7 +1118,7 @@ test('filtering a selected VM disables its actions without choosing another VM',
   await expect(row).toHaveCount(0);
   await expect(
     manager.getByRole('button', { name: 'Inspect', exact: true }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   await manager
     .getByRole('combobox', { name: 'State', exact: true })
     .selectOption('all');
@@ -654,7 +1126,7 @@ test('filtering a selected VM disables its actions without choosing another VM',
   expect(state.writes).toEqual([]);
 });
 
-test('Environment and tabs preserve mounted volume and image drafts', async ({
+test('VM Host and tabs preserve mounted volume and image drafts', async ({
   page,
   hasTouch,
 }) => {
@@ -671,7 +1143,11 @@ test('Environment and tabs preserve mounted volume and image drafts', async ({
     exact: true,
   });
   const environment = manager.getByRole('button', {
-    name: 'Environment',
+    name: 'VM Host',
+    exact: true,
+  });
+  const hostStatus = manager.getByRole('heading', {
+    name: 'VM service connected',
     exact: true,
   });
   await press(manager.getByRole('button', { name: 'Volumes', exact: true }));
@@ -703,9 +1179,7 @@ test('Environment and tabs preserve mounted volume and image drafts', async ({
     buffer: Buffer.from('Not submitted; tests retained file selection only.'),
   });
   await press(environment);
-  await expect(
-    manager.getByRole('heading', { name: 'VM environment' }),
-  ).toBeVisible();
+  await expect(hostStatus).toBeVisible();
   await expect(image).toBeHidden();
   await expect(image).not.toBeFocused();
   await expect(image).toHaveCount(1);
@@ -720,11 +1194,9 @@ test('Environment and tabs preserve mounted volume and image drafts', async ({
   await expect(environment).toHaveAttribute('aria-pressed', 'false');
   await press(environment);
   await press(manager.getByRole('button', { name: 'Images', exact: true }));
+  await expect(hostStatus).toHaveCount(0);
   await expect(
-    manager.getByRole('heading', { name: 'VM environment' }),
-  ).toHaveCount(0);
-  await expect(
-    manager.getByRole('button', { name: 'Environment', exact: true }),
+    manager.getByRole('button', { name: 'VM Host', exact: true }),
   ).toHaveAttribute('aria-pressed', 'false');
   await expect(image).toHaveValue('Retained image draft');
   await expect(image).toHaveAttribute('data-mount-probe', 'image');
@@ -790,16 +1262,16 @@ test('an uncertain start can be resolved from the Inspector after inventory adva
     exact: true,
   });
   await row.click();
-  await manager.getByRole('button', { name: 'Start', exact: true }).click();
+  await manager.getByRole('button', { name: 'Start VM', exact: true }).click();
   await expect(
     manager.getByRole('button', { name: 'Retry Original Request' }),
   ).toBeVisible();
-  await refresh(manager);
+  await refreshMachines(page);
   await expect(
     manager.getByRole('button', { name: 'Build VM lima', exact: true }),
   ).toContainText('Running');
   await expect(
-    manager.getByRole('button', { name: 'Start', exact: true }),
+    manager.getByRole('button', { name: 'Start VM', exact: true }),
   ).toHaveCount(0);
   await expect(
     manager.getByRole('button', { name: 'Stop', exact: true }),
@@ -875,12 +1347,21 @@ test('an uncertain start can be resolved from the Inspector after inventory adva
     exact: true,
   });
   await expect(feedback).toContainText('Stop · Queued · Waiting for shutdown');
+  await expect(
+    manager.getByText('Stopping…', { exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    manager.getByRole('button', { name: 'Stop', exact: true }),
+  ).toHaveCount(0);
   await viewActivity.click();
   await expect(
     manager.getByRole('button', { name: 'Activity', exact: true }),
   ).toBeFocused();
   const selectedOperation = manager.locator('tr[data-selected="true"]');
-  await expect(selectedOperation).toContainText(stopOperation.id);
+  await expect(selectedOperation).toHaveAttribute(
+    'data-operation-id',
+    stopOperation.id,
+  );
   await expect(selectedOperation).toContainText(original.spec.name);
   await expect(selectedOperation).toContainText('Queued');
   await expect(viewActivity).toHaveCount(0);
@@ -891,7 +1372,7 @@ test('an uncertain start can be resolved from the Inspector after inventory adva
     phase: 'shutdown',
     error: 'Guest shutdown failed; the VM is still running.',
   };
-  await refresh(manager);
+  await refreshMachines(page);
   await expect(selectedOperation).toContainText('Failed');
   await expect(selectedOperation).toContainText(
     'Guest shutdown failed; the VM is still running.',
@@ -903,25 +1384,32 @@ test('an uncertain start can be resolved from the Inspector after inventory adva
   await captureSizes(page, info, feedback, 'activity-selected-operation');
   await manager.getByRole('button', { name: 'VMs', exact: true }).click();
   await expect(viewActivity).toBeVisible();
+  await expect(feedback).toContainText(
+    'Guest shutdown failed; the VM is still running.',
+  );
   await viewActivity.click();
   await expect(
     manager.getByRole('button', { name: 'Activity', exact: true }),
   ).toBeFocused();
-  await expect(selectedOperation).toContainText(stopOperation.id);
+  await expect(selectedOperation).toHaveAttribute(
+    'data-operation-id',
+    stopOperation.id,
+  );
   await expect(viewActivity).toHaveCount(0);
-  await manager
-    .getByRole('button', { name: 'Environment', exact: true })
-    .click();
+  await manager.getByRole('button', { name: 'VM Host', exact: true }).click();
   await expect(viewActivity).toBeVisible();
   await viewActivity.click();
   await expect(
-    manager.getByRole('button', { name: 'Environment', exact: true }),
+    manager.getByRole('button', { name: 'VM Host', exact: true }),
   ).toHaveAttribute('aria-pressed', 'false');
   await expect(
     manager.getByRole('button', { name: 'Activity', exact: true }),
   ).toBeFocused();
   await expect(selectedOperation).toBeVisible();
-  await expect(selectedOperation).toContainText(stopOperation.id);
+  await expect(selectedOperation).toHaveAttribute(
+    'data-operation-id',
+    stopOperation.id,
+  );
   await expect(viewActivity).toHaveCount(0);
   await feedback.getByRole('button', { name: 'Dismiss', exact: true }).click();
   await expect(feedback).toHaveCount(0);
@@ -929,6 +1417,185 @@ test('an uncertain start can be resolved from the Inspector after inventory adva
     'Guest shutdown failed; the VM is still running.',
   );
 });
+
+test(
+  'View Activity reveals the exact failure in a long history',
+  { tag: '@vm-ui' },
+  async ({ page, hasTouch }, info) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const state = fixture();
+    const failed: Operation = {
+      id: 'older-start-failure',
+      action: 'start',
+      machineId: state.machines[0]!.id,
+      status: 'failed',
+      error: 'The previous boot did not complete.',
+      createdAt: '2026-10-16T00:00:00Z',
+    };
+    state.operations = [
+      ...Array.from({ length: 36 }, (_, index): Operation => ({
+        id: `recent-stop-${index}`,
+        action: 'stop',
+        machineId: state.machines[1]!.id,
+        status: 'succeeded',
+        createdAt: '2026-10-16T00:01:00Z',
+      })),
+      failed,
+    ];
+    const manager = await host(page, state);
+    await manager.getByRole('button', { name: 'Build VM lima' }).click();
+    await manager.getByRole('button', { name: 'View Activity' }).click();
+
+    const history = manager.getByRole('table');
+    const row = history.getByRole('row', { name: /Start.*Build VM.*Failed/ });
+    const activity = manager.getByRole('button', {
+      name: 'Activity',
+      exact: true,
+    });
+    await expect(row).toHaveAttribute('aria-current', 'true');
+    await expect(row).toBeInViewport({ ratio: 0.9 });
+    await expect(activity).toBeFocused();
+    const path = info.outputPath('activity-failure-390.png');
+    await page.screenshot({ path });
+    await info.attach('activity-failure-390', {
+      path,
+      contentType: 'image/png',
+    });
+
+    const scrollport = manager.locator('.machines-scroll');
+    await scrollport.evaluate((element) => (element.scrollTop = 0));
+    state.operations[0]!.phase = 'observed-on-refresh';
+    await refreshMachines(page, hasTouch);
+    await expect(history.getByText('Observed on refresh')).toBeVisible();
+    await expect(row).not.toBeInViewport();
+
+    await manager.getByRole('button', { name: 'VMs', exact: true }).click();
+    await manager.getByRole('button', { name: 'Inspect', exact: true }).click();
+    const inspector = page.getByRole('region', {
+      name: 'Build VM — Inspector',
+    });
+    await inspector.getByRole('button', { name: 'View Activity' }).click();
+    await expect(row).toHaveAttribute('aria-current', 'true');
+    await expect(row).toBeInViewport({ ratio: 0.9 });
+    await expect(activity).toBeFocused();
+    expect(state.writes).toEqual([]);
+  },
+);
+
+test(
+  'VM actions and task expiry stay visible when selecting at the bottom of a long inventory',
+  { tag: '@vm-ui' },
+  async ({ page, hasTouch }, info) => {
+    await page.setViewportSize({ width: 320, height: 568 });
+    const state = fixture();
+    const regular = state.machines[0]!;
+    const expiry = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+    const stopped: Machine = {
+      ...regular,
+      id: 'vm-last-stopped',
+      spec: {
+        ...regular.spec,
+        name: 'Final stopped VM',
+        volumeId: 'volume-last-stopped',
+      },
+    };
+    state.volumes.push({
+      ...state.volumes[0]!,
+      id: stopped.spec.volumeId!,
+      name: 'Final stopped project',
+      machineId: stopped.id,
+    });
+    const task: Machine = {
+      ...regular,
+      id: 'vm-last-task',
+      spec: { ...regular.spec, name: 'Final task', kind: 'task' },
+      desired: 'running',
+      status: 'running',
+      ready: true,
+      guestState: 'ready',
+      guestCapabilities: ['terminals'],
+      expiresAt: expiry,
+    };
+    state.machines.push(
+      ...Array.from({ length: 10 }, (_, index) => ({
+        ...regular,
+        id: `vm-list-${index}`,
+        spec: { ...regular.spec, name: `Review VM ${index + 1}` },
+      })),
+      stopped,
+      task,
+    );
+    const manager = await host(page, state);
+    const actions = manager.getByRole('group', { name: 'Selected VM actions' });
+    const scrollport = manager.locator('.machines-scroll');
+    const stoppedTile = manager.getByRole('button', {
+      name: 'Final stopped VM lima',
+    });
+    await stoppedTile.click();
+    await expect(stoppedTile).toHaveAttribute('aria-pressed', 'true');
+    await expect
+      .poll(() => scrollport.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(100);
+    const start = actions.getByRole('button', {
+      name: 'Start VM',
+      exact: true,
+    });
+    await expect(start).toBeEnabled();
+    await expect(start).toBeInViewport();
+    await expect(actions.locator('time')).toHaveCount(0);
+
+    await manager.getByRole('button', { name: 'Final task lima' }).click();
+    await expect(
+      actions.getByRole('button', { name: 'Open Terminal' }),
+    ).toBeInViewport();
+    const deadline = actions.locator('time');
+    await expect(deadline).toHaveAttribute('datetime', expiry);
+    await expect(deadline).toBeInViewport();
+    const path = info.outputPath('vm-selection-and-task-320.png');
+    await page.screenshot({ path });
+    await info.attach('vm-selection-and-task-320', {
+      path,
+      contentType: 'image/png',
+    });
+
+    const longName =
+      'Final task for a shared project with a long workspace name';
+    task.spec.name = longName;
+    await refreshMachines(page, hasTouch);
+    await expect(actions.getByText(longName, { exact: true })).toHaveAttribute(
+      'title',
+      longName,
+    );
+    const layout = await actions
+      .locator('.machines-selection-identity')
+      .evaluate((row) => {
+        const name = row.querySelector('strong')!;
+        const nameBounds = name.getBoundingClientRect();
+        const timeBounds = row.querySelector('time')!.getBoundingClientRect();
+        return {
+          sameLine:
+            nameBounds.top < timeBounds.bottom &&
+            timeBounds.top < nameBounds.bottom,
+          nameTruncates: name.scrollWidth > name.clientWidth,
+          timeFits: timeBounds.right <= row.getBoundingClientRect().right + 1,
+        };
+      });
+    expect(layout).toEqual({
+      sameLine: true,
+      nameTruncates: true,
+      timeFits: true,
+    });
+    await expect(deadline).toBeInViewport();
+
+    await actions.getByRole('button', { name: 'Inspect', exact: true }).click();
+    await expect(
+      page
+        .getByRole('region', { name: `${longName} — Inspector` })
+        .locator('time'),
+    ).toHaveAttribute('datetime', expiry);
+    expect(state.writes).toEqual([]);
+  },
+);
 
 test('inspectors keep their original host when another host reuses the VM ID', async ({
   page,
@@ -1000,11 +1667,9 @@ test('inspectors keep their original host when another host reuses the VM ID', a
   await manager.getByRole('button', { name: 'Inspect', exact: true }).click();
   const inspectors = page.locator('[data-app-id="machine-inspector"]');
   await expect(inspectors).toHaveCount(2);
-  const replacement = inspectors.filter({
-    has: page.getByRole('heading', {
-      name: 'Replacement Task VM',
-      exact: true,
-    }),
+  const replacement = page.getByRole('region', {
+    name: 'Replacement Task VM — Inspector',
+    exact: true,
   });
   await expect(
     replacement.getByRole('button', { name: 'Retry Original Request' }),
@@ -1051,7 +1716,7 @@ test('legacy inspectors without a recorded host remain unavailable after restore
     restored.getByRole('heading', { name: 'VM identity unavailable' }),
   ).toBeVisible();
   await expect(
-    restored.getByRole('button', { name: 'Start', exact: true }),
+    restored.getByRole('button', { name: 'Start VM', exact: true }),
   ).toHaveCount(0);
   expect(state.writes).toEqual([]);
   expect(state.guestReads).toEqual([]);

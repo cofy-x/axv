@@ -52,7 +52,7 @@ Contribution, support, conduct and vulnerability-reporting paths are linked from
 
 Apply these reads only to affected boundaries:
 
-- UI and interaction changes: [Design](design.md), including [acceptance checks](design.md#acceptance-checks).
+- For UI and interaction changes, see [Design](design.md), including [interface copy](design.md#interface-copy) and [acceptance checks](design.md#acceptance-checks).
 - Service startup/lifecycle, deployment, environment or configuration changes: [Startup](startup.md).
 - HTTP, WebSocket or guest protocol changes: shared rules in the [API index](api/README.md) and the affected contract.
 - Product boundary changes: [Product direction](product.md). Existing implementation work does not require rereading unrelated goals.

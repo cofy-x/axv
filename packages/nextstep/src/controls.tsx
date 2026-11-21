@@ -529,7 +529,13 @@ export function WindowControlIcon({
       ) : icon === 'restore' ? (
         <path d="M6 6h7v7H6zM3 10V3h7v3" />
       ) : icon === 'overview' ? (
-        <path d="M5 11H2V2h9v4M2 4h9M5 6h9v8H5zM5 8.5h9" />
+        <path
+          fill="currentColor"
+          fillRule="evenodd"
+          stroke="none"
+          shapeRendering="crispEdges"
+          d="M1 1h10v4H9V3H3v6h2v2H1zM5 5h10v10H5zM7 7h6v1H7zM7 9h6v4H7z"
+        />
       ) : (
         <path d="m4 4 8 8M12 4l-8 8" />
       )}

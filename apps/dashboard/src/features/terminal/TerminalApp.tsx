@@ -55,10 +55,6 @@ export function TerminalApp({
       setFeedback,
     });
   const live = state.phase === 'connecting' || state.phase === 'connected';
-  const projectName =
-    projectPath?.split(/[\\/]/).filter(Boolean).at(-1) ||
-    projectPath ||
-    'No project directory selected.';
 
   useLayoutEffect(() => {
     interactiveRef.current = interactive && active;
@@ -325,9 +321,8 @@ export function TerminalApp({
             </dd>
           </dl>
           <p>
-            AXV documents are separate from the host filesystem. Closing this
-            window ends its shell and foreground jobs. New Session starts in the
-            initial directory, not a later shell directory.
+            Closing this window ends its shell and foreground jobs. New Session
+            starts in the initial directory, not a later shell directory.
           </p>
         </div>
       ),
@@ -393,7 +388,7 @@ export function TerminalApp({
       data-session-id={window.id}
       data-project-path={projectPath}
     >
-      <div className="app-toolbar terminal-toolbar">
+      <div className="app-toolbar terminal-toolbar shell-toolbar">
         <PixelIcon name="terminal" size={16} />
         <span className="toolbar-caption">Host shell</span>
         {!live && (
@@ -405,18 +400,22 @@ export function TerminalApp({
           disabled={!hasSelection}
           onClick={() => void copySelection()}
         />
-        <IconButton
-          icon="paste"
-          label="Paste"
-          disabled={state.phase !== 'connected'}
-          onClick={() => void pasteClipboard()}
-        />
-        <Button
-          disabled={state.phase !== 'connected'}
-          onClick={() => void interrupt()}
-        >
-          Interrupt
-        </Button>
+        {live && (
+          <>
+            <IconButton
+              icon="paste"
+              label="Paste"
+              disabled={state.phase !== 'connected'}
+              onClick={() => void pasteClipboard()}
+            />
+            <Button
+              disabled={state.phase !== 'connected'}
+              onClick={() => void interrupt()}
+            >
+              Interrupt
+            </Button>
+          </>
+        )}
         <IconButton
           icon="more"
           label="More terminal actions"
@@ -425,22 +424,12 @@ export function TerminalApp({
             event.currentTarget.focus({ preventScroll: true });
             const rect = event.currentTarget.getBoundingClientRect();
             desktop.contextMenu(
-              terminalSessionMenu(commands, window.id),
+              terminalSessionMenu(commands, window.id, { compact: true }),
               { x: rect.left, y: rect.bottom },
               { title: 'Session', ownerWindowId: window.id },
             );
           }}
         />
-      </div>
-      <div className="terminal-host-info terminal-project-info">
-        <span>Initial directory</span>
-        <strong
-          className="terminal-project-name"
-          data-testid="terminal-project-name"
-        >
-          {projectPath === undefined ? 'Home' : projectName}
-        </strong>
-        <Button onClick={() => void details()}>Details</Button>
       </div>
       {(state.message || feedback) && (
         <div

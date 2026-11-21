@@ -4,6 +4,7 @@ import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { useResource } from '../../shared/api/useResource';
 import { useDraftNamespace } from '../../shared/drafts/context';
 import { machinesApi } from '../machines/api';
+import { confirmVMAction } from '../machines/lifecycle';
 import { vmProjectsAPI } from './vm-api';
 import {
   projectBackups,
@@ -136,6 +137,12 @@ export function VMProjectBackups({
   );
   const disabled =
     !interactive || busy || !!pending || recoveryBlocked || !!inventory.error;
+  const stopTarget =
+    !disabled && !dirty && supportsCopy && machine?.status === 'running'
+      ? machine
+      : undefined;
+  const currentStopTarget = useRef(stopTarget);
+  currentStopTarget.current = stopTarget;
   const notice =
     recoveryBlocked || (pending && !pending.operationId && !busy)
       ? 'recovery'
@@ -286,6 +293,30 @@ export function VMProjectBackups({
     return submit({ ...value, hostId, projectId });
   }
 
+  async function stopVM() {
+    if (!stopTarget || !(await confirmVMAction(desktop, stopTarget, 'stop')))
+      return;
+    if (!mounted.current || !interactiveRef.current) return;
+    const current = currentStopTarget.current;
+    if (
+      current?.id !== stopTarget.id ||
+      current.hostId !== stopTarget.hostId ||
+      current.revision !== stopTarget.revision
+    ) {
+      setError('The VM changed. Review its current state before stopping it.');
+      return;
+    }
+    await action({
+      kind: 'stop',
+      machineId: stopTarget.id,
+      values: {
+        requestId: crypto.randomUUID(),
+        revision: stopTarget.revision,
+        action: 'stop',
+      },
+    });
+  }
+
   async function releaseRequest() {
     if (!interactive || busyRef.current) return;
     const reviewedRaw = retainedRaw.current;
@@ -411,27 +442,7 @@ export function VMProjectBackups({
           </div>
           <p>Whole-volume copy. Save drafts, finish tasks and stop the VM.</p>
           <div className="vm-project-backup-controls">
-            <Button
-              disabled={
-                disabled ||
-                !supportsCopy ||
-                !machine ||
-                machine.status !== 'running' ||
-                dirty
-              }
-              onClick={() =>
-                machine &&
-                void action({
-                  kind: 'stop',
-                  machineId: machine.id,
-                  values: {
-                    requestId: crypto.randomUUID(),
-                    revision: machine.revision,
-                    action: 'stop',
-                  },
-                })
-              }
-            >
+            <Button disabled={!stopTarget} onClick={() => void stopVM()}>
               Stop VM
             </Button>
             <Button

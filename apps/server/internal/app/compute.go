@@ -15,6 +15,7 @@ import (
 	"github.com/cofy-x/axv/apps/server/internal/compute"
 	computeclient "github.com/cofy-x/axv/apps/server/internal/compute/client"
 	computegateway "github.com/cofy-x/axv/apps/server/internal/compute/gateway"
+	"github.com/cofy-x/axv/apps/server/internal/compute/hostinstall"
 	"github.com/cofy-x/axv/apps/server/internal/compute/prepare"
 	"github.com/cofy-x/axv/apps/server/internal/jsonfile"
 	"github.com/cofy-x/axv/apps/server/internal/profile"
@@ -211,19 +212,33 @@ func (c *computeCoordinator) activate(ctx context.Context, activation *prepare.A
 	if previous.HostID != "" && previous.HostID != info.HostID {
 		return result, fmt.Errorf("the active VM host identity changed; existing views remain bound to their original host")
 	}
+	if err = c.bindHost(ctx, s, info); err != nil {
+		return result, err
+	}
+	c.publish("starting", s, nil, info)
+	if err = verifyCapabilities(ctx, s, info, ""); err != nil {
+		return result, err
+	}
+	c.publish("ready", s, nil, info)
+	return prepare.Binding{HostID: info.HostID, ProtocolVersion: info.ProtocolVersion, ConfigFingerprint: info.ConfigFingerprint}, nil
+}
+
+// bindHost is called with activation held. The caller verifies the new target
+// before publication, and owns any capability checks and runtime status.
+func (c *computeCoordinator) bindHost(ctx context.Context, s Settings, info compute.Runtime) error {
 	var record bindingRecord
 	path := filepath.Join(s.RunDir(), "compute-binding.json")
 	if readErr := jsonfile.Read(path, &record); readErr != nil && !os.IsNotExist(readErr) {
-		return result, readErr
+		return readErr
 	}
 	if record.Socket == s.Compute.Socket && record.Fingerprint == info.ConfigFingerprint && record.HostID != "" && record.HostID != info.HostID {
-		return result, fmt.Errorf("the configured VM host identity differs from the previously verified host")
+		return fmt.Errorf("the configured VM host identity differs from the previously verified host")
 	}
-	if err = ctx.Err(); err != nil {
-		return result, err
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	if err = jsonfile.Write(path, bindingRecord{Socket: s.Compute.Socket, HostID: info.HostID, Fingerprint: info.ConfigFingerprint}, 0600); err != nil {
-		return result, err
+	if err := jsonfile.Write(path, bindingRecord{Socket: s.Compute.Socket, HostID: info.HostID, Fingerprint: info.ConfigFingerprint}, 0600); err != nil {
+		return err
 	}
 	generation := c.gateway.Bind(s.Compute.Socket, info.HostID, info.ConfigFingerprint)
 	c.mu.Lock()
@@ -231,12 +246,7 @@ func (c *computeCoordinator) activate(ctx context.Context, activation *prepare.A
 	c.bound = &s
 	c.boundIdentity = info
 	c.mu.Unlock()
-	c.publish("starting", s, nil, info)
-	if err = verifyCapabilities(ctx, s, info); err != nil {
-		return result, err
-	}
-	c.publish("ready", s, nil, info)
-	return prepare.Binding{HostID: info.HostID, ProtocolVersion: info.ProtocolVersion, ConfigFingerprint: info.ConfigFingerprint}, nil
+	return nil
 }
 
 func (c *computeCoordinator) close() {
@@ -269,7 +279,7 @@ func occupiedHostSocket(socket string) bool {
 
 // Capability probes run once per activation/reconnection, never on the cheap
 // identity heartbeat. A recovered controller is not necessarily a usable provider.
-func verifyCapabilities(ctx context.Context, s Settings, identity compute.Runtime) error {
+func verifyCapabilities(ctx context.Context, s Settings, identity compute.Runtime, expectedImage string) error {
 	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
 	client, err := computeclient.Connect(ctx, s.Compute.Socket, computeclient.Binding{HostID: identity.HostID, ConfigFingerprint: identity.ConfigFingerprint})
@@ -296,12 +306,18 @@ func verifyCapabilities(ctx context.Context, s Settings, identity compute.Runtim
 	if len(available) == 0 {
 		return compute.Problem("provider_unavailable", "No VM provider is available. %s", reasons)
 	}
+	// A newly installed Firecracker service connects before its administrator
+	// registers the first guest image. VM creation still validates that image.
+	if expectedImage == "" && s.Compute.Mode == "external" && available["firecracker"] && len(info.Images) == 0 {
+		return nil
+	}
 	arch := info.HostArch
 	if arch == "" {
 		arch = runtime.GOARCH
 	}
 	for _, image := range info.Images {
-		if available[image.Provider] && image.Arch == arch && (image.Status == "ready" || image.Status == "configured") {
+		if (expectedImage == "" || image.ID == expectedImage) && available[image.Provider] &&
+			image.Arch == arch && (image.Status == "ready" || image.Status == "configured") {
 			return nil
 		}
 	}
@@ -335,18 +351,48 @@ func (c *computeCoordinator) checkConnection() {
 	ctx, cancel := context.WithTimeout(c.ctx, 3*time.Second)
 	info, err := HostStatus(ctx, *bound)
 	cancel()
-	if err == nil && (info.HostID != identity.HostID || info.ConfigFingerprint != identity.ConfigFingerprint) {
+	changed := err == nil && (info.HostID != identity.HostID || info.ConfigFingerprint != identity.ConfigFingerprint)
+	if (err != nil || changed) && bound.Compute.Mode == "external" {
+		if recorded, ok := hostinstall.ReadImageReload(bound.Compute.Socket, identity.HostID, identity.ConfigFingerprint); ok {
+			if err != nil && recorded.Pending(time.Now()) {
+				c.publish("starting", *bound, nil, compute.Runtime{})
+				return
+			}
+			if err == nil && c.followImageReload(*bound, info, recorded) {
+				return
+			}
+		}
+	}
+	if changed {
 		err = fmt.Errorf("the verified VM host identity changed")
 	}
 	if err != nil {
 		c.publish("failed", *bound, compute.Problem("host_unavailable", "The VM service connection is unavailable: %v", err), compute.Runtime{})
 		return
 	}
-	if status.Code == "host_unavailable" {
-		if err := verifyCapabilities(c.ctx, *bound, info); err != nil {
+	if status.Code == "host_unavailable" || status.State == "starting" {
+		if err := verifyCapabilities(c.ctx, *bound, info, ""); err != nil {
 			c.publish("failed", *bound, err, info)
 			return
 		}
 		c.publish("ready", *bound, nil, info)
 	}
+}
+
+// followImageReload updates only the previously approved external host. It
+// requires the verified catalog entry before advancing the gateway generation.
+func (c *computeCoordinator) followImageReload(s Settings, info compute.Runtime, recorded hostinstall.ImageReload) bool {
+	if info.HostID != recorded.HostID || info.ConfigFingerprint != recorded.Fingerprint {
+		return false
+	}
+	if err := verifyCapabilities(c.ctx, s, info, recorded.ImageID); err != nil {
+		c.publish("failed", s, err, compute.Runtime{})
+		return true
+	}
+	if err := c.bindHost(c.ctx, s, info); err != nil {
+		c.publish("failed", s, err, compute.Runtime{})
+		return true
+	}
+	c.publish("ready", s, nil, info)
+	return true
 }

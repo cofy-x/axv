@@ -1,4 +1,5 @@
 import { machinesApi } from './api';
+import { APIError } from '../../shared/api/http';
 import { SerialPoller } from '../../shared/api/serial-poller';
 import type { PollContext } from '../../shared/api/serial-poller';
 import type {
@@ -19,6 +20,7 @@ export interface ComputeSnapshot {
   images: ImageInfo[];
   loading: boolean;
   refreshing: boolean;
+  reloading?: boolean;
   error?: string;
   lastUpdated?: number;
 }
@@ -56,12 +58,16 @@ export class ComputeStore {
   constructor(private readonly api: ComputeAPI = machinesApi) {
     this.poller = new SerialPoller({
       timeoutMs: 15000,
-      intervalMs: 5000,
+      intervalMs: () => (this.snapshot.reloading ? 1000 : 5000),
       onStart: () => this.publish({ refreshing: true }),
       read: (context) => this.load(context),
       onError: (error) =>
         this.publish({
           error: error instanceof Error ? error.message : String(error),
+          reloading:
+            error instanceof APIError &&
+            (error.code === 'image_reload' ||
+              (error.code === 'binding_changed' && !!this.snapshot.reloading)),
         }),
       onSettled: () => this.publish({ loading: false, refreshing: false }),
     });
@@ -87,6 +93,33 @@ export class ComputeStore {
     if (!this.listeners.size) return;
     this.poller.refresh();
   };
+
+  receiveMachineOperation(machine: Machine, operation: Operation) {
+    const { info, machines, operations } = this.snapshot;
+    if (info?.hostId !== machine.hostId) return;
+    const observed = machines.find((item) => item.id === machine.id);
+    if (
+      operation.machineId !== machine.id ||
+      operations.some((item) => item.id === operation.id) ||
+      (observed && observed.revision > machine.revision)
+    ) {
+      this.refresh();
+      return;
+    }
+    // A read issued before acknowledgement must not hide the accepted work.
+    this.poller.stop();
+    this.probeNeeded = true;
+    this.publish({
+      machines:
+        operation.action === 'create' && !observed
+          ? [...machines, machine]
+          : machines,
+      operations: [operation, ...operations].sort(
+        (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
+      ),
+    });
+    if (this.listeners.size) this.poller.start();
+  }
 
   private publish(update: Partial<ComputeSnapshot>) {
     this.snapshot = { ...this.snapshot, ...update };
@@ -167,6 +200,7 @@ export class ComputeStore {
         info,
         ...inventory,
         error: undefined,
+        reloading: false,
         lastUpdated: Date.now(),
       });
   }

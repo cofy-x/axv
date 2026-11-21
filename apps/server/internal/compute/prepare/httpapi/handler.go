@@ -19,7 +19,7 @@ import (
 const prefix = "/api/compute/preparation/"
 
 type preparation interface {
-	Check(context.Context) (prepare.Check, error)
+	CheckWithLocalService(context.Context) (prepare.Check, error)
 	Plan(context.Context, prepare.Request) (prepare.Plan, error)
 	Start(context.Context, prepare.StartRequest) (prepare.Job, error)
 	Job(context.Context, string) (prepare.Job, error)
@@ -40,7 +40,7 @@ func New(service preparation, instanceID string) http.Handler {
 		switch {
 		case path == "check" && r.Method == http.MethodGet:
 			var check prepare.Check
-			check, err = service.Check(r.Context())
+			check, err = service.CheckWithLocalService(r.Context())
 			value = struct {
 				prepare.Check
 				InstanceID string `json:"instanceId"`

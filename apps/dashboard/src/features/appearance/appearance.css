@@ -1,22 +1,36 @@
 .settings-app > .app-pad {
   padding-block: 10px;
 }
-.settings-app > .app-pad > fieldset {
-  margin-block-start: 8px;
-  padding-block: 8px;
+
+.settings-app .preferences-section {
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  scroll-margin-block: 4px;
 }
-.settings-app > .app-pad > fieldset:first-child {
-  margin-block-start: 0;
+
+.settings-app .preferences-section + .preferences-section {
+  margin-block-start: 10px;
+  padding-block-start: 10px;
+  border-block-start: 1px solid var(--ns-mid);
 }
+
+.preferences-section h2 {
+  margin: 0 0 7px;
+  font-size: var(--ns-font-size-body);
+}
+
 .wallpaper-options {
   display: flex;
-  gap: 10px;
+  gap: 7px;
 }
 .wallpaper-swatch {
   flex: 1;
   min-width: 0;
-  border: 0;
-  padding: 2px;
+  border: 1px solid transparent;
+  padding: 3px;
   background: transparent;
   font: inherit;
   font-size: var(--ns-font-size-secondary);
@@ -32,34 +46,46 @@
     1px 1px #fff;
   margin-bottom: 5px;
 }
-.wallpaper-swatch.chosen {
-  box-shadow: 0 0 0 2px var(--ns-text);
+.wallpaper-swatch[aria-pressed='true'] {
+  border-color: var(--ns-text);
+  box-shadow: inset 1px 1px var(--ns-shadow);
 }
 .wallpaper-swatch:focus-visible {
-  outline-offset: 4px;
+  outline-offset: 2px;
 }
-.settings-app .ns-checkbox {
+
+.preferences-section .ns-checkbox {
+  min-height: var(--ns-control-height);
+}
+.preferences-section > .ns-checkbox {
   display: flex;
-  margin-bottom: 8px;
+  width: fit-content;
+  margin-block-start: 4px;
 }
-@media (max-width: 599px) {
-  .wallpaper-options {
-    gap: 7px;
-  }
-}
-.preferences-access-row {
+
+.preferences-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 4px 8px;
 }
-.preferences-access-row + .preferences-access-row {
+.preferences-row + .preferences-row {
   margin-top: 6px;
 }
-.preferences-access-row > span {
-  min-width: 0;
+.preferences-row > span {
   font-size: var(--ns-font-size-secondary);
 }
-.preferences-access-row > .ns-button {
+.preferences-row > h2 {
+  margin: 0;
+}
+.preferences-row > .ns-button {
   flex-shrink: 0;
+}
+
+.preferences-status:empty {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
 }

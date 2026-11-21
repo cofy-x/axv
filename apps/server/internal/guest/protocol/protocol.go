@@ -44,7 +44,8 @@ type TerminalRequest struct {
 }
 
 type Terminal struct {
-	ID     string `json:"id"`
-	BootID string `json:"bootId"`
-	Status string `json:"status"`
+	ID       string `json:"id"`
+	BootID   string `json:"bootId"`
+	Status   string `json:"status"`
+	Sequence uint64 `json:"sequence,omitempty"`
 }

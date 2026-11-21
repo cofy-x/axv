@@ -1,9 +1,14 @@
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
 import type { HostInfo, Machine, Operation, Volume } from './api';
 import { machinesApi } from './api';
+import { activeResourceOperation } from './form-state';
 import { isDefiniteOperationRejection } from './operation-requests';
 
 export type VMAction = 'start' | 'restart' | 'stop' | 'force-stop' | 'delete';
+
+export function activeVMOperation(machine: Machine, operations: Operation[]) {
+  return activeResourceOperation(operations, machine.id, machine.spec.volumeId);
+}
 
 export function machineActionReason(
   machine: Machine,
@@ -13,22 +18,7 @@ export function machineActionReason(
   provider?: NonNullable<HostInfo['providers']>[number],
 ): string | undefined {
   if (machine.status === 'deleted') return 'This VM has been deleted.';
-  const resources = [machine.id, machine.spec.volumeId].filter(
-    (id): id is string => !!id,
-  );
-  if (
-    operations.some(
-      (operation) =>
-        ['queued', 'running'].includes(operation.status) &&
-        resources.some(
-          (id) =>
-            operation.machineId === id ||
-            operation.volumeId === id ||
-            operation.resourceId === id ||
-            operation.locks?.includes(id),
-        ),
-    )
-  )
+  if (activeVMOperation(machine, operations))
     return 'Wait for the active VM or project-volume operation to finish.';
   if (
     ['queued', 'provisioning', 'starting', 'stopping', 'deleting'].includes(
@@ -49,6 +39,8 @@ export function machineActionReason(
   }
   if (action === 'start' && machine.status === 'running')
     return 'This VM is already running; guest readiness is separate.';
+  if (action === 'start' && machine.status === 'unknown')
+    return 'Confirm the VM is stopped before starting it.';
   if (action === 'restart' && machine.status !== 'running')
     return 'Start this VM before restarting it.';
   if (provider && !provider.available)
@@ -193,7 +185,7 @@ export async function confirmVMAction(
   const name = `“${machine.spec.name}”`;
   const message = {
     restart: `Restart ${name}? All live guest sessions will end. Project data remains on disk.`,
-    stop: `Stop ${name}? Guest sessions end. Project data remains on disk. If graceful shutdown fails, the VM state remains visible.`,
+    stop: `Stop ${name}? Guest sessions end. Project data remains on disk.`,
     'force-stop': `Power off ${name} immediately? Unsaved guest work may be lost and filesystems may require recovery.`,
     delete: `Delete ${name} and its root disk? ${machine.spec.retainVolume ? 'Its project volume will be retained.' : 'Its temporary project volume will also be deleted.'}`,
   }[action];

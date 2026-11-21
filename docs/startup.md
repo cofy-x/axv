@@ -51,7 +51,7 @@ Replacing the installed command or selecting a new archive directory on `PATH` d
 
 ### Browser installation
 
-The browser installation opens AXV in a standalone window using its existing online service. Install from the production desktop address you intend to keep: a stable loopback address on the deployment machine, or the enrolled [Tailscale HTTPS address](#remote-access) on another device. A Vite development address can change between launches. On a phone, `localhost` refers to that phone, not the AXV host.
+The browser installation opens AXV in a standalone window using its existing online service. Use the in-app browser installation guide from [Welcome](usage.md#desktop) when you need the supported browser steps. Install from the production desktop address you intend to keep, either a stable loopback address on the deployment machine or the enrolled [Tailscale HTTPS address](#remote-access) on another device. A Vite development address can change between launches. On a phone, `localhost` refers to that phone.
 
 - **Desktop Chrome or Edge:** Open AXV, then use the browser's install action in its address bar or menu. Browser engagement rules can delay an install suggestion; AXV does not depend on an automatic prompt.
 - **iPhone Safari through Tailscale:** Connect the phone with the authorized Tailscale account, open AXV's HTTPS address in Safari, then choose **Share → Add to Home Screen**. Keep **Open as Web App** enabled when that option appears.
@@ -83,7 +83,7 @@ Use the installed command from any directory:
 ```bash
 axv                      # start or reopen the background workstation in a browser
 axv init                 # create a starter config without starting services
-axv serve                # foreground desktop; VM service starts in the background
+axv serve                # run the desktop in the foreground
 axv daemon start         # explicit background start without opening a browser
 axv daemon status        # desktop identity and VM controller readiness
 axv daemon logs          # print recent service logs
@@ -461,27 +461,49 @@ Guest enhancements require preinstalled services from the [image build recipes](
 
 ## Linux privilege boundary
 
-Provision Firecracker as an administrator-managed system service on the same Linux computer where AXV runs, using the [host example](../config/examples/host-firecracker.json), [systemd unit](../config/examples/axv-host.service) and [guest image recipe](../images/guest). Replace digest placeholders and choose local paths, capacity, subnet and jail UID/GID ranges; the example cannot launch unchanged. Automatic Linux provisioning is not implemented.
+On Linux, the desktop connects to a separate VM service on the same computer. The default [systemd unit](../config/examples/axv-host.service) runs `/opt/axv/bin/axv host --config /etc/axv/host.json` and listens on `/run/axv-host/control.sock`.
 
-The host requires KVM, TUN, cgroup v2 with `cgroup.kill` and delegated `cpu`, `memory` and `pids` controllers, pinned Firecracker/jailer binaries, `ip`, `nft`, `cp`, `mkfs.ext4` and `resize2fs`. Enable IPv4 forwarding separately and choose a short host data path and non-overlapping guest subnet. Existing host firewalls must also authorize guest forwarding; [VM networking](vm-platform.md#host-firewall-integration) owns coexistence with Docker and other firewall managers.
+### Install and connect the service
 
-Set `firecracker.cgroupParent` to the service's delegated cgroup path relative to `/sys/fs/cgroup`, for example `system.slice/axv-host.service`. The example unit requires systemd 254 or newer: `Delegate=yes` delegates that subtree, and `DelegateSubgroup=controller` places the host process in its own leaf so VM resource controllers can be enabled beside it. AXV configures only its owned descendants inside that delegation. It does not enable controllers in global ancestor cgroups. Keep the unit name and configured parent stable while its VMs exist; `KillMode=process` preserves guests across controller restarts. Alternative supervisors must provide the equivalent writable, empty delegated parent and place the controller outside that parent or in a separate leaf.
+On a fresh Linux amd64 host, **Virtual Machines** shows an installation command using the absolute path to the running AXV executable. Follow the [desktop setup steps](usage.md#virtual-machines) to run it in Host Terminal. In another shell on the host, if `command -v axv` resolves to the same executable, use the following command.
 
-Start AXV with the intended desktop account on that computer, then open **Virtual Machines** to configure and check the service's local Unix socket or readable host configuration. A successful connection becomes available in the current desktop without a restart. Missing permissions or an unavailable service show diagnostics and a check-again action; AXV never starts or stops the administrator's system service. Running the desktop as root does not change Firecracker's independent service ownership or enable managed Firecracker hosting.
+```sh
+sudo "$(command -v axv)" host install-service
+```
 
-The equivalent CLI configuration is:
+The [installer](../apps/server/internal/compute/hostinstall) checks systemd 254 or newer, KVM, TUN, cgroup v2, IPv4 forwarding and the required host tools. It downloads and verifies the pinned Firecracker and jailer executables, [published AXV Guest and matching kernel](../apps/server/internal/compute/artifacts/firecracker.go). It installs AXV and the runtime under `/opt/axv/bin`, keeps the verified Guest archive and extracted disk in a versioned directory under `/opt/axv/images`, and registers the image in `/etc/axv/host.json` before starting `axv-host.service`. Leave room for the roughly 2 GiB image and the separate storage allocations of the VMs you create. The installer selects a private guest subnet clear of current routes, available jail identities and initial capacity limits. The default socket grants access to the invoking desktop account through its private primary group, or to root for a root desktop. If a shared group should control this VM host, an administrator can select it explicitly with `--socket-group NAME`. All members gain VM control.
 
-```bash
+To check this host first, append `--check` to the displayed command. This checks prerequisites and existing paths without downloading, installing or starting anything. The installer preserves existing manual installations. After an interrupted first installation, run the same command again to continue from its recorded files.
+
+When the installer reports the service is ready, return to **Virtual Machines** and choose **Connect** when AXV detects the service. Then choose **New VM** to use the installed image. Follow the [VM workflow](usage.md#virtual-machines) for custom paths and recovering the connection. For an installed but stopped service, the panel offers `sudo systemctl start axv-host.service`. Inspect failures with `systemctl status axv-host.service --no-pager`.
+
+If an earlier invocation of the installer created a running service with an empty catalog, use the command in **Virtual Machines → Set Up VM Image** or run the following with the current AXV executable on the host.
+
+```sh
+sudo "$(command -v axv)" host install-image
+```
+
+The command verifies the installed service, appends the default image registration while preserving other settings and reloads the service with the new catalog. The command copied by the desktop also requires the connected host ID. Virtual Machines rechecks the authorized update and refreshes its catalog as described in [VM usage](usage.md#virtual-machines). For additional or custom images, follow [Linux Guest bundle installation](#linux-guest-bundle-installation).
+
+To connect the current AXV profile from a shell, run:
+
+```sh
 axv setup --socket /run/axv-host/control.sock
 ```
 
-Alternatively, `setup --host-config /etc/axv/host.json` reads a host configuration and saves its local Unix socket. The desktop needs existing socket access.
+Alternatively, `axv setup --host-config /etc/axv/host.json` reads a regular configuration file of at most 1 MiB and saves its local Unix socket. The desktop account needs access to the socket, and must be able to read the configuration file when using that option.
+
+### Custom Linux service
+
+For other architectures, custom paths or an existing administrator-managed service, use the [host configuration example](../config/examples/host-firecracker.json) and the [systemd unit](../config/examples/axv-host.service) with compatible Firecracker and jailer binaries. Choose local paths, capacity, an unused subnet, a socket group and dedicated jail identities for that host. The service needs KVM, TUN, cgroup v2 with `cgroup.kill` and delegated `cpu`, `memory` and `pids` controllers, plus `ip`, `nft`, `cp`, `mkfs.ext4` and `resize2fs`. Enable IPv4 forwarding and allow guest egress in the applicable host firewalls. See [VM networking](vm-platform.md#host-firewall-integration) for coexistence with Docker and other firewall managers.
+
+Set `firecracker.cgroupParent` to the service's delegated path relative to `/sys/fs/cgroup`, for example `system.slice/axv-host.service`. The example unit uses `Delegate=yes` and `DelegateSubgroup=controller` to place the controller process in its own leaf. Keep the unit name and configured parent stable while VMs exist. `KillMode=process` preserves guests across controller restarts. Alternative supervisors must provide the equivalent writable, empty delegated parent and place the controller outside that parent or in a separate leaf. In **Virtual Machines**, use **Edit connection** to choose the custom socket or readable configuration file.
 
 ### Linux Guest bundle installation
 
 Choose Guest bundles from [Releases](https://github.com/cofy-x/axv/releases) by provider, architecture and required capabilities. Application and Guest releases have independent versions; use the Guest's release notes for its tested application, kernel and runtime combination. The recipe below retains a known accepted baseline so its exact files and compatibility remain reproducible.
 
-The baseline uses [AXV Guest 0.1.0-guest.2](https://github.com/cofy-x/axv/releases/tag/v0.1.0-guest.2), a **Linux amd64 / Firecracker** prerelease for this manual administrator-configured path. It was accepted with the separately published [AXV v0.1.0-rc.5 application](https://github.com/cofy-x/axv/releases/tag/v0.1.0-rc.5); the Guest uses its own `v0.1.0-guest.2` tag. Installation downloads the complete bundle archive, `candidate.json` and `SHA256SUMS`. The bundle already includes the raw disk, manifest and original distribution materials. The separately published raw disk is optional for this installation path; the release also provides a [matching source companion](https://github.com/cofy-x/axv/releases/download/v0.1.0-guest.2/axv_guest_0.1.0-guest.2_sources.tar.gz) and its [source checksums](https://github.com/cofy-x/axv/releases/download/v0.1.0-guest.2/SOURCE-SHA256SUMS). Kernel and Firecracker/jailer executables are separately administered prerequisites; [native acceptance inputs](development.md#linux-firecracker) describe the pinned combination and checks. Publication does not add automatic Linux provisioning or change the macOS image default.
+The baseline uses [AXV Guest 0.1.0-guest.2](https://github.com/cofy-x/axv/releases/tag/v0.1.0-guest.2), a **Linux amd64 / Firecracker** prerelease for this manual administrator-configured path. It was accepted with the separately published [AXV v0.1.0-rc.5 application](https://github.com/cofy-x/axv/releases/tag/v0.1.0-rc.5); the Guest uses its own `v0.1.0-guest.2` tag. Installation downloads the complete bundle archive, `candidate.json` and `SHA256SUMS`. The bundle already includes the raw disk, manifest and original distribution materials. The separately published raw disk is optional for this installation path; the release also provides a [matching source companion](https://github.com/cofy-x/axv/releases/download/v0.1.0-guest.2/axv_guest_0.1.0-guest.2_sources.tar.gz) and its [source checksums](https://github.com/cofy-x/axv/releases/download/v0.1.0-guest.2/SOURCE-SHA256SUMS). The Guest bundle contains neither the kernel nor the runtime. The Linux host installer supplies the pinned Firecracker/jailer runtime. Use the [matching kernel and digest](development.md#linux-firecracker) for this baseline.
 
 Review the selected release's [build-provenance requirements and historical limits](releasing.md#verify-build-provenance). For an attested Guest, download its original `provenance.json` and verify the archive, `candidate.json` and `SHA256SUMS` before extraction; verify the standalone raw disk too when using it. The commands below reproduce the pinned baseline.
 
@@ -525,9 +547,9 @@ jq -Rse --arg checksum "$axv_guest_rootfs_sha256  ${axv_guest_name}.ext4" \
   SHA256SUMS
 ```
 
-Preserve the original downloads and the entire extracted bundle, including `distribution/`. The disk must stay raw ext4 at the configured path: the host does not extract a compressed disk or reconstruct split files. Upload size and native acceptance are [release gates](releasing.md#vm-image-publication), rather than consequences of adding a download URL to a catalog. Automatic catalog image selection currently serves Lima; Linux `setup` connects an existing administrator-owned host service.
+Preserve the original downloads and the entire extracted bundle, including `distribution/`. The VM service uses the extracted raw ext4 disk at the configured path. Upload size and native acceptance are [release gates](releasing.md#vm-image-publication). Linux `setup` connects to an existing administrator-owned service. The [default installer](#install-and-connect-the-service) prepares the pinned release, while this procedure selects and registers a specific bundle manually.
 
-For a new host, copy the complete verified `bundle/` into a new versioned administrator-owned image directory, for example `/opt/axv/images/<guest-version>/`; provide the reviewed kernel at its own path. Verify the copied bundle checksums and kernel digest again. Keep prior images and all existing VM storage. In a copy of the [host example](../config/examples/host-firecracker.json), select the runtime paths/version, service cgroup parent, socket group, capacity, unused subnet and jail UID/GID range for this computer. Replace its image entry with the exact bundle values:
+Copy the complete verified `bundle/` into a new versioned administrator-owned image directory, for example `/opt/axv/images/<guest-version>/`; provide the reviewed kernel at its own path. Verify the copied bundle checksums and kernel digest again. Keep prior images and all existing VM storage. In the installed service configuration (by default `/etc/axv/host.json`), append an entry to `images` using the exact bundle values below. Retain the generated runtime settings, ownership, capacity, socket, data directory and other image entries. The [host example](../config/examples/host-firecracker.json) shows the image fields.
 
 | Host image field | Source |
 | --- | --- |
@@ -538,7 +560,9 @@ For a new host, copy the complete verified `bundle/` into a new versioned admini
 
 The example's placeholders are intentionally unusable. Its sample capabilities do not grant support: the host intersects the configured contract with the running guest's health. Confirm the configured root-disk allocation has room for the intended workload; the 2047 MiB base is expanded to the VM's requested allocation during creation.
 
-Install the reviewed application executable, host configuration and [systemd unit](../config/examples/axv-host.service) using the paths chosen above. The unit's `ExecStart` must select the verified application's absolute path; a desktop account's command search path is not used. For the unchanged example paths on a new host, an administrator can use:
+On an already installed service, restart the controller to load the updated image catalog. For the default systemd unit, run `sudo systemctl restart axv-host.service`. Reconnect the desktop profile to the same host using `axv setup --socket /run/axv-host/control.sock` and confirm its reviewed plan. This verifies the new configuration fingerprint.
+
+For a **new manual installation** with the example paths, prepare a reviewed configuration with the chosen host settings and image entry. Install the application executable, configuration and unit with the paths below. The unit's `ExecStart` selects the verified application's absolute path.
 
 ```sh
 sudo install -d -m 0755 /opt/axv/bin /etc/axv
@@ -549,7 +573,7 @@ sudo systemctl daemon-reload
 sudo systemctl start axv-host.service
 ```
 
-This provisions a new administrator service; it is not an update procedure for a live host. Preserve the configured service name and delegated cgroup parent while its VMs exist. For fresh-profile acceptance, choose a new absolute `AXV_HOME` and keep it set for every desktop and CLI invocation. As the intended desktop account with existing socket permission, run `axv setup --socket /run/axv-host/control.sock`, then `axv vm images`. Explicitly select the configured manifest ID with `axv vm create dev --image <manifest-id>` and inspect the resulting VM's `guestState`, `ready` and confirmed capabilities. Follow [VM project files](#vm-project-files) and [persistent tasks](#vm-project-tasks) only when their capabilities are confirmed. Installation alone does not establish native acceptance; maintainers must complete the exact-candidate [Linux checks](development.md#linux-firecracker) before publication.
+For fresh-profile acceptance, choose a new absolute `AXV_HOME` and keep it set for every desktop and CLI invocation. As the intended desktop account with existing socket permission, connect the profile and run `axv vm images`. Explicitly select the configured manifest ID with `axv vm create dev --image <manifest-id>` and inspect the resulting VM's `guestState`, `ready` and confirmed capabilities. Follow [VM project files](#vm-project-files) and [persistent tasks](#vm-project-tasks) only when their capabilities are confirmed. Installation alone does not establish native acceptance; maintainers must complete the exact-candidate [Linux checks](development.md#linux-firecracker) before publication.
 
 ## Configuration and storage
 
