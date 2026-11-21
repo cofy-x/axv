@@ -621,19 +621,10 @@ test(
     const manager = await host(page, state);
     const choose = (control: Locator) =>
       hasTouch ? control.tap() : control.click();
-    await expect(
-      manager.getByText('Linux · arm64', { exact: true }),
-    ).toBeVisible();
-    await expect(
-      manager.getByRole('heading', { name: 'Connect VM service', exact: true }),
-    ).toBeInViewport();
-    await expect(
-      manager.getByRole('heading', {
-        name: 'Check the VM service',
-        exact: true,
-      }),
-    ).toBeVisible();
-    await expect(manager.getByText(socket, { exact: true })).toBeVisible();
+    const heading = manager.getByRole('heading', { level: 2 });
+    await expect(heading).toHaveText('Check the VM service');
+    await expect(heading).toBeInViewport();
+    await expect(manager.getByText(socket, { exact: true })).toHaveCount(0);
     await expect(
       manager.getByRole('list', { name: 'Setup steps', exact: true }),
     ).toHaveCount(0);
@@ -694,6 +685,9 @@ test(
     await expect(
       diagnosticDialog.locator('.ns-dialog-main > .ns-pixel-icon'),
     ).toHaveCount(0);
+    await expect(
+      diagnosticDialog.getByText(socket, { exact: true }),
+    ).toBeVisible();
     await expect(diagnosticDialog).toContainText('/test/axv/config.json');
     await expect(diagnosticDialog).toContainText('/test/axv/logs/daemon.log');
     const copyDiagnostics = diagnosticDialog.getByRole('button', {
@@ -831,7 +825,10 @@ test(
 test(
   'Linux VM setup guides the host owner from the detected unit state back to the connection check',
   { tag: '@vm-ui' },
-  async ({ page, hasTouch }) => {
+  async ({ page, hasTouch }, info) => {
+    await page.setViewportSize(
+      hasTouch ? { width: 390, height: 844 } : { width: 1180, height: 820 },
+    );
     const state = fixture('linux');
     state.executablePath = "/test/AXV's build!/one\\two/axv";
     const socket = '/run/axv-host/control.sock';
@@ -890,11 +887,15 @@ test(
     const setupGuide = manager.getByRole('link', {
       name: 'Linux VM setup guide',
     });
+    const checkConnection = manager.getByRole('button', {
+      name: 'Check connection',
+      exact: true,
+    });
     const inputs = () =>
       terminalInputs.map((input) => Buffer.concat(input).toString());
 
     const installInstruction =
-      'Install Firecracker and the default Guest image, then start axv-host.service.';
+      'The command installs Firecracker and the default Guest image, then starts axv-host.service.';
 
     async function openCleanShell(button: Locator) {
       const previousInputs = inputs();
@@ -963,6 +964,19 @@ test(
     await expect(start).toHaveCount(0);
     await expect(manager).toContainText(installInstruction);
     await expect(status).toHaveCount(0);
+    await expect(manager.getByRole('heading', { level: 2 })).toHaveText(
+      'Install the VM service',
+    );
+    await expect(manager.getByText(socket, { exact: true })).toHaveCount(0);
+    await expect(checkConnection).toBeInViewport({ ratio: 1 });
+    await expect(copy).toBeInViewport({ ratio: 1 });
+    const connectionActions = manager.locator('.machines-connection-actions');
+    const [actionsBox, buttonBox] = await Promise.all([
+      connectionActions.boundingBox(),
+      checkConnection.boundingBox(),
+    ]);
+    expect(buttonBox!.y - actionsBox!.y).toBeGreaterThanOrEqual(8);
+    await capture(page, info, 'preparation-linux-install');
     await choose(copy);
     await expect(clipboard).toHaveAttribute(
       'data-vm-clipboard',
@@ -1040,10 +1054,6 @@ test(
     );
     await activate(page, manager, hasTouch);
     expect(state.writes).toHaveLength(0);
-    const checkConnection = manager.getByRole('button', {
-      name: 'Check connection',
-      exact: true,
-    });
     state.blocked = true;
     await choose(checkConnection);
     await expect(manager.getByText(/default socket is missing/)).toBeVisible();

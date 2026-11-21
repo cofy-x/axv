@@ -77,9 +77,19 @@ function installationStep(arch: string, executablePath?: string) {
   return {
     title,
     instruction:
-      'Install Firecracker and the default Guest image, then start axv-host.service.',
+      'The command installs Firecracker and the default Guest image, then starts axv-host.service.',
     command,
   };
+}
+
+export function getHostServiceGuidance(
+  state: HostUnitState | undefined,
+  arch: string,
+  executablePath?: string,
+) {
+  return state === 'not_installed'
+    ? installationStep(arch, executablePath)
+    : guidance[state ?? 'unknown'];
 }
 
 export function HostCommand({
@@ -148,23 +158,16 @@ export function HostCommand({
 }
 
 export function HostServiceGuidance({
-  state,
-  arch,
-  executablePath,
+  instruction,
+  command,
   desktop,
 }: {
-  state?: HostUnitState;
-  arch: string;
-  executablePath?: string;
+  instruction: string;
+  command?: string;
   desktop: DesktopAPI;
 }) {
-  const { title, instruction, command } =
-    state === 'not_installed'
-      ? installationStep(arch, executablePath)
-      : guidance[state ?? 'unknown'];
   return (
     <div className="machines-host-guidance">
-      <h3>{title}</h3>
       <p>{instruction}</p>
       {command ? (
         <HostCommand key={command} command={command} desktop={desktop} />

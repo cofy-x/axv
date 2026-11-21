@@ -15,7 +15,10 @@ import { operationError } from './operation-requests';
 import { humanize, linuxVMSetupGuide } from './presentation';
 import type { useCompute } from './useCompute';
 import { openMachineDiagnostics } from './MachineDiagnostics';
-import { HostServiceGuidance } from './HostServiceGuidance';
+import {
+  getHostServiceGuidance,
+  HostServiceGuidance,
+} from './HostServiceGuidance';
 
 const serviceStatusLabel = {
   missing: 'Firecracker service not found',
@@ -162,7 +165,10 @@ export function MachineEnvironment({
   );
   const detectedAfterMissingCheck =
     serviceFailure?.code === 'missing' && serviceCheck?.status === 'ready';
-  const showHostGuidance =
+  const hostGuidance =
+    check &&
+    linuxSetup &&
+    !showJob &&
     !connectionEdits &&
     !directConnect &&
     !preparation.connectionError &&
@@ -171,9 +177,15 @@ export function MachineEnvironment({
     connectionPath === defaultFirecrackerSocket &&
     (connectionPlan
       ? serviceFailure?.code === 'missing'
-      : serviceCheck?.status === 'missing' || !!serviceCheck?.systemdState);
+      : serviceCheck?.status === 'missing' || !!serviceCheck?.systemdState)
+      ? getHostServiceGuidance(
+          serviceCheck?.systemdState,
+          check.arch,
+          data.error ? undefined : environment?.executablePath,
+        )
+      : undefined;
   const remainingFailures =
-    showHostGuidance || detectedAfterMissingCheck
+    hostGuidance || detectedAfterMissingCheck
       ? connectionFailures.filter((check) => check !== serviceFailure)
       : connectionFailures;
   const simpleConnect =
@@ -396,13 +408,17 @@ export function MachineEnvironment({
     ));
 
   return (
-    <section className="machines-environment" aria-label="VM host">
+    <section
+      className="machines-environment"
+      aria-label="VM host"
+      data-linux-setup={linuxSetup && !showJob}
+    >
       <header
         className="machines-section-heading machines-host-heading"
         data-connected={showHostOverview}
       >
         <div>
-          {!launcherConnection && !simpleConnect && !ready && (
+          {!launcherConnection && !linuxSetup && !ready && (
             <span className="machines-eyebrow">
               {platform === 'darwin'
                 ? 'macOS'
@@ -413,7 +429,7 @@ export function MachineEnvironment({
             </span>
           )}
           <h2 ref={heading} tabIndex={-1}>
-            {title}
+            {hostGuidance?.title ?? title}
           </h2>
         </div>
         {(!check || !linuxSetup || showJob) && (
@@ -627,7 +643,7 @@ export function MachineEnvironment({
             </>
           ) : linuxSetup ? (
             <form
-              className="machines-form"
+              className="machines-form machines-linux-setup"
               onSubmit={(event) => {
                 event.preventDefault();
                 if (preparation.connectionError) {
@@ -637,95 +653,90 @@ export function MachineEnvironment({
                 void (canConnect ? start() : review(directConnect));
               }}
             >
-              {showHostGuidance && (
+              {hostGuidance && (
                 <HostServiceGuidance
-                  state={serviceCheck?.systemdState}
-                  arch={check.arch}
-                  executablePath={
-                    data.error ? undefined : environment?.executablePath
-                  }
+                  instruction={hostGuidance.instruction}
+                  command={hostGuidance.command}
                   desktop={desktop}
                 />
               )}
-              {!simpleConnect && (
-                <div className="machines-environment-facts">
-                  {connectionEdits ? (
-                    <div className="machines-connection-fields">
-                      <Select
-                        label="Read connection from"
-                        value={connectionEdits.connection}
+              {!simpleConnect &&
+                !hostGuidance &&
+                (connectionEdits ? (
+                  <div className="machines-connection-fields">
+                    <Select
+                      label="Read connection from"
+                      value={connectionEdits.connection}
+                      disabled={busy || reviewing}
+                      autoFocus
+                      onChange={(event) =>
+                        setConnectionEdits({
+                          ...connectionEdits,
+                          connection:
+                            event.target.value === 'socket'
+                              ? 'socket'
+                              : 'configuration',
+                        })
+                      }
+                    >
+                      <option value="socket">Local Unix socket</option>
+                      <option value="configuration">
+                        Local configuration file
+                      </option>
+                    </Select>
+                    {connectionEdits.connection === 'socket' ? (
+                      <Field
+                        label="Local service socket"
+                        value={connectionEdits.socket}
+                        required
+                        spellCheck={false}
                         disabled={busy || reviewing}
-                        autoFocus
                         onChange={(event) =>
                           setConnectionEdits({
                             ...connectionEdits,
-                            connection:
-                              event.target.value === 'socket'
-                                ? 'socket'
-                                : 'configuration',
+                            socket: event.target.value,
                           })
                         }
-                      >
-                        <option value="socket">Local Unix socket</option>
-                        <option value="configuration">
-                          Local configuration file
-                        </option>
-                      </Select>
-                      {connectionEdits.connection === 'socket' ? (
-                        <Field
-                          label="Local service socket"
-                          value={connectionEdits.socket}
-                          required
-                          spellCheck={false}
-                          disabled={busy || reviewing}
-                          onChange={(event) =>
-                            setConnectionEdits({
-                              ...connectionEdits,
-                              socket: event.target.value,
-                            })
-                          }
-                        />
-                      ) : (
-                        <Field
-                          label="Local service configuration"
-                          value={connectionEdits.hostConfig}
-                          required
-                          spellCheck={false}
-                          disabled={busy || reviewing}
-                          onChange={(event) =>
-                            setConnectionEdits({
-                              ...connectionEdits,
-                              hostConfig: event.target.value,
-                            })
-                          }
-                        />
-                      )}
-                    </div>
-                  ) : (
-                    <dl className="info-list machines-details">
-                      <dt>
-                        {socketConnection ? 'Socket' : 'Host configuration'}
-                      </dt>
-                      <dd>
-                        <code>{connectionPath}</code>
-                      </dd>
-                      {!socketConnection && connectionPlan?.request.socket && (
-                        <>
-                          <dt>Resolved socket</dt>
-                          <dd>
-                            <code>{connectionPlan.request.socket}</code>
-                          </dd>
-                        </>
-                      )}
-                    </dl>
-                  )}
-                </div>
-              )}
+                      />
+                    ) : (
+                      <Field
+                        label="Local service configuration"
+                        value={connectionEdits.hostConfig}
+                        required
+                        spellCheck={false}
+                        disabled={busy || reviewing}
+                        onChange={(event) =>
+                          setConnectionEdits({
+                            ...connectionEdits,
+                            hostConfig: event.target.value,
+                          })
+                        }
+                      />
+                    )}
+                  </div>
+                ) : (
+                  <dl className="info-list machines-details">
+                    <dt>
+                      {socketConnection ? 'Socket' : 'Host configuration'}
+                    </dt>
+                    <dd>
+                      <code>{connectionPath}</code>
+                    </dd>
+                    {!socketConnection && connectionPlan?.request.socket && (
+                      <>
+                        <dt>Resolved socket</dt>
+                        <dd>
+                          <code>{connectionPlan.request.socket}</code>
+                        </dd>
+                      </>
+                    )}
+                  </dl>
+                ))}
               {!simpleConnect &&
                 !connectionEdits &&
                 (connectionPlan && !connectionPlan.canStart ? (
                   <div role="status">
-                    {showHostGuidance && (
+                    {hostGuidance && (
                       <p>Connection checked. The default socket is missing.</p>
                     )}
                     {remainingFailures.map((check) => (
@@ -745,7 +756,7 @@ export function MachineEnvironment({
               {!simpleConnect &&
                 !connectionEdits &&
                 serviceCheck &&
-                (showHostGuidance
+                (hostGuidance
                   ? serviceCheck.status === 'permission_denied'
                   : !connectionPlan) && (
                   <div role="status">
@@ -753,7 +764,7 @@ export function MachineEnvironment({
                     <p className="machines-form-help">{serviceCheck.detail}</p>
                   </div>
                 )}
-              {!showHostGuidance &&
+              {!hostGuidance &&
                 !connectionEdits &&
                 !canConnect &&
                 serviceCheck?.status !== 'ready' && (
@@ -768,10 +779,10 @@ export function MachineEnvironment({
                   </p>
                 )}
               {draftError && <p className="machines-warning">{draftError}</p>}
-              <div className="machines-form-actions">
+              <div className="machines-form-actions machines-connection-actions">
                 <Button
                   type="submit"
-                  primary={!showHostGuidance}
+                  primary={!hostGuidance}
                   disabled={
                     busy ||
                     reviewing ||
