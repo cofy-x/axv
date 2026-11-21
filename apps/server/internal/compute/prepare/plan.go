@@ -120,13 +120,23 @@ func (e *Engine) Plan(ctx context.Context, request Request) (Plan, error) {
 		p.Actions = append(p.Actions, "Preserve the selected local VM service configuration and all existing VM storage.", "Save this profile's reference to that configuration and verify the local service.")
 	} else if e.platform == "linux" {
 		p.Provider = "firecracker"
-		p.Request.Socket, err = e.localServiceSocket(r)
+		p.Request.Socket, err = localServiceSocket(r)
 		if err != nil {
 			p.Checks = append(p.Checks, blocked("local_service", "Local Firecracker service", err.Error()))
 		} else {
 			binding, probeErr := probeLocalService(ctx, p.Request.Socket, true)
 			if probeErr != nil {
-				p.Checks = append(p.Checks, blocked("local_service", "Local Firecracker service", probeErr.Error()))
+				diagnostic := localServiceFailure(p.Request.Socket, probeErr)
+				label := "Firecracker service unavailable"
+				switch diagnostic.Status {
+				case localServiceMissing:
+					label = "Firecracker service not found"
+				case localServicePermission:
+					label = "Socket access denied"
+				}
+				check := blocked("local_service", label, diagnostic.Detail)
+				check.Code = diagnostic.Status
+				p.Checks = append(p.Checks, check)
 			} else {
 				spec.ExpectedHostID = binding.HostID
 				p.Checks = append(p.Checks, ready("local_service", "Local Firecracker service", "The service on this computer has a compatible identity, protocol and available Firecracker provider."))
@@ -418,7 +428,7 @@ func checkOwnedOrEmpty(path, owner string) error {
 	return owneddir.Check(path, owner)
 }
 
-func (e *Engine) localServiceSocket(r Request) (string, error) {
+func localServiceSocket(r Request) (string, error) {
 	if r.Socket != "" && r.HostConfig != "" {
 		return "", fmt.Errorf("choose a local socket or a host configuration file")
 	}

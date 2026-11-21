@@ -1,8 +1,27 @@
 import type { Machine, Operation, Volume } from './api';
+import type { VMAction } from './lifecycle';
+import { isProjectBackup } from './volume-policy';
+
+export const linuxVMSetupGuide =
+  'https://github.com/cofy-x/axv/blob/main/docs/startup.md#linux-privilege-boundary';
 
 export function humanize(value: string) {
   const words = value.replaceAll('-', ' ');
   return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+export function operationLabel(operation: Operation, volumes: Volume[]) {
+  if (operation.action === 'copy-volume') {
+    const volume = volumes.find((item) => item.id === operation.volumeId);
+    if (volume?.restoredFrom) return 'Restore volume';
+    if (volume && isProjectBackup(volume)) return 'Back up volume';
+  }
+  return humanize(operation.action);
+}
+
+export function operationPhase({ action, phase }: Operation) {
+  if (!phase || phase === 'complete' || phase === action) return;
+  return humanize(phase).replace(/\bvm\b/gi, 'VM');
 }
 
 export function operationTarget(
@@ -20,17 +39,55 @@ export function operationTarget(
   );
 }
 
-export function machineGuidance(
+const actionProgress: Partial<Record<string, string>> = {
+  create: 'Creating…',
+  start: 'Starting…',
+  restart: 'Restarting…',
+  stop: 'Stopping…',
+  'force-stop': 'Stopping…',
+  delete: 'Deleting…',
+  configure: 'Updating configuration…',
+};
+
+export function machineTransition(
   machine: Machine,
-  operations: Operation[],
+  operation?: Operation,
+  sending?: VMAction,
 ): string | undefined {
-  const operation = operations.find(
-    (op) =>
-      (op.machineId === machine.id || op.locks?.includes(machine.id)) &&
-      (op.status === 'queued' || op.status === 'running'),
-  );
+  if (sending) return actionProgress[sending];
   if (operation)
-    return `${humanize(operation.action)} is ${operation.status}${operation.phase ? ` · ${humanize(operation.phase)}` : ''}. Open Activity for progress.`;
+    return (
+      (operation.machineId === machine.id &&
+        actionProgress[operation.action]) ||
+      'Updating VM storage…'
+    );
+  switch (machine.status) {
+    case 'queued':
+    case 'provisioning':
+      return 'Preparing VM…';
+    case 'starting':
+      return 'Starting…';
+    case 'stopping':
+      return 'Stopping…';
+    case 'deleting':
+      return 'Deleting…';
+  }
+}
+
+export function latestVMFailure(machine: Machine, operations: Operation[]) {
+  const latest = operations.find(
+    (op) =>
+      op.machineId === machine.id &&
+      ['create', 'start', 'restart', 'stop', 'force-stop', 'delete'].includes(
+        op.action,
+      ),
+  );
+  return latest?.status === 'failed' ? latest : undefined;
+}
+
+export function machineGuidance(machine: Machine): string | undefined {
+  if (machine.status === 'unknown')
+    return 'Power state is unconfirmed. Stop the VM before trying to start it again.';
   if (machine.pendingSpec)
     return 'Configuration change pending. Review or retry the change.';
   if (!machine.spec.volumeId)
@@ -40,7 +97,7 @@ export function machineGuidance(
   if (machine.status === 'running' && machine.guestState === 'incompatible')
     return 'Guest protocol incompatible. Guest enhancements require a compatible AXV image.';
   if (machine.status === 'running' && !machine.ready)
-    return 'Guest not ready. Terminals require a guest connection.';
+    return machine.guestReason || 'Waiting for the guest service.';
   if (machine.ready && !machine.guestCapabilities?.includes('terminals'))
     return 'Guest terminals are unavailable in this image.';
   return machine.reason || undefined;

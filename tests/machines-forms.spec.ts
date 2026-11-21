@@ -1,5 +1,6 @@
 import { preparationCheckFixture } from './machines-preparation-fixture';
 import { creationDefaultsFixture } from './machines-creation-fixture';
+import { refreshMachines } from './machines-helpers';
 import type { Page, Route } from '@playwright/test';
 import type {
   HostInfo,
@@ -264,140 +265,234 @@ test('removing the selected creation image requires a new explicit choice', asyn
   await expect(image).toHaveValue('linux-one');
   await image.selectOption('linux-two');
   state.images = state.images.filter((item) => item.id !== 'linux-two');
+  await create.getByText('Advanced', { exact: true }).click();
   await create.getByRole('button', { name: 'Check Host', exact: true }).click();
   await expect(
     create.getByText(
-      'The selected image is no longer available. Choose an image explicitly.',
+      'The selected image is no longer available. Choose another image.',
       { exact: true },
     ),
   ).toBeVisible();
   await expect(image).toHaveValue('linux-two');
   await expect(
-    create.getByRole('button', { name: 'Create', exact: true }),
+    create.getByRole('button', { name: 'Create & Start', exact: true }),
   ).toBeDisabled();
   expect(state.mutations).toHaveLength(0);
   await image.selectOption('linux-one');
   await expect(
-    create.getByRole('button', { name: 'Create', exact: true }),
+    create.getByRole('button', { name: 'Create & Start', exact: true }),
   ).toBeEnabled();
 });
 
-test('creation shares host defaults and preserves drafts while validating name claims', async ({
-  page,
-}, info) => {
-  const state = fixture();
-  state.defaults.spec.resources.cpus = 3;
-  state.defaults.spec.resources.memoryMiB = 2048;
-  state.images[0].minRootGiB = 12;
-  state.machines[0].pendingSpec = {
-    ...state.machines[0].spec,
-    name: 'Reserved name',
-  };
-  const manager = await host(page, state, async (route) => {
-    await route.fulfill({
-      status: 409,
-      json: {
-        code: 'name_conflict',
-        error: 'Another VM claimed this name before the request was accepted.',
-      },
+test(
+  'creation shares host defaults and preserves drafts while validating name claims',
+  { tag: '@vm-ui' },
+  async ({ page }, info) => {
+    const state = fixture();
+    state.defaults.spec.resources.cpus = 3;
+    state.defaults.spec.resources.memoryMiB = 2048;
+    state.images[0].minRootGiB = 12;
+    state.machines[0].pendingSpec = {
+      ...state.machines[0].spec,
+      name: 'Reserved name',
+    };
+    const manager = await host(page, state, async (route) => {
+      await route.fulfill({
+        status: 409,
+        json: {
+          code: 'name_conflict',
+          error:
+            'Another VM claimed this name before the request was accepted.',
+        },
+      });
     });
-  });
-  await manager.getByRole('button', { name: 'New VM', exact: true }).click();
-  const create = page.locator('[data-app-id="machine-create"]');
-  const name = create.getByLabel('Name', { exact: true });
-  const submit = create.getByRole('button', { name: 'Create', exact: true });
-  await expect(name).toHaveValue('my-vm');
-  await expect(create.getByLabel('CPUs', { exact: true })).toHaveValue('3');
-  await expect(create.getByLabel('Memory (MiB)', { exact: true })).toHaveValue(
-    '2048',
-  );
-  await expect(
-    create.getByLabel('Root disk (GiB)', { exact: true }),
-  ).toHaveValue('12');
-  await expect(create.getByLabel('Start after creation')).toBeChecked();
-  for (const claimed of [
-    ' Form VM ',
-    'Reserved name',
-    `vm-${'a'.repeat(32)}`,
-  ]) {
-    await name.fill(claimed);
-    await expect(submit).toBeDisabled();
-  }
-  await name.fill('form vm');
-  await expect(submit).toBeEnabled();
-  state.defaults.spec.name = 'A later host default';
-  state.defaults.spec.resources.cpus = 6;
-  await create.getByRole('button', { name: 'Check Host', exact: true }).click();
-  await expect(name).toHaveValue('form vm');
-  await expect(create.getByLabel('CPUs', { exact: true })).toHaveValue('3');
-  await name.fill('  My own VM  ');
-  await submit.click();
-  await expect(create.getByRole('alert')).toContainText('Another VM claimed');
-  expect(state.mutations).toHaveLength(1);
-  expect(state.mutations[0].body.spec.name).toBe('My own VM');
-  expect(state.mutations[0].body.spec.resources).toEqual({
-    cpus: 3,
-    memoryMiB: 2048,
-    diskGiB: 12,
-  });
-  expect(state.mutations[0].body).toMatchObject({ start: true });
-  for (const width of [1440, 390]) {
-    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
-    await create.getByRole('alert').scrollIntoViewIfNeeded();
-    await expect(create.getByRole('alert')).toBeVisible();
-    await expect(submit).toBeVisible();
-    const path = info.outputPath(`creation-name-conflict-${width}.png`);
-    await page.screenshot({ path });
-    await info.attach(`creation-name-conflict-${width}`, {
-      path,
+    await manager.getByRole('button', { name: 'New VM', exact: true }).click();
+    const create = page.locator('[data-app-id="machine-create"]');
+    const name = create.getByLabel('Name', { exact: true });
+    const submit = create.getByRole('button', {
+      name: 'Create & Start',
+      exact: true,
+    });
+    const stopped = create.getByRole('button', {
+      name: 'Create stopped',
+      exact: true,
+    });
+    const advanced = create.getByText('Advanced', { exact: true });
+    await expect(name).toHaveValue('my-vm');
+    await expect(create.getByLabel('CPUs', { exact: true })).toBeHidden();
+    await page.setViewportSize({ width: 320, height: 568 });
+    await expect(submit).toBeInViewport({ ratio: 1 });
+    await expect(stopped).toBeInViewport({ ratio: 1 });
+    const compact = info.outputPath('new-vm-default-320.png');
+    await page.screenshot({ path: compact });
+    await info.attach('new-vm-default-320', {
+      path: compact,
       contentType: 'image/png',
     });
-  }
-});
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await advanced.click();
+    const vmType = create.getByRole('combobox', {
+      name: 'VM type',
+      exact: true,
+    });
+    await expect(vmType).toHaveValue('development');
+    await expect(vmType).toHaveCount(1);
+    await expect(
+      create.getByRole('group', { name: 'VM type', exact: true }),
+    ).toHaveCount(0);
+    await expect(create.getByText(/even while running/)).toHaveCount(0);
+    await vmType.selectOption('task');
+    await expect(
+      create.getByLabel('Auto-delete after (minutes)'),
+    ).toBeVisible();
+    await advanced.click();
+    await expect(create.getByText(/even while running/)).toBeVisible();
+    await advanced.click();
+    await vmType.selectOption('development');
+    await expect(create.getByLabel('CPUs', { exact: true })).toHaveValue('3');
+    await expect(
+      create.getByLabel('Memory (MiB)', { exact: true }),
+    ).toHaveValue('2048');
+    await expect(
+      create.getByLabel('Root disk (GiB)', { exact: true }),
+    ).toHaveValue('12');
+    for (const claimed of [
+      ' Form VM ',
+      'Reserved name',
+      `vm-${'a'.repeat(32)}`,
+    ]) {
+      await name.fill(claimed);
+      await expect(submit).toBeDisabled();
+    }
+    await name.fill('form vm');
+    await expect(submit).toBeEnabled();
+    state.defaults.spec.name = 'A later host default';
+    state.defaults.spec.resources.cpus = 6;
+    await create
+      .getByRole('button', { name: 'Check Host', exact: true })
+      .click();
+    await expect(name).toHaveValue('form vm');
+    await expect(create.getByLabel('CPUs', { exact: true })).toHaveValue('3');
+    await name.fill('  My own VM  ');
+    await submit.click();
+    await expect(create.getByRole('alert')).toContainText('Another VM claimed');
+    expect(state.mutations).toHaveLength(1);
+    expect(state.mutations[0].body.spec.name).toBe('My own VM');
+    expect(state.mutations[0].body.spec.resources).toEqual({
+      cpus: 3,
+      memoryMiB: 2048,
+      diskGiB: 12,
+    });
+    expect(state.mutations[0].body).toMatchObject({ start: true });
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+      await create.getByRole('alert').scrollIntoViewIfNeeded();
+      await expect(create.getByRole('alert')).toBeVisible();
+      await expect(submit).toBeVisible();
+      const path = info.outputPath(`creation-name-conflict-${width}.png`);
+      await page.screenshot({ path });
+      await info.attach(`creation-name-conflict-${width}`, {
+        path,
+        contentType: 'image/png',
+      });
+    }
+  },
+);
 
-test('removing the chosen attachment target never selects another VM', async ({
-  page,
-}) => {
-  const state = fixture();
-  state.machines[0].spec.volumeId = undefined;
-  state.volumes[0].machineId = undefined;
-  state.machines.push({
-    ...structuredClone(state.machines[0]),
-    id: 'vm-second-target',
-    spec: { ...state.machines[0].spec, name: 'Other VM' },
-  });
-  const manager = await host(page, state);
-  await manager.getByRole('button', { name: 'Volumes', exact: true }).click();
-  await manager
-    .getByRole('button', { name: 'Form project', exact: true })
-    .click();
-  const target = manager.getByRole('combobox', {
-    name: 'VM without a project volume',
-    exact: true,
-  });
-  const attach = manager.getByRole('button', {
-    name: 'Attach',
-    exact: true,
-  });
-  await expect(target).toHaveValue('');
-  await expect(attach).toBeDisabled();
-  await target.selectOption('vm-form-review');
-  await expect(attach).toBeEnabled();
-  state.machines = state.machines.filter(
-    (machine) => machine.id !== 'vm-form-review',
-  );
-  await manager.getByRole('button', { name: 'Refresh', exact: true }).click();
-  await expect(target).toHaveValue('vm-form-review');
-  await expect(
-    manager.getByText('The selected VM is no longer eligible.', {
-      exact: false,
-    }),
-  ).toBeVisible();
-  await expect(attach).toBeDisabled();
-  expect(state.mutations).toHaveLength(0);
-  await target.selectOption('vm-second-target');
-  await expect(attach).toBeEnabled();
-});
+test(
+  'volume attachment stays by its row and preserves the reviewed target',
+  { tag: '@vm-ui' },
+  async ({ page, hasTouch }, info) => {
+    await page.setViewportSize({ width: 320, height: 568 });
+    const state = fixture();
+    state.machines[0].spec.volumeId = undefined;
+    const volume = state.volumes[0]!;
+    volume.machineId = undefined;
+    state.volumes.unshift(
+      ...Array.from({ length: 12 }, (_, index) => ({
+        ...volume,
+        id: `volume-list-${index}`,
+        name: `Project volume ${index + 1}`,
+      })),
+    );
+    state.machines.push({
+      ...structuredClone(state.machines[0]),
+      id: 'vm-second-target',
+      spec: { ...state.machines[0].spec, name: 'Other VM' },
+    });
+    const manager = await host(page, state, async (route, path) => {
+      expect(path).toBe(`/volumes/${volume.id}/actions`);
+      const body = route.request().postDataJSON();
+      expect(body).toMatchObject({
+        action: 'attach',
+        machineId: 'vm-second-target',
+        machineRevision: 1,
+        revision: 1,
+      });
+      volume.machineId = 'vm-second-target';
+      state.machines[0]!.spec.volumeId = volume.id;
+      const operation: Operation = {
+        id: 'attach-reviewed-volume',
+        action: 'attach-volume',
+        machineId: 'vm-second-target',
+        volumeId: volume.id,
+        status: 'succeeded',
+        createdAt: new Date().toISOString(),
+      };
+      state.operations.push(operation);
+      await route.fulfill({ status: 202, json: { volume, operation } });
+    });
+    await manager.getByRole('button', { name: 'Volumes', exact: true }).click();
+    await manager
+      .getByRole('button', { name: 'Form project', exact: true })
+      .click();
+    const openAttachment = manager.getByRole('button', {
+      name: 'Attach Form project',
+      exact: true,
+    });
+    await expect(openAttachment).toBeInViewport();
+    await openAttachment.click();
+    const target = manager.getByRole('combobox', {
+      name: 'VM without a project volume',
+      exact: true,
+    });
+    const attach = manager.getByRole('button', {
+      name: 'Attach',
+      exact: true,
+    });
+    await expect(target).toHaveValue('');
+    await expect(target).toBeFocused();
+    await expect(attach).toBeDisabled();
+    await target.selectOption('vm-form-review');
+    await expect(attach).toBeEnabled();
+    state.machines = state.machines.filter(
+      (machine) => machine.id !== 'vm-form-review',
+    );
+    await refreshMachines(page, hasTouch);
+    await expect(target).toHaveValue('vm-form-review');
+    await expect(
+      manager.getByText('The selected VM is no longer eligible.', {
+        exact: false,
+      }),
+    ).toBeVisible();
+    await expect(attach).toBeDisabled();
+    expect(state.mutations).toHaveLength(0);
+    await target.selectOption('vm-second-target');
+    await expect(attach).toBeEnabled();
+    await expect(attach).toBeInViewport();
+    const shot = info.outputPath('volume-attachment-320.png');
+    await page.screenshot({ path: shot });
+    await info.attach('volume-attachment-320', {
+      path: shot,
+      contentType: 'image/png',
+    });
+    await attach.click();
+    await expect(
+      manager.getByRole('row').filter({ hasText: 'Form project' }).first(),
+    ).toContainText('Other VM');
+    expect(state.mutations).toHaveLength(1);
+  },
+);
 
 test('creation retries retain their host and survive a reconnect to that same host', async ({
   page,
@@ -419,14 +514,18 @@ test('creation retries retain their host and survive a reconnect to that same ho
   const create = page.locator('[data-window-id="machine-create:main"]');
   const name = create.getByLabel('Name', { exact: true });
   await name.fill('Preserved draft VM');
-  await create.getByRole('button', { name: 'Create', exact: true }).click();
+  await create
+    .getByRole('button', { name: 'Create stopped', exact: true })
+    .click();
   const retry = create.getByRole('button', { name: 'Retry Original' });
   await expect(retry).toBeEnabled();
+  await create.getByText('Advanced', { exact: true }).click();
   state.generation++;
   await create.getByRole('button', { name: 'Check Host' }).click();
   await expect(retry).toBeEnabled();
   await retry.click();
   await expect.poll(() => state.mutations.length).toBe(2);
+  expect(state.mutations[0].body).toMatchObject({ start: false });
   expect(state.mutations[1].body).toEqual(state.mutations[0].body);
   expect(headers.map((header) => header['x-axv-host-id'])).toEqual([
     'host-form-review',
@@ -569,12 +668,7 @@ for (const resource of ['volume', 'image'] as const) {
         ...machine,
         hostId: id,
       }));
-      const refresh = manager.getByRole('button', {
-        name: 'Refresh',
-        exact: true,
-      });
-      await expect(refresh).toBeEnabled();
-      await refresh.click();
+      await refreshMachines(page);
     };
     await changeHost('replacement-host');
     await expect(
@@ -620,7 +714,10 @@ for (const resource of ['volume', 'image'] as const) {
       .getByRole('table')
       .locator('tr[data-selected="true"]');
     await expect(selectedOperation).toBeVisible();
-    await expect(selectedOperation).toContainText(operation.id);
+    await expect(selectedOperation).toHaveAttribute(
+      'data-operation-id',
+      operation.id,
+    );
     await expect(selectedOperation).toContainText(
       resource === 'volume' ? 'Preserved resource draft' : resourceId,
     );

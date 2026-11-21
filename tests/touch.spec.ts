@@ -1,6 +1,7 @@
 import { captureWorkArea, expectRect } from './work-area-helpers';
 import {
   encoded,
+  expectShellToolbar,
   marker,
   openTerminal,
   output,
@@ -269,7 +270,14 @@ test('touch Terminal supports input, explicit controls and workspace restoration
     process.platform === 'win32',
     'These commands use POSIX shell syntax.',
   );
+  await page.setViewportSize({ width: 320, height: 568 });
   const terminal = await openTerminal(page, true);
+  await expectShellToolbar(terminal, 'Host shell', [
+    'Copy',
+    'Paste',
+    'Interrupt',
+    'More terminal actions',
+  ]);
   const input = terminal.getByLabel('Host terminal input');
   await terminal.getByTestId('terminal-screen').tap();
   await expect(input).toBeFocused();
@@ -290,6 +298,11 @@ test('touch Terminal supports input, explicit controls and workspace restoration
     'data-state',
     'ended',
   );
+  await expectShellToolbar(terminal, 'Host shell', [
+    'Copy',
+    'New Session',
+    'More terminal actions',
+  ]);
   await terminal
     .getByRole('button', { name: 'New Session', exact: true })
     .tap();
@@ -301,7 +314,7 @@ test('touch Terminal supports input, explicit controls and workspace restoration
   await expect(
     terminal.getByRole('button', { name: /^Close / }),
   ).toBeInViewport();
-  const path = info.outputPath('390x844-touch-terminal.png');
+  const path = info.outputPath('320x568-touch-terminal.png');
   await page.screenshot({ path, fullPage: true });
   await info.attach('touch-terminal', { path, contentType: 'image/png' });
   await terminal.getByRole('button', { name: /^Close / }).tap();

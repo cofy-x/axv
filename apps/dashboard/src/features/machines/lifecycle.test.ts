@@ -343,6 +343,16 @@ describe('VM lifecycle availability', () => {
     ).toBeUndefined();
   });
 
+  it('allows shutdown to resolve an unconfirmed power state before starting', () => {
+    const unknown = { ...stopped, status: 'unknown' };
+    expect(
+      machineActionReason(unknown, 'start', [], [volume], provider),
+    ).toContain('Confirm the VM is stopped');
+    expect(
+      machineActionReason(unknown, 'stop', [], [volume], provider),
+    ).toBeUndefined();
+  });
+
   it('requires a ready attached project volume, resolved configuration, and an active task lease', () => {
     expect(machineActionReason(stopped, 'start', [], [volume])).toBeUndefined();
     for (const volumes of [

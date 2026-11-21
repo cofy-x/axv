@@ -55,7 +55,7 @@ export function createMachinesMenu(
       label: 'Selected VM',
       items: [
         selected('Inspect', 'inspect'),
-        selected('New Terminal', 'terminal'),
+        selected('Open Terminal', 'terminal'),
         { separator: true },
         selected('Start', 'start'),
         selected('Stop', 'stop'),
@@ -83,7 +83,7 @@ export function createMachinesMenu(
         })),
         { separator: true },
         {
-          label: 'Environment',
+          label: 'VM Host',
           checked: environment,
           action: () =>
             desktop.updateWindowState(window.id, {

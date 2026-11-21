@@ -7,7 +7,9 @@ import { nameError, resourceBusy } from './form-state';
 import { OperationFeedback, RequestDetails } from './OperationFeedback';
 import { computeStore } from './compute-store';
 import { OperationRequest, operationError } from './operation-requests';
+import { humanize, linuxVMSetupGuide } from './presentation';
 import type { useCompute } from './useCompute';
+import { HostCommand } from './HostServiceGuidance';
 
 type ImageInput = { binding: ComputeBinding } & (
   | { kind: 'import'; spec: ImageImport; file?: File }
@@ -27,10 +29,12 @@ export function ImageManager({
   data,
   desktop,
   onShowActivity,
+  defaultSetupCommand,
 }: {
   data: ReturnType<typeof useCompute>;
   desktop: DesktopAPI;
   onShowActivity?: (id: string) => void;
+  defaultSetupCommand?: string;
 }) {
   const [selectedId, setSelected] = useState('');
   const [selectedHost, setSelectedHost] = useState('');
@@ -85,26 +89,32 @@ export function ImageManager({
       : undefined;
   const hostArch = data.info?.hostArch || data.info?.images?.[0]?.arch || '';
   const arch = editing ? editingArch : hostArch;
-  const available = data.info?.providers?.some(
+  const providers = data.info?.providers || [];
+  const available = providers.some(
     (provider) => provider.available && provider.images,
   );
-  const active = selected && resourceBusy(data.operations, selected.id);
-  const usedBy = data.machines.filter(
-    (machine) =>
-      selectedHost === hostId &&
-      machine.status !== 'deleted' &&
-      machine.spec.imageId === selectedId,
-  );
+  const administratorImages =
+    providers.some((provider) => provider.provider === 'firecracker') &&
+    !providers.some((provider) => provider.images);
+  const defaultImageId = data.preparation.check?.defaultImageId;
+  const showImageMenu = !!selected && selected.id !== defaultImageId;
+  const imageUsers = (image: ImageInfo) =>
+    data.machines.filter(
+      (machine) =>
+        machine.status !== 'deleted' && machine.spec.imageId === image.id,
+    );
+  const usedBy = selected ? imageUsers(selected) : [];
   const locked = busy || !!requests.pending;
   const canVersion =
     !locked && !editing && !data.error && !!available && !!selected;
-  const canRemove =
+  const canRemoveImage = (image: ImageInfo, hasUsers: boolean) =>
     !locked &&
     !editing &&
     !data.error &&
-    !!selected &&
-    !active &&
-    !usedBy.length;
+    !resourceBusy(data.operations, image.id) &&
+    image.id !== defaultImageId &&
+    !hasUsers;
+  const canRemove = !!selected && canRemoveImage(selected, !!usedBy.length);
   const validation =
     (editing && editingHost !== hostId
       ? 'This draft belongs to another VM host. Cancel it and open a new form for the current host.'
@@ -192,23 +202,87 @@ export function ImageManager({
     );
   }
 
-  async function remove() {
-    if (!selected) return;
+  async function remove(image: ImageInfo) {
     const answer = await desktop.dialog({
       title: 'Remove image?',
-      message: selected.managed
-        ? `Remove “${selected.name}” and its managed files? Images used by VMs, backups or templates cannot be removed.`
-        : `Remove “${selected.name}” from the image catalog? Its administrator-supplied source files remain on disk.`,
+      message: image.managed
+        ? `Remove “${image.name}” and its managed files? Images used by VMs, backups or templates cannot be removed.`
+        : `Remove “${image.name}” from the image catalog? Its administrator-supplied source files remain on disk.`,
       buttons: [
         { label: 'Cancel', value: 'cancel', default: true, cancel: true },
         { label: 'Remove Image', value: 'remove' },
       ],
     });
-    if (answer?.button === 'remove')
-      await run(
-        { kind: 'delete', image: selected, binding: { hostId } },
-        `Remove “${selected.name}”`,
-      );
+    if (answer?.button !== 'remove') return;
+    const latest = computeStore.getSnapshot();
+    if (
+      latest.info?.hostId === hostId &&
+      data.prepare.getSnapshot().check?.defaultImageId === image.id
+    ) {
+      setError('The default AXV Guest image is managed by the VM host.');
+      return;
+    }
+    await run(
+      { kind: 'delete', image, binding: { hostId } },
+      `Remove “${image.name}”`,
+    );
+  }
+
+  async function showDetails(image: ImageInfo) {
+    const imageMachines = imageUsers(image);
+    const answer = await desktop.dialog({
+      title: 'Image Details',
+      showIcon: false,
+      message: (
+        <div className="machines-resource-details">
+          <strong>{image.name}</strong>
+          <dl className="info-list">
+            <dt>Source</dt>
+            <dd>
+              {image.source ||
+                (image.managed ? 'Managed' : 'Host configuration')}
+            </dd>
+            {!!image.minRootGiB && (
+              <>
+                <dt>Minimum root disk</dt>
+                <dd>{image.minRootGiB} GiB</dd>
+              </>
+            )}
+            {!!image.sizeBytes && (
+              <>
+                <dt>Image size</dt>
+                <dd>{(image.sizeBytes / 1024 ** 2).toFixed(0)} MiB</dd>
+              </>
+            )}
+            <dt>Image ID</dt>
+            <dd>
+              <code>{image.id}</code>
+            </dd>
+            {image.sha256 && (
+              <>
+                <dt>SHA-256</dt>
+                <dd>
+                  <code>{image.sha256}</code>
+                </dd>
+              </>
+            )}
+          </dl>
+          {administratorImages && !!imageMachines.length && (
+            <p>
+              Used by{' '}
+              {imageMachines.map((machine) => machine.spec.name).join(', ')}.
+            </p>
+          )}
+        </div>
+      ),
+      buttons: [
+        ...(administratorImages && canRemoveImage(image, !!imageMachines.length)
+          ? [{ label: 'Remove…', value: 'remove' }]
+          : []),
+        { label: 'Close', value: 'close', default: true, cancel: true },
+      ],
+    });
+    if (answer?.button === 'remove') await remove(image);
   }
 
   const current = useRef({
@@ -221,58 +295,90 @@ export function ImageManager({
   });
   current.current = { hostId, selected, canVersion, canRemove, begin, remove };
 
-  return (
-    <div>
-      <div className="app-toolbar machines-toolbar">
-        <Button
-          disabled={locked || editing || !!data.error || !available}
-          onClick={() => begin()}
-        >
-          Add Image
-        </Button>
-        <div className="machines-resource-actions">
-          <IconButton
-            icon="more"
-            label="More image actions"
-            aria-haspopup="menu"
-            disabled={!selected}
-            onClick={(event) => {
-              if (!selected) return;
-              const targetHost = hostId;
-              const targetId = selected.id;
-              const rect = event.currentTarget.getBoundingClientRect();
-              const invoke = (action: 'version' | 'remove') => {
-                const latest = current.current;
-                if (
-                  latest.hostId !== targetHost ||
-                  latest.selected?.id !== targetId ||
-                  !(action === 'version' ? latest.canVersion : latest.canRemove)
-                )
-                  return;
-                if (action === 'version') latest.begin(true);
-                else void latest.remove();
-              };
-              desktop.contextMenu(
-                [
-                  {
-                    label: 'Add Version',
-                    disabled: !canVersion,
-                    action: () => invoke('version'),
-                  },
-                  { separator: true },
-                  {
-                    label: 'Remove',
-                    disabled: !canRemove,
-                    action: () => invoke('remove'),
-                  },
-                ],
-                { x: rect.left, y: rect.bottom },
-                { title: selected.name || selected.id },
-              );
-            }}
+  if (
+    defaultSetupCommand &&
+    !editing &&
+    !requests.pending &&
+    !data.images.length
+  ) {
+    if (data.reloading) return null;
+    return (
+      <section className="machines-environment">
+        <header className="machines-section-heading">
+          <h2>Install the default VM image</h2>
+        </header>
+        <div className="machines-host-guidance">
+          <p>
+            Install the AXV Guest and kernel (about 135 MiB). The catalog
+            refreshes after the service restarts.
+          </p>
+          <HostCommand
+            key={defaultSetupCommand}
+            command={defaultSetupCommand}
+            desktop={desktop}
           />
         </div>
-      </div>
+      </section>
+    );
+  }
+
+  return (
+    <div>
+      {!administratorImages && (
+        <div className="app-toolbar machines-toolbar">
+          <Button
+            disabled={locked || editing || !!data.error || !available}
+            onClick={() => begin()}
+          >
+            Add Image
+          </Button>
+          {showImageMenu && (
+            <div className="machines-resource-actions">
+              <IconButton
+                icon="more"
+                label="More image actions"
+                aria-haspopup="menu"
+                onClick={(event) => {
+                  if (!selected) return;
+                  const targetHost = hostId;
+                  const targetId = selected.id;
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  const invoke = (action: 'version' | 'remove') => {
+                    const latest = current.current;
+                    if (
+                      latest.hostId !== targetHost ||
+                      latest.selected?.id !== targetId ||
+                      !(action === 'version'
+                        ? latest.canVersion
+                        : latest.canRemove)
+                    )
+                      return;
+                    if (action === 'version') latest.begin(true);
+                    else void latest.remove(latest.selected);
+                  };
+                  desktop.contextMenu(
+                    [
+                      {
+                        label: 'Add Version',
+                        disabled: !canVersion,
+                        action: () => invoke('version'),
+                      },
+                      { separator: true },
+                      {
+                        label: 'Remove',
+                        disabled: !canRemove,
+                        action: () => invoke('remove'),
+                      },
+                    ],
+                    { x: rect.left, y: rect.bottom },
+                    { title: selected.name || selected.id },
+                  );
+                }}
+              />
+            </div>
+          )}
+        </div>
+      )}
       {error && (
         <p className="machines-error" role="alert">
           {error}
@@ -307,12 +413,24 @@ export function ImageManager({
           />
         </div>
       )}
-      {!available && (
-        <p className="machines-form-help">
-          {data.info
-            ? 'An available provider with image import support is required to add images.'
-            : 'Checking host image support…'}
+      {administratorImages && !data.images.length ? (
+        <p className="machines-message">
+          The deployment host administrator registers Firecracker guest images
+          in the VM host configuration. See the{' '}
+          <a href={linuxVMSetupGuide} target="_blank" rel="noreferrer">
+            Linux VM setup guide
+          </a>
+          .
         </p>
+      ) : (
+        !administratorImages &&
+        !available && (
+          <p className="machines-form-help">
+            {data.info
+              ? 'An available provider with image import support is required to add images.'
+              : 'Checking host image support…'}
+          </p>
+        )
       )}
       {selectedId && !selected && (
         <p className="machines-warning">
@@ -414,65 +532,76 @@ export function ImageManager({
           )}
         </form>
       )}
-      <table className="machines-table">
+      <table className="machines-table machines-inventory-table">
+        <colgroup>
+          <col />
+          <col className="machines-inventory-secondary-column" />
+          <col className="machines-details-column" />
+        </colgroup>
         <thead>
           <tr>
-            <th>Image</th>
-            <th>Compatibility</th>
-            <th>State</th>
+            <th scope="col">Image</th>
+            <th scope="col">Status</th>
+            <th scope="col" aria-label="Details" />
           </tr>
         </thead>
         <tbody>
           {data.images.map((image) => (
             <tr key={image.id} data-selected={selected?.id === image.id}>
               <td>
-                <button
-                  className="machines-select"
-                  aria-pressed={selected?.id === image.id}
-                  onClick={() => {
-                    setSelected(image.id);
-                    setSelectedHost(hostId);
-                  }}
-                >
-                  {image.name}
-                </button>
-                <details>
-                  <summary>Details</summary>
-                  <code>{image.id}</code>
-                  {image.sha256 && (
-                    <small>
-                      SHA-256 <code>{image.sha256}</code>
-                    </small>
-                  )}
-                </details>
-              </td>
-              <td>
-                {image.arch} · {image.provider}
-                <small>
-                  {image.minRootGiB
-                    ? `Root disk ≥ ${image.minRootGiB} GiB`
-                    : 'Configured cloud image'}
-                </small>
-                {!!image.sizeBytes && (
-                  <small>{(image.sizeBytes / 1024 ** 2).toFixed(0)} MiB</small>
+                {administratorImages || image.id === defaultImageId ? (
+                  <strong>{image.name}</strong>
+                ) : (
+                  <button
+                    className="machines-select"
+                    aria-pressed={selected?.id === image.id}
+                    onClick={() => {
+                      setSelected(image.id);
+                      setSelectedHost(hostId);
+                    }}
+                  >
+                    {image.name}
+                  </button>
                 )}
+                <small>
+                  {humanize(image.provider)} · {image.arch}
+                </small>
               </td>
               <td>
-                {image.status || 'configured'}
-                <small>
-                  {image.source ||
-                    (image.managed ? 'Managed' : 'Host configuration')}
-                </small>
+                {!image.status ||
+                image.status === 'configured' ||
+                image.status === 'ready'
+                  ? providers.some(
+                      (provider) =>
+                        provider.provider === image.provider &&
+                        provider.available,
+                    ) &&
+                    (!hostArch || image.arch === hostArch)
+                    ? 'Ready'
+                    : 'Registered'
+                  : humanize(image.status)}
                 {image.reason && (
                   <small className="machines-failure">{image.reason}</small>
                 )}
+              </td>
+              <td className="machines-inventory-action">
+                <Button
+                  className="machines-details-button"
+                  aria-label={`Image details for ${image.name}`}
+                  aria-haspopup="dialog"
+                  onClick={() => void showDetails(image)}
+                >
+                  Details
+                </Button>
               </td>
             </tr>
           ))}
           {!data.images.length && (
             <tr>
               <td colSpan={3}>
-                No registered images. Add a verified Linux cloud image.
+                {administratorImages
+                  ? 'No Firecracker guest images are registered.'
+                  : 'No registered images. Add a verified Linux cloud image.'}
               </td>
             </tr>
           )}

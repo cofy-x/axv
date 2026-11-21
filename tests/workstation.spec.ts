@@ -52,15 +52,109 @@ test('compact Workspace commands remain reachable with selected desktop icons', 
   await choose(menuItem(page, 'Welcome'));
   const welcome = page.locator('[data-app-id="welcome"]');
   await expect(welcome).toHaveClass(/is-active/);
-  for (const label of ['Connect from another device', 'Install AXV']) {
-    await expect(welcome.getByText(label, { exact: true })).toBeInViewport({
-      ratio: 1,
-    });
-  }
+  await expect(
+    welcome.getByRole('button', { name: 'Remote access', exact: true }),
+  ).toBeInViewport({ ratio: 1 });
   await expect(
     page.getByRole('navigation', { name: 'Application menus' }),
   ).toHaveCount(0);
 });
+
+for (const viewport of [
+  { width: 701, height: 852 },
+  { width: 320, height: 568 },
+]) {
+  test(`Welcome keeps launchers visible and opens setup on demand at ${viewport.width}×${viewport.height}`, async ({
+    page,
+  }, info) => {
+    const touch = info.project.use.hasTouch === true;
+    const choose = (control: Locator) =>
+      touch ? control.tap() : control.click();
+    await page.setViewportSize(viewport);
+    const welcome = page.locator('[data-app-id="welcome"]');
+    const workApps = welcome.getByRole('group', { name: 'Work applications' });
+    const remoteAccess = welcome.getByRole('button', {
+      name: 'Remote access',
+      exact: true,
+    });
+    const more = welcome.getByRole('button', {
+      name: 'More welcome actions',
+      exact: true,
+    });
+    const showDesktop = welcome.getByRole('button', {
+      name: 'Show Desktop',
+      exact: true,
+    });
+    await expect(workApps.getByRole('button')).toHaveCount(4);
+    for (const name of [
+      'Codex',
+      'Virtual Machines',
+      'Project Files',
+      'Terminal',
+    ])
+      await expect(
+        workApps.getByRole('button', { name, exact: true }),
+      ).toBeInViewport({ ratio: 1 });
+    for (const control of [remoteAccess, more, showDesktop])
+      await expect(control).toBeInViewport({ ratio: 1 });
+    await expect(
+      welcome.getByText('Notifications', { exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      welcome.getByText('Application Manager', { exact: true }),
+    ).toHaveCount(0);
+    await expect(welcome.locator('details')).toHaveCount(0);
+
+    await choose(more);
+    await expect(menuItem(page, 'Application Manager')).toBeVisible();
+    await choose(menuItem(page, 'Browser installation guide'));
+    const guide = page.getByRole('dialog', {
+      name: 'Browser installation guide',
+      exact: true,
+    });
+    await expect(guide).toBeVisible();
+    for (const copy of [
+      'stable AXV address',
+      'Chrome or Edge',
+      'Share → Add to Home Screen',
+      'Keep AXV running and reachable.',
+    ])
+      await expect(guide).toContainText(copy);
+    await choose(guide.getByRole('button', { name: 'OK', exact: true }));
+    await expect(guide).toBeHidden();
+    await expect(more).toBeFocused();
+
+    const preferences = page.locator('[data-app-id="appearance"]');
+    const remoteSection = preferences.getByRole('group', {
+      name: 'Remote access',
+      exact: true,
+    });
+    const openRemoteAccess = async () => {
+      await choose(remoteAccess);
+      await expect(preferences).toHaveClass(/is-active/);
+      await expect(remoteSection).toBeFocused();
+      for (const name of ['Open Tailscale', 'Open Cloudflare'])
+        await expect(
+          remoteSection.getByRole('button', { name, exact: true }),
+        ).toBeInViewport({ ratio: 1 });
+    };
+    await openRemoteAccess();
+    await expect(preferences).toHaveAttribute(
+      'data-window-id',
+      'appearance:main',
+    );
+    await remoteSection.evaluate((section) => {
+      section.setAttribute('data-mount-probe', 'remote-access');
+    });
+    await activate(page, welcome, touch);
+    await openRemoteAccess();
+    await expect(preferences).toHaveCount(1);
+    await expect(remoteSection).toHaveAttribute(
+      'data-mount-probe',
+      'remote-access',
+    );
+  });
+}
 
 test('mobile shell keeps long workspace names and connection states within 320 pixels', async ({
   page,
@@ -544,18 +638,41 @@ for (const viewport of [
     else await machinesLink.click();
     const machines = page.locator('[data-window-id="machines:main"]');
     await expect(machines).toBeVisible();
+    const check = await request.get('/api/compute/preparation/check');
+    const { platform, localService, lockedReason } = await check.json();
+    const defaultServiceReady =
+      localService?.status === 'ready' &&
+      localService.socket === '/run/axv-host/control.sock' &&
+      !lockedReason;
     await expect(
-      machines.getByRole('heading', { name: 'Enable virtual machines' }),
+      machines.getByRole('heading', {
+        name:
+          platform === 'linux'
+            ? defaultServiceReady
+              ? 'Firecracker ready to connect'
+              : 'Connect VM service'
+            : 'Enable virtual machines',
+        exact: true,
+      }),
     ).toBeVisible();
     await expect(
-      machines.getByRole('button', { name: 'Review', exact: true }),
+      machines.getByRole('button', {
+        name:
+          platform !== 'linux'
+            ? 'Review'
+            : defaultServiceReady
+              ? 'Connect'
+              : 'Check connection',
+        exact: true,
+      }),
     ).toBeVisible();
     await expect(
       machines.getByRole('button', { name: 'New VM', exact: true }),
     ).toHaveCount(0);
     await expect(
       machines.getByRole('button', { name: 'Refresh', exact: true }),
-    ).toBeInViewport();
+    ).toHaveCount(0);
+    await expect(machines.locator('.machines-toolbar')).toHaveCount(0);
     const compute = await request.get('/api/compute/info');
     expect((await compute.json()).configured).toBe(false);
     const capture = async (name: string) => {

@@ -1,7 +1,10 @@
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
 import type { GuestTerminal, Machine } from './api';
 import { machinesApi } from './api';
+import { computeStore } from './compute-store';
+import { activeVMOperation, machineActionRequests } from './lifecycle';
 import { isDefiniteOperationRejection } from './operation-requests';
+import { guestTerminalReason } from './presentation';
 
 interface TerminalAttempt {
   machineId: string;
@@ -18,9 +21,33 @@ type SendingTerminal = {
 type TerminalRequestState =
   SendingTerminal | { phase: 'uncertain'; attempt: TerminalAttempt };
 
+export function currentGuestTerminalTarget({
+  id,
+  hostId,
+}: Pick<Machine, 'id' | 'hostId'>) {
+  const latest = computeStore.getSnapshot();
+  if (latest.error || latest.info?.hostId !== hostId) return;
+  const target = latest.machines.find(
+    (item) => item.id === id && item.hostId === hostId,
+  );
+  if (
+    !target ||
+    guestTerminalReason(target) ||
+    activeVMOperation(target, latest.operations) ||
+    machineActionRequests.getPending(hostId, id)
+  )
+    return;
+  return target;
+}
+
 /** Preserve a creation request while its outcome is uncertain. */
 export class GuestTerminalRequests {
   private readonly states = new Map<string, TerminalRequestState>();
+
+  retryPending(machineId: string, hostId: string) {
+    if (this.states.has(JSON.stringify([hostId, machineId])))
+      return this.execute(machineId, hostId);
+  }
 
   execute(machineId: string, hostId: string) {
     const key = JSON.stringify([hostId, machineId]);
@@ -67,6 +94,15 @@ export class GuestTerminalRequests {
 
 export const guestTerminalRequests = new GuestTerminalRequests();
 
+export function guestTerminalLabel(session: GuestTerminal) {
+  const { id, sequence } = session;
+  const reference =
+    sequence && sequence > 0 && Number.isSafeInteger(sequence)
+      ? sequence
+      : id.slice(-12);
+  return `Terminal ${reference}`;
+}
+
 export function openGuestTerminal(
   desktop: DesktopAPI,
   machine: Pick<Machine, 'id' | 'hostId'> & {
@@ -82,6 +118,6 @@ export function openGuestTerminal(
       terminalId: session.id,
       bootId: session.bootId,
     },
-    { title: `${machine.spec.name} — Terminal` },
+    { title: `${machine.spec.name} — ${guestTerminalLabel(session)}` },
   );
 }

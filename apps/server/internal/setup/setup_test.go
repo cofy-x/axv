@@ -35,6 +35,34 @@ func TestNormalizeRequiresValidOptions(t *testing.T) {
 	}
 }
 
+func TestShowPlanReviewsOnlySettingsUsedByTheConnection(t *testing.T) {
+	plan := prepare.Plan{
+		Platform: "linux", CacheHome: "/cache", ConfigPath: "/profile/config.json",
+		Request: prepare.Request{
+			Socket: "/run/axv-host/control.sock", StorageRoot: "/profile/compute",
+			LimaHome: "/profile/lima", CPUs: 2, MemoryMiB: 4096, DiskGiB: 128, Machines: 4,
+		},
+	}
+	var output bytes.Buffer
+	showPlan(plan, &output)
+	if !strings.Contains(output.String(), "Socket: /run/axv-host/control.sock") ||
+		!strings.Contains(output.String(), "Profile configuration: /profile/config.json") ||
+		strings.Contains(output.String(), "Lima state:") ||
+		strings.Contains(output.String(), "Limits:") ||
+		strings.Contains(output.String(), "Shared cache:") {
+		t.Fatalf("unexpected Linux connection plan: %s", &output)
+	}
+
+	plan.Platform = "darwin"
+	plan.Request.Socket = ""
+	output.Reset()
+	showPlan(plan, &output)
+	if !strings.Contains(output.String(), "Lima state: /profile/lima") ||
+		!strings.Contains(output.String(), "Limits: 2 CPUs") {
+		t.Fatalf("unexpected Lima preparation plan: %s", &output)
+	}
+}
+
 func TestOfflinePreparationCannotRaceDesktop(t *testing.T) {
 	if os.PathSeparator == '\\' {
 		t.Skip("Unix profile locks")

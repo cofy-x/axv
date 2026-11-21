@@ -1,6 +1,7 @@
 import { APIError } from '../../shared/api/http';
 import type { TerminalState } from '../terminal/terminal-session';
 import { machinesApi } from './api';
+import type { GuestTerminal } from './api';
 
 interface Options {
   hostId: string;
@@ -10,6 +11,7 @@ interface Options {
   reset: () => Promise<void>;
   write: (data: Uint8Array, done: () => void) => void;
   onState: (state: TerminalState) => void;
+  onIdentity?: (terminal: GuestTerminal) => void;
   onInputRejected: () => void;
 }
 
@@ -104,6 +106,11 @@ export class GuestTerminalSession {
         );
         return;
       }
+      if (info.id !== this.options.terminalId) {
+        this.fail('The guest returned a different terminal.');
+        return;
+      }
+      this.options.onIdentity?.(info);
       await this.options.reset();
       if (this.disposed) return;
       this.outputBytes = 0;

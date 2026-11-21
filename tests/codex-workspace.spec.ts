@@ -1,5 +1,5 @@
 import { activate } from './helpers';
-import { encoded, output, run } from './terminal-helpers';
+import { encoded, output, run, terminalAction } from './terminal-helpers';
 import {
   codexSessionAction,
   codexWindow,
@@ -238,10 +238,10 @@ test('Host Terminal uses the Codex directory and closing it leaves Codex running
     'data-state',
     'connected',
   );
-  await expect(terminal.getByTestId('terminal-project-name')).toHaveText(
-    projectPath.split('/').filter(Boolean).at(-1)!,
+  await expect(terminal).toHaveAccessibleName(
+    `Terminal · ${projectPath.split('/').filter(Boolean).at(-1)}`,
   );
-  await terminal.getByRole('button', { name: 'Details', exact: true }).click();
+  await terminalAction(page, terminal, 'Details');
   const details = page.getByRole('dialog', {
     name: 'Host Terminal Details',
     exact: true,

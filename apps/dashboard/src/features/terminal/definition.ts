@@ -19,19 +19,17 @@ export function openTerminalWindow(desktop: DesktopAPI, projectPath?: string) {
   let number = 1;
   let title = baseTitle;
   while (titles.has(title)) title = `${baseTitle} ${++number}`;
-  return desktop.openApp(
-    'terminal',
-    {
-      sessionId: crypto.randomUUID(),
-      ...(projectPath === undefined ? {} : { projectPath }),
-    },
-    { title },
-  );
+  const params = {
+    sessionId: crypto.randomUUID(),
+    ...(projectPath === undefined ? {} : { projectPath }),
+  };
+  return desktop.openApp('terminal', params, { title });
 }
 
 export function terminalSessionMenu(
   commands: WindowCommands,
   windowId: string,
+  { compact = false } = {},
 ): MenuItem[] {
   const command = (label: string, id: WindowCommand): MenuItem => ({
     label,
@@ -40,14 +38,18 @@ export function terminalSessionMenu(
       void commands.execute(windowId, id);
     },
   });
-  return [
+  const items = [
     command('Clear', 'terminal:clear'),
     command('Details', 'terminal:details'),
     command('Paste text', 'terminal:paste-text'),
-    { separator: true },
-    command('Interrupt', 'terminal:interrupt'),
-    command('New Session', 'terminal:new-session'),
   ];
+  if (!compact)
+    items.push(
+      { separator: true },
+      command('Interrupt', 'terminal:interrupt'),
+      command('New Session', 'terminal:new-session'),
+    );
+  return items;
 }
 
 export function createTerminalApp(commands: WindowCommands): AppDefinition {

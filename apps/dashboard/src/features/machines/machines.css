@@ -18,6 +18,10 @@
   gap: 7px;
   margin-inline-start: auto;
 }
+.machines-reload-status {
+  align-self: center;
+  font-size: 12px;
+}
 .machines-filter {
   display: flex;
   flex-wrap: wrap;
@@ -63,6 +67,16 @@
 .machines-error {
   padding: 6px 9px;
 }
+.machines-inventory-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.machines-inventory-error > [role='alert'] {
+  flex: 1 1 240px;
+  min-width: 0;
+}
 .machines-table {
   width: 100%;
   border-collapse: collapse;
@@ -87,8 +101,83 @@
   margin-top: 4px;
   font-size: 11px;
 }
-.machines-table code {
+.machines-inventory-table {
+  border-top: 1px solid var(--ns-shadow);
+}
+.machines-inventory-table th,
+.machines-inventory-table td {
+  padding-inline: 12px;
+}
+.machines-inventory-table th {
+  background: #bbb;
+}
+.machines-inventory-table td {
+  vertical-align: middle;
+}
+.machines-inventory-table small {
+  margin-top: 2px;
+}
+.machines-inventory-secondary-column {
+  width: 32%;
+}
+.machines-details-column {
+  width: 84px;
+}
+.machines-volume-actions-column {
+  width: 52px;
+}
+.machines-inventory-table .machines-inventory-action {
+  text-align: right;
+  padding-block: 4px;
+}
+.machines-inventory-table .machines-volume-actions-cell {
+  padding-inline: 6px 8px;
+}
+.machines-activity-label-column {
+  width: 31%;
+}
+.machines-activity-table td {
+  vertical-align: top;
+}
+.machines-activity-table time > span {
+  white-space: nowrap;
+}
+.ns-button.machines-details-button {
+  min-width: 0;
+  padding: 3px 8px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.ns-button.machines-details-button:hover:not(:disabled),
+.ns-button.machines-details-button:active:not(:disabled) {
+  padding: 3px 8px;
+  border-color: currentColor;
+  background: transparent;
+  box-shadow: none;
+  text-decoration: none;
+}
+.ns-button.machines-details-button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
+}
+.machines-resource-details code {
   overflow-wrap: anywhere;
+  user-select: text;
+}
+.machines-resource-details .info-list {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 3px;
+  margin-top: 10px;
+}
+.machines-resource-details dd + dt {
+  margin-top: 7px;
+}
+.machines-resource-details p {
+  margin: 12px 0 0;
 }
 .machines-table tr[data-selected='true'] {
   background: var(--ns-highlight);
@@ -106,6 +195,10 @@
   cursor: pointer;
   text-align: left;
   font: inherit;
+  font-weight: 600;
+}
+.machines-select:hover {
+  text-decoration: underline;
 }
 .machines-select:focus-visible {
   outline: 2px solid currentColor;
@@ -136,6 +229,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   margin: 8px 0;
 }
@@ -159,6 +253,60 @@
   font-size: 11px;
   font-weight: bold;
 }
+.machines-host-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+.machines-host-heading[data-connected='true'] {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--ns-mid);
+}
+.machines-host-heading[data-connected='true'] h2 {
+  margin: 0;
+  font-size: var(--ns-font-size-body);
+  font-weight: normal;
+}
+.machines-host-heading[data-connected='true'] h2::before {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-inline-end: 7px;
+  border: 1px solid var(--ns-shadow);
+  background: #37804d;
+  content: '';
+}
+.machines-host-limits {
+  container: vm-host / inline-size;
+}
+.machines-host-capacity {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  border: 1px solid var(--ns-mid);
+  background: var(--ns-mid);
+}
+.machines-host-capacity > div {
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--ns-face), var(--ns-light) 25%);
+  overflow-wrap: anywhere;
+}
+.machines-host-capacity dt {
+  font-size: var(--ns-font-size-secondary);
+}
+.machines-host-capacity dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+@container vm-host (min-width: 440px) {
+  .machines-host-capacity {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
 .machines-setup-steps {
   padding-left: 24px;
   margin: 16px 0;
@@ -173,11 +321,34 @@
 .machines-command {
   background: var(--ns-light);
   box-shadow: var(--ns-recessed);
-  padding: 12px;
+  min-width: 0;
+  padding: 6px 8px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   user-select: text;
   font-size: 12px;
+}
+.machines-host-guidance {
+  margin-block: 8px 14px;
+}
+.machines-host-guidance h3 {
+  margin: 0 0 4px;
+}
+.machines-host-guidance p {
+  margin: 4px 0;
+  font-size: 12px;
+}
+.machines-host-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 8px;
+}
+.machines-command-line {
+  display: flex;
+  align-items: start;
+  gap: 6px;
 }
 .machines-copy-result {
   display: inline-block;
@@ -188,11 +359,14 @@
   padding: 10px 0;
   border-top: 1px solid var(--ns-shadow);
 }
-.machines-technical summary,
-.machines-table summary {
+.machines-technical summary {
   cursor: pointer;
 }
 .machines-selection {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--ns-face);
   border-block: 1px solid var(--ns-shadow);
   padding: 10px 8px;
   font-size: 12px;
@@ -203,9 +377,28 @@
   align-items: center;
   gap: 8px 14px;
 }
-.machines-selection-heading > strong {
-  flex: 1 1 160px;
+.machines-selection-identity {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: baseline;
+  gap: 8px;
   min-width: 0;
+  max-width: 100%;
+}
+.machines-selection-identity > strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.machines-vm-expiry {
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+.machines-selection-identity > .machines-vm-expiry {
+  flex: none;
+  max-width: 100%;
+  margin: 0;
   overflow-wrap: anywhere;
 }
 .machines-selection-heading .machines-action-buttons {
@@ -233,18 +426,72 @@
 .machines-action-buttons {
   margin: 8px 0;
 }
-.machines-create-actions {
-  margin-top: 12px;
+.machines-create-form {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
 }
-.machines-create-start,
+.machines-create-body {
+  font-size: 13px;
+}
+.machines-create-summary {
+  margin-block: 16px;
+  line-height: 1.45;
+}
+.machines-create-summary dd {
+  min-width: 0;
+}
+.machines-create-advanced {
+  margin-bottom: 0;
+}
+.machines-create-advanced > summary,
+.machines-inspector-body > .machines-technical > summary {
+  min-height: var(--ns-control-height);
+  padding-block: 6px;
+}
+.machines-create-footer {
+  flex: 0 0 auto;
+  max-height: 50%;
+  overflow: auto;
+  padding: 8px 12px;
+  border-top: 1px solid var(--ns-shadow);
+  background: #ddd;
+  box-shadow: inset 0 1px var(--ns-light);
+}
+.machines-create-footer > p {
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+}
+.machines-create-footer > .machines-error {
+  padding: 0;
+}
+.machines-create-actions {
+  justify-content: flex-end;
+}
 .machines-volume-editor .ns-checkbox {
   display: flex;
 }
 .machines-volume-editor .machines-form-actions {
   margin-top: 12px;
 }
-.machines-create-actions .ns-icon-button {
+.machines-inventory-table .machines-volume-selection > td {
+  padding: 8px 12px 10px;
+}
+.machines-volume-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.machines-volume-controls .ns-icon-button {
   margin-inline-start: auto;
+}
+.machines-volume-retention {
+  margin-top: 8px;
+}
+.machines-volume-attachment fieldset {
+  margin-block: 10px 0;
 }
 .machines-operation-feedback {
   padding: 6px 8px;
@@ -255,7 +502,17 @@
 .machines-operation-feedback > p {
   flex: 1;
   min-width: 120px;
+  margin: 0;
   overflow-wrap: anywhere;
+}
+.machines-selection > .machines-operation-feedback,
+.machines-inspector-notice {
+  padding-inline: 0;
+  margin-top: 8px;
+}
+.machines-selection .machines-vm-transition {
+  margin: 6px 0 0;
+  font-weight: 600;
 }
 .machines-form-help {
   font-size: 12px;
@@ -272,10 +529,6 @@
 }
 .machines-table {
   table-layout: fixed;
-}
-.machines-table details {
-  margin-top: 6px;
-  font-size: 11px;
 }
 .machines-app fieldset {
   min-width: 0;
@@ -297,7 +550,20 @@
   .machines-table {
     font-size: 11px;
   }
+  .machines-inventory-table {
+    font-size: 12px;
+  }
+  .machines-inventory-table td,
+  .machines-inventory-table th {
+    padding-inline: 7px;
+  }
+  .machines-details-column {
+    width: 69px;
+  }
   .machines-action-buttons .ns-button:not(.ns-icon-button) {
+    flex: 1 0 auto;
+  }
+  .machines-create-actions .ns-button {
     flex: 1 0 auto;
   }
   .machines-section-heading h2 {
@@ -308,6 +574,14 @@
 .machines-environment-facts {
   padding-block: 8px;
   border-block: 1px solid var(--ns-shadow);
+}
+.machines-connection-fields {
+  display: grid;
+  gap: 6px;
+}
+.machines-connection-fields .ns-select,
+.machines-connection-fields .ns-field {
+  margin-bottom: 0;
 }
 .machines-environment-checks {
   list-style: none;
@@ -412,6 +686,11 @@
   font-size: 14px;
   margin: 16px 0 8px;
 }
+.machines-host-limits > h3 {
+  margin: 12px 0 6px;
+  font-size: var(--ns-font-size-secondary);
+  font-weight: normal;
+}
 .machines-environment .ns-field input {
   min-width: 0;
 }
@@ -473,6 +752,43 @@
   align-items: center;
   margin-bottom: 12px;
 }
+.machines-inspector-body > .machines-technical {
+  margin-block: 0;
+  padding-block: 0;
+}
+.machines-inspector-body > .machines-technical[open] {
+  padding-bottom: 10px;
+}
+.machines-inspector-body > .machines-technical > summary {
+  position: relative;
+  padding-inline-end: 22px;
+  list-style: none;
+}
+.machines-inspector-body
+  > .machines-technical
+  > summary::-webkit-details-marker {
+  display: none;
+}
+.machines-inspector-body > .machines-technical > summary::after {
+  position: absolute;
+  inset-block-start: calc(50% - 5px);
+  inset-inline-end: 4px;
+  width: 7px;
+  height: 7px;
+  border: solid currentColor;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+  content: '';
+}
+.machines-inspector-body > .machines-technical[open] > summary::after {
+  transform: translateY(3px) rotate(225deg);
+}
+.machines-inspector-body > .machines-technical[open] > summary + * {
+  margin-block-start: 8px;
+}
+.machines-inspector-body > .machines-inspector-notice {
+  margin-bottom: 8px;
+}
 .machines-inspector-identity {
   display: flex;
   flex: 1 1 auto;
@@ -486,6 +802,9 @@
 .machines-inspector-actions .machines-action-buttons {
   margin: 0 0 12px;
 }
+.machines-inspector-actions .machines-action-buttons:empty {
+  margin: 0;
+}
 .machines-inspector-actions .ns-button:not(.ns-icon-button) {
   flex: 0 0 auto;
 }
@@ -497,7 +816,4 @@
 }
 .machines-inspector-heading h2 {
   overflow-wrap: anywhere;
-}
-.machines-provider-detail {
-  display: contents;
 }

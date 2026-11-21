@@ -72,11 +72,9 @@ test.describe('fresh desktop defaults', () => {
     await expect(
       workApps.getByRole('button', { name: 'Project Files', exact: true }),
     ).toBeInViewport();
-    for (const label of ['Connect from another device', 'Install AXV']) {
-      await expect(welcome.getByText(label, { exact: true })).toBeInViewport({
-        ratio: 1,
-      });
-    }
+    await expect(
+      welcome.getByRole('button', { name: 'Remote access', exact: true }),
+    ).toBeInViewport({ ratio: 1 });
     await expect(page.locator('[data-icon-id="system:terminal"]')).toHaveCount(
       0,
     );
@@ -583,14 +581,20 @@ test('preferences persist and browser clients keep independent layouts', async (
 }) => {
   await launch(page, 'appearance');
   const preferences = page.locator('[data-app-id="appearance"]');
-  const slate = preferences.getByRole('button', {
+  const wallpaper = preferences.getByRole('group', {
+    name: 'Wallpaper',
+    exact: true,
+  });
+  const status = preferences.getByRole('status');
+  const slate = wallpaper.getByRole('button', {
     name: 'Slate',
     exact: true,
   });
-  const dither = preferences.getByRole('button', {
+  const dither = wallpaper.getByRole('button', {
     name: 'Dither',
     exact: true,
   });
+  await expect(status).toBeHidden();
   await expect(slate).toHaveAttribute('aria-pressed', 'true');
   await page.keyboard.press('Tab');
   await slate.focus();
@@ -602,8 +606,10 @@ test('preferences persist and browser clients keep independent layouts', async (
   await expect(slate).toHaveAttribute('aria-pressed', 'true');
   await expect(dither).toHaveAttribute('aria-pressed', 'false');
   await dither.press('Enter');
-  await expect(preferences).toContainText('Saved.');
+  await expect(status).toHaveText('Saved.');
+  await expect(status).toBeVisible();
   await expect(dither).toHaveAttribute('aria-pressed', 'true');
+  await expect(status).toBeHidden();
   await switchWorkspace(page, 4);
   await expect
     .poll(

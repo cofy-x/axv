@@ -1,4 +1,5 @@
 import { switchWorkspace } from './helpers';
+import { terminalAction } from './terminal-helpers';
 import {
   codexOutput,
   codexSessionAction,
@@ -160,12 +161,11 @@ test('touch Codex supports project selection, history, session organization, pro
     'data-state',
     'connected',
   );
-  await expect(terminal.getByTestId('terminal-project-name')).toHaveText(
-    projectPath.split('/').filter(Boolean).at(-1)!,
+  await expect(terminal).toHaveAccessibleName(
+    `Terminal · ${projectPath.split('/').filter(Boolean).at(-1)}`,
   );
-  await expect(terminal.getByTestId('terminal-project-name')).toBeInViewport();
   await capture('touch-codex-project-terminal');
-  await terminal.getByRole('button', { name: 'Details', exact: true }).tap();
+  await terminalAction(page, terminal, 'Details', true);
   const hostDetails = page.getByRole('dialog', {
     name: 'Host Terminal Details',
     exact: true,

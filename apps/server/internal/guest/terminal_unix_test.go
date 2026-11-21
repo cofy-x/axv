@@ -30,7 +30,7 @@ func TestTerminalDetachReplayAndExplicitEnd(t *testing.T) {
 	if err := json.Unmarshal(created.Body.Bytes(), &terminalInfo); err != nil {
 		t.Fatal(err)
 	}
-	if created.Code != 201 || terminalInfo.ID == "" || terminalInfo.BootID != s.bootID || terminalInfo.Status != "running" {
+	if created.Code != 201 || terminalInfo.ID == "" || terminalInfo.BootID != s.bootID || terminalInfo.Status != "running" || terminalInfo.Sequence != 1 {
 		t.Fatalf("create = %d %s", created.Code, created.Body)
 	}
 	// Defaults are part of the idempotent request identity.
@@ -39,7 +39,7 @@ func TestTerminalDetachReplayAndExplicitEnd(t *testing.T) {
 	if err := json.Unmarshal(retry.Body.Bytes(), &retried); err != nil {
 		t.Fatal(err)
 	}
-	if retry.Code != 200 || retried.ID != terminalInfo.ID {
+	if retry.Code != 200 || retried.ID != terminalInfo.ID || retried.Sequence != terminalInfo.Sequence {
 		t.Fatalf("retry = %d %s", retry.Code, retry.Body)
 	}
 	assertProblem(t, guestRequest(s, "POST", "/v1/terminals", `{"requestId":"terminal-request","rows":25}`), 409, "idempotency_conflict")
@@ -134,6 +134,17 @@ func TestTerminalDetachReplayAndExplicitEnd(t *testing.T) {
 	}
 	conn.CloseNow()
 	assertProblem(t, guestRequest(s, "GET", "/v1/terminals/missing", ""), 404, "terminal_lost")
+	next := guestRequest(s, "POST", "/v1/terminals", `{"requestId":"another-terminal-request"}`)
+	var another protocol.Terminal
+	if err := json.Unmarshal(next.Body.Bytes(), &another); err != nil {
+		t.Fatal(err)
+	}
+	if next.Code != 201 || another.ID == terminalInfo.ID || another.Sequence != 2 {
+		t.Fatalf("second terminal = %d %s", next.Code, next.Body)
+	}
+	if session.description(s.bootID).Sequence != terminalInfo.Sequence {
+		t.Fatal("ending a session or creating another one changed the original sequence")
+	}
 }
 
 func TestTerminalValidationAndClosedRegistry(t *testing.T) {

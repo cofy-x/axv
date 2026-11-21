@@ -184,8 +184,7 @@ export function MachineSettings({
         void save();
       }}
     >
-      <fieldset disabled={locked}>
-        <legend>Configuration</legend>
+      <fieldset disabled={locked} aria-label="VM settings">
         <Field
           label="VM name"
           value={draft.name}

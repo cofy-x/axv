@@ -282,9 +282,10 @@ test('VM desktop activation opens only the exact host Inspector across host chan
     'data-window-id',
     'machine-inspector:["desktop-host-one","desktop-vm-one"]',
   );
-  await expect(
-    inspectors.getByRole('heading', { name: 'Desktop VM', exact: true }),
-  ).toBeVisible();
+  await expect(inspectors).toHaveAttribute(
+    'aria-label',
+    'Desktop VM — Inspector',
+  );
   const firstId = (await inspectors.getAttribute('data-window-id'))!;
   state.hostId = 'desktop-host-two';
   state.generation++;
@@ -301,9 +302,10 @@ test('VM desktop activation opens only the exact host Inspector across host chan
       { exact: true },
     ),
   ).toBeVisible();
-  await expect(
-    inspectors.getByRole('heading', { name: 'Desktop VM', exact: true }),
-  ).toBeVisible();
+  await expect(inspectors).toHaveAttribute(
+    'aria-label',
+    'Desktop VM — Inspector',
+  );
   await inspectors.getByRole('button', { name: /^Miniaturize / }).click();
   const replacement = canvas.getByRole('button', {
     name: 'Replacement host VM — Stopped',

@@ -11,6 +11,7 @@ import {
 import {
   applicationMenu,
   encoded,
+  expectShellToolbar,
   marker,
   openTerminal,
   output,
@@ -36,7 +37,11 @@ test('Terminal streams ANSI and control bytes, interrupts jobs, and explicitly s
   });
   await more.focus();
   await more.press('Enter');
-  await expect(menuItem(page, 'Clear')).toBeVisible();
+  const sessionMenu = page.getByRole('menu', { name: 'Session', exact: true });
+  for (const name of ['Clear', 'Details', 'Paste text'])
+    await expect(menuItem(sessionMenu, name)).toBeVisible();
+  for (const name of ['Interrupt', 'New Session'])
+    await expect(menuItem(sessionMenu, name)).toHaveCount(0);
   await expect(terminal.getByLabel('Host terminal input')).not.toBeFocused();
   await page.keyboard.press('Escape');
   await expect(page.locator('.ns-menu-layer')).toHaveCount(0);
@@ -277,7 +282,8 @@ test('Terminal yields desktop navigation and blocks shell input behind a modal',
 
 test('Terminal exposes unavailable and failed connections without automatic retry', async ({
   page,
-}) => {
+}, info) => {
+  await page.setViewportSize({ width: 320, height: 568 });
   let requests = 0;
   await page.route('**/api/terminal/info', async (route) => {
     requests++;
@@ -298,6 +304,11 @@ test('Terminal exposes unavailable and failed connections without automatic retr
   await expect(terminal.getByRole('alert')).toContainText(
     'E2E unsupported host',
   );
+  await expectShellToolbar(terminal, 'Host shell', [
+    'Copy',
+    'New Session',
+    'More terminal actions',
+  ]);
   expect(requests).toBe(1);
   await page.unroute('**/api/terminal/info');
   await page.route('**/api/terminal/info', async (route) => {
@@ -312,6 +323,12 @@ test('Terminal exposes unavailable and failed connections without automatic retr
     'error',
   );
   expect(requests).toBe(2);
+  const path = info.outputPath('320x568-host-terminal-recovery.png');
+  await page.screenshot({ path });
+  await info.attach('host-terminal-recovery', {
+    path,
+    contentType: 'image/png',
+  });
   await page.unroute('**/api/terminal/info');
   await terminal
     .getByRole('button', { name: 'New Session', exact: true })
@@ -320,6 +337,12 @@ test('Terminal exposes unavailable and failed connections without automatic retr
     'data-state',
     'connected',
   );
+  await expectShellToolbar(terminal, 'Host shell', [
+    'Copy',
+    'Paste',
+    'Interrupt',
+    'More terminal actions',
+  ]);
 });
 
 test('Unicode paste and IME composition reach the host as exact UTF-8', async ({

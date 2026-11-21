@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { APIError } from '../../shared/api/http';
 import { machinesApi } from './api';
 import type { GuestTerminal } from './api';
-import { GuestTerminalRequests, openGuestTerminal } from './open-terminal';
+import {
+  GuestTerminalRequests,
+  guestTerminalLabel,
+  openGuestTerminal,
+} from './open-terminal';
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
 import type { Machine } from './api';
 
@@ -60,13 +64,18 @@ describe('guest terminal creation ownership', () => {
       )
       .mockResolvedValue(terminal);
     const requests = new GuestTerminalRequests();
+    expect(requests.retryPending('vm-one', 'host-original')).toBeUndefined();
     const first = requests.execute('vm-one', 'host-original');
-    expect(requests.execute('vm-one', 'host-original')).toBe(first);
+    expect(requests.retryPending('vm-one', 'host-original')).toBe(first);
+    expect(requests.retryPending('vm-two', 'host-original')).toBeUndefined();
     const failure = expect(first).rejects.toThrow('Response lost');
     reject(new TypeError('Response lost'));
     await failure;
-    expect(await requests.execute('vm-one', 'host-original')).toBe(terminal);
+    expect(await requests.retryPending('vm-one', 'host-original')).toBe(
+      terminal,
+    );
     expect(create.mock.calls[1]).toEqual(create.mock.calls[0]);
+    expect(requests.retryPending('vm-one', 'host-original')).toBeUndefined();
     await requests.execute('vm-one', 'host-original');
     expect(create.mock.calls[2][1]).not.toBe(create.mock.calls[0][1]);
   });
@@ -112,7 +121,7 @@ describe('guest terminal creation ownership', () => {
         hostId: 'host-one',
         spec: { name: 'Project' },
       } as Machine,
-      terminal,
+      { ...terminal, sequence: 2 },
     );
     expect(openApp).toHaveBeenCalledWith(
       'guest-terminal',
@@ -122,8 +131,12 @@ describe('guest terminal creation ownership', () => {
         terminalId: terminal.id,
         bootId: terminal.bootId,
       },
-      { title: 'Project — Terminal' },
+      { title: 'Project — Terminal 2' },
     );
+  });
+
+  it('uses the same short label for an older guest without terminal sequence metadata', () => {
+    expect(guestTerminalLabel(terminal)).toBe('Terminal nal-original');
   });
 
   it('retains the original creation request after a gateway failure', async () => {

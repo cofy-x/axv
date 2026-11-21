@@ -21,6 +21,7 @@ type terminals struct {
 	mu       sync.Mutex
 	sessions map[string]*terminal
 	requests map[string]string
+	sequence uint64
 	closed   bool
 }
 
@@ -28,6 +29,7 @@ type terminal struct {
 	mu            sync.Mutex
 	terminateOnce sync.Once
 	id, request   string
+	sequence      uint64
 	file          *os.File
 	cmd           *exec.Cmd
 	done          chan struct{}
@@ -106,7 +108,15 @@ func (t *terminals) create(w http.ResponseWriter, r *http.Request) {
 		fail(w, 502, "terminal_failed", err)
 		return
 	}
-	session := &terminal{id: id(), request: string(raw), file: f, cmd: cmd, done: make(chan struct{})}
+	t.sequence++
+	session := &terminal{
+		id:       id(),
+		request:  string(raw),
+		sequence: t.sequence,
+		file:     f,
+		cmd:      cmd,
+		done:     make(chan struct{}),
+	}
 	t.sessions[session.id], t.requests[req.RequestID] = session, session.id
 	go session.run()
 	respond(w, 201, session.description(t.service.bootID))
@@ -119,7 +129,7 @@ func (s *terminal) description(boot string) protocol.Terminal {
 	if s.ended {
 		status = "ended"
 	}
-	return protocol.Terminal{ID: s.id, BootID: boot, Status: status}
+	return protocol.Terminal{ID: s.id, BootID: boot, Status: status, Sequence: s.sequence}
 }
 
 func (s *terminal) run() {

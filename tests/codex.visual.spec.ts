@@ -13,6 +13,7 @@ import {
   startCodex,
   test,
 } from './codex-helpers';
+import { terminalAction } from './terminal-helpers';
 
 for (const viewport of [
   { width: 1440, height: 900 },
@@ -166,12 +167,9 @@ for (const viewport of [
       'data-state',
       'connected',
     );
-    await expect(terminal.getByTestId('terminal-project-name')).toHaveText(
-      defaultProjectPath.split('/').filter(Boolean).at(-1)!,
+    await expect(terminal).toHaveAccessibleName(
+      `Terminal · ${defaultProjectPath.split('/').filter(Boolean).at(-1)}`,
     );
-    await expect(
-      terminal.getByTestId('terminal-project-name'),
-    ).toBeInViewport();
     await expect(
       terminal.getByRole('button', { name: /^Close / }),
     ).toBeInViewport();
@@ -179,9 +177,7 @@ for (const viewport of [
       await page.evaluate(() => document.documentElement.scrollWidth),
     ).toBeLessThanOrEqual(viewport.width);
     await capture('codex-project-terminal');
-    await terminal
-      .getByRole('button', { name: 'Details', exact: true })
-      .click();
+    await terminalAction(page, terminal, 'Details');
     const hostDetails = page.getByRole('dialog', {
       name: 'Host Terminal Details',
       exact: true,

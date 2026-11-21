@@ -17,6 +17,7 @@ import { machinesApi } from './api';
 import type { TerminalState } from '../terminal/terminal-session';
 import { isDesktopTerminalKey } from '../terminal/terminal-keys';
 import { guestTerminalSessionMenu } from './definition';
+import { guestTerminalLabel } from './open-terminal';
 
 function mayFocus() {
   return !document.querySelector('.ns-dialog-layer, .ns-menu-layer');
@@ -27,6 +28,9 @@ export function GuestTerminalApp({
   desktop,
   interactive = true,
 }: AppWindowProps) {
+  const { setTitle } = desktop;
+  const title = useRef(window.title);
+  title.current = window.title;
   const machineId = window.params.machineId || '';
   const hostId = window.params.hostId || '';
   const terminalId = window.params.terminalId || '';
@@ -50,7 +54,7 @@ export function GuestTerminalApp({
   const { pasteClipboard, pasteText, invalidatePaste, recordPasteInput } =
     useTerminalPaste({
       desktop,
-      title: `${window.title} · Terminal ${terminalId.slice(0, 8)}`,
+      title: window.title,
       terminal,
       connection: session,
       interactive: interactiveRef,
@@ -141,6 +145,12 @@ export function GuestTerminalApp({
           }),
         ),
       write: (data, done) => term.write(data, done),
+      onIdentity: (info) => {
+        const separator = title.current.lastIndexOf(' — Terminal');
+        if (separator < 0) return;
+        const next = `${title.current.slice(0, separator)} — ${guestTerminalLabel(info)}`;
+        if (next !== title.current) setTitle(window.id, next);
+      },
       onState: (next) => {
         if (disposed) return;
         if (next.phase !== 'connected') invalidatePaste();
@@ -244,6 +254,8 @@ export function GuestTerminalApp({
     machineId,
     terminalId,
     bootId,
+    setTitle,
+    window.id,
     invalidatePaste,
     recordPasteInput,
   ]);
@@ -340,7 +352,7 @@ export function GuestTerminalApp({
   const endSession = useCallback(async () => {
     const answer = await desktop.dialog({
       title: 'End guest terminal?',
-      message: `End “${window.title}” and its jobs? Terminal: ${terminalId}. Closing the window only detaches it.`,
+      message: `End “${window.title}” and its jobs? Closing the window only detaches it.`,
       buttons: [
         { label: 'Cancel', value: 'cancel', default: true, cancel: true },
         { label: 'End Session', value: 'end' },
@@ -427,7 +439,7 @@ export function GuestTerminalApp({
       data-state={state.phase}
       data-session-id={window.id}
     >
-      <div className="app-toolbar terminal-toolbar">
+      <div className="app-toolbar terminal-toolbar shell-toolbar">
         <PixelIcon name="guest-terminal" size={16} />
         <span className="toolbar-caption">Guest shell</span>
         {!live && <Button onClick={() => void reconnect()}>Reconnect</Button>}
@@ -437,18 +449,22 @@ export function GuestTerminalApp({
           disabled={!hasSelection}
           onClick={() => void copySelection()}
         />
-        <IconButton
-          icon="paste"
-          label="Paste"
-          disabled={state.phase !== 'connected'}
-          onClick={() => void pasteClipboard()}
-        />
-        <Button
-          disabled={state.phase !== 'connected'}
-          onClick={() => void interrupt()}
-        >
-          Interrupt
-        </Button>
+        {live && (
+          <>
+            <IconButton
+              icon="paste"
+              label="Paste"
+              disabled={state.phase !== 'connected'}
+              onClick={() => void pasteClipboard()}
+            />
+            <Button
+              disabled={state.phase !== 'connected'}
+              onClick={() => void interrupt()}
+            >
+              Interrupt
+            </Button>
+          </>
+        )}
         <IconButton
           icon="more"
           label="More guest terminal actions"
@@ -457,17 +473,12 @@ export function GuestTerminalApp({
             event.currentTarget.focus({ preventScroll: true });
             const rect = event.currentTarget.getBoundingClientRect();
             desktop.contextMenu(
-              guestTerminalSessionMenu(commands, window.id),
+              guestTerminalSessionMenu(commands, window.id, { compact: true }),
               { x: rect.left, y: rect.bottom },
               { title: 'Session', ownerWindowId: window.id },
             );
           }}
         />
-      </div>
-      <div className="terminal-host-info terminal-project-info">
-        <span>VM</span>
-        <strong className="terminal-project-name">Project volume</strong>
-        <Button onClick={() => void details()}>Details</Button>
       </div>
       {(state.message || feedback) && (
         <div

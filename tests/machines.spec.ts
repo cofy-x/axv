@@ -15,7 +15,7 @@ import {
   menuItem,
   test,
 } from './helpers';
-import { output } from './terminal-helpers';
+import { expectShellToolbar, output } from './terminal-helpers';
 import { applicationMenu } from './desktop-application-helpers';
 
 async function capture(page: Page, info: TestInfo, name: string) {
@@ -193,10 +193,10 @@ test('application menus follow the active VM view and retain its selection', asy
   await expect(menuItem(selectedVM, 'Start')).toBeEnabled();
   await page.keyboard.press('Escape');
   await applicationMenu(page, 'View', hasTouch);
-  await menuItem(page, 'Environment').click();
+  await menuItem(page, 'VM Host').click();
   await expect(manager.locator('.machines-environment')).toBeVisible();
   await applicationMenu(page, 'View', hasTouch);
-  await expect(menuItem(page, 'Environment')).toHaveAttribute(
+  await expect(menuItem(page, 'VM Host')).toHaveAttribute(
     'aria-checked',
     'true',
   );
@@ -226,19 +226,21 @@ test('VM and volume controls respect cross-resource operation ownership', async 
   ];
   const manager = await host(page, state);
   await expect(
-    manager.getByRole('button', { name: 'Start', exact: true }),
-  ).toBeDisabled();
+    manager.getByRole('button', { name: 'Start VM', exact: true }),
+  ).toHaveCount(0);
   await expect(
-    manager.getByText(/active VM or project-volume operation/),
+    manager
+      .locator('.machines-selection')
+      .getByText('Updating VM storage…', { exact: true }),
   ).toBeVisible();
   await manager.getByRole('button', { name: 'Inspect', exact: true }).click();
   const inspector = page.locator('[data-app-id="machine-inspector"]');
   await expect(
-    inspector.getByText(/active VM or project-volume operation/),
+    inspector.getByText('Updating VM storage…', { exact: true }),
   ).toBeVisible();
-  await inspector.getByRole('button', { name: 'More VM actions' }).click();
-  await expect(menuItem(page, 'Delete')).toBeDisabled();
-  await page.keyboard.press('Escape');
+  await expect(
+    inspector.getByRole('button', { name: 'More VM actions' }),
+  ).toHaveCount(0);
   await activate(page, manager);
   await manager.getByRole('button', { name: 'Volumes', exact: true }).click();
   await manager
@@ -336,6 +338,9 @@ test('uncertain project attachments cannot be deleted from the volume view', asy
       'Retry the pending attachment before deleting this volume or VM.',
     ),
   ).toBeVisible();
+  await manager
+    .getByRole('button', { name: 'Attach Review project', exact: true })
+    .click();
   await expect(
     manager.getByRole('button', { name: 'Attach', exact: true }),
   ).toBeEnabled();
@@ -448,16 +453,19 @@ test('a basic running VM keeps lifecycle controls while guest terminals remain u
   await expect(menuItem(page, 'Restart')).toBeEnabled();
   await page.keyboard.press('Escape');
   await expect(
-    manager.getByRole('button', { name: 'New Terminal', exact: true }),
-  ).toBeDisabled();
+    manager.getByRole('button', { name: 'Open Terminal', exact: true }),
+  ).toHaveCount(0);
   await manager.getByRole('button', { name: 'Inspect', exact: true }).click();
   const inspector = page.locator('[data-app-id="machine-inspector"]');
   await expect(
-    inspector.getByText('Guest not installed', { exact: false }),
+    inspector.getByText(
+      'Basic VM management only. This image has no guest enhancements.',
+      { exact: true },
+    ),
   ).toBeVisible();
   await expect(
-    inspector.getByRole('button', { name: 'New Terminal', exact: true }),
-  ).toBeDisabled();
+    inspector.getByRole('button', { name: /^(Open|New) Terminal$/ }),
+  ).toHaveCount(0);
   await expect(
     inspector.getByRole('button', { name: 'Stop', exact: true }),
   ).toBeEnabled();
@@ -465,7 +473,7 @@ test('a basic running VM keeps lifecycle controls while guest terminals remain u
   await capture(page, info, 'basic-vm-inspector');
 });
 
-test('a ready guest without terminal capability gives a concrete disabled reason', async ({
+test('a ready guest without terminal capability explains unavailable terminals', async ({
   page,
 }) => {
   const state = fixture();
@@ -474,177 +482,324 @@ test('a ready guest without terminal capability gives a concrete disabled reason
   state.machine.guestState = 'ready';
   state.machine.guestCapabilities = ['exec'];
   const manager = await host(page, state);
-  const terminal = manager.getByRole('button', {
-    name: 'New Terminal',
-    exact: true,
-  });
-  await expect(terminal).toBeDisabled();
-  await expect(terminal).toHaveAttribute(
-    'title',
-    'This image does not provide guest terminals.',
-  );
+  await expect(
+    manager.getByRole('button', { name: 'Open Terminal', exact: true }),
+  ).toHaveCount(0);
   await manager.getByRole('button', { name: 'Inspect', exact: true }).click();
   const inspector = page.locator('[data-app-id="machine-inspector"]');
-  await inspector.getByText('Guest terminals', { exact: true }).click();
   await expect(
-    inspector.getByText('This image does not provide guest terminals.', {
+    inspector.getByText('Guest terminals are unavailable in this image.', {
       exact: true,
     }),
   ).toBeVisible();
   expect(state.terminalReads).toBe(0);
 });
 
-test('narrow guest terminal menus clear and end only the selected shell', async ({
-  page,
-}, info) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  const state = fixture();
-  state.machine.status = state.machine.desired = 'running';
-  state.machine.ready = true;
-  state.machine.guestState = 'ready';
-  state.machine.guestCapabilities = ['terminals'];
-  const manager = await host(page, state);
-  const terminals: GuestTerminal[] = [];
-  const sockets = new Map<string, WebSocketRoute>();
-  const ended: string[] = [];
-  const input: Buffer[] = [];
-  const prefix = `/api/compute/machines/${state.machine.id}/guest/terminals`;
-  await page.route(`**${prefix}**`, async (route) => {
-    const request = route.request();
-    expect(request.headers()['x-axv-host-id']).toBe(state.machine.hostId);
-    const path = new URL(request.url()).pathname;
-    if (request.method() === 'POST') {
-      expect(path).toBe(prefix);
-      const terminal = {
-        id: `guest-shell-${terminals.length + 1}`,
-        bootId: 'review-boot',
-        status: 'running',
-      };
-      terminals.push(terminal);
+test(
+  'narrow guest terminal menus clear and end only the selected shell',
+  { tag: '@vm-ui' },
+  async ({ page, hasTouch }, info) => {
+    await page.setViewportSize({ width: 320, height: 568 });
+    const state = fixture();
+    state.machine.status = state.machine.desired = 'running';
+    state.machine.ready = true;
+    state.machine.guestState = 'ready';
+    state.machine.guestCapabilities = ['terminals'];
+    const manager = await host(page, state);
+    const terminals: GuestTerminal[] = [];
+    const sockets = new Map<string, WebSocketRoute>();
+    const ended: string[] = [];
+    const input: Buffer[] = [];
+    let rejectRoster = true;
+    let rosterGate: Promise<void> | undefined;
+    let rejectAttachment = true;
+    const prefix = `/api/compute/machines/${state.machine.id}/guest/terminals`;
+    await page.route(`**${prefix}**`, async (route) => {
+      const request = route.request();
+      expect(request.headers()['x-axv-host-id']).toBe(state.machine.hostId);
+      const path = new URL(request.url()).pathname;
+      if (request.method() === 'POST') {
+        expect(path).toBe(prefix);
+        const terminal = {
+          id: `guest-shell-${terminals.length + 1}`,
+          bootId: 'review-boot',
+          status: 'running',
+          sequence: terminals.length + 1,
+        };
+        terminals.push(terminal);
+        await route.fulfill({ json: terminal });
+        return;
+      }
+      if (path === prefix) {
+        if (rejectRoster) {
+          await route.fulfill({
+            status: 503,
+            json: { error: 'Could not list current terminals.' },
+          });
+          return;
+        }
+        await rosterGate;
+        await route.fulfill({ json: { terminals } });
+        return;
+      }
+      const id = path.slice(prefix.length + 1);
+      const terminal = terminals.find((item) => item.id === id);
+      expect(terminal).toBeTruthy();
+      if (request.method() === 'DELETE') {
+        ended.push(id);
+        terminal!.status = 'ended';
+      }
+      if (request.method() === 'GET' && rejectAttachment) {
+        rejectAttachment = false;
+        await route.fulfill({
+          status: 409,
+          json: { error: 'Guest attachment is temporarily unavailable.' },
+        });
+        return;
+      }
       await route.fulfill({ json: terminal });
-      return;
+    });
+    await page.routeWebSocket(
+      (url) =>
+        url.pathname.startsWith(`${prefix}/`) &&
+        url.pathname.endsWith('/attach'),
+      (socket) => {
+        const url = new URL(socket.url());
+        expect(url.searchParams.get('hostId')).toBe(state.machine.hostId);
+        const id = url.pathname.slice(prefix.length + 1).split('/')[0]!;
+        sockets.set(id, socket);
+        socket.onMessage((message) => {
+          if (Buffer.isBuffer(message)) input.push(message);
+        });
+        socket.send(JSON.stringify({ ready: true, bootId: 'review-boot' }));
+        socket.send(Buffer.from(`GUEST ${id}\r\nguest-test> `));
+      },
+    );
+    const openTerminal = manager.getByRole('button', {
+      name: 'Open Terminal',
+      exact: true,
+    });
+    await openTerminal.click();
+    const first = page.locator('[data-app-id="guest-terminal"]').first();
+    await expect(manager.getByRole('alert')).toContainText(
+      'Could not list current terminals.',
+    );
+    await expect(first).toHaveCount(0);
+    expect(terminals).toHaveLength(0);
+    rejectRoster = false;
+
+    let releaseRoster!: () => void;
+    rosterGate = new Promise<void>((resolve) => {
+      releaseRoster = resolve;
+    });
+    try {
+      await openTerminal.click();
+      await expect(
+        manager.getByRole('button', { name: 'Opening Terminal…' }),
+      ).toBeDisabled();
+      await manager
+        .getByRole('button', { name: 'Volumes', exact: true })
+        .click();
+    } finally {
+      releaseRoster();
+      rosterGate = undefined;
     }
-    if (path === prefix) {
-      await route.fulfill({ json: { terminals } });
-      return;
-    }
-    const id = path.slice(prefix.length + 1);
-    const terminal = terminals.find((item) => item.id === id);
-    expect(terminal).toBeTruthy();
-    if (request.method() === 'DELETE') {
-      ended.push(id);
-      terminal!.status = 'ended';
-    }
-    await route.fulfill({ json: terminal });
-  });
-  await page.routeWebSocket(
-    (url) =>
-      url.pathname.startsWith(`${prefix}/`) && url.pathname.endsWith('/attach'),
-    (socket) => {
-      const url = new URL(socket.url());
-      expect(url.searchParams.get('hostId')).toBe(state.machine.hostId);
-      const id = url.pathname.slice(prefix.length + 1).split('/')[0]!;
-      sockets.set(id, socket);
-      socket.onMessage((message) => {
-        if (Buffer.isBuffer(message)) input.push(message);
-      });
-      socket.send(JSON.stringify({ ready: true, bootId: 'review-boot' }));
-      socket.send(Buffer.from(`GUEST ${id}\r\nguest-test> `));
-    },
-  );
-  await manager
-    .getByRole('button', { name: 'New Terminal', exact: true })
-    .click();
-  const first = page.locator('[data-app-id="guest-terminal"]').first();
-  await expect(first.getByTestId('terminal-status')).toHaveAttribute(
-    'data-state',
-    'connected',
-  );
-  await expect(output(first)).toContainText('GUEST guest-shell-1');
-  const more = first.getByRole('button', {
-    name: 'More guest terminal actions',
-    exact: true,
-  });
-  for (const label of [
-    'Copy',
-    'Paste',
-    'Interrupt',
-    'More guest terminal actions',
-  ])
-    await expect(
-      first.getByRole('button', { name: label, exact: true }),
-    ).toBeInViewport();
-  await more.focus();
-  await more.press('Enter');
-  await expect(menuItem(page, 'End Session')).toBeInViewport();
-  await expect(first.getByLabel('Guest terminal input')).not.toBeFocused();
-  await capture(page, info, 'guest-terminal-more-390');
-  await page.keyboard.press('Escape');
-  await expect(more).toBeFocused();
-  await activate(page, manager);
-  await manager
-    .getByRole('button', { name: 'New Terminal', exact: true })
-    .click();
-  const second = page.locator('[data-app-id="guest-terminal"]').last();
-  await expect(second.getByTestId('terminal-status')).toHaveAttribute(
-    'data-state',
-    'connected',
-  );
-  await expect(output(second)).toContainText('GUEST guest-shell-2');
-  await page
-    .getByRole('button', { name: 'Window Overview', exact: true })
-    .click();
-  await first.getByRole('button', { name: /^Switch to / }).click();
-  await expect(first).toHaveClass(/is-active/);
-  await actionMenu(page, first, 'More guest terminal actions', 'Clear');
-  await expect(output(first)).not.toContainText('GUEST guest-shell-1');
-  await expect(output(second)).toContainText('GUEST guest-shell-2');
-  expect(input).toHaveLength(0);
-  await actionMenu(page, first, 'More guest terminal actions', 'End Session');
-  const confirmation = page.getByRole('dialog', {
-    name: 'End guest terminal?',
-    exact: true,
-  });
-  await expect(confirmation).toContainText(
-    `End “${state.machine.spec.name} — Terminal” and its jobs? Terminal: guest-shell-1. Closing the window only detaches it.`,
-  );
-  await expect(confirmation).not.toContainText('guest-shell-2');
-  await expect(
-    confirmation.getByRole('button', { name: 'Cancel', exact: true }),
-  ).toBeFocused();
-  await capture(page, info, 'guest-terminal-end-confirmation-390');
-  await confirmation
-    .getByRole('button', { name: 'Cancel', exact: true })
-    .click();
-  expect(ended).toEqual([]);
-  for (const target of [first, second])
-    await expect(target.getByTestId('terminal-status')).toHaveAttribute(
+    await expect(manager.getByRole('button', { name: 'New VM' })).toBeEnabled();
+    await expect(first).toHaveCount(0);
+    expect(terminals).toHaveLength(0);
+    await manager.getByRole('button', { name: 'VMs', exact: true }).click();
+    await openTerminal.click();
+    await expect(first).toHaveAttribute(
+      'aria-label',
+      `${state.machine.spec.name} — Terminal 1`,
+    );
+    await expect(first.getByTestId('terminal-status')).toHaveAttribute(
+      'data-state',
+      'error',
+    );
+    await expectShellToolbar(first, 'Guest shell', [
+      'Copy',
+      'Reconnect',
+      'More guest terminal actions',
+    ]);
+    await expect(first.getByRole('alert')).toContainText(
+      'Guest attachment is temporarily unavailable.',
+    );
+    await capture(page, info, 'guest-terminal-recovery-320');
+    const reconnect = first.getByRole('button', {
+      name: 'Reconnect',
+      exact: true,
+    });
+    if (hasTouch) await reconnect.tap();
+    else await reconnect.click();
+    await expect(first.getByTestId('terminal-status')).toHaveAttribute(
       'data-state',
       'connected',
     );
-  expect(terminals.map((terminal) => terminal.status)).toEqual([
-    'running',
-    'running',
-  ]);
-  await actionMenu(page, first, 'More guest terminal actions', 'End Session');
-  await confirmation
-    .getByRole('button', { name: 'End Session', exact: true })
-    .click();
-  await expect(first.getByTestId('terminal-status')).toHaveAttribute(
-    'data-state',
-    'ended',
-  );
-  await expect(second.getByTestId('terminal-status')).toHaveAttribute(
-    'data-state',
-    'connected',
-  );
-  expect(ended).toEqual(['guest-shell-1']);
-  expect(terminals.map((terminal) => terminal.status)).toEqual([
-    'ended',
-    'running',
-  ]);
-  expect([...sockets.keys()]).toEqual(['guest-shell-1', 'guest-shell-2']);
-});
+    await expect(output(first)).toContainText('GUEST guest-shell-1');
+    expect(terminals.map(({ id }) => id)).toEqual(['guest-shell-1']);
+    const more = first.getByRole('button', {
+      name: 'More guest terminal actions',
+      exact: true,
+    });
+    await expectShellToolbar(first, 'Guest shell', [
+      'Copy',
+      'Paste',
+      'Interrupt',
+      'More guest terminal actions',
+    ]);
+    await capture(page, info, 'guest-terminal-320');
+    await more.focus();
+    await more.press('Enter');
+    const sessionMenu = page.getByRole('menu', {
+      name: 'Session',
+      exact: true,
+    });
+    for (const name of ['Clear', 'Details', 'Paste text', 'End Session'])
+      await expect(menuItem(sessionMenu, name)).toBeInViewport();
+    for (const name of ['Interrupt', 'Reconnect'])
+      await expect(menuItem(sessionMenu, name)).toHaveCount(0);
+    await expect(first.getByLabel('Guest terminal input')).not.toBeFocused();
+    await capture(page, info, 'guest-terminal-more-320');
+    await page.keyboard.press('Escape');
+    await expect(more).toBeFocused();
+    const originalWindow = await first.getAttribute('data-window-id');
+    await first.getByRole('button', { name: /^Close / }).click();
+    await expect(first).toHaveCount(0);
+    await activate(page, manager);
+    await applicationMenu(page, 'Selected VM', hasTouch);
+    const selectedVM = page.getByRole('menu', { name: 'Selected VM' });
+    await menuItem(selectedVM, 'Open Terminal').click();
+    await expect(first).toHaveAttribute('data-window-id', originalWindow!);
+    await expect(output(first)).toContainText('GUEST guest-shell-1');
+    expect(terminals.map(({ id }) => id)).toEqual(['guest-shell-1']);
+    await first.getByRole('button', { name: /^Close / }).click();
+    await expect(first).toHaveCount(0);
+    await activate(page, manager);
+    await manager.getByRole('button', { name: 'Inspect', exact: true }).click();
+    const inspector = page.locator('[data-app-id="machine-inspector"]');
+    await inspector
+      .getByRole('button', { name: 'Resume Terminal', exact: true })
+      .click();
+    await expect(first).toHaveAttribute('data-window-id', originalWindow!);
+    await expect(first.getByTestId('terminal-status')).toHaveAttribute(
+      'data-state',
+      'connected',
+    );
+    expect(terminals.map(({ id }) => id)).toEqual(['guest-shell-1']);
+    await activate(page, inspector);
+    await inspector
+      .getByRole('button', { name: 'New Terminal', exact: true })
+      .click();
+    const second = page.locator('[data-app-id="guest-terminal"]').last();
+    await expect(second.getByTestId('terminal-status')).toHaveAttribute(
+      'data-state',
+      'connected',
+    );
+    await expect(second).toHaveAttribute(
+      'aria-label',
+      `${state.machine.spec.name} — Terminal 2`,
+    );
+    await expect(output(second)).toContainText('GUEST guest-shell-2');
+    await activate(page, manager);
+    await openTerminal.click();
+    await expect(inspector).toHaveClass(/is-active/);
+    const sessions = inspector.locator('details[open]').filter({
+      has: page.getByText('Guest terminals', { exact: true }),
+    });
+    await expect(sessions.locator('summary')).toBeFocused();
+    await expect(
+      sessions.getByRole('button', { name: 'Resume Terminal 1', exact: true }),
+    ).toBeVisible();
+    await capture(page, info, 'guest-terminal-picker-320');
+    await sessions
+      .getByRole('button', { name: 'Resume Terminal 2', exact: true })
+      .click();
+    await expect(second).toHaveClass(/is-active/);
+    await expect(output(second)).toContainText('GUEST guest-shell-2');
+    expect(terminals.map(({ id }) => id)).toEqual([
+      'guest-shell-1',
+      'guest-shell-2',
+    ]);
+    await page
+      .getByRole('button', { name: 'Window Overview', exact: true })
+      .click();
+    await first.getByRole('button', { name: /^Switch to / }).click();
+    await expect(first).toHaveClass(/is-active/);
+    await actionMenu(
+      page,
+      first,
+      'More guest terminal actions',
+      'Details',
+      hasTouch,
+    );
+    const details = page.getByRole('dialog', {
+      name: 'Guest Terminal Details',
+      exact: true,
+    });
+    for (const binding of [
+      state.machine.id,
+      state.machine.hostId,
+      'review-boot',
+      'guest-shell-1',
+    ])
+      await expect(details.getByText(binding, { exact: true })).toBeVisible();
+    await expect(
+      details.getByText('guest-shell-2', { exact: true }),
+    ).toHaveCount(0);
+    await capture(page, info, 'guest-terminal-details-320');
+    await details.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(more).toBeFocused();
+    await actionMenu(page, first, 'More guest terminal actions', 'Clear');
+    await expect(output(first)).not.toContainText('GUEST guest-shell-1');
+    await expect(output(second)).toContainText('GUEST guest-shell-2');
+    expect(input).toHaveLength(0);
+    await actionMenu(page, first, 'More guest terminal actions', 'End Session');
+    const confirmation = page.getByRole('dialog', {
+      name: 'End guest terminal?',
+      exact: true,
+    });
+    await expect(confirmation).toContainText(
+      `End “${state.machine.spec.name} — Terminal 1” and its jobs? Closing the window only detaches it.`,
+    );
+    await expect(confirmation).not.toContainText('Terminal 2');
+    await expect(
+      confirmation.getByRole('button', { name: 'Cancel', exact: true }),
+    ).toBeFocused();
+    await capture(page, info, 'guest-terminal-end-confirmation-320');
+    await confirmation
+      .getByRole('button', { name: 'Cancel', exact: true })
+      .click();
+    expect(ended).toEqual([]);
+    for (const target of [first, second])
+      await expect(target.getByTestId('terminal-status')).toHaveAttribute(
+        'data-state',
+        'connected',
+      );
+    expect(terminals.map((terminal) => terminal.status)).toEqual([
+      'running',
+      'running',
+    ]);
+    await actionMenu(page, first, 'More guest terminal actions', 'End Session');
+    await confirmation
+      .getByRole('button', { name: 'End Session', exact: true })
+      .click();
+    await expect(first.getByTestId('terminal-status')).toHaveAttribute(
+      'data-state',
+      'ended',
+    );
+    await expect(second.getByTestId('terminal-status')).toHaveAttribute(
+      'data-state',
+      'connected',
+    );
+    expect(ended).toEqual(['guest-shell-1']);
+    expect(terminals.map((terminal) => terminal.status)).toEqual([
+      'ended',
+      'running',
+    ]);
+    expect([...sockets.keys()]).toEqual(['guest-shell-1', 'guest-shell-2']);
+  },
+);
 
 function backupProvenance(): NonNullable<Volume['backup']> {
   return {
@@ -680,11 +835,8 @@ test('immutable project backups expose deletion but cannot attach or change', as
     manager.getByLabel('Keep this volume after VM deletion', { exact: true }),
   ).toBeDisabled();
   await expect(
-    manager.getByRole('combobox', {
-      name: 'VM without a project volume',
-      exact: true,
-    }),
-  ).toBeDisabled();
+    manager.getByRole('button', { name: 'Attach Review project', exact: true }),
+  ).toHaveCount(0);
   await manager.getByRole('button', { name: 'More volume actions' }).click();
   for (const label of ['Rename', 'Grow', 'Detach'])
     await expect(menuItem(page, label)).toBeDisabled();
@@ -718,6 +870,9 @@ test('restored working volumes remain attachable and editable without generic co
     manager.getByLabel('Keep this volume after VM deletion', { exact: true }),
   ).toBeEnabled();
   await manager
+    .getByRole('button', { name: 'Attach Review project', exact: true })
+    .click();
+  await manager
     .getByRole('combobox', { name: 'VM without a project volume', exact: true })
     .selectOption(state.machine.id);
   await expect(
@@ -744,7 +899,14 @@ test('VM creation excludes immutable backups and offers restored working volumes
   const manager = await host(page, state);
   await manager.getByRole('button', { name: 'New VM', exact: true }).click();
   const create = page.locator('[data-app-id="machine-create"]');
-  const select = create.getByRole('combobox', { name: 'Volume', exact: true });
+  await create.getByText('Advanced', { exact: true }).click();
+  const select = create.getByRole('combobox', {
+    name: 'Project volume',
+    exact: true,
+  });
+  await expect(
+    select.locator('optgroup[label="Existing volumes"]'),
+  ).toHaveCount(1);
   await expect(
     select.locator(`option[value="${state.volume.id}"]`),
   ).toHaveCount(0);

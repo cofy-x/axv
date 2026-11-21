@@ -13,8 +13,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cofy-x/axv/apps/server/internal/compute"
+	"github.com/cofy-x/axv/apps/server/internal/compute/hostinstall"
 	"github.com/cofy-x/axv/apps/server/internal/compute/internal/hostconn"
 	"github.com/cofy-x/axv/apps/server/internal/compute/prepare"
 	"github.com/cofy-x/axv/apps/server/internal/diagnostics"
@@ -167,6 +169,12 @@ func (g *Gateway) Bind(socket, hostID, fingerprint string) uint64 {
 		b.errorMu.Unlock()
 		if changed || (r.Method != http.MethodGet && r.Method != http.MethodHead) {
 			g.logger.Error("compute.transport_failed", err, "hostId", hostID, "generation", b.generation, "method", r.Method)
+		}
+		if r.Method == http.MethodGet {
+			if change, ok := hostinstall.ReadImageReload(socket, hostID, fingerprint); ok && change.Pending(time.Now()) {
+				write(w, 503, map[string]string{"code": "image_reload", "error": "Reconnecting after the VM image installation."})
+				return
+			}
 		}
 		write(w, 503, map[string]string{"code": "host_unavailable", "error": "The local VM service is unavailable. Check its status on the computer running AXV; existing VMs have not been stopped."})
 	}}

@@ -20,7 +20,12 @@ for (const viewport of [
     await page.setViewportSize(viewport);
     const welcome = page.locator('[data-app-id="welcome"]');
     const entries = welcome.getByRole('group', { name: 'Work applications' });
-    for (const app of ['Codex', 'Virtual Machines', 'Project Files'])
+    for (const app of [
+      'Codex',
+      'Virtual Machines',
+      'Project Files',
+      'Terminal',
+    ])
       await expect(entries.getByRole('button', { name: app })).toBeInViewport();
     await expect(
       page.getByRole('button', { name: 'Workspace menu', exact: true }),

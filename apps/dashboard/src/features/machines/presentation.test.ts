@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { Machine, Operation } from './api';
-import { guestTerminalReason, machineGuidance } from './presentation';
+import { activeVMOperation } from './lifecycle';
+import {
+  guestTerminalReason,
+  latestVMFailure,
+  machineGuidance,
+  machineTransition,
+} from './presentation';
 
 const running: Machine = {
   id: 'vm-presentation',
@@ -40,11 +46,11 @@ describe('machine guidance', () => {
   };
 
   it('leaves normal states and states without diagnostics free of generic instructions', () => {
-    expect(machineGuidance(stopped, [])).toBeUndefined();
-    expect(machineGuidance(ready, [])).toBeUndefined();
-    expect(
-      machineGuidance({ ...stopped, status: 'unknown' }, []),
-    ).toBeUndefined();
+    expect(machineGuidance(stopped)).toBeUndefined();
+    expect(machineGuidance(ready)).toBeUndefined();
+    expect(machineGuidance({ ...stopped, status: 'unknown' })).toContain(
+      'Stop the VM before trying to start it again.',
+    );
   });
 
   it.each(['queued', 'running'])(
@@ -59,47 +65,66 @@ describe('machine guidance', () => {
         phase: 'copying-data',
         createdAt: '',
       };
-      expect(machineGuidance(stopped, [operation])).toContain(status);
-      expect(machineGuidance(stopped, [operation])).toContain('Copying data');
       expect(
-        machineGuidance(stopped, [{ ...operation, locks: ['another-vm'] }]),
+        machineTransition(stopped, activeVMOperation(stopped, [operation])),
+      ).toBe('Updating VM storage…');
+      expect(
+        activeVMOperation(stopped, [{ ...operation, locks: ['another-vm'] }]),
       ).toBeUndefined();
       expect(
-        machineGuidance(stopped, [{ ...operation, status: 'succeeded' }]),
+        activeVMOperation(stopped, [{ ...operation, status: 'succeeded' }]),
       ).toBeUndefined();
     },
   );
 
+  it('shows acknowledged startup on a stopped snapshot and clears a superseded failure', () => {
+    const start: Operation = {
+      id: 'new-start',
+      machineId: stopped.id,
+      action: 'start',
+      status: 'queued',
+      createdAt: '',
+    };
+    const failed = {
+      ...start,
+      id: 'previous-start',
+      status: 'failed',
+      error: 'Startup failed.',
+    };
+    expect(machineTransition(stopped, start)).toBe('Starting…');
+    expect(latestVMFailure(stopped, [failed])).toEqual(failed);
+    expect(
+      latestVMFailure(stopped, [{ ...start, status: 'succeeded' }, failed]),
+    ).toBeUndefined();
+  });
+
   it('retains configuration, storage and guest capability blockers', () => {
     expect(
-      machineGuidance({ ...stopped, pendingSpec: stopped.spec }, []),
+      machineGuidance({ ...stopped, pendingSpec: stopped.spec }),
     ).toContain('pending');
     expect(
-      machineGuidance(
-        { ...stopped, spec: { ...stopped.spec, volumeId: undefined } },
-        [],
-      ),
+      machineGuidance({
+        ...stopped,
+        spec: { ...stopped.spec, volumeId: undefined },
+      }),
     ).toContain('project volume');
     expect(
-      machineGuidance({ ...ready, guestState: 'not-installed' }, []),
+      machineGuidance({ ...ready, guestState: 'not-installed' }),
     ).toContain('no guest enhancements');
+    expect(machineGuidance({ ...ready, guestState: 'incompatible' })).toContain(
+      'incompatible',
+    );
     expect(
-      machineGuidance({ ...ready, guestState: 'incompatible' }, []),
-    ).toContain('incompatible');
-    expect(
-      machineGuidance(
-        { ...ready, ready: false, guestState: 'unavailable' },
-        [],
-      ),
-    ).toContain('not ready');
-    expect(machineGuidance(running, [])).toContain('terminals');
+      machineGuidance({ ...ready, ready: false, guestState: 'unavailable' }),
+    ).toBe('Waiting for the guest service.');
+    expect(machineGuidance(running)).toContain('terminals');
   });
 
   it.each([stopped, ready])(
     'keeps a reported reason when the VM is $status',
     (machine) => {
       const reason = 'The provider could not verify the project volume.';
-      expect(machineGuidance({ ...machine, reason }, [])).toBe(reason);
+      expect(machineGuidance({ ...machine, reason })).toBe(reason);
     },
   );
 });

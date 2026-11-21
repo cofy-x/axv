@@ -69,47 +69,17 @@
   display: block;
   color: #333;
 }
-.welcome-tools {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 14px;
-}
-.welcome-remote {
-  border-top: 1px solid var(--ns-shadow);
-  box-shadow: 0 -1px var(--ns-light);
-  margin-top: 18px;
-  padding-top: 12px;
-  font-size: var(--ns-font-size-secondary);
-}
-.welcome-remote > summary {
-  min-height: var(--ns-control-height);
-  padding: 5px 0;
-  cursor: pointer;
-}
-.welcome-remote p {
-  line-height: 1.5;
-  margin: 10px 0 0;
-}
-.welcome-remote .welcome-tools {
-  margin-top: 10px;
-}
-.welcome-install-steps {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: 12px 16px;
-  margin: 10px 0 0;
-  line-height: 1.5;
-}
-.welcome-install-steps dt {
-  font-weight: bold;
-}
-.welcome-install-steps dd {
+.welcome-install-guide p {
   margin: 0;
 }
+.welcome-install-guide p + p {
+  margin-top: 10px;
+}
 .welcome-footer {
-  justify-content: space-between;
   flex-wrap: wrap;
+}
+.welcome-footer > :last-child {
+  margin-left: auto;
 }
 .about-app {
   height: 100%;
@@ -136,14 +106,11 @@
     padding: 14px;
   }
   .welcome-link {
-    padding: 10px;
+    padding: 8px 10px;
     gap: 10px;
   }
-  .welcome-install-steps {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 2px;
-  }
-  .welcome-install-steps dt:not(:first-child) {
-    margin-top: 10px;
+  .welcome-link > svg {
+    width: 34px;
+    height: 34px;
   }
 }

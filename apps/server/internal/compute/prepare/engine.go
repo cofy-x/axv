@@ -17,6 +17,7 @@ import (
 	"github.com/cofy-x/axv/apps/server/internal/artifactcache"
 	"github.com/cofy-x/axv/apps/server/internal/compute"
 	"github.com/cofy-x/axv/apps/server/internal/compute/artifacts"
+	"github.com/cofy-x/axv/apps/server/internal/compute/hostinstall"
 	"github.com/cofy-x/axv/apps/server/internal/diagnostics"
 	"github.com/cofy-x/axv/apps/server/internal/filelock"
 	"github.com/cofy-x/axv/apps/server/internal/owneddir"
@@ -45,6 +46,7 @@ type Engine struct {
 	dependencyChecks  []Requirement
 	dependencyChecked time.Time
 	dependencyRunning bool
+	localService      linuxServiceDiagnostic
 }
 
 type runnerControl struct{ cancel context.CancelFunc }
@@ -144,6 +146,22 @@ func (e *Engine) Close() error {
 // Snapshot uses the same inexpensive reads as Check and does not probe hosts or
 // hash downloaded images. It is suitable for desktop environment responses.
 func (e *Engine) Snapshot() Check { result, _ := e.Check(context.Background()); return result }
+
+// CheckWithLocalService is for the guarded desktop preparation check. Plan and
+// Snapshot avoid probing a default service while inspecting other settings.
+func (e *Engine) CheckWithLocalService(ctx context.Context) (Check, error) {
+	c, err := e.Check(ctx)
+	if err != nil || e.platform != "linux" || c.LockedReason != "" || c.ActiveJob != nil {
+		return c, err
+	}
+	if !c.Configured {
+		result := e.localService.check(ctx, defaultFirecrackerSocket, defaultFirecrackerConfig)
+		c.LocalService = &result
+	} else if c.Defaults.Socket == defaultFirecrackerSocket && hostinstall.DefaultImageInstallAvailable() {
+		c.DefaultImageID = artifacts.DefaultFirecrackerGuest().Bundle.ID
+	}
+	return c, err
+}
 
 func (e *Engine) Check(ctx context.Context) (Check, error) {
 	c := Check{Platform: e.platform, Arch: e.arch, ConfigurationSource: "profile", CacheHome: e.cache.Home, RequiredLimaVersion: compute.SupportedLimaVersion, AutomaticSetupSupported: e.platform == "darwin" && (e.arch == "arm64" || e.arch == "amd64"), Defaults: e.defaults(), Checks: []Requirement{}}

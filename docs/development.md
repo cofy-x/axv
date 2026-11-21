@@ -219,6 +219,18 @@ E2E_SKIP_BUILD=1 make test-e2e E2E_ARGS="--project=chromium tests/desktop.spec.t
 
 Use `E2E_SKIP_BUILD=1` only when the existing production binary includes the changes under test. Focused runs complement the required full suite.
 
+### Focused VM UI review
+
+Run `make test-vm-ui` for the VM interface checks marked `@vm-ui`. It uses the regular isolated Playwright launcher with desktop and touch Chromium and fixture VM data. The `--output` option keeps a named set of screenshots for review.
+
+```bash
+make test-vm-ui E2E_ARGS="--output=.data/test/vm-ui-results"
+```
+
+The tests exercise connection, creation, Inspector, guest terminal reuse and labels, volume attachment, backup stop confirmation and Activity navigation. Long inventory fixtures check that VM actions and task expiry stay visible while scrolling. They check that the next action, consequential copy and recovery remain visible and use screenshot attachments for reviewing layout at the captured viewports. Review the attachments in the local Playwright report with `pnpm exec playwright show-report`. Use a fresh output path to keep earlier captures for comparison. See [interface copy](design.md#interface-copy) for the design rule and [verification](#verification) for the full set of checks.
+
+### Production smoke
+
 The [production smoke](../scripts/smoke-production.mjs) exercises the embedded binary from an unrelated directory: CLI validation, listener isolation, persistence across restart and session lifecycles. Its assertions are the coverage source; extend them for changed production behavior instead of maintaining a second checklist here.
 
 ## GitHub CI and dependency maintenance

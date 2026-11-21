@@ -20,7 +20,7 @@ Command and terminal routes are nested under `/machines/:id/guest`: the browser 
 
 - `POST /terminals`
   - Request: `{ requestId, directory?, cols?, rows? }`.
-  - Response: `201 { id, bootId, status }`, or `200` for an idempotent retry.
+  - Response: `201 { id, bootId, status, sequence? }`, or `200` for an idempotent retry.
 
 - `GET /terminals/:id`
   - Response: Existing terminal identity/status.
@@ -30,6 +30,8 @@ Command and terminal routes are nested under `/machines/:id/guest`: the browser 
 
 - `GET /terminals/:id/attach` (WebSocket upgrade)
   - Attaches to the existing terminal; disconnect only detaches.
+
+The optional `sequence` numbers new terminals in creation order within a guest-service lifetime. It stays fixed across retries, detachments and session end. Requests and attachments use the terminal and boot identities.
 
 ## Command execution
 

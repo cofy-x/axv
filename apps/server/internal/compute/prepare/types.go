@@ -51,25 +51,35 @@ type Request struct {
 
 type Requirement struct {
 	ID     string `json:"id"`
+	Code   string `json:"code,omitempty"`
 	Label  string `json:"label"`
 	Status string `json:"status"` // ready, needed, blocked
 	Detail string `json:"detail"`
 }
 
+type LocalServiceCheck struct {
+	Status       string `json:"status"` // missing, permission_denied, unavailable, ready
+	Socket       string `json:"socket"`
+	Detail       string `json:"detail"`
+	SystemdState string `json:"systemdState,omitempty"` // not_installed, inactive, failed, active
+}
+
 type Check struct {
-	OfficialImageAvailable  bool          `json:"officialImageAvailable"`
-	Platform                string        `json:"platform"`
-	Arch                    string        `json:"arch"`
-	Configured              bool          `json:"configured"`
-	CacheHome               string        `json:"cacheHome"`
-	ConfigurationSource     string        `json:"configurationSource"`
-	LockedReason            string        `json:"lockedReason,omitempty"`
-	AutomaticSetupSupported bool          `json:"automaticSetupSupported"`
-	RequiredLimaVersion     string        `json:"requiredLimaVersion"`
-	Defaults                Request       `json:"defaults"`
-	Checks                  []Requirement `json:"checks"`
-	ActiveJob               *Job          `json:"activeJob,omitempty"`
-	LatestJob               *Job          `json:"latestJob,omitempty"`
+	OfficialImageAvailable  bool               `json:"officialImageAvailable"`
+	DefaultImageID          string             `json:"defaultImageId,omitempty"`
+	Platform                string             `json:"platform"`
+	Arch                    string             `json:"arch"`
+	Configured              bool               `json:"configured"`
+	CacheHome               string             `json:"cacheHome"`
+	ConfigurationSource     string             `json:"configurationSource"`
+	LockedReason            string             `json:"lockedReason,omitempty"`
+	AutomaticSetupSupported bool               `json:"automaticSetupSupported"`
+	RequiredLimaVersion     string             `json:"requiredLimaVersion"`
+	Defaults                Request            `json:"defaults"`
+	Checks                  []Requirement      `json:"checks"`
+	LocalService            *LocalServiceCheck `json:"localService,omitempty"`
+	ActiveJob               *Job               `json:"activeJob,omitempty"`
+	LatestJob               *Job               `json:"latestJob,omitempty"`
 }
 
 type Download struct {

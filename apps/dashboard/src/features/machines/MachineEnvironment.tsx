@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, Field, IconButton, Select } from '@cofy-x/axv-nextstep';
+import type { DesktopAPI } from '@cofy-x/axv-nextstep';
 import type { PreparationPlan, PreparationRequirement } from './api';
 import {
+  defaultFirecrackerSocket,
   preparationDraft,
   preparationDraftError,
   preparationRequest,
@@ -10,8 +12,17 @@ import {
 import type { PreparationDraft } from './preparation-form';
 import { preparationRunning } from './preparation-store';
 import { operationError } from './operation-requests';
-import { humanize } from './presentation';
+import { humanize, linuxVMSetupGuide } from './presentation';
 import type { useCompute } from './useCompute';
+import { openMachineDiagnostics } from './MachineDiagnostics';
+import { HostServiceGuidance } from './HostServiceGuidance';
+
+const serviceStatusLabel = {
+  missing: 'Firecracker service not found',
+  permission_denied: 'Firecracker access denied',
+  unavailable: 'Firecracker service unavailable',
+  ready: 'Firecracker service detected',
+};
 
 function Checks({ checks }: { checks: PreparationRequirement[] }) {
   function list(items: PreparationRequirement[]) {
@@ -57,9 +68,11 @@ function Checks({ checks }: { checks: PreparationRequirement[] }) {
 
 export function MachineEnvironment({
   data,
+  desktop,
   onShowMachines,
 }: {
   data: ReturnType<typeof useCompute>;
+  desktop: DesktopAPI;
   onShowMachines: () => void;
 }) {
   const { environment, info, preparation, prepare } = data;
@@ -68,6 +81,8 @@ export function MachineEnvironment({
     preparationDraft({}),
   );
   const draftSource = useRef('');
+  const [connectionSelected, setConnectionSelected] = useState(false);
+  const [connectionEdits, setConnectionEdits] = useState<PreparationDraft>();
   const [plan, setPlan] = useState<PreparationPlan>();
   const [reviewing, setReviewing] = useState(false);
   const [error, setError] = useState('');
@@ -78,8 +93,36 @@ export function MachineEnvironment({
   const reviewRequest = useRef<AbortController | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const platform = check?.platform || environment?.platform;
+  const runtime = environment?.runtime;
+  const launcherConnection =
+    check?.configurationSource === 'environment' ||
+    environment?.configurationSource === 'environment' ||
+    (runtime?.mode === 'external' && runtime.readOnly);
+  const launcherReady =
+    launcherConnection && runtime?.state === 'ready' && !data.error;
   const configured =
-    check?.configured ?? environment?.configured ?? info?.configured ?? false;
+    launcherConnection ||
+    (check?.configured ?? environment?.configured ?? info?.configured ?? false);
+  const linux = platform === 'linux';
+  const linuxSetup = linux && !configured;
+  const service = check?.localService;
+  const useDetectedSocket = linuxSetup && !connectionSelected;
+  const connectionDraft: PreparationDraft = useDetectedSocket
+    ? {
+        ...draft,
+        connection: 'socket',
+        socket: service?.socket || check?.defaults.socket || draft.socket,
+      }
+    : draft;
+  const socketConnection = connectionDraft.connection === 'socket';
+  const connectionPath = socketConnection
+    ? connectionDraft.socket
+    : connectionDraft.hostConfig;
+  const connectionInput = connectionEdits ?? connectionDraft;
+  const serviceCheck =
+    socketConnection && service?.socket === connectionDraft.socket
+      ? service
+      : undefined;
   const running = preparationRunning(job);
   const failed = job?.status === 'failed' || job?.status === 'interrupted';
   const busy = !!preparation.mutation || !!preparation.pending || running;
@@ -94,36 +137,93 @@ export function MachineEnvironment({
     !!job &&
     (running || (failed && reviewedJob !== jobVersion) || stage === 'progress');
   const showReview = !!plan && stage === 'review' && !showJob;
-  const draftError = preparationDraftError(draft, platform || '', configured);
+  const showHostOverview = launcherConnection
+    ? launcherReady
+    : !!check && ready && !showJob && !showReview;
+  const draftError = preparationDraftError(
+    connectionInput,
+    platform || '',
+    configured,
+  );
   const expired = !!plan && Date.parse(plan.expiresAt) <= Date.now();
-  const connectsService =
-    platform === 'linux' || environment?.runtime?.mode === 'external';
+  const connectionPlan = showReview ? plan : undefined;
+  const canConnect = !connectionEdits && !!connectionPlan?.canStart && !expired;
+  const directConnect =
+    linuxSetup &&
+    !connectionEdits &&
+    !check?.lockedReason &&
+    socketConnection &&
+    connectionPath === defaultFirecrackerSocket &&
+    serviceCheck?.status === 'ready';
+  const connectionFailures =
+    connectionPlan?.checks.filter((check) => check.status === 'blocked') ?? [];
+  const serviceFailure = connectionFailures.find(
+    (check) => check.id === 'local_service',
+  );
+  const detectedAfterMissingCheck =
+    serviceFailure?.code === 'missing' && serviceCheck?.status === 'ready';
+  const showHostGuidance =
+    !connectionEdits &&
+    !directConnect &&
+    !preparation.connectionError &&
+    !detectedAfterMissingCheck &&
+    socketConnection &&
+    connectionPath === defaultFirecrackerSocket &&
+    (connectionPlan
+      ? serviceFailure?.code === 'missing'
+      : serviceCheck?.status === 'missing' || !!serviceCheck?.systemdState);
+  const remainingFailures =
+    showHostGuidance || detectedAfterMissingCheck
+      ? connectionFailures.filter((check) => check !== serviceFailure)
+      : connectionFailures;
+  const simpleConnect =
+    directConnect &&
+    !canConnect &&
+    !remainingFailures.length &&
+    !preparation.connectionError;
+  const connectsService = linux || environment?.runtime?.mode === 'external';
   const startLabel = connectsService
     ? 'Connect'
     : configured
       ? 'Start Service'
       : 'Prepare';
-  const title = !check
-    ? preparation.loading
-      ? 'Checking VM availability'
-      : 'VM environment unavailable'
-    : running
-      ? 'Preparing virtual machines'
-      : failed && showJob
-        ? job.status === 'interrupted'
-          ? 'Preparation interrupted'
-          : 'Preparation failed'
-        : job?.status === 'cancelled' && showJob
-          ? 'Preparation cancelled'
-          : ready
-            ? 'VM environment ready'
-            : environment?.runtime?.state === 'starting'
-              ? 'Starting VM service'
-              : configured
-                ? 'VM service needs attention'
-                : showReview
-                  ? 'Review VM preparation'
-                  : 'Enable virtual machines';
+  const title = launcherConnection
+    ? launcherReady
+      ? 'VM service connected'
+      : !data.error && (!runtime || runtime.state === 'starting')
+        ? 'Connecting VM service'
+        : 'VM service needs attention'
+    : !check
+      ? preparation.loading
+        ? 'Checking VM availability'
+        : 'VM environment unavailable'
+      : running
+        ? linux
+          ? 'Connecting VM service'
+          : 'Preparing virtual machines'
+        : failed && showJob
+          ? linux
+            ? 'VM service connection failed'
+            : job.status === 'interrupted'
+              ? 'Preparation interrupted'
+              : 'Preparation failed'
+          : job?.status === 'cancelled' && showJob
+            ? linux
+              ? 'Connection cancelled'
+              : 'Preparation cancelled'
+            : ready
+              ? 'VM service connected'
+              : environment?.runtime?.state === 'starting'
+                ? 'Starting VM service'
+                : configured
+                  ? 'VM service needs attention'
+                  : linuxSetup
+                    ? simpleConnect
+                      ? 'Firecracker ready to connect'
+                      : 'Connect VM service'
+                    : showReview
+                      ? 'Review VM preparation'
+                      : 'Enable virtual machines';
 
   useEffect(() => {
     if (!check) return;
@@ -131,6 +231,8 @@ export function MachineEnvironment({
     if (draftSource.current === source) return;
     draftSource.current = source;
     setDraft(preparationDraft(check.defaults));
+    setConnectionSelected(false);
+    setConnectionEdits(undefined);
     setPlan(undefined);
     setStage('settings');
   }, [check]);
@@ -150,22 +252,50 @@ export function MachineEnvironment({
     setError('');
   }
 
-  async function review() {
+  async function review(connectAfterCheck = false) {
     if (!check || draftError || busy || preparation.connectionError) return;
     reviewRequest.current?.abort();
     const controller = new AbortController();
     reviewRequest.current = controller;
     setReviewing(true);
     setError('');
+    if (connectionEdits || useDetectedSocket) {
+      setDraft(connectionInput);
+      setConnectionSelected(true);
+    }
+    if (connectionEdits) {
+      setConnectionEdits(undefined);
+      setPlan(undefined);
+      setStage('settings');
+    }
     try {
       const result = await prepare.review(
-        preparationRequest(draft, check.platform, configured, check.defaults),
+        preparationRequest(
+          connectionInput,
+          check.platform,
+          configured,
+          check.defaults,
+        ),
         controller.signal,
       );
       if (controller.signal.aborted) return;
       setPlan(result);
       setStage('review');
-      heading.current?.focus();
+      if (connectAfterCheck && result.canStart) {
+        const latest = prepare.getSnapshot();
+        if (latest.check?.instanceId !== check.instanceId) {
+          setPlan(undefined);
+          setStage('settings');
+          setError(
+            'The desktop changed during connection. Check the VM service again.',
+          );
+          return;
+        }
+        if (!latest.check.configured && !latest.connectionError)
+          await start(result);
+      } else {
+        heading.current?.focus();
+      }
     } catch (failure) {
       if (!controller.signal.aborted) setError(operationError(failure));
     } finally {
@@ -176,26 +306,119 @@ export function MachineEnvironment({
     }
   }
 
-  async function start() {
-    if (!plan?.canStart || expired || busy || reviewing) return;
-    await prepare.start(plan);
-    if (prepare.getSnapshot().job?.planId === plan.id) setStage('progress');
+  async function start(selectedPlan = plan) {
+    const latest = prepare.getSnapshot();
+    if (
+      !selectedPlan?.canStart ||
+      Date.parse(selectedPlan.expiresAt) <= Date.now() ||
+      latest.mutation ||
+      latest.pending ||
+      preparationRunning(latest.job) ||
+      (selectedPlan === plan && reviewing)
+    )
+      return;
+    await prepare.start(selectedPlan);
+    if (prepare.getSnapshot().job?.planId === selectedPlan.id)
+      setStage('progress');
   }
 
+  function showDiagnostics() {
+    const defaults = check?.defaults;
+    const connection = launcherConnection
+      ? undefined
+      : linuxSetup
+        ? {
+            label: socketConnection ? 'Socket' : 'Host configuration',
+            value: connectionPath,
+          }
+        : defaults?.socket
+          ? { label: 'Socket', value: defaults.socket }
+          : defaults?.hostConfig
+            ? { label: 'Host configuration', value: defaults.hostConfig }
+            : undefined;
+    const failedCheck = connectionFailures[0];
+    const checked = connectionPlan?.canStart && !expired;
+    const status =
+      linuxSetup && !showJob && !simpleConnect
+        ? checked
+          ? 'Connection verified'
+          : failedCheck?.label ||
+            (serviceCheck && serviceStatusLabel[serviceCheck.status]) ||
+            title
+        : title;
+    const detail =
+      linuxSetup && !showJob && !checked
+        ? failedCheck?.detail || serviceCheck?.detail
+        : undefined;
+    void openMachineDiagnostics(desktop, data, { status, detail, connection });
+  }
+
+  const capacity = info?.capacity;
+  const hostCapacity = capacity && (
+    <div className="machines-host-limits">
+      <h3>Capacity limits</h3>
+      <dl className="machines-host-capacity">
+        <div>
+          <dt>CPUs</dt>
+          <dd>{capacity.cpus}</dd>
+        </div>
+        <div>
+          <dt>Memory</dt>
+          <dd>
+            {capacity.memoryMiB % 1024 === 0
+              ? `${capacity.memoryMiB / 1024} GiB`
+              : `${capacity.memoryMiB} MiB`}
+          </dd>
+        </div>
+        <div>
+          <dt>Storage</dt>
+          <dd>{capacity.diskGiB} GiB</dd>
+        </div>
+        <div>
+          <dt>VM slots</dt>
+          <dd>
+            {data.machines.length} of {capacity.machines} used
+          </dd>
+        </div>
+      </dl>
+    </div>
+  );
+  const providerWarnings = info?.providers
+    ?.filter(
+      (provider) =>
+        !provider.available &&
+        (!runtime?.error || provider.reason !== runtime.error),
+    )
+    .map((provider) => (
+      <p className="machines-warning" key={provider.provider}>
+        {provider.reason || `${provider.provider} is unavailable.`}
+      </p>
+    ));
+
   return (
-    <section className="machines-environment" aria-label="VM setup">
-      <header className="machines-section-heading">
-        <span className="machines-eyebrow">
-          {platform === 'darwin'
-            ? 'macOS'
-            : platform === 'linux'
-              ? 'Linux'
-              : humanize(platform || 'Local host')}
-          {check?.arch && ` · ${check.arch}`}
-        </span>
-        <h2 ref={heading} tabIndex={-1}>
-          {title}
-        </h2>
+    <section className="machines-environment" aria-label="VM host">
+      <header
+        className="machines-section-heading machines-host-heading"
+        data-connected={showHostOverview}
+      >
+        <div>
+          {!launcherConnection && !simpleConnect && !ready && (
+            <span className="machines-eyebrow">
+              {platform === 'darwin'
+                ? 'macOS'
+                : platform === 'linux'
+                  ? 'Linux'
+                  : humanize(platform || 'Local host')}
+              {check?.arch && ` · ${check.arch}`}
+            </span>
+          )}
+          <h2 ref={heading} tabIndex={-1}>
+            {title}
+          </h2>
+        </div>
+        {(!check || !linuxSetup || showJob) && (
+          <Button onClick={showDiagnostics}>Diagnostics</Button>
+        )}
       </header>
       {environment?.loggingError && (
         <p className="machines-error" role="alert">
@@ -204,7 +427,17 @@ export function MachineEnvironment({
           profile’s disk space and permissions.
         </p>
       )}
-      {!check ? (
+      {launcherConnection ? (
+        <>
+          {launcherReady && hostCapacity}
+          {runtime?.error && runtime.error !== data.error && (
+            <p className="machines-error" role="alert">
+              {runtime.error}
+            </p>
+          )}
+          {launcherReady && providerWarnings}
+        </>
+      ) : !check ? (
         <>
           <p role="status">
             {preparation.loading
@@ -212,17 +445,22 @@ export function MachineEnvironment({
               : 'Environment checks could not be completed.'}
           </p>
           {preparation.connectionError && (
-            <p className="machines-error" role="alert">
-              {preparation.connectionError}
-            </p>
+            <>
+              <p className="machines-error" role="alert">
+                {preparation.connectionError}
+              </p>
+              <Button disabled={preparation.refreshing} onClick={data.refresh}>
+                Check again
+              </Button>
+            </>
           )}
         </>
       ) : (
         <>
           {preparation.connectionError && (
             <p className="machines-error" role="alert">
-              Connection interrupted: {preparation.connectionError} The
-              preparation job remains on the AXV machine.
+              Connection interrupted: {preparation.connectionError}{' '}
+              {job && 'The preparation job remains on the AXV machine.'}
             </p>
           )}
           {check.lockedReason && (
@@ -249,21 +487,25 @@ export function MachineEnvironment({
           )}
           {showJob && job ? (
             <>
-              <ol
-                className="machines-preparation-stages"
-                aria-label="Setup steps"
-              >
-                <li>1. Settings</li>
-                <li>2. Review</li>
-                <li aria-current="step">3. Prepare</li>
-              </ol>
+              {!linux && (
+                <ol
+                  className="machines-preparation-stages"
+                  aria-label="Setup steps"
+                >
+                  <li>1. Settings</li>
+                  <li>2. Review</li>
+                  <li aria-current="step">3. Prepare</li>
+                </ol>
+              )}
               <p className="machines-preparation-phase" role="status">
                 {humanize(job.status)} · {humanize(job.phase)} · Attempt{' '}
                 {job.attempt}
               </p>
               <ol
                 className="machines-preparation-progress"
-                aria-label="Preparation progress"
+                aria-label={
+                  linux ? 'Connection progress' : 'Preparation progress'
+                }
               >
                 {job.steps.map((step) => (
                   <li key={step.id} data-state={step.status}>
@@ -297,15 +539,17 @@ export function MachineEnvironment({
                   {job.error.message}
                 </p>
               )}
-              <p className="machines-form-help">
-                {job.committed
-                  ? 'Configuration saved. Remaining work starts and verifies the VM service.'
-                  : running
-                    ? 'Preparation continues after closing this window. Cancel is available until configuration is saved.'
-                    : job.status === 'cancelled'
-                      ? 'Preparation cancelled. Verified downloads are kept for the next attempt.'
-                      : 'Completed files are kept. Retry continues this job with its reviewed settings.'}
-              </p>
+              {!linux && (
+                <p className="machines-form-help">
+                  {job.committed
+                    ? 'Configuration saved. Remaining work starts and verifies the VM service.'
+                    : running
+                      ? 'Preparation continues after closing this window. Cancel is available until configuration is saved.'
+                      : job.status === 'cancelled'
+                        ? 'Preparation cancelled. Verified downloads are kept for the next attempt.'
+                        : 'Completed files are kept. Retry continues this job with its reviewed settings.'}
+                </p>
+              )}
               <div className="machines-form-actions">
                 {job.canRetry && (
                   <Button
@@ -346,11 +590,15 @@ export function MachineEnvironment({
               </div>
               {job.status === 'succeeded' && !ready && (
                 <p className="machines-form-help">
-                  Preparation completed. Checking VM service readiness…
+                  {linux
+                    ? 'Connection saved. Checking VM service readiness…'
+                    : 'Preparation completed. Checking VM service readiness…'}
                 </p>
               )}
               <details className="machines-technical">
-                <summary>Reviewed preparation</summary>
+                <summary>
+                  {linux ? 'Connection details' : 'Reviewed preparation'}
+                </summary>
                 <dl className="info-list machines-details">
                   <dt>Job</dt>
                   <dd>
@@ -377,6 +625,182 @@ export function MachineEnvironment({
                 </ol>
               </details>
             </>
+          ) : linuxSetup ? (
+            <form
+              className="machines-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (preparation.connectionError) {
+                  data.refresh();
+                  return;
+                }
+                void (canConnect ? start() : review(directConnect));
+              }}
+            >
+              {showHostGuidance && (
+                <HostServiceGuidance
+                  state={serviceCheck?.systemdState}
+                  arch={check.arch}
+                  executablePath={
+                    data.error ? undefined : environment?.executablePath
+                  }
+                  desktop={desktop}
+                />
+              )}
+              {!simpleConnect && (
+                <div className="machines-environment-facts">
+                  {connectionEdits ? (
+                    <div className="machines-connection-fields">
+                      <Select
+                        label="Read connection from"
+                        value={connectionEdits.connection}
+                        disabled={busy || reviewing}
+                        autoFocus
+                        onChange={(event) =>
+                          setConnectionEdits({
+                            ...connectionEdits,
+                            connection:
+                              event.target.value === 'socket'
+                                ? 'socket'
+                                : 'configuration',
+                          })
+                        }
+                      >
+                        <option value="socket">Local Unix socket</option>
+                        <option value="configuration">
+                          Local configuration file
+                        </option>
+                      </Select>
+                      {connectionEdits.connection === 'socket' ? (
+                        <Field
+                          label="Local service socket"
+                          value={connectionEdits.socket}
+                          required
+                          spellCheck={false}
+                          disabled={busy || reviewing}
+                          onChange={(event) =>
+                            setConnectionEdits({
+                              ...connectionEdits,
+                              socket: event.target.value,
+                            })
+                          }
+                        />
+                      ) : (
+                        <Field
+                          label="Local service configuration"
+                          value={connectionEdits.hostConfig}
+                          required
+                          spellCheck={false}
+                          disabled={busy || reviewing}
+                          onChange={(event) =>
+                            setConnectionEdits({
+                              ...connectionEdits,
+                              hostConfig: event.target.value,
+                            })
+                          }
+                        />
+                      )}
+                    </div>
+                  ) : (
+                    <dl className="info-list machines-details">
+                      <dt>
+                        {socketConnection ? 'Socket' : 'Host configuration'}
+                      </dt>
+                      <dd>
+                        <code>{connectionPath}</code>
+                      </dd>
+                      {!socketConnection && connectionPlan?.request.socket && (
+                        <>
+                          <dt>Resolved socket</dt>
+                          <dd>
+                            <code>{connectionPlan.request.socket}</code>
+                          </dd>
+                        </>
+                      )}
+                    </dl>
+                  )}
+                </div>
+              )}
+              {!simpleConnect &&
+                !connectionEdits &&
+                (connectionPlan && !connectionPlan.canStart ? (
+                  <div role="status">
+                    {showHostGuidance && (
+                      <p>Connection checked. The default socket is missing.</p>
+                    )}
+                    {remainingFailures.map((check) => (
+                      <div key={check.id}>
+                        <strong>{check.label}</strong>
+                        <p className="machines-form-help">{check.detail}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : expired ? (
+                  <p className="machines-warning" role="status">
+                    Connection check expired. Check again to connect.
+                  </p>
+                ) : canConnect ? (
+                  <p role="status">Connection verified</p>
+                ) : null)}
+              {!simpleConnect &&
+                !connectionEdits &&
+                serviceCheck &&
+                (showHostGuidance
+                  ? serviceCheck.status === 'permission_denied'
+                  : !connectionPlan) && (
+                  <div role="status">
+                    <strong>{serviceStatusLabel[serviceCheck.status]}</strong>
+                    <p className="machines-form-help">{serviceCheck.detail}</p>
+                  </div>
+                )}
+              {!showHostGuidance &&
+                !connectionEdits &&
+                !canConnect &&
+                serviceCheck?.status !== 'ready' && (
+                  <p className="machines-form-help">
+                    <a
+                      href={linuxVMSetupGuide}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Linux VM setup guide
+                    </a>
+                  </p>
+                )}
+              {draftError && <p className="machines-warning">{draftError}</p>}
+              <div className="machines-form-actions">
+                <Button
+                  type="submit"
+                  primary={!showHostGuidance}
+                  disabled={
+                    busy ||
+                    reviewing ||
+                    (preparation.connectionError
+                      ? preparation.refreshing
+                      : !!draftError)
+                  }
+                >
+                  {preparation.connectionError
+                    ? 'Check again'
+                    : reviewing
+                      ? 'Checking connection…'
+                      : canConnect || directConnect
+                        ? 'Connect'
+                        : 'Check connection'}
+                </Button>
+                <Button
+                  disabled={busy || reviewing}
+                  onClick={() =>
+                    setConnectionEdits(
+                      connectionEdits ? undefined : connectionDraft,
+                    )
+                  }
+                >
+                  {connectionEdits ? 'Cancel' : 'Edit connection'}
+                </Button>
+                <Button onClick={showDiagnostics}>Diagnostics</Button>
+              </div>
+            </form>
           ) : showReview && plan ? (
             <>
               <ol
@@ -498,21 +922,9 @@ export function MachineEnvironment({
             </>
           ) : ready ? (
             <>
+              {hostCapacity}
+              {providerWarnings}
               <Checks checks={check.checks} />
-              {info?.capacity && (
-                <p className="machines-host-capacity">
-                  {info.capacity.cpus} CPU · {info.capacity.memoryMiB} MiB
-                  memory · {info.capacity.diskGiB} GiB storage ·{' '}
-                  {info.capacity.machines} VMs
-                </p>
-              )}
-              {info?.providers
-                ?.filter((provider) => !provider.available)
-                .map((provider) => (
-                  <p className="machines-warning" key={provider.provider}>
-                    {provider.reason || `${provider.provider} is unavailable.`}
-                  </p>
-                ))}
             </>
           ) : (
             <>
@@ -520,18 +932,7 @@ export function MachineEnvironment({
               {environment?.runtime?.error && (
                 <p className="machines-error">{environment.runtime.error}</p>
               )}
-              {info?.providers
-                ?.filter(
-                  (provider) =>
-                    !provider.available &&
-                    (!environment?.runtime?.error ||
-                      provider.reason !== environment.runtime.error),
-                )
-                .map((provider) => (
-                  <p className="machines-warning" key={provider.provider}>
-                    {provider.reason || `${provider.provider} is unavailable.`}
-                  </p>
-                ))}
+              {providerWarnings}
               {platform === 'darwin' || platform === 'linux' ? (
                 <form
                   className="machines-form"
@@ -664,53 +1065,6 @@ export function MachineEnvironment({
                       </p>
                     </fieldset>
                   )}
-                  {!configured && platform === 'linux' && (
-                    <fieldset disabled={busy || reviewing}>
-                      <legend>Local Firecracker service</legend>
-                      <p className="machines-form-help">
-                        Connect to a local Firecracker/KVM service set up by an
-                        administrator. Socket access is required.
-                      </p>
-                      <Select
-                        label="Read connection from"
-                        value={draft.connection}
-                        onChange={(event) =>
-                          change(
-                            'connection',
-                            event.target.value === 'socket'
-                              ? 'socket'
-                              : 'configuration',
-                          )
-                        }
-                      >
-                        <option value="configuration">
-                          Local configuration file
-                        </option>
-                        <option value="socket">Local Unix socket</option>
-                      </Select>
-                      {draft.connection === 'configuration' ? (
-                        <Field
-                          label="Local service configuration"
-                          value={draft.hostConfig}
-                          required
-                          spellCheck={false}
-                          onChange={(event) =>
-                            change('hostConfig', event.target.value)
-                          }
-                        />
-                      ) : (
-                        <Field
-                          label="Local service socket"
-                          value={draft.socket}
-                          required
-                          spellCheck={false}
-                          onChange={(event) =>
-                            change('socket', event.target.value)
-                          }
-                        />
-                      )}
-                    </fieldset>
-                  )}
                   {draftError && (
                     <p className="machines-warning">{draftError}</p>
                   )}
@@ -745,71 +1099,6 @@ export function MachineEnvironment({
               )}
             </>
           )}
-          <details className="machines-technical">
-            <summary>Technical details</summary>
-            <dl className="info-list machines-details">
-              <dt>Configuration source</dt>
-              <dd>{check.configurationSource || 'Not configured'}</dd>
-              <dt>Shared download cache</dt>
-              <dd>
-                <code>{check.cacheHome}</code>
-              </dd>
-              <dt>Host identity</dt>
-              <dd>
-                <code>
-                  {info?.hostId ||
-                    environment?.runtime?.hostId ||
-                    'Unavailable'}
-                </code>
-              </dd>
-              {environment?.logPath && (
-                <>
-                  <dt>Desktop log</dt>
-                  <dd>
-                    <code>{environment.logPath}</code>
-                  </dd>
-                  <dt>Recent service logs</dt>
-                  <dd>
-                    <code>axv daemon logs</code>
-                  </dd>
-                </>
-              )}
-              <dt>Profile</dt>
-              <dd>
-                <code>{environment?.profileHome || 'Unavailable'}</code>
-              </dd>
-              <dt>Configuration</dt>
-              <dd>
-                <code>{environment?.configPath || 'Unavailable'}</code>
-              </dd>
-              {platform === 'darwin' && (
-                <>
-                  <dt>Required Lima</dt>
-                  <dd>{check.requiredLimaVersion}</dd>
-                </>
-              )}
-              {info?.providers?.map((provider) => (
-                <div
-                  key={provider.provider}
-                  className="machines-provider-detail"
-                >
-                  <dt>{provider.provider}</dt>
-                  <dd>
-                    {provider.available ? 'Available' : 'Unavailable'}
-                    {provider.version && ` · ${provider.version}`}
-                  </dd>
-                </div>
-              ))}
-              <dt>Runtime</dt>
-              <dd>
-                {environment?.runtime
-                  ? humanize(environment.runtime.state)
-                  : configured
-                    ? 'Configured'
-                    : 'Not configured'}
-              </dd>
-            </dl>
-          </details>
         </>
       )}
     </section>

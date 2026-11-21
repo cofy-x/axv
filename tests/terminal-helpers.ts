@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
-import { expect, menuItem } from './helpers';
+import { bounds, expect, menuItem } from './helpers';
 
 export async function openTerminal(page: Page, touch = false) {
   const choose = async (target: Locator) => {
@@ -30,6 +30,31 @@ export async function run(terminal: Locator, command: string) {
 
 export function output(terminal: Locator) {
   return terminal.locator('.xterm-accessibility-tree');
+}
+
+export async function expectShellToolbar(
+  terminal: Locator,
+  caption: string,
+  labels: string[],
+) {
+  await expect(terminal.locator('.terminal-project-info')).toHaveCount(0);
+  await expect(
+    terminal.getByRole('button', { name: 'Details', exact: true }),
+  ).toHaveCount(0);
+  const toolbar = terminal.locator('.terminal-toolbar');
+  const shell = toolbar.getByText(caption, { exact: true });
+  await expect(shell).toBeInViewport({ ratio: 1 });
+  await expect(toolbar.getByRole('button')).toHaveCount(labels.length);
+  const shellBounds = await bounds(shell);
+  const center = shellBounds.y + shellBounds.height / 2;
+  for (const name of labels) {
+    const button = toolbar.getByRole('button', { name, exact: true });
+    await expect(button).toBeInViewport({ ratio: 1 });
+    const buttonBounds = await bounds(button);
+    expect(
+      Math.abs(buttonBounds.y + buttonBounds.height / 2 - center),
+    ).toBeLessThanOrEqual(1);
+  }
 }
 
 export async function terminalAction(

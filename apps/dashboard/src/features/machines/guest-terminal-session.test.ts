@@ -56,6 +56,7 @@ function harness(hostId = 'host-original') {
     reset: vi.fn(async () => {}),
     write: vi.fn((_data: Uint8Array, done: () => void) => done()),
     onState: vi.fn(),
+    onIdentity: vi.fn(),
     onInputRejected: vi.fn(),
   };
   const session = new GuestTerminalSession(options);
@@ -82,6 +83,7 @@ describe('guest terminal attachment identity', () => {
     session.resize(120, 40);
     await Promise.all([session.start(), session.start()]);
     expect(lookup).toHaveBeenCalledOnce();
+    expect(options.onIdentity).toHaveBeenCalledWith(terminal);
     expect(FakeSocket.instances).toHaveLength(1);
     const first = FakeSocket.instances[0];
     expect(first.url.href).toBe(

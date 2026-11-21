@@ -18,6 +18,7 @@
 }
 .app-pad legend {
   padding: 0 5px;
+  background-color: var(--ns-face);
   font-weight: bold;
 }
 .app-pad hr {

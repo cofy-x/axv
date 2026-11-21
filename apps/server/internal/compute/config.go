@@ -48,15 +48,19 @@ type Config struct {
 var simpleID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`)
 
 func LoadConfig(path string) (Config, error) {
-	var c Config
 	f, err := os.Open(path)
 	if err != nil {
-		return c, err
+		return Config{}, err
 	}
 	defer f.Close()
-	d := json.NewDecoder(io.LimitReader(f, 1<<20))
+	return DecodeConfig(f)
+}
+
+func DecodeConfig(reader io.Reader) (Config, error) {
+	var c Config
+	d := json.NewDecoder(io.LimitReader(reader, 1<<20))
 	d.DisallowUnknownFields()
-	if err = d.Decode(&c); err != nil {
+	if err := d.Decode(&c); err != nil {
 		return c, fmt.Errorf("host configuration: %w", err)
 	}
 	if d.Decode(new(any)) != io.EOF {

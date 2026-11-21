@@ -5,6 +5,7 @@ import type {
   HostInfo,
   ImageInfo,
   Machine,
+  Operation,
   Volume,
 } from './api';
 import { ComputeStore } from './compute-store';
@@ -34,7 +35,7 @@ function harness() {
       }),
     ),
     volumes: vi.fn(async () => ({ volumes: [] as Volume[] })),
-    operations: vi.fn(async () => ({ operations: [] })),
+    operations: vi.fn(async () => ({ operations: [] as Operation[] })),
     images: vi.fn(async () => ({ images: [] as ImageInfo[] })),
   };
   const store = new ComputeStore(api);
@@ -161,6 +162,42 @@ describe('shared compute inventory', () => {
     expect(api.info).toHaveBeenCalledTimes(2);
     expect(api.machines).toHaveBeenCalledTimes(3);
     expect(store.getSnapshot().refreshing).toBe(false);
+  });
+
+  it('publishes a VM acknowledgement and retires inventory read before it', async () => {
+    const { store, api, subscribe } = harness();
+    subscribe();
+    await vi.advanceTimersByTimeAsync(0);
+    let resolveOld!: (value: { machines: Machine[] }) => void;
+    let signal!: AbortSignal;
+    api.machines.mockImplementationOnce((currentSignal) => {
+      signal = currentSignal!;
+      return new Promise((resolve) => {
+        resolveOld = resolve;
+      });
+    });
+    await vi.advanceTimersByTimeAsync(5000);
+    const created = { ...machine, id: 'vm-created' };
+    const queued = {
+      id: 'operation-create',
+      machineId: created.id,
+      action: 'create',
+      status: 'queued',
+      createdAt: '2026-10-17T00:00:00Z',
+    };
+    store.receiveMachineOperation(created, queued);
+    expect(signal.aborted).toBe(true);
+    expect(store.getSnapshot().machines).toEqual([machine, created]);
+    expect(store.getSnapshot().operations).toEqual([queued]);
+    const completed = { ...queued, status: 'succeeded' };
+    api.machines.mockResolvedValue({ machines: [machine, created] });
+    api.operations.mockResolvedValue({ operations: [completed] });
+    resolveOld({ machines: [] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.getSnapshot().machines).toEqual([machine, created]);
+    expect(store.getSnapshot().operations).toEqual([completed]);
+    store.receiveMachineOperation(created, queued);
+    expect(store.getSnapshot().operations).toEqual([completed]);
   });
 
   it('aborts on the final detach and ignores a late response from an older subscription', async () => {

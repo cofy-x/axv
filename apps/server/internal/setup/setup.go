@@ -191,11 +191,18 @@ func execute(ctx context.Context, service preparation, o Options, output io.Writ
 
 func showPlan(plan prepare.Plan, output io.Writer) {
 	fmt.Fprintln(output, "VM preparation plan:")
-	fmt.Fprintf(output, "  Shared cache: %s\n", plan.CacheHome)
+	if len(plan.Downloads) > 0 {
+		fmt.Fprintf(output, "  Shared cache: %s\n", plan.CacheHome)
+	}
 	for _, action := range plan.Actions {
 		fmt.Fprintf(output, "  - %s\n", action)
 	}
-	if r := plan.Request; r.StorageRoot != "" {
+	switch r := plan.Request; {
+	case r.HostConfig != "":
+		fmt.Fprintf(output, "  Host configuration: %s\n", r.HostConfig)
+	case r.Socket != "":
+		fmt.Fprintf(output, "  Socket: %s\n", r.Socket)
+	case plan.Platform == "darwin" && r.StorageRoot != "":
 		fmt.Fprintf(output, "  Storage: %s\n  Lima state: %s\n  Limits: %d CPUs, %d MiB memory, %d GiB disk, %d machines\n", r.StorageRoot, r.LimaHome, r.CPUs, r.MemoryMiB, r.DiskGiB, r.Machines)
 	}
 	for _, download := range plan.Downloads {

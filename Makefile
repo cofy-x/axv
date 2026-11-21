@@ -2,10 +2,10 @@ PNPM ?= npx --yes pnpm@12.11.2
 GO ?= go
 E2E_ARGS ?=
 
-.PHONY: help deps install dev build build-dashboard build-go test test-go typecheck format format-check lint lint-fix lint-fix-format test-e2e smoke-production verify-codex-live security audit-js audit-go clean
+.PHONY: help deps install dev build build-dashboard build-go test test-go typecheck format format-check lint lint-fix lint-fix-format test-e2e test-vm-ui smoke-production verify-codex-live security audit-js audit-go clean
 
 help:
-	@echo "make deps | install | dev | build | test | typecheck | format | format-check | lint | lint-fix | lint-fix-format | test-e2e | smoke-production | verify-codex-live | security"
+	@echo "make deps | install | dev | build | test | typecheck | format | format-check | lint | lint-fix | lint-fix-format | test-e2e | test-vm-ui | smoke-production | verify-codex-live | security"
 
 deps:
 	$(PNPM) install --frozen-lockfile
@@ -54,6 +54,10 @@ lint-fix-format:
 test-e2e:
 	$(PNPM) exec playwright install chromium firefox webkit
 	$(PNPM) run test:e2e $(E2E_ARGS)
+
+test-vm-ui:
+	$(PNPM) exec playwright install chromium
+	$(PNPM) run test:e2e --project=chromium --project=chromium-touch --grep @vm-ui $(E2E_ARGS)
 
 smoke-production:
 	$(PNPM) run smoke:production
