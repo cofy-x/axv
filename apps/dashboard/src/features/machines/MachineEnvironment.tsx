@@ -193,6 +193,7 @@ export function MachineEnvironment({
     !canConnect &&
     !remainingFailures.length &&
     !preparation.connectionError;
+  const readyToConnect = simpleConnect && !showJob;
   const connectsService = linux || environment?.runtime?.mode === 'external';
   const startLabel = connectsService
     ? 'Connect'
@@ -231,7 +232,7 @@ export function MachineEnvironment({
                   ? 'VM service needs attention'
                   : linuxSetup
                     ? simpleConnect
-                      ? 'Firecracker ready to connect'
+                      ? serviceStatusLabel.ready
                       : 'Connect VM service'
                     : showReview
                       ? 'Review VM preparation'
@@ -412,6 +413,7 @@ export function MachineEnvironment({
       className="machines-environment"
       aria-label="VM host"
       data-linux-setup={linuxSetup && !showJob}
+      data-ready-to-connect={readyToConnect}
     >
       <header
         className="machines-section-heading machines-host-heading"
@@ -428,7 +430,11 @@ export function MachineEnvironment({
               {check?.arch && ` · ${check.arch}`}
             </span>
           )}
-          <h2 ref={heading} tabIndex={-1}>
+          <h2
+            ref={heading}
+            tabIndex={-1}
+            aria-live={linuxSetup ? 'polite' : undefined}
+          >
             {hostGuidance?.title ?? title}
           </h2>
         </div>
@@ -800,6 +806,9 @@ export function MachineEnvironment({
                         : 'Check connection'}
                 </Button>
                 <Button
+                  className={
+                    readyToConnect ? 'machines-text-button' : undefined
+                  }
                   disabled={busy || reviewing}
                   onClick={() =>
                     setConnectionEdits(
@@ -809,7 +818,14 @@ export function MachineEnvironment({
                 >
                   {connectionEdits ? 'Cancel' : 'Edit connection'}
                 </Button>
-                <Button onClick={showDiagnostics}>Diagnostics</Button>
+                <Button
+                  className={
+                    readyToConnect ? 'machines-text-button' : undefined
+                  }
+                  onClick={showDiagnostics}
+                >
+                  Diagnostics
+                </Button>
               </div>
             </form>
           ) : showReview && plan ? (

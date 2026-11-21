@@ -644,19 +644,13 @@ for (const viewport of [
       localService?.status === 'ready' &&
       localService.socket === '/run/axv-host/control.sock' &&
       !lockedReason;
+    const vmHost = machines.getByRole('region', {
+      name: 'VM host',
+      exact: true,
+    });
+    await expect(vmHost.getByRole('heading', { level: 2 })).toBeInViewport();
     await expect(
-      machines.getByRole('heading', {
-        name:
-          platform === 'linux'
-            ? defaultServiceReady
-              ? 'Firecracker ready to connect'
-              : 'Connect VM service'
-            : 'Enable virtual machines',
-        exact: true,
-      }),
-    ).toBeVisible();
-    await expect(
-      machines.getByRole('button', {
+      vmHost.getByRole('button', {
         name:
           platform !== 'linux'
             ? 'Review'

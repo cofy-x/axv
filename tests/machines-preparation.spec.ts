@@ -7,7 +7,7 @@ import type {
   PreparationPlan,
   PreparationRequest,
 } from '../apps/dashboard/src/features/machines/api';
-import { activate, expect, launch, menuItem, test } from './helpers';
+import { activate, bounds, expect, launch, menuItem, test } from './helpers';
 import { applicationMenu } from './desktop-application-helpers';
 import { preparationCheckFixture } from './machines-preparation-fixture';
 import { refreshMachines } from './machines-helpers';
@@ -717,9 +717,23 @@ test(
     };
     await refreshMachines(page, hasTouch);
     const ready = manager.getByRole('heading', {
-      name: 'Firecracker ready to connect',
+      name: 'Firecracker service detected',
     });
     await expect(ready).toBeInViewport();
+    await expect(ready).toHaveAttribute('aria-live', 'polite');
+    await expect(connect).toBeInViewport({ ratio: 1 });
+    await expect(edit).toBeInViewport({ ratio: 1 });
+    await expect(diagnostics).toBeInViewport({ ratio: 1 });
+    const [statusBox, connectBox, editBox, diagnosticsBox] = await Promise.all([
+      bounds(ready),
+      bounds(connect),
+      bounds(edit),
+      bounds(diagnostics),
+    ]);
+    expect(connectBox.y).toBeGreaterThan(statusBox.y + statusBox.height);
+    expect(Math.min(editBox.y, diagnosticsBox.y)).toBeGreaterThan(
+      connectBox.y + connectBox.height,
+    );
     await expect(manager.getByText(socket, { exact: true })).toHaveCount(0);
     await expect(
       manager.getByText('Linux · arm64', { exact: true }),
@@ -735,6 +749,7 @@ test(
     await diagnosticDialog
       .getByRole('button', { name: 'Close', exact: true })
       .click();
+    await expect(diagnostics).toBeFocused();
     await expect(copyCommand).toHaveCount(0);
     await expect(openTerminal).toHaveCount(0);
     expect(state.checks).toBeGreaterThan(previousChecks);
@@ -1065,14 +1080,20 @@ test(
     await refreshMachines(page, hasTouch);
     await expect(
       manager.getByRole('heading', {
-        name: 'Firecracker ready to connect',
+        name: 'Firecracker service detected',
         exact: true,
       }),
     ).toBeVisible();
+    await capture(page, info, 'preparation-linux-ready');
     await expect(copyAndOpen).toHaveCount(0);
     await expect(openWithoutCopy).toHaveCount(0);
     state.blocked = false;
-    await choose(manager.getByRole('button', { name: 'Connect', exact: true }));
+    const connect = manager.getByRole('button', {
+      name: 'Connect',
+      exact: true,
+    });
+    if (hasTouch) await connect.tap();
+    else await connect.press('Enter');
     await expect(
       manager.getByRole('heading', { name: 'Connecting VM service' }),
     ).toBeVisible();

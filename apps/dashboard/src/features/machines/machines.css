@@ -142,7 +142,7 @@
 .machines-activity-table time > span {
   white-space: nowrap;
 }
-.ns-button.machines-details-button {
+.ns-button.machines-text-button {
   min-width: 0;
   padding: 3px 8px;
   border-color: transparent;
@@ -152,17 +152,21 @@
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-.ns-button.machines-details-button:hover:not(:disabled),
-.ns-button.machines-details-button:active:not(:disabled) {
+.ns-button.machines-text-button:hover:not(:disabled),
+.ns-button.machines-text-button:active:not(:disabled) {
   padding: 3px 8px;
   border-color: currentColor;
   background: transparent;
   box-shadow: none;
   text-decoration: none;
 }
-.ns-button.machines-details-button:focus-visible {
+.ns-button.machines-text-button:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: -2px;
+}
+.ns-button.machines-text-button:disabled {
+  opacity: 0.65;
+  text-shadow: none;
 }
 .machines-resource-details code {
   overflow-wrap: anywhere;
@@ -255,6 +259,20 @@
   font-size: 15px;
   font-weight: 600;
 }
+.machines-environment[data-ready-to-connect='true'] {
+  max-inline-size: 420px;
+  margin-inline: auto;
+  padding-block-start: clamp(24px, 8vh, 60px);
+}
+.machines-environment[data-ready-to-connect='true'] .machines-host-heading {
+  justify-content: center;
+  text-align: center;
+}
+.machines-environment[data-ready-to-connect='true'] .machines-host-heading h2 {
+  margin-block-end: 14px;
+  font-size: 14px;
+  font-weight: normal;
+}
 .machines-section-heading p {
   margin: 8px 0 14px;
 }
@@ -278,7 +296,10 @@
   font-size: var(--ns-font-size-body);
   font-weight: normal;
 }
-.machines-host-heading[data-connected='true'] h2::before {
+.machines-host-heading[data-connected='true'] h2::before,
+.machines-environment[data-ready-to-connect='true']
+  .machines-host-heading
+  h2::before {
   display: inline-block;
   width: 8px;
   height: 8px;
@@ -599,6 +620,20 @@
   margin-block-start: 4px;
   padding-block-start: 12px;
   border-block-start: 1px solid var(--ns-mid);
+}
+.machines-environment[data-ready-to-connect='true']
+  .machines-connection-actions {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  justify-content: center;
+  gap: 10px 8px;
+}
+.machines-environment[data-ready-to-connect='true']
+  .machines-connection-actions
+  > .ns-default {
+  grid-column: 1 / -1;
+  justify-self: center;
+  min-inline-size: 104px;
 }
 .machines-connection-fields {
   display: grid;

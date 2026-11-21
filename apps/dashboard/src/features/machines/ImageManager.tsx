@@ -586,7 +586,7 @@ export function ImageManager({
               </td>
               <td className="machines-inventory-action">
                 <Button
-                  className="machines-details-button"
+                  className="machines-text-button"
                   aria-label={`Image details for ${image.name}`}
                   aria-haspopup="dialog"
                   onClick={() => void showDetails(image)}
