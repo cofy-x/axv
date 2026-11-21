@@ -491,7 +491,7 @@ To connect the current AXV profile from a shell, run:
 axv setup --socket /run/axv-host/control.sock
 ```
 
-Alternatively, `axv setup --host-config /etc/axv/host.json` reads a host configuration and saves its local Unix socket. The desktop account needs access to the socket, and must be able to read the configuration file when using that option.
+Alternatively, `axv setup --host-config /etc/axv/host.json` reads a regular configuration file of at most 1 MiB and saves its local Unix socket. The desktop account needs access to the socket, and must be able to read the configuration file when using that option.
 
 ### Custom Linux service
 

@@ -47,18 +47,49 @@ type Config struct {
 
 var simpleID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`)
 
+const maxHostConfigBytes = 1 << 20
+
 func LoadConfig(path string) (Config, error) {
-	f, err := os.Open(path)
+	// The local operator chooses the file. Resolve an intentional symlink,
+	// then pin the resolved parent so the open stays within that directory.
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return Config{}, err
+	}
+	name := filepath.Base(resolved)
+	if !filepath.IsLocal(name) || name == "." {
+		return Config{}, fmt.Errorf("invalid host configuration file: %s", path)
+	}
+	root, err := os.OpenRoot(filepath.Dir(resolved))
+	if err != nil {
+		return Config{}, err
+	}
+	defer root.Close()
+	selected, err := root.Lstat(name)
+	if err != nil {
+		return Config{}, err
+	}
+	if !selected.Mode().IsRegular() || selected.Size() > maxHostConfigBytes {
+		return Config{}, fmt.Errorf("host configuration must be a regular file of at most 1 MiB: %s", path)
+	}
+	f, err := openHostConfig(root, name)
 	if err != nil {
 		return Config{}, err
 	}
 	defer f.Close()
+	opened, err := f.Stat()
+	if err != nil {
+		return Config{}, err
+	}
+	if !opened.Mode().IsRegular() || opened.Size() > maxHostConfigBytes || !os.SameFile(selected, opened) {
+		return Config{}, fmt.Errorf("host configuration changed while opening: %s", path)
+	}
 	return DecodeConfig(f)
 }
 
 func DecodeConfig(reader io.Reader) (Config, error) {
 	var c Config
-	d := json.NewDecoder(io.LimitReader(reader, 1<<20))
+	d := json.NewDecoder(io.LimitReader(reader, maxHostConfigBytes))
 	d.DisallowUnknownFields()
 	if err := d.Decode(&c); err != nil {
 		return c, fmt.Errorf("host configuration: %w", err)

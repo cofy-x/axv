@@ -177,6 +177,22 @@ func guestSubnet(routes []byte) (netip.Prefix, error) {
 
 type idRange struct{ first, last int }
 
+func subordinateIDRange(entry string) (idRange, bool) {
+	parts := strings.Split(entry, ":")
+	if len(parts) != 3 {
+		return idRange{}, false
+	}
+	first, firstErr := strconv.Atoi(parts[1])
+	count, countErr := strconv.Atoi(parts[2])
+	// Linux reserves the all-ones UID and GID. Check the upper end before
+	// calculating it so the range fits both the kernel and the Go type.
+	const maxID = 1<<32 - 2
+	if firstErr != nil || countErr != nil || first < 0 || first > maxID || count <= 0 || count-1 > maxID-first {
+		return idRange{}, false
+	}
+	return idRange{first, first + count - 1}, true
+}
+
 func freeJailIDs(ctx context.Context, socketGID int) (int, error) {
 	used := []idRange{{socketGID, socketGID}}
 	for _, db := range []string{"passwd", "group"} {
@@ -215,16 +231,11 @@ func freeJailIDs(ctx context.Context, socketGID int) (int, error) {
 			if line == "" || strings.HasPrefix(line, "#") {
 				continue
 			}
-			parts := strings.Split(line, ":")
-			if len(parts) != 3 {
+			ids, ok := subordinateIDRange(line)
+			if !ok {
 				return 0, fmt.Errorf("invalid subordinate ID range in %s", path)
 			}
-			first, e1 := strconv.ParseUint(parts[1], 10, 32)
-			count, e2 := strconv.ParseUint(parts[2], 10, 32)
-			if e1 != nil || e2 != nil || count == 0 {
-				return 0, fmt.Errorf("invalid subordinate ID range in %s", path)
-			}
-			used = append(used, idRange{int(first), int(first + count - 1)})
+			used = append(used, ids)
 		}
 	}
 	// Running jails and containers can use IDs with no passwd or group entry.

@@ -31,3 +31,22 @@ func TestJailIDsAvoidAssignedUsersAndDelegatedRanges(t *testing.T) {
 		t.Fatalf("allocated overlapping IDs at %d", base)
 	}
 }
+
+func TestSubordinateIDRangeBounds(t *testing.T) {
+	for _, input := range []string{
+		"operator:4294967294:2",
+		"operator:4294967295:1",
+		"operator:1:0",
+		"operator:-1:3",
+		"operator:1:9223372036854775807",
+		"operator:1:18446744073709551616",
+	} {
+		if got, ok := subordinateIDRange(input); ok {
+			t.Errorf("subordinateIDRange(%q) accepted %v", input, got)
+		}
+	}
+	const entry = "operator:4294967293:2"
+	if got, ok := subordinateIDRange(entry); !ok || got != (idRange{4294967293, 4294967294}) {
+		t.Errorf("subordinateIDRange(%q) = %v, %t", entry, got, ok)
+	}
+}
