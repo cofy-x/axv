@@ -106,6 +106,9 @@ func remoteWriteError(w http.ResponseWriter, status int, code, message string) {
 }
 
 func remoteLocalOnlyRoute(r *http.Request) bool {
+	if pathWithin(r.URL.Path, "/api/github-review") {
+		return true
+	}
 	if pathWithin(r.URL.Path, "/api/notifications") {
 		return r.Method == http.MethodPost && (r.URL.Path == "/api/notifications/config" ||
 			r.URL.Path == "/api/notifications/test" || r.URL.Path == "/api/notifications/disable" ||

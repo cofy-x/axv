@@ -1,0 +1,23 @@
+.github-review-automatic-validation,
+.github-review-automatic-scenario {
+  margin-block: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--ns-mid);
+  background: #edf0ec;
+}
+
+.github-review-automatic-validation:is(
+  [data-verification='needs_review'],
+  [data-verification='stale']
+) {
+  background: #f0ebe0;
+}
+
+.github-review-automatic-validation p,
+.github-review-automatic-scenario p {
+  margin: 4px 0;
+}
+
+.github-review-automatic-validation .ns-button {
+  margin-block: 3px 0;
+}

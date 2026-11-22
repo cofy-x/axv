@@ -1,0 +1,163 @@
+#!/usr/bin/python3 -I
+"""Root-owned entry point installed only in a dedicated AXV review guest."""
+import ctypes as c
+import errno
+import os
+from pathlib import Path
+import re
+import resource
+import socket
+import subprocess
+import sys
+import tempfile
+
+
+class Argument(c.Structure):
+    _fields_ = [("index", c.c_uint), ("op", c.c_uint),
+                ("value", c.c_uint64), ("mask", c.c_uint64)]
+
+
+def sandbox_filter(output):
+    # libseccomp validates the syscall architecture as well as arguments.
+    lib = c.CDLL("libseccomp.so.2")
+    lib.seccomp_init.argtypes = [c.c_uint32]
+    lib.seccomp_init.restype = c.c_void_p
+    lib.seccomp_release.argtypes = [c.c_void_p]
+    lib.seccomp_syscall_resolve_name.argtypes = [c.c_char_p]
+    lib.seccomp_rule_add_array.argtypes = [c.c_void_p, c.c_uint32, c.c_int, c.c_uint, c.POINTER(Argument)]
+    lib.seccomp_export_bpf.argtypes = [c.c_void_p, c.c_int]
+    ctx = lib.seccomp_init(0x7fff0000)  # SCMP_ACT_ALLOW
+    if not ctx:
+        raise RuntimeError("Unable to create the test syscall filter.")
+
+    def deny(name, error, arg=None):
+        nr = lib.seccomp_syscall_resolve_name(name.encode("ascii"))
+        if nr < 0:
+            raise RuntimeError("Unknown syscall in sandbox filter: " + name)
+        if lib.seccomp_rule_add_array(ctx, 0x50000 | error, nr, int(arg is not None),
+                                      c.byref(arg) if arg is not None else None):
+            raise RuntimeError("Unable to install sandbox rule for " + name)
+
+    try:
+        # Keep UNIX and private IPv4/IPv6 sockets, including loopback test servers.
+        # Network namespaces alone do not fence AF_VSOCK.
+        for name in ("socket", "socketpair"):
+            for domain in range(socket.AF_INET6 + 1):
+                if domain not in (socket.AF_UNIX, socket.AF_INET, socket.AF_INET6):
+                    deny(name, errno.EAFNOSUPPORT, Argument(0, 4, domain, 0))  # EQ
+            deny(name, errno.EAFNOSUPPORT, Argument(0, 6, socket.AF_INET6, 0))  # GT
+        for name in ("unshare", "setns", "io_uring_setup", "ptrace", "bpf"):
+            deny(name, errno.EPERM)
+        deny("clone3", errno.ENOSYS)  # libc falls back to clone, whose flags can be filtered.
+        deny("clone", errno.EPERM, Argument(0, 7, 0x10000000, 0x10000000))  # CLONE_NEWUSER
+        if lib.seccomp_export_bpf(ctx, output.fileno()):
+            raise RuntimeError("Unable to export the test syscall filter.")
+        output.seek(0)
+    finally:
+        lib.seccomp_release(ctx)
+
+
+def trusted_dir(path):
+    if not path.exists():
+        return False
+    for component in (path, *path.parents):
+        info = component.lstat()
+        if info.st_uid != 0 or info.st_mode & 0o022 or not component.is_dir() or component.is_symlink():
+            raise RuntimeError("Review fixtures require root-owned, read-only paths.")
+    return True
+
+
+def sandbox():
+    argv = ["/usr/bin/bwrap", "--die-with-parent", "--new-session", "--unshare-pid",
+            "--unshare-ipc", "--unshare-uts", "--clearenv", "--ro-bind", "/usr", "/usr",
+            "--proc", "/proc", "--dev", "/dev", "--perms", "0755", "--dir", "/etc",
+            "--perms", "0755", "--dir", "/etc/ssl", "--perms", "0755", "--dir", "/opt",
+            "--perms", "0755", "--dir", "/opt/axv-review", "--perms", "1777", "--tmpfs", "/tmp",
+            "--chdir", "/tmp", "--setenv", "HOME", "/tmp/home", "--setenv", "PATH",
+            "/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin", "--setenv", "LANG", "C.UTF-8",
+            "--setenv", "GIT_CONFIG_NOSYSTEM", "1", "--setenv", "GIT_CONFIG_GLOBAL", "/dev/null",
+            "--setenv", "GIT_TERMINAL_PROMPT", "0", "--setenv", "GOTOOLCHAIN", "local",
+            "--setenv", "GOPROXY", "file:///opt/axv-review/deps/go-proxy",
+            "--setenv", "GOSUMDB", "off"]
+    for name in ("bin", "sbin", "lib", "lib64"):
+        if Path("/usr", name).is_dir():
+            argv += ["--symlink", "usr/" + name, "/" + name]
+    return argv
+
+
+# setpriv executes before git or repository code and drops all groups and caps.
+DROP = ["--", "/usr/bin/setpriv", "--reuid=65534", "--regid=65534", "--clear-groups",
+        "--bounding-set=-all", "--inh-caps=-all", "--ambient-caps=-all", "--no-new-privs", "--"]
+FETCH = """
+set -eu
+umask 077
+mkdir "$HOME"
+if [ "$3" = file ]; then
+    git config --file "$HOME/.gitconfig" safe.directory /source.git
+fi
+git init --quiet --bare /tmp/objects
+cd /tmp/objects
+git -c protocol.allow=never -c "protocol.$3.allow=always" -c fetch.fsckObjects=true fetch --quiet --no-tags --depth=1 -- "$1" "$2"
+test "$(git rev-parse --verify 'FETCH_HEAD^{commit}')" = "$2"
+# A depth-one fetch may omit the parent commit. Enumerate the fetched objects
+# directly so the pack contains the selected commit and every tree and blob.
+git cat-file --batch-all-objects --batch-check='%(objectname)' > /tmp/objects.list
+git pack-objects --stdout < /tmp/objects.list
+"""
+
+
+def main():
+    if os.geteuid() != 0 or len(sys.argv) < 4:
+        raise ValueError("Run the installed guest helper through the review VM task.")
+    repo, sha, *command = sys.argv[1:]
+    if (not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9-]{0,38}/[a-zA-Z0-9_.-]{1,100}", repo)
+            or repo.split("/")[1] in (".", "..") or not re.fullmatch("[0-9a-f]{40}", sha)):
+        raise ValueError("Invalid repository or commit.")
+    os.chdir("/")
+    os.umask(0o077)
+    # sudo may start in an untrusted project directory. All privileged lookups
+    # use absolute paths and the wrapper uses Python's isolated import mode.
+    os.environ.clear()
+    os.environ["PATH"] = "/usr/bin:/bin"
+    mirror = Path("/opt/axv-review/mirrors", repo.lower() + ".git")
+    fetch = sandbox()
+    if trusted_dir(mirror):
+        # Git's upload-pack also checks ownership. Trust only this root-verified
+        # mirror path, including inside its child Git processes.
+        fetch += ["--unshare-net", "--ro-bind", str(mirror), "/source.git",
+                  "--setenv", "GIT_CONFIG_GLOBAL", "/tmp/home/.gitconfig"]
+        source, protocol = "/source.git", "file"
+    else:
+        fetch += ["--ro-bind", "/etc/resolv.conf", "/etc/resolv.conf",
+                  "--ro-bind", "/etc/ssl/certs", "/etc/ssl/certs"]
+        source, protocol = "https://github.com/" + repo + ".git", "https"
+    with tempfile.TemporaryFile(dir="/tmp") as pack, tempfile.TemporaryFile(dir="/tmp") as policy:
+        sandbox_filter(policy)
+        print("Preparing " + repo + " at " + sha, flush=True)
+        def bound_pack():
+            resource.setrlimit(resource.RLIMIT_FSIZE, (256 << 20, 256 << 20))
+        subprocess.run(fetch + DROP + ["/bin/sh", "-c", FETCH, "review-fetch", source, sha, protocol],
+                       check=True, stdin=subprocess.DEVNULL, stdout=pack, preexec_fn=bound_pack, umask=0o022)
+        pack.seek(0)
+        run = sandbox() + ["--unshare-net", "--seccomp", str(policy.fileno()),
+                           "--perms", "0444", "--ro-bind-data", str(pack.fileno()), "/source.pack"]
+        deps = Path("/opt/axv-review/deps")
+        if trusted_dir(deps):
+            run += ["--ro-bind", str(deps), str(deps)]
+        run += DROP + ["/usr/bin/python3", "-I", "/usr/local/lib/axv/review-test-command.py", sha, *command]
+        # Let nobody traverse bubblewrap's root-owned mount parents (/opt and /etc).
+        # The outer supervisor's temporary files retain their private permissions.
+        result = subprocess.run(run, pass_fds=(pack.fileno(), policy.fileno()),
+                                stdin=subprocess.DEVNULL, umask=0o022)
+        return result.returncode if result.returncode in (0, 10) else 1
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except subprocess.CalledProcessError as exc:
+        print("Source preparation failed (exit " + str(exc.returncode) + ").", file=sys.stderr)
+        sys.exit(1)
+    except (OSError, ValueError, RuntimeError) as exc:
+        print("VM test setup failed:", exc, file=sys.stderr)
+        sys.exit(1)

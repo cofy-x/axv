@@ -12,6 +12,7 @@ export type IconName =
   | 'gallery'
   | 'applications'
   | 'checklist'
+  | 'code-review'
   | 'image'
   | 'network'
   | 'cloud-tunnel'

@@ -1,0 +1,126 @@
+.github-review-repository-list > header,
+.github-review-repository-editor > h2 {
+  margin-block: 0 7px;
+}
+
+.github-review-repository-list h2,
+.github-review-repository-editor h2 {
+  font-size: 15px;
+}
+
+.github-review-repository-list h2 {
+  margin: 0;
+}
+
+.github-review-repository-list > ul {
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--ns-mid);
+  background: #eeefed;
+  list-style: none;
+}
+
+.github-review-repository-list > ul > li {
+  align-items: center;
+  padding: 8px 10px;
+}
+
+.github-review-repository-list > ul > li + li {
+  border-top: 1px solid #bbb;
+}
+
+.github-review-repository-description {
+  flex: 1 1 210px;
+  min-width: 0;
+}
+
+.github-review-repository-description > strong {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.github-review-repository-add {
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--ns-mid);
+  background: #e9eae8;
+}
+
+.github-review-repository-add .ns-field {
+  width: 100%;
+}
+
+.github-review-repository-add .app-actions {
+  flex-wrap: wrap;
+}
+
+.github-review-repository-back {
+  margin-bottom: 7px;
+}
+
+.github-review-repository-editor > fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--ns-mid);
+  background: #eeefed;
+}
+
+.github-review-repository-group + .github-review-repository-group {
+  border-top: 1px solid #bbb;
+}
+
+.github-review-repository-group > summary {
+  padding: 8px 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.github-review-repository-group > summary:hover,
+.github-review-repository-group[open] > summary {
+  background: #e3e8e4;
+}
+
+.github-review-repository-group > summary > span {
+  display: inline-block;
+  margin-inline-start: 8px;
+  color: #4c544d;
+  font-size: var(--ns-font-size-secondary);
+  font-weight: 400;
+}
+
+.github-review-repository-fields {
+  padding: 4px 10px 8px;
+}
+
+.github-review-repository-editor :is(input, textarea, summary, h2) {
+  scroll-margin-block-end: 55px;
+}
+
+.github-review-repository-editor [aria-invalid='true'],
+.github-review-repository-add [aria-invalid='true'] {
+  outline: 1px solid #8c3b33;
+}
+
+.github-review-repository-scenarios {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.github-review-repository-scenarios li {
+  border-top: 1px solid #ccc;
+  padding-block: 5px;
+}
+
+.github-review-test-default {
+  margin-top: 8px;
+}
+
+.github-review-test-default > summary {
+  cursor: pointer;
+}
+
+.github-review-repository-stop {
+  margin-top: 10px;
+}
