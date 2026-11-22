@@ -360,7 +360,7 @@ export interface ReviewPRRequest extends ReviewPR {
   revision: number;
 }
 
-export interface ReviewPRResult extends ReviewSnapshot {
+export interface ReviewSelectionResult extends ReviewSnapshot {
   selectedReview: ReviewTarget & Pick<ReviewJob, 'status'>;
 }
 
@@ -429,7 +429,7 @@ export const githubReviewAPI = {
   run: (signal: AbortSignal) =>
     request<ReviewSnapshot>(`${path}/run`, { method: 'POST', signal }),
   reviewPR: (body: ReviewPRRequest, signal: AbortSignal) =>
-    request<ReviewPRResult>(`${path}/review-pr`, {
+    request<ReviewSelectionResult>(`${path}/review-pr`, {
       method: 'POST',
       body: JSON.stringify(body),
       signal,
@@ -515,7 +515,7 @@ export const githubReviewAPI = {
       signal,
     }),
   reviewLatest: (body: ReviewRetry, signal: AbortSignal) =>
-    request<ReviewSnapshot>(`${path}/review-latest`, {
+    request<ReviewSelectionResult>(`${path}/review-latest`, {
       method: 'POST',
       body: JSON.stringify(body),
       signal,

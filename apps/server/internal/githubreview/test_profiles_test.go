@@ -244,7 +244,7 @@ func TestRetargetPreservesSubmittedTestAndSelectsFromNewComparison(t *testing.T)
 	gh.targets = []Target{newTarget}
 	service.scan(ctx, settings, now)
 	req := RetryRequest{Repository: target.Repository, Number: target.Number, BaseSHA: target.BaseSHA, HeadSHA: target.HeadSHA, Revision: settings.Revision}
-	if err := service.reviewLatest(ctx, req); err != nil {
+	if _, err := service.reviewLatest(ctx, req); err != nil {
 		t.Fatal(err)
 	}
 	step()

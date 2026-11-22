@@ -119,8 +119,8 @@ func TestCandidateCommentDraftMigrationPreservesSettings(t *testing.T) {
 		t.Fatalf("account changed during upgrade: %q", got)
 	}
 	var version int
-	if err := upgraded.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil || version != 6 {
-		t.Fatalf("schema version = %d, %v; want 6", version, err)
+	if err := upgraded.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil || version != 7 {
+		t.Fatalf("schema version = %d, %v; want 7", version, err)
 	}
 }
 

@@ -2,10 +2,8 @@ package githubreview
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"errors"
-	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -19,7 +17,6 @@ type githubProvider interface {
 	Checks(context.Context, Target, string, Checks) (Checks, error)
 	Current(context.Context, Target, string) (Target, error)
 	Token(context.Context, string) (string, error)
-	Publish(context.Context, Target, string, string, string) (string, error)
 }
 
 type authProvider interface {
@@ -77,9 +74,8 @@ type Service struct {
 	enrolling map[string]bool
 	observed  map[string]observedConnection
 
-	policyMu          sync.Mutex
-	cancelPublication context.CancelFunc
-	deferredOutcome   *Job // owned by the worker loop
+	policyMu        sync.Mutex
+	deferredOutcome *Job // owned by the worker loop
 
 	discoveryMu        sync.Mutex
 	selectedDuringScan map[string]bool
@@ -212,13 +208,7 @@ func (s *Service) disconnect(ctx context.Context, provider string) error {
 func (s *Service) attach(ctx context.Context, provider, identity string) error {
 	s.policyMu.Lock()
 	defer s.policyMu.Unlock()
-	if err := s.store.attach(ctx, provider, identity); err != nil {
-		return err
-	}
-	if s.cancelPublication != nil {
-		s.cancelPublication()
-	}
-	return nil
+	return s.store.attach(ctx, provider, identity)
 }
 
 func (s *Service) configure(ctx context.Context, config Config) error {
@@ -226,9 +216,6 @@ func (s *Service) configure(ctx context.Context, config Config) error {
 	defer s.policyMu.Unlock()
 	if err := s.store.configure(ctx, config); err != nil {
 		return err
-	}
-	if s.cancelPublication != nil {
-		s.cancelPublication()
 	}
 	s.schedule()
 	return nil
@@ -579,18 +566,13 @@ func (s *Service) processNext(ctx context.Context, saved savedSettings, now time
 		}
 		return errStore
 	}
-	if job.Status == "publishing" && !saved.autoPublishes(job.Repository) {
-		return s.setOutcome(ctx, job, "analyzed", nil)
-	}
 	// Connectivity is checked immediately before processing, rather than
 	// relying on an earlier browser visit to the Connections pane.
-	if job.Status == "queued" {
-		check, cancel := context.WithTimeout(ctx, 6*time.Second)
-		login := s.auth.Inspect(check, "codex")
-		cancel()
-		if !login.Connected {
-			return errors.New("Reconnect the local Codex CLI to continue reviewing.")
-		}
+	check, cancel := context.WithTimeout(ctx, 6*time.Second)
+	login := s.auth.Inspect(check, "codex")
+	cancel()
+	if !login.Connected {
+		return errors.New("Reconnect the local Codex CLI to continue reviewing.")
 	}
 	remote, cancel := context.WithTimeout(ctx, 40*time.Second)
 	current, err := s.github.Current(remote, job.Target, saved.account)
@@ -613,9 +595,6 @@ func (s *Service) processNext(ctx context.Context, saved savedSettings, now time
 	}
 	if !matchesJob(saved.Config, job, current) {
 		return s.setOutcome(ctx, job, "stale", errOutdated)
-	}
-	if job.Status == "publishing" {
-		return s.publish(ctx, job)
 	}
 	job.Requested = current.Requested
 	job.authorContext = current.authorContext
@@ -708,76 +687,7 @@ func (s *Service) review(ctx context.Context, saved savedSettings, job Job) erro
 	if len(findings) == 0 {
 		return s.setOutcome(ctx, job, "clean", nil)
 	}
-	before, err := s.store.settings(ctx)
-	if err != nil {
-		return s.setOutcome(ctx, job, "analyzed", errStore)
-	}
-	if !job.manualReview && saved.autoPublishes(job.Repository) && before.active() && before.autoPublishes(job.Repository) && strings.EqualFold(before.account, job.account) {
-		return s.setOutcome(ctx, job, "publishing", nil)
-	}
 	return s.setOutcome(ctx, job, "analyzed", nil)
-}
-
-func (s *Service) publish(ctx context.Context, job Job) error {
-	s.policyMu.Lock()
-	settings, err := s.store.settings(ctx)
-	if err != nil {
-		s.policyMu.Unlock()
-		return errStore
-	}
-	if !settings.active() || !strings.EqualFold(settings.account, job.account) {
-		s.policyMu.Unlock()
-		return nil
-	}
-	if !settings.autoPublishes(job.Repository) {
-		s.policyMu.Unlock()
-		return s.setOutcome(ctx, job, "analyzed", nil)
-	}
-	remote, cancel := context.WithTimeout(ctx, time.Minute)
-	s.cancelPublication = cancel
-	s.policyMu.Unlock()
-	defer func() {
-		cancel()
-		s.policyMu.Lock()
-		s.cancelPublication = nil
-		s.policyMu.Unlock()
-	}()
-	target := job.Target
-	target.Source = sourceRepository
-	job.attempts++
-	if err := s.setOutcome(ctx, job, "publishing", nil); err != nil {
-		return err
-	}
-	id := sha256.Sum256(fmt.Appendf(nil, "%s\n%s\n%d\n%s", strings.ToLower(job.account),
-		strings.ToLower(job.Repository), job.Number, job.HeadSHA))
-	marker := fmt.Sprintf("<!-- axv-review:%x -->", id)
-	link, err := s.github.Publish(remote, target, job.account, marker, reviewComment(job))
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	if err != nil {
-		if errors.Is(remote.Err(), context.Canceled) {
-			job.attempts--
-			return s.setOutcome(ctx, job, "publishing", nil)
-		}
-		if errors.Is(err, ErrTargetChanged) {
-			return s.setOutcome(ctx, job, "stale", errOutdated)
-		}
-		if githubConnectionError(err) {
-			job.attempts--
-			if saveErr := s.setOutcome(ctx, job, "publishing", err); saveErr != nil {
-				return saveErr
-			}
-			return err
-		}
-		status := "publishing"
-		if job.attempts >= 3 || errors.Is(err, ErrGitHubForbidden) {
-			status = "failed"
-		}
-		return s.setOutcome(ctx, job, status, err)
-	}
-	job.CommentURL = link
-	return s.setOutcome(ctx, job, "published", nil)
 }
 
 func (s *Service) setOutcome(ctx context.Context, job Job, status string, cause error) error {
@@ -789,23 +699,4 @@ func (s *Service) setOutcome(ctx context.Context, job Job, status string, cause 
 		return errStore
 	}
 	return nil
-}
-
-var markdown = strings.NewReplacer(
-	"&", "&amp;", "<", "&lt;", ">", "&gt;", "@", "@\u200b",
-	"\\", "\\\\", "`", "\\`", "*", "\\*", "_", "\\_", "[", "\\[", "]", "\\]",
-	"|", "\\|", "\n", " ", "\r", " ",
-)
-
-func reviewComment(job Job) string {
-	var body strings.Builder
-	fmt.Fprintf(&body, "Automated Codex review of commit `%s`.\n", job.HeadSHA)
-	for _, finding := range job.Findings {
-		location := fmt.Sprintf("%s:%d", markdown.Replace(finding.Path), finding.Line)
-		if finding.Side == "base" {
-			location += " (base)"
-		}
-		fmt.Fprintf(&body, "\n- **%s** · %s\n  %s\n", markdown.Replace(finding.Title), location, markdown.Replace(finding.Body))
-	}
-	return body.String()
 }

@@ -17,12 +17,11 @@ var (
 
 // Resolve the displayed PR against the enrolled GitHub account. The displayed
 // SHA can be old, but the request cannot introduce a new repository or PR.
-func (s *Service) reviewLatest(ctx context.Context, request RetryRequest) error {
+func (s *Service) reviewLatest(ctx context.Context, request RetryRequest) (selectedReview, error) {
 	if !request.valid() {
-		return ErrInvalid
+		return selectedReview{}, ErrInvalid
 	}
-	_, err := s.reviewSelected(ctx, reviewPRRequest{Repository: request.Repository, Number: request.Number, Revision: request.Revision}, &request)
-	return err
+	return s.reviewSelected(ctx, reviewPRRequest{Repository: request.Repository, Number: request.Number, Revision: request.Revision}, &request)
 }
 
 func (s *Service) reviewSelected(ctx context.Context, request reviewPRRequest, displayed *RetryRequest) (selectedReview, error) {

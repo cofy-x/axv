@@ -18,7 +18,6 @@ type workerGitHub struct {
 	checks  func(Checks) (Checks, error)
 	targets []Target
 	current func(Target) (Target, error)
-	post    func(Target, string, string) (string, error)
 }
 
 func (g *workerGitHub) Discover(context.Context, []string, string, bool) ([]Target, error) {
@@ -34,10 +33,6 @@ func (g *workerGitHub) Current(_ context.Context, target Target, _ string) (Targ
 }
 
 func (*workerGitHub) Token(context.Context, string) (string, error) { return "fixture-token", nil }
-
-func (g *workerGitHub) Publish(_ context.Context, target Target, _ string, marker, body string) (string, error) {
-	return g.post(target, marker, body)
-}
 
 func (g *workerGitHub) MergeBase(_ context.Context, _ string, t Target) (string, error) {
 	if g.merge != nil {
@@ -95,7 +90,7 @@ func testReviewStore(t *testing.T, filename string, initialize bool) *store {
 	}
 	configureWorker(t, ledger, Config{
 		Repositories: []string{"owner/alpha", "owner/beta"}, IntervalMinutes: 1,
-		Enabled: true, PublishRepositories: []string{"owner/alpha", "owner/beta"}, DailyLimit: 10,
+		Enabled: true, PublishRepositories: []string{}, DailyLimit: 10,
 	})
 	return ledger
 }
@@ -185,15 +180,12 @@ func TestWorkerMergesDiscoveryAndSkipsSupersededReview(t *testing.T) {
 	if err := service.processNext(ctx, saved, now); err != nil {
 		t.Fatal(err)
 	}
-	workerJob(t, ledger, ordinary, "publishing")
-	github.current = func(target Target) (Target, error) {
-		target.HeadSHA = strings.Repeat("c", 40)
-		target.Requested = true
-		return target, nil
-	}
-	if err := service.processNext(ctx, saved, now); err != nil {
-		t.Fatal(err)
-	}
+	workerJob(t, ledger, ordinary, "analyzed")
+	newer := duplicate
+	newer.HeadSHA = strings.Repeat("c", 40)
+	github.targets = []Target{newer}
+	service.scan(ctx, saved, now.Add(time.Minute))
+	workerJob(t, ledger, newer, "queued")
 	if job := workerJob(t, ledger, ordinary, "stale"); len(job.Findings) == 0 {
 		t.Fatalf("superseded review was not kept locally: %#v", job)
 	}
@@ -225,30 +217,14 @@ func TestWorkerDefersOneUnavailableTargetWithoutBlockingOthers(t *testing.T) {
 	}
 }
 
-func TestWorkerRecoversPublicationWithoutRepeatingCodex(t *testing.T) {
-	ctx := context.Background()
+func TestReleaseKeepsLegacyPublicationLocal(t *testing.T) {
+	ctx := t.Context()
 	filename := filepath.Join(t.TempDir(), "jobs.sqlite")
 	ledger := testReviewStore(t, filename, true)
+	pending := workerTestTarget("owner/alpha", 4, sourceRepository)
+	published := workerTestTarget("owner/alpha", 5, sourceRepository)
 	reviewer := &countedReviewer{}
-	target := workerTestTarget("owner/alpha", 4, sourceRepository)
-	calls := 0
-	firstMarker := ""
-	const link = "https://github.com/owner/alpha/pull/4#issuecomment-42"
-	github := &workerGitHub{targets: []Target{target}, post: func(_ Target, marker, body string) (string, error) {
-		calls++
-		if !strings.Contains(body, "main.go:12") || !strings.Contains(body, "Automated Codex review") {
-			t.Fatalf("unexpected review comment: %s", body)
-		}
-		if calls == 1 {
-			firstMarker = marker
-			return "", errors.New("Connection interrupted after submission.")
-		}
-		if marker != firstMarker {
-			t.Fatal("publication retry changed identity")
-		}
-		return link, nil
-	}}
-	service := newService(ctx, func() {}, ledger, github, connectedCLI{}, reviewer)
+	service := newService(ctx, func() {}, ledger, &workerGitHub{targets: []Target{pending, published}}, connectedCLI{}, reviewer)
 	saved := workerSettings(t, ledger)
 	now := time.Now()
 	service.scan(ctx, saved, now)
@@ -257,28 +233,39 @@ func TestWorkerRecoversPublicationWithoutRepeatingCodex(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	const link = "https://github.com/owner/alpha/pull/5#issuecomment-42"
+	_, err := ledger.db.ExecContext(ctx, `
+		UPDATE review_settings SET publish_repositories='["owner/alpha"]';
+		UPDATE review_jobs SET status='publishing', error='Pending previous publication.' WHERE number=4;
+		UPDATE review_jobs SET status='published', comment_url=? WHERE number=5;
+		PRAGMA user_version=6;
+	`, link)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := ledger.db.Close(); err != nil {
 		t.Fatal(err)
 	}
 	ledger = testReviewStore(t, filename, false)
-	service = newService(ctx, func() {}, ledger, github, connectedCLI{}, reviewer)
-	if err := service.processNext(ctx, workerSettings(t, ledger), now.Add(2*time.Minute)); err != nil {
-		t.Fatal(err)
+	if saved := workerSettings(t, ledger); len(saved.PublishRepositories) != 0 {
+		t.Fatalf("publication carried into release settings: %v", saved.PublishRepositories)
 	}
-	view, err := ledger.history(ctx, "owner")
-	if err != nil || len(view) != 1 || view[0].Status != "published" || view[0].CommentURL != link || calls != 2 || len(reviewer.numbers) != 1 {
-		t.Fatalf("incorrect recovery: %#v, publish calls=%d, model calls=%v, err=%v", view, calls, reviewer.numbers, err)
+	if job := workerJob(t, ledger, pending, "analyzed"); len(job.Findings) != 1 || job.CommentURL != "" || job.Error != "" {
+		t.Fatalf("pending publication did not become a local finding: %+v", job)
 	}
-	provider := github
-	provider.targets[0].BaseSHA = strings.Repeat("d", 40)
-	service.scan(ctx, saved, now.Add(3*time.Minute))
-	view, err = ledger.history(ctx, "owner")
-	if err != nil || len(view) != 1 || view[0].Status != "published" || view[0].BaseSHA != target.BaseSHA {
-		t.Fatalf("a new raw base duplicated an already reviewed head: %#v, %v", view, err)
+	if job := workerJob(t, ledger, published, "published"); job.CommentURL != link {
+		t.Fatalf("historical link was lost: %+v", job)
+	}
+	service = newService(ctx, func() {}, ledger, &workerGitHub{}, connectedCLI{}, reviewer)
+	if err := service.processNext(ctx, workerSettings(t, ledger), now.Add(time.Minute)); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("new release revived old work: %v", err)
+	}
+	if len(reviewer.numbers) != 2 {
+		t.Fatalf("legacy results spent additional reviews: %v", reviewer.numbers)
 	}
 }
 
-func TestWorkerHonorsRepositoryPublishingAndDailyCap(t *testing.T) {
+func TestWorkerHonorsDailyCapForWatchedAndRequestedPullRequests(t *testing.T) {
 	ctx := t.Context()
 	ledger := testReviewStore(t, filepath.Join(t.TempDir(), "jobs.sqlite"), true)
 	outside := workerTestTarget("acme/outside", 1, sourceRequested)
@@ -286,15 +273,10 @@ func TestWorkerHonorsRepositoryPublishingAndDailyCap(t *testing.T) {
 	watched := workerTestTarget("owner/bravo", 3, sourceRepository)
 	saved := configureWorker(t, ledger, Config{
 		Repositories:        []string{requested.Repository, watched.Repository},
-		PublishRepositories: []string{requested.Repository}, DailyLimit: 2, IntervalMinutes: 1, Enabled: true,
+		PublishRepositories: []string{}, DailyLimit: 2, IntervalMinutes: 1, Enabled: true,
 	})
-	var posted []string
-	github := &workerGitHub{targets: []Target{requested, watched, outside}, post: func(target Target, _, _ string) (string, error) {
-		posted = append(posted, target.Repository)
-		return "https://github.com/owner/alpha/pull/2#issuecomment-42", nil
-	}}
 	reviewer := &countedReviewer{}
-	service := newService(ctx, func() {}, ledger, github, connectedCLI{}, reviewer)
+	service := newService(ctx, func() {}, ledger, &workerGitHub{targets: []Target{requested, watched, outside}}, connectedCLI{}, reviewer)
 	now := time.Now()
 	service.scan(ctx, saved, now)
 	for range 2 {
@@ -305,15 +287,10 @@ func TestWorkerHonorsRepositoryPublishingAndDailyCap(t *testing.T) {
 	if job := workerJob(t, ledger, outside, "analyzed"); len(job.Findings) == 0 {
 		t.Fatal("the directly requested off-list review did not retain its findings")
 	}
-	workerJob(t, ledger, requested, "publishing")
-	workerJob(t, ledger, watched, "queued")
+	workerJob(t, ledger, requested, "analyzed")
 	if budget, err := ledger.budget(ctx, now); err != nil || budget.Used != 2 {
 		t.Fatalf("daily budget = %#v, err=%v", budget, err)
 	}
-	if err := service.processNext(ctx, saved, now); err != nil {
-		t.Fatal("publication at the daily cap:", err)
-	}
-	workerJob(t, ledger, requested, "published")
 	if err := service.processNext(ctx, saved, now); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("worker started another analysis at the daily cap: %v", err)
 	}
@@ -325,86 +302,8 @@ func TestWorkerHonorsRepositoryPublishingAndDailyCap(t *testing.T) {
 		t.Fatal(err)
 	}
 	workerJob(t, ledger, watched, "analyzed")
-	if len(posted) != 1 || posted[0] != requested.Repository || len(reviewer.numbers) != 3 {
-		t.Fatalf("posted=%v, model calls=%v", posted, reviewer.numbers)
-	}
-}
-
-func TestPendingPublicationStaysLocalAfterRepositoryRemoval(t *testing.T) {
-	ctx := t.Context()
-	ledger := testReviewStore(t, filepath.Join(t.TempDir(), "jobs.sqlite"), true)
-	saved := workerSettings(t, ledger)
-	selected := workerTestTarget("owner/alpha", 1, sourceRequested)
-	github := &workerGitHub{targets: []Target{selected}}
-	service := newService(ctx, func() {}, ledger, github, connectedCLI{}, &countedReviewer{})
-	now := time.Now()
-	service.scan(ctx, saved, now)
-	if err := service.processNext(ctx, saved, now); err != nil {
-		t.Fatal(err)
-	}
-	workerJob(t, ledger, selected, "publishing")
-	config := saved.Config
-	config.Repositories = []string{"owner/beta"}
-	config.PublishRepositories = []string{"owner/beta"}
-	saved = configureWorker(t, ledger, config)
-	if err := service.processNext(ctx, saved, now); err != nil {
-		t.Fatal(err)
-	}
-	if result := workerJob(t, ledger, selected, "analyzed"); len(result.Findings) != 1 || result.CommentURL != "" {
-		t.Fatalf("repository removal did not preserve findings locally: %#v", result)
-	}
-}
-
-func TestRetryResumesOneFailedPublicationAtDailyCap(t *testing.T) {
-	ctx := t.Context()
-	ledger := testReviewStore(t, filepath.Join(t.TempDir(), "jobs.sqlite"), true)
-	saved := workerSettings(t, ledger)
-	config := saved.Config
-	config.DailyLimit = 1
-	saved = configureWorker(t, ledger, config)
-	selected := workerTestTarget("owner/alpha", 1, sourceRepository)
-	other := workerTestTarget("owner/beta", 2, sourceRepository)
-	const link = "https://github.com/owner/alpha/pull/1#issuecomment-42"
-	var marker string
-	github := &workerGitHub{targets: []Target{selected, other}, post: func(target Target, currentMarker, _ string) (string, error) {
-		if target.Number != selected.Number {
-			t.Fatalf("published a different pull request: %#v", target)
-		}
-		if marker == "" {
-			marker = currentMarker
-			return "", ErrGitHubForbidden
-		}
-		if currentMarker != marker {
-			t.Fatal("the targeted publish retry changed the deduplication marker")
-		}
-		return link, nil
-	}}
-	reviewer := &countedReviewer{}
-	service := newService(ctx, func() {}, ledger, github, connectedCLI{}, reviewer)
-	mux := http.NewServeMux()
-	service.Register(mux)
-	now := time.Now()
-	service.scan(ctx, saved, now)
-	for range 2 {
-		if err := service.processNext(ctx, saved, now); err != nil {
-			t.Fatal(err)
-		}
-	}
-	job := workerJob(t, ledger, selected, "failed")
-	retryReview(t, mux, job, saved.Revision, http.StatusOK)
-	if retried := workerJob(t, ledger, selected, "publishing"); len(retried.Findings) != 1 || retried.attempts != 0 {
-		t.Fatalf("targeted retry discarded findings or failed to reset publish attempts: %#v", retried)
-	}
-	retryReview(t, mux, job, saved.Revision, http.StatusConflict)
-	workerJob(t, ledger, other, "queued")
-	if err := service.processNext(ctx, saved, now); err != nil {
-		t.Fatal(err)
-	}
-	if result := workerJob(t, ledger, selected, "published"); result.CommentURL != link {
-		t.Fatalf("unexpected publication result: %#v", result)
-	}
-	if budget, err := ledger.budget(ctx, now); err != nil || budget.Used != 1 || len(reviewer.numbers) != 1 {
-		t.Fatalf("publication retry spent another review: budget=%#v, model calls=%v, err=%v", budget, reviewer.numbers, err)
+	if len(reviewer.numbers) != 3 {
+		t.Fatalf("model calls=%v", reviewer.numbers)
 	}
 }
 

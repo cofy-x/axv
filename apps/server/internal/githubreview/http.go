@@ -179,7 +179,7 @@ func (s *Service) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		err = readObject(w, r, 2<<10, fields, optional...)
 		if err == nil && path == "/review-latest" {
-			err = s.reviewLatest(ctx, request)
+			selected, err = s.reviewLatest(ctx, request)
 		} else if err == nil && path == "/retry-test" {
 			err = s.retrySelectedTest(ctx, request, attempt, testID)
 		} else if err == nil && path == "/refresh-checks" {
@@ -209,7 +209,7 @@ func (s *Service) serve(w http.ResponseWriter, r *http.Request) {
 		writeFailure(w, errStore)
 		return
 	}
-	if path == "/review-pr" {
+	if path == "/review-pr" || path == "/review-latest" {
 		writeResponse(w, http.StatusOK, struct {
 			Snapshot
 			SelectedReview selectedReview `json:"selectedReview"`

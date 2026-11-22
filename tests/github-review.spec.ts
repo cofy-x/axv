@@ -1236,7 +1236,19 @@ test('assesses a candidate against selected evidence and tracks the issue on a l
           },
         ],
       });
-      return route.fulfill({ json: snapshot });
+      return route.fulfill({
+        json: {
+          ...snapshot,
+          jobs: [],
+          selectedReview: {
+            repository,
+            number,
+            baseSha,
+            headSha: newHead,
+            status: 'clean',
+          },
+        },
+      });
     }
     if (req.method() === 'POST' && req.url().endsWith('/candidate-followup')) {
       const latest = snapshot.jobs[0],

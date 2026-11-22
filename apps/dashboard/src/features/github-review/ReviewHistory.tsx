@@ -1481,7 +1481,7 @@ export function ReviewHistory({
   refreshStatus,
   dailyLimitReached,
 }: {
-  onLatest: (job: ReviewJob, select: (job: ReviewJob) => void) => void;
+  onLatest: (job: ReviewJob, select: (target: ReviewTarget) => void) => void;
   latestDisabled: boolean;
   automation: (open: (target: ReviewTarget) => void) => ReactNode;
   dailyLimitReached: boolean;

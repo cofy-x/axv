@@ -761,15 +761,8 @@ export function GitHubReview({
                         },
                         signal,
                       ),
-                    (value) => {
-                      const latest = value.jobs.find(
-                        (j) =>
-                          j.repository.toLowerCase() ===
-                            repository.toLowerCase() &&
-                          j.number === number &&
-                          j.status !== 'stale',
-                      );
-                      if (latest) select(latest);
+                    ({ selectedReview }) => {
+                      select(selectedReview);
                       setNotice('Latest PR comparison checked');
                     },
                   );

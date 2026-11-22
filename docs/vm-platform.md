@@ -158,7 +158,7 @@ The Linux guest requires usable delegated cgroup v2 CPU, memory and process cont
 
 ### Dedicated GitHub Review VM
 
-GitHub Review submits each configured test as a VM Project Task. Its deployment selects a single host, machine and project by their stable IDs. The first step captures the current volume, boot and guest instance. Later requests recover the receipt on that exact binding. A changed boot before admission requires another explicit test attempt. Once admitted, logs and results remain on the original Compute host. The review window retains its own bounded copy. The desktop configuration, guest image setup and offline dependencies are described in the [review VM recipe](../recipes/github-review/README.md).
+GitHub Review submits each configured test as a VM Project Task. The deployment selects the repository's registered host, machine and project by their stable IDs. The first step captures the current volume, boot and guest instance. Later requests recover the receipt on that exact binding. A changed boot before admission requires another explicit test attempt. Once admitted, logs and results remain on the original Compute host. The review window retains its own bounded copy. The desktop configuration, guest image setup and offline dependencies are described in the [review VM recipe](../recipes/github-review/README.md).
 
 ## Image and capability contract
 

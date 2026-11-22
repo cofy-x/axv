@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/cofy-x/axv/apps/server/internal/compute"
 )
 
 type evidenceReviewer struct{ rules []string }
@@ -35,6 +37,76 @@ func (v *evidenceVM) Poll(_ context.Context, target Target, command []string, ke
 	previous.Status = "passed"
 	previous.Log = "example package tests passed"
 	return previous, nil
+}
+
+type quickTestPollFunc func(Target, []string, string, VMTestAttempt) VMTestAttempt
+
+func (f quickTestPollFunc) Poll(_ context.Context, target Target, command []string, key string, previous VMTestAttempt) (VMTestAttempt, error) {
+	return f(target, command, key, previous), nil
+}
+
+func TestQuickTestRevokedDuringPRLookupCanOnlyObserveOriginalReceipt(t *testing.T) {
+	for _, alreadyAccepted := range []bool{false, true} {
+		name := "missing receipt"
+		if alreadyAccepted {
+			name = "accepted receipt"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := t.Context()
+			db := testReviewStore(t, filepath.Join(t.TempDir(), "run.sqlite"), true)
+			target := workerTestTarget("owner/alpha", 7, sourceRepository)
+			cfg := workerSettings(t, db).Config
+			command := []string{"go", "test", "./pkg/api"}
+			cfg.RepositoryPolicies = map[string]RepositoryPolicy{target.Repository: {TestCommand: command}}
+			saved := configureWorker(t, db, cfg)
+			github := &workerGitHub{targets: []Target{target}}
+			service := newService(ctx, func() {}, db, github, connectedCLI{}, &evidenceReviewer{})
+			binding := compute.ProjectBinding{MachineID: "vm-original", ProjectID: "project-original"}
+			calls := 0
+			service.vm = quickTestPollFunc(func(current Target, selected []string, key string, before VMTestAttempt) VMTestAttempt {
+				calls++
+				if current.HeadSHA != target.HeadSHA || !slices.Equal(selected, command) {
+					t.Fatalf("changed quick test: %+v %v", current, selected)
+				}
+				if before.Binding == nil {
+					bindVMTestAttempt(&before, binding, key)
+					before.Status = "running"
+					return before
+				}
+				if !before.ObserveOnly || before.RequestID != boundReviewRequestID(key, binding) {
+					t.Fatalf("unapproved or substituted receipt: %+v", before)
+				}
+				if alreadyAccepted {
+					before.Status, before.Error, before.TaskID = "passed", "", "original-task"
+				}
+				return before
+			})
+			now := time.Now()
+			service.scan(ctx, saved, now)
+			if err := service.processNext(ctx, saved, now); err != nil {
+				t.Fatal(err)
+			}
+			if err := service.advanceEvidence(ctx, "test", now.Add(time.Second)); err != nil {
+				t.Fatal(err)
+			}
+			github.current = func(current Target) (Target, error) {
+				changed := saved.Config
+				changed.RepositoryPolicies = nil
+				if err := service.configure(ctx, changed); err != nil {
+					t.Fatal(err)
+				}
+				return current, nil
+			}
+			if err := service.advanceEvidence(ctx, "test", now.Add(time.Minute)); err != nil {
+				t.Fatal(err)
+			}
+			test := workerJob(t, db, target, "analyzed").Evidence.Tests[0]
+			if calls != 2 || test.RequestID == "" || (alreadyAccepted && (test.Status != "passed" || test.TaskID != "original-task")) ||
+				(!alreadyAccepted && (test.Status != "canceled" || test.TaskID != "")) {
+				t.Fatalf("unexpected observation after policy revocation: calls=%d attempt=%+v", calls, test)
+			}
+		})
+	}
 }
 
 func TestRepositoryEvidenceAndIsolatedTestRetrySurviveRestart(t *testing.T) {

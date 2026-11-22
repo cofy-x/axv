@@ -219,7 +219,7 @@ func (r RetryRequest) valid() bool {
 }
 
 func (c Config) normalized() (Config, error) {
-	if c.Repositories == nil || c.PublishRepositories == nil || len(c.Repositories) > 100 || len(c.PublishRepositories) > 100 ||
+	if c.Repositories == nil || c.PublishRepositories == nil || len(c.Repositories) > 100 || len(c.PublishRepositories) != 0 ||
 		c.IntervalMinutes < 1 || c.IntervalMinutes > 1440 || c.DailyLimit < 1 || c.DailyLimit > 1000 {
 		return Config{}, ErrInvalid
 	}
@@ -234,23 +234,6 @@ func (c Config) normalized() (Config, error) {
 		if _, exists := watched[key]; !exists {
 			repositories = append(repositories, repo)
 			watched[key] = repo
-		}
-	}
-	publishRepositories := make([]string, 0, len(c.PublishRepositories))
-	seen := make(map[string]bool, len(c.PublishRepositories))
-	for _, value := range c.PublishRepositories {
-		requested := strings.TrimSpace(value)
-		if !validRepository(requested) {
-			return Config{}, ErrInvalid
-		}
-		key := strings.ToLower(requested)
-		repo, ok := watched[key]
-		if !ok {
-			return Config{}, ErrInvalid
-		}
-		if !seen[key] {
-			publishRepositories = append(publishRepositories, repo)
-			seen[key] = true
 		}
 	}
 	policies := make(map[string]RepositoryPolicy, len(c.RepositoryPolicies))
@@ -274,7 +257,6 @@ func (c Config) normalized() (Config, error) {
 	}
 	c.RepositoryPolicies = policies
 	c.Repositories = repositories
-	c.PublishRepositories = publishRepositories
 	return c, nil
 }
 
@@ -290,10 +272,6 @@ func describeReviewQueue(job *Job, config Config) {
 	if config.holdsOutsideReview(*job) {
 		job.QueueReason = "Waiting: outside watched repositories"
 	}
-}
-
-func (c Config) autoPublishes(repository string) bool {
-	return c.watches(repository) && hasRepository(c.PublishRepositories, repository)
 }
 
 func hasRepository(repositories []string, repository string) bool {

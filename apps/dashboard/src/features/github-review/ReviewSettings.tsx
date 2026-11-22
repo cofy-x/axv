@@ -121,7 +121,7 @@ export function ReviewSettings({
     const answer = await desktop.dialog({
       title: `Stop watching ${repository}?`,
       message:
-        'Saving will remove this repository and its rules and tests from the watch list. Existing reviews and receipts stay available. Direct review requests still appear.',
+        'Saving will remove this repository and its rules and tests from the watch list. Existing reviews and receipts stay available. The review schedule controls automatic discovery of direct review requests.',
       buttons: [
         { label: 'Cancel', value: 'cancel', default: true, cancel: true },
         { label: 'Stop watching', value: 'stop' },

@@ -76,8 +76,7 @@ func (s *store) initialize(ctx context.Context) error {
 	if err := sqlitemigrate.Apply(ctx, s.db, migrations, reviewDatabaseFormat, nil); err != nil {
 		return err
 	}
-	// A model process from the stopped service cannot publish. An uncertain write
-	// remains in the outbox and is reconciled before another POST.
+	// A review interrupted by a desktop shutdown can be retried.
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE review_jobs SET status='queued', error='',review_stage=json_set(review_stage,'$.status','queued') WHERE status='reviewing';
   UPDATE review_jobs SET review_stage=json_set(review_stage,'$.status','failed',
@@ -93,18 +92,18 @@ func (s *store) settings(ctx context.Context) (savedSettings, error) {
 
 func readSettings(ctx context.Context, db rowQuerier) (savedSettings, error) {
 	var result savedSettings
-	var repositories, publishRepositories, policies string
+	var repositories, policies string
 	err := db.QueryRowContext(ctx, `
-		SELECT repositories, publish_repositories, interval_minutes, daily_limit, enabled, revision,
+		SELECT repositories, interval_minutes, daily_limit, enabled, revision,
 			github_account, codex_connected, repository_policies, watch_only
 		FROM review_settings WHERE singleton=1
-	`).Scan(&repositories, &publishRepositories, &result.IntervalMinutes, &result.DailyLimit, &result.Enabled,
+	`).Scan(&repositories, &result.IntervalMinutes, &result.DailyLimit, &result.Enabled,
 		&result.Revision, &result.account, &result.codex, &policies, &result.WatchOnly)
 	if err != nil {
 		return savedSettings{}, err
 	}
-	err = errors.Join(json.Unmarshal([]byte(repositories), &result.Repositories),
-		json.Unmarshal([]byte(publishRepositories), &result.PublishRepositories), json.Unmarshal([]byte(policies), &result.RepositoryPolicies))
+	result.PublishRepositories = []string{}
+	err = errors.Join(json.Unmarshal([]byte(repositories), &result.Repositories), json.Unmarshal([]byte(policies), &result.RepositoryPolicies))
 	return result, err
 }
 
@@ -117,18 +116,14 @@ func (s *store) configure(ctx context.Context, c Config) error {
 	if err != nil {
 		return err
 	}
-	publishRepositories, err := json.Marshal(c.PublishRepositories)
-	if err != nil {
-		return err
-	}
 	policies, err := json.Marshal(c.RepositoryPolicies)
 	if err != nil {
 		return err
 	}
 	result, err := s.db.ExecContext(ctx, `
-		UPDATE review_settings SET repositories=?, publish_repositories=?, interval_minutes=?, daily_limit=?,
+		UPDATE review_settings SET repositories=?, publish_repositories='[]', interval_minutes=?, daily_limit=?,
 			enabled=?, repository_policies=?, watch_only=?, revision=revision+1
-		WHERE singleton=1 AND revision=?`, string(repositories), string(publishRepositories), c.IntervalMinutes,
+		WHERE singleton=1 AND revision=?`, string(repositories), c.IntervalMinutes,
 		c.DailyLimit, c.Enabled, string(policies), c.WatchOnly, c.Revision)
 	if err != nil {
 		return err
@@ -204,11 +199,11 @@ func enqueueJobs(ctx context.Context, tx *sql.Tx, account string, observations, 
 
 func (s *store) nextJob(ctx context.Context, account string, retryBefore time.Time, allowAnalysis, pollingEnabled bool) (Job, error) {
 	return scanJob(s.db.QueryRowContext(ctx, "SELECT "+jobFields+`
-		FROM review_jobs WHERE account=? AND (? OR (manual_review=1 AND status='queued')) AND
-		(status='publishing' OR (? AND status='queued')) AND (attempts=0 OR updated_at<=?)
-		AND (status<>'queued' OR manual_review=1 OR (SELECT watch_only=0 FROM review_settings WHERE singleton=1) OR
+		FROM review_jobs WHERE account=? AND status='queued' AND (? OR manual_review=1) AND
+		? AND (attempts=0 OR updated_at<=?)
+		AND (manual_review=1 OR (SELECT watch_only=0 FROM review_settings WHERE singleton=1) OR
 			EXISTS (SELECT 1 FROM json_each((SELECT repositories FROM review_settings WHERE singleton=1)) WHERE value=review_jobs.repository COLLATE NOCASE))
-		ORDER BY (status='publishing') DESC, manual_review DESC, (source='requested') DESC, updated_at ASC, repository, number LIMIT 1
+		ORDER BY manual_review DESC, (source='requested') DESC, updated_at ASC, repository, number LIMIT 1
 	`, account, pollingEnabled, allowAnalysis, retryBefore.UnixMilli()))
 }
 
@@ -334,9 +329,6 @@ func resetReviewForRetry(ctx context.Context, tx *sql.Tx, settings savedSettings
 	status, findings := "queued", "[]"
 	if job.Status == "failed" && len(job.Findings) > 0 && job.BaseSHA == current.BaseSHA {
 		status = "analyzed"
-		if !manual && settings.autoPublishes(current.Repository) {
-			status = "publishing"
-		}
 		encoded, err := json.Marshal(job.Findings)
 		if err != nil {
 			return err
@@ -424,7 +416,7 @@ func (s *store) update(ctx context.Context, job Job) error {
 	// finding and stage evidence on the old row without reviving its job status.
 	reviewStatus := ""
 	switch job.Status {
-	case "analyzed", "clean", "publishing", "published":
+	case "analyzed", "clean", "published":
 		reviewStatus = "completed"
 	case "failed":
 		reviewStatus = "failed"
@@ -438,14 +430,14 @@ func (s *store) update(ctx context.Context, job Job) error {
 	}
 	defer tx.Rollback()
 	result, err := tx.ExecContext(ctx, `
-  UPDATE review_jobs SET status=CASE WHEN status='stale' THEN status WHEN manual_review=1 AND ?='publishing' THEN 'analyzed' ELSE ? END,
+  UPDATE review_jobs SET status=CASE WHEN status='stale' THEN status ELSE ? END,
   findings=?,comment_url=?,error=CASE WHEN status='stale' THEN error ELSE ? END,attempts=?,updated_at=?,
   review_stage=CASE WHEN ?<>'' AND json_extract(review_stage,'$.status') IN ('running','queued')
     THEN json_set(review_stage,'$.status',?,'$.updatedAt',?,'$.error',?,
      '$.messages[#]',json_object('at',?,'text',?)) ELSE review_stage END
   WHERE account=? AND repository=? AND number=? AND base_sha=? AND head_sha=?
   AND (status<>'stale' OR (?<>'' AND evidence_key=?))
-  `, job.Status, job.Status, string(findings), job.CommentURL, job.Error, job.attempts, job.UpdatedAt.UnixMilli(), reviewStatus, reviewStatus,
+  `, job.Status, string(findings), job.CommentURL, job.Error, job.attempts, job.UpdatedAt.UnixMilli(), reviewStatus, reviewStatus,
 		job.UpdatedAt.UTC().Format(time.RFC3339Nano), job.Error, job.UpdatedAt.UTC().Format(time.RFC3339Nano), message, job.account, job.Repository, job.Number, job.BaseSHA, job.HeadSHA, job.evidenceKey, job.evidenceKey)
 	if err != nil {
 		return err

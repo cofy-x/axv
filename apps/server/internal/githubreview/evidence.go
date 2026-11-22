@@ -186,6 +186,20 @@ func (s *Service) advanceTest(ctx context.Context, job Job, key string, now time
 			}
 		}
 	}
+	firstDispatch := latest.TaskID == "" && (latest.Status == "running" || latest.Status == "queued")
+	if firstDispatch {
+		// The lookup or test selection may have outlived the approved policy.
+		// Serialize final admission and dispatch against settings changes.
+		s.policyMu.Lock()
+		defer s.policyMu.Unlock()
+		allowed, err := s.quickTestDispatchAllowed(ctx, job, latest, command)
+		if err != nil {
+			return errStore
+		}
+		if !allowed {
+			latest.Status, latest.Error = "canceled", "The PR or repository test configuration changed before submission."
+		}
+	}
 	// A previous submission may have reached Compute without its receipt
 	// reaching SQLite. On revocation, observe that request without resubmitting.
 	if latest.Binding != nil && (latest.Status == "canceled" || latest.Status == "error") {
@@ -195,7 +209,13 @@ func (s *Service) advanceTest(ctx context.Context, job Job, key string, now time
 		if s.vm == nil {
 			latest.Status, latest.Error = "error", "Configure a dedicated review VM on this AXV host."
 		} else {
-			result, err := s.vmForRepository(job.Repository).Poll(run, job.Target, command, fmt.Sprintf("%s-%d", key, latest.Attempt), latest)
+			poll := run
+			if firstDispatch {
+				var stop context.CancelFunc
+				poll, stop = context.WithTimeout(run, 8*time.Second)
+				defer stop()
+			}
+			result, err := s.vmForRepository(job.Repository).Poll(poll, job.Target, command, fmt.Sprintf("%s-%d", key, latest.Attempt), latest)
 			if err != nil {
 				latest.Error = safeError(err)
 				if latest.TaskID != "" {
@@ -227,6 +247,22 @@ func (s *Service) advanceTest(ctx context.Context, job Job, key string, now time
 	}
 	tests[index] = latest
 	return saveTestAttempts(ctx, s.store.db, job, key, tests, due)
+}
+
+func (s *Service) quickTestDispatchAllowed(ctx context.Context, job Job, attempt VMTestAttempt, command []string) (bool, error) {
+	settings, err := s.store.settings(ctx)
+	if err != nil {
+		return false, err
+	}
+	if !strings.EqualFold(settings.account, job.account) || !settings.watches(job.Repository) ||
+		!attempt.matchesPolicy(settings.policy(job.Repository), command) {
+		return false, nil
+	}
+	current, err := s.store.job(ctx, job.account, job.Repository, job.Number, job.HeadSHA)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil && current.BaseSHA == job.BaseSHA && current.evidenceKey == job.evidenceKey && current.Status != "stale", err
 }
 
 // Head-only receipts remain valid after retargeting. A path-scoped choice was

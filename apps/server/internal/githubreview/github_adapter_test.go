@@ -60,18 +60,6 @@ case "$4" in
     printf 'gh: Resource not found (HTTP 404)\n' >&2
     exit 1
     ;;
-  repos/external/repo/issues/21/comments\?*)
-    if [ -f posted ]; then
-      printf '{"count":1,"match":{"html_url":"https://github.com/external/repo/pull/21#issuecomment-55"}}'
-    else
-      printf '{"count":0,"match":null}'
-    fi
-    ;;
-  repos/external/repo/issues/21/comments)
-    [ "$5" = --method ] && [ "$6" = POST ]
-    cat > posted
-    printf '{"html_url":"https://github.com/external/repo/pull/21#issuecomment-55"}'
-    ;;
   *) exit 1 ;;
 esac
 `
@@ -139,35 +127,6 @@ func TestGitHubDiscoveryPinsAccountAndMergesSources(t *testing.T) {
 		targets[1].Repository != "watched/repo" || targets[1].Number != 12 || targets[1].Source != sourceRequested ||
 		targets[2].Repository != "watched/repo" || targets[2].Number != 13 || targets[2].Source != sourceRepository {
 		t.Fatalf("unexpected discovered targets: %+v", targets)
-	}
-}
-
-func TestGitHubPublishingReconcilesAndRefusesChangedHead(t *testing.T) {
-	directory, executable := fakeReviewCLI(t, "gh", fixtureGH)
-	reviewFixtureFile(t, directory, "signed-in")
-	gh := GitHubCLI{Directory: directory, Executable: executable}
-	target := Target{Repository: "external/repo", Number: 21, Source: sourceRequested,
-		HeadSHA: strings.Repeat("b", 40), BaseSHA: strings.Repeat("a", 40)}
-	marker := "<!-- axv-github-review:fixture -->"
-	reviewFixtureFile(t, directory, "new-head")
-	_, err := gh.Publish(t.Context(), target, "reviewer", marker, "Finding")
-	if !errors.Is(err, ErrTargetChanged) {
-		t.Fatalf("stale publication result = %v", err)
-	}
-	if err := os.Remove(filepath.Join(directory, "new-head")); err != nil {
-		t.Fatal(err)
-	}
-	first, err := gh.Publish(t.Context(), target, "reviewer", marker, "Finding")
-	if err != nil || first != "https://github.com/external/repo/pull/21#issuecomment-55" {
-		t.Fatalf("publication result = %q, %v", first, err)
-	}
-	second, err := gh.Publish(t.Context(), target, "reviewer", marker, "Should never replace the existing comment")
-	if err != nil || second != first {
-		t.Fatalf("reconciled publication result = %q, %v", second, err)
-	}
-	posted, err := os.ReadFile(filepath.Join(directory, "posted"))
-	if err != nil || !strings.Contains(string(posted), "Finding") || strings.Contains(string(posted), "Should never") {
-		t.Fatalf("published body = %s, %v", posted, err)
 	}
 }
 

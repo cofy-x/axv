@@ -265,7 +265,7 @@ export function ReviewRepositoryList({
         </ul>
       ) : (
         <p className="github-review-detail">
-          No watched repositories. Direct review requests are still eligible.
+          Add repositories to watch for new pull requests.
         </p>
       )}
     </section>

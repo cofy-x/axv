@@ -53,9 +53,15 @@ func TestReviewLatestWhilePausedSurvivesRestartAndHonorsBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	response := reviewRequest(t, mux, "POST", route+"/review-latest", "http://localhost", "127.0.0.1:39282", string(body))
-	var snapshot Snapshot
-	if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &snapshot) != nil || snapshot.Config.Enabled {
+	var result struct {
+		Snapshot
+		Selected selectedReview `json:"selectedReview"`
+	}
+	if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &result) != nil || result.Config.Enabled {
 		t.Fatalf("selected PR response: %d %s", response.Code, response.Body)
+	}
+	if got := result.Selected; got.Repository != current.Repository || got.Number != current.Number || got.BaseSHA != current.BaseSHA || got.HeadSHA != current.HeadSHA || got.Status != "queued" {
+		t.Fatalf("wrong selected comparison: %+v", got)
 	}
 	workerJob(t, ledger, old, "stale")
 	workerJob(t, ledger, current, "queued")
@@ -69,11 +75,11 @@ func TestReviewLatestWhilePausedSurvivesRestartAndHonorsBudget(t *testing.T) {
 	}
 	workerJob(t, ledger, current, "analyzed")
 	workerJob(t, ledger, unselected, "queued")
-	if err := service.reviewLatest(ctx, request); err != nil {
+	if _, err := service.reviewLatest(ctx, request); err != nil {
 		t.Fatal(err)
 	}
 	workerJob(t, ledger, current, "analyzed")
-	if err := service.reviewLatest(ctx, latestReviewRef(next, saved.Revision)); err != nil {
+	if _, err := service.reviewLatest(ctx, latestReviewRef(next, saved.Revision)); err != nil {
 		t.Fatal(err)
 	}
 	if err := service.processNext(ctx, saved, time.Now()); !errors.Is(err, sql.ErrNoRows) {
@@ -90,7 +96,7 @@ func TestReviewLatestWhilePausedSurvivesRestartAndHonorsBudget(t *testing.T) {
 	}
 }
 
-func TestReviewLatestLocalWithPublicationEnabledAndChangingBase(t *testing.T) {
+func TestReviewLatestWithChangingBase(t *testing.T) {
 	ctx := t.Context()
 	ledger := testReviewStore(t, filepath.Join(t.TempDir(), "jobs.sqlite"), true)
 	saved := workerSettings(t, ledger)
@@ -106,7 +112,7 @@ func TestReviewLatestLocalWithPublicationEnabledAndChangingBase(t *testing.T) {
 		t.Fatal(err)
 	}
 	ref := latestReviewRef(first, saved.Revision)
-	if err := service.reviewLatest(ctx, ref); err != nil {
+	if _, err := service.reviewLatest(ctx, ref); err != nil {
 		t.Fatal(err)
 	}
 	if err := service.processNext(ctx, saved, time.Now()); err != nil {
@@ -114,7 +120,7 @@ func TestReviewLatestLocalWithPublicationEnabledAndChangingBase(t *testing.T) {
 	}
 	workerJob(t, ledger, first, "analyzed")
 	current.BaseSHA = strings.Repeat("d", 40)
-	if err := service.reviewLatest(ctx, ref); err != nil {
+	if _, err := service.reviewLatest(ctx, ref); err != nil {
 		t.Fatal(err)
 	}
 	if job := workerJob(t, ledger, current, "queued"); job.BaseSHA != current.BaseSHA {
@@ -141,12 +147,12 @@ func TestReviewLatestRevalidatesDirectRequestAndSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := latestReviewRef(direct, saved.Revision)
-	if err := service.reviewLatest(ctx, request); !errors.Is(err, ErrRetryStale) {
+	if _, err := service.reviewLatest(ctx, request); !errors.Is(err, ErrRetryStale) {
 		t.Fatalf("revoked direct request: %v", err)
 	}
 	current.Requested = true
 	current.Draft = true
-	if err := service.reviewLatest(ctx, request); !errors.Is(err, ErrRetryStale) {
+	if _, err := service.reviewLatest(ctx, request); !errors.Is(err, ErrRetryStale) {
 		t.Fatalf("draft review request: %v", err)
 	}
 	current.Draft = false
@@ -154,7 +160,7 @@ func TestReviewLatestRevalidatesDirectRequestAndSettings(t *testing.T) {
 		configureWorker(t, ledger, saved.Config)
 		return current, nil
 	}
-	if err := service.reviewLatest(ctx, request); !errors.Is(err, ErrConflict) {
+	if _, err := service.reviewLatest(ctx, request); !errors.Is(err, ErrConflict) {
 		t.Fatalf("changed settings: %v", err)
 	}
 	if workerJob(t, ledger, direct, "queued").manualReview {

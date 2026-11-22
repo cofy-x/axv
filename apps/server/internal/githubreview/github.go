@@ -1,13 +1,11 @@
 package githubreview
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"os/exec"
 	"regexp"
@@ -31,11 +29,10 @@ var (
 	githubStatusPattern  = regexp.MustCompile(`\bHTTP ([45][0-9]{2})\b`)
 
 	ErrGitHubLoginRequired = errors.New("Connect a GitHub CLI account to continue.")
-	ErrGitHubAccountChange = errors.New("The active GitHub account changed. Reconnect before reviewing or publishing.")
+	ErrGitHubAccountChange = errors.New("The active GitHub account changed. Reconnect before reviewing.")
 	ErrGitHubRateLimited   = errors.New("GitHub rate limited the request. Try again after the rate limit resets.")
 	ErrGitHubForbidden     = errors.New("GitHub did not grant permission for this operation.")
 	ErrGitHubNotFound      = errors.New("GitHub returned HTTP 404.")
-	ErrTargetChanged       = errors.New("The pull request changed or is no longer ready for review.")
 )
 
 // GitHubCLI uses the deployment user's official GitHub CLI credentials.
@@ -402,87 +399,6 @@ func (g GitHubCLI) Discover(ctx context.Context, repositories []string, account 
 
 func githubTargetKey(target Target) string {
 	return strings.ToLower(target.Repository) + "#" + strconv.Itoa(target.Number)
-}
-
-type githubComment struct {
-	URL string `json:"html_url"`
-}
-
-func checkCommentURL(target Target, raw string) (string, error) {
-	u, err := url.Parse(raw)
-	expected := "/" + target.Repository + "/pull/" + strconv.Itoa(target.Number)
-	if err != nil || u.Scheme != "https" || u.Host != githubHost || u.User != nil ||
-		!strings.EqualFold(u.Path, expected) || u.RawQuery != "" {
-		return "", errors.New("GitHub did not return a valid comment link.")
-	}
-	id, ok := strings.CutPrefix(u.Fragment, "issuecomment-")
-	number, parseErr := strconv.ParseUint(id, 10, 64)
-	if !ok || parseErr != nil || number == 0 {
-		return "", errors.New("GitHub did not return a valid comment link.")
-	}
-	return u.String(), nil
-}
-
-func (g GitHubCLI) findComment(ctx context.Context, token, account, endpoint, marker string) (githubComment, error) {
-	// Only a marker on its own line and authored by the connected account may
-	// reconcile an uncertain write.
-	loginJSON, _ := json.Marshal(strings.ToLower(account))
-	markerJSON, _ := json.Marshal(marker)
-	query := `{count:length,match:([.[] | select((.user.login // "" | ascii_downcase) == ` +
-		string(loginJSON) + `) | select((.body // "" | split("\n") | index(` + string(markerJSON) + `)) != null) | {html_url}] | first)}`
-	for page := 1; page <= githubMaxPages; page++ {
-		var result struct {
-			Count int           `json:"count"`
-			Match githubComment `json:"match"`
-		}
-		path := fmt.Sprintf("%s?per_page=%d&page=%d", endpoint, githubPageSize, page)
-		if err := g.api(ctx, token, &result, nil, path, "--jq", query); err != nil {
-			return githubComment{}, err
-		}
-		if result.Match.URL != "" || result.Count < githubPageSize {
-			return result.Match, nil
-		}
-	}
-	return githubComment{}, errors.New("GitHub comments exceeded the supported reconciliation scan size.")
-}
-
-// Publish adds one conversation comment without satisfying a review request.
-func (g GitHubCLI) Publish(ctx context.Context, target Target, account, marker, body string) (string, error) {
-	if !target.valid() ||
-		marker == "" || strings.ContainsAny(marker, "\r\n") ||
-		!strings.HasPrefix(marker, "<!-- ") || !strings.HasSuffix(marker, " -->") ||
-		strings.TrimSpace(body) == "" || len(body)+len(marker) > 60_000 {
-		return "", errors.New("Invalid GitHub review comment.")
-	}
-	token, err := g.Token(ctx, account)
-	if err != nil {
-		return "", err
-	}
-	endpoint := fmt.Sprintf("repos/%s/issues/%d/comments", target.Repository, target.Number)
-	comment, err := g.findComment(ctx, token, account, endpoint, marker)
-	if err != nil {
-		return "", err
-	}
-	if comment.URL != "" {
-		return checkCommentURL(target, comment.URL)
-	}
-	current, err := g.current(ctx, token, account, target, githubPullFields)
-	if err != nil {
-		return "", err
-	}
-	if current.Closed || current.Draft || current.HeadSHA != target.HeadSHA || current.BaseSHA != target.BaseSHA ||
-		(target.Source == sourceRequested && !current.Requested) {
-		return "", ErrTargetChanged
-	}
-	payload, err := json.Marshal(map[string]string{"body": marker + "\n\n" + body})
-	if err != nil {
-		return "", err
-	}
-	err = g.api(ctx, token, &comment, bytes.NewReader(payload), endpoint, "--method", "POST", "--input", "-", "--jq", "{html_url}")
-	if err != nil {
-		return "", err
-	}
-	return checkCommentURL(target, comment.URL)
 }
 
 // Restrict subprocess inputs to the device login and provider client settings.
