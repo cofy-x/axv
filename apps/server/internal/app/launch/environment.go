@@ -3,6 +3,7 @@ package launch
 import (
 	"fmt"
 	"os"
+	"slices"
 )
 
 // Capture only service inputs, not the caller's entire shell environment. These
@@ -17,10 +18,19 @@ var environmentKeys = []string{
 	"SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS",
 }
 
+var reviewVMEnvironmentKeys = []string{
+	"AXV_REVIEW_VM_CONFIG", "AXV_REVIEW_VM_HOST_ID", "AXV_REVIEW_VM_MACHINE_ID", "AXV_REVIEW_VM_PROJECT_ID",
+}
+
 func CaptureEnvironment(getenv func(string) string) map[string]string {
 	values := make(map[string]string, len(environmentKeys))
 	for _, key := range environmentKeys {
 		values[key] = getenv(key)
+	}
+	for _, key := range reviewVMEnvironmentKeys {
+		if value := getenv(key); value != "" {
+			values[key] = value
+		}
 	}
 	return values
 }
@@ -33,7 +43,7 @@ func RestoreEnvironment(values map[string]string) error {
 			return fmt.Errorf("desktop environment snapshot is incomplete: missing %s", key)
 		}
 	}
-	for _, key := range environmentKeys {
+	for _, key := range slices.Concat(environmentKeys, reviewVMEnvironmentKeys) {
 		value := values[key]
 		var err error
 		if value == "" {

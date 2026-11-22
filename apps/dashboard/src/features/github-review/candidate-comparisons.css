@@ -1,0 +1,39 @@
+.github-review-comparison-evidence {
+  scroll-margin-block-start: 48px;
+}
+
+.github-review-comparison-evidence .github-review-comparison-checkout {
+  margin-block-start: 4px;
+}
+
+.github-review-comparison-evidence .github-review-comparison-details > summary {
+  width: fit-content;
+  padding-block: 4px;
+  font-weight: 600;
+}
+
+.github-review-comparison-evidence
+  .github-review-comparison-details[open]
+  > summary {
+  margin-block-end: 4px;
+}
+
+@container (max-width: 470px) {
+  .github-review-comparison-result-summary[data-logs-open] {
+    position: sticky;
+    z-index: 1;
+    top: 44px;
+    padding-block: 5px;
+    background: #edf0ec;
+  }
+
+  .github-review-comparison-result-summary[data-logs-open]
+    .github-review-comparison-side {
+    padding: 4px 6px;
+  }
+
+  .github-review-comparison-result-summary[data-logs-open]
+    .github-review-comparison-checkout {
+    margin-block-start: 1px;
+  }
+}

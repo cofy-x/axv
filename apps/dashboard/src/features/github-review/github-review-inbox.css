@@ -1,0 +1,76 @@
+.github-review-inbox-views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 4px;
+  margin-block-end: 10px;
+  border-bottom: 1px solid var(--ns-mid);
+}
+
+.github-review-inbox-filter {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-height: 36px;
+  padding: 5px 8px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #424242;
+  font: inherit;
+}
+
+.github-review-inbox-filter[aria-pressed='true'] {
+  border-bottom-color: #365b47;
+  color: #243c30;
+  font-weight: 600;
+}
+
+.github-review-inbox-filter:not(:disabled):hover {
+  background: #dfe9e3;
+}
+
+.github-review-inbox-row:has(.github-review-inbox-actions) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.github-review-inbox-row:has(.github-review-inbox-actions)
+  .github-review-item-aside {
+  display: none;
+}
+
+.github-review-inbox-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 280px;
+  padding: 6px 9px;
+}
+
+@container (max-width: 580px) {
+  .github-review-inbox-row:has(.github-review-inbox-actions) {
+    grid-template-columns: 1fr;
+  }
+
+  .github-review-inbox-actions {
+    justify-content: flex-start;
+    max-width: none;
+    padding-block-start: 0;
+  }
+}
+
+@media (pointer: coarse) {
+  .github-review-inbox-filter {
+    min-height: 44px;
+  }
+}
+.github-review-page-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 10px;
+  padding-block: 10px 3px;
+}

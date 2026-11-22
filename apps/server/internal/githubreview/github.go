@@ -34,6 +34,7 @@ var (
 	ErrGitHubAccountChange = errors.New("The active GitHub account changed. Reconnect before reviewing or publishing.")
 	ErrGitHubRateLimited   = errors.New("GitHub rate limited the request. Try again after the rate limit resets.")
 	ErrGitHubForbidden     = errors.New("GitHub did not grant permission for this operation.")
+	ErrGitHubNotFound      = errors.New("GitHub returned HTTP 404.")
 	ErrTargetChanged       = errors.New("The pull request changed or is no longer ready for review.")
 )
 
@@ -122,6 +123,9 @@ func githubCLIError(stderr string) error {
 	if matches := githubStatusPattern.FindStringSubmatch(stderr); len(matches) == 2 {
 		if matches[1] == "403" {
 			return ErrGitHubForbidden
+		}
+		if matches[1] == "404" {
+			return ErrGitHubNotFound
 		}
 		return fmt.Errorf("GitHub returned HTTP %s.", matches[1])
 	}
@@ -356,17 +360,21 @@ func (g GitHubCLI) repositoryPulls(ctx context.Context, token, account, reposito
 	return targets, errors.Join(append(failures, errors.New("The repository exceeded the supported pull request scan size."))...)
 }
 
-func (g GitHubCLI) Discover(ctx context.Context, repositories []string, account string) ([]Target, error) {
+func (g GitHubCLI) Discover(ctx context.Context, repositories []string, account string, includeRequests bool) ([]Target, error) {
 	token, err := g.Token(ctx, account)
 	if err != nil {
 		return nil, err
 	}
-	targets, directErr := g.requested(ctx, token, account)
+	var targets []Target
 	var failures []error
-	if directErr != nil {
-		failures = append(failures, fmt.Errorf("Review requests: %w", directErr))
-		if ctx.Err() != nil || errors.Is(directErr, ErrGitHubRateLimited) {
-			return targets, errors.Join(failures...)
+	if includeRequests {
+		var directErr error
+		targets, directErr = g.requested(ctx, token, account)
+		if directErr != nil {
+			failures = append(failures, fmt.Errorf("Review requests: %w", directErr))
+			if ctx.Err() != nil || errors.Is(directErr, ErrGitHubRateLimited) {
+				return targets, errors.Join(failures...)
+			}
 		}
 	}
 	seen := make(map[string]bool)

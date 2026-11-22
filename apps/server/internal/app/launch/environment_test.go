@@ -12,11 +12,16 @@ func TestSnapshotEnvironmentIsScopedAndClearsSupervisorDefaults(t *testing.T) {
 			return "/private/test/codex"
 		case "HTTPS_PROXY":
 			return "http://snapshot-user:snapshot-password@127.0.0.1:7890"
+		case "AXV_REVIEW_VM_CONFIG":
+			return "/private/test/review-vms.json"
 		default:
 			return ""
 		}
 	})
 	for _, key := range environmentKeys {
+		t.Setenv(key, "inherited-supervisor-value")
+	}
+	for _, key := range reviewVMEnvironmentKeys {
 		t.Setenv(key, "inherited-supervisor-value")
 	}
 	t.Setenv("AXV_TEST_UNRELATED", "preserved")
@@ -29,6 +34,9 @@ func TestSnapshotEnvironmentIsScopedAndClearsSupervisorDefaults(t *testing.T) {
 	}
 	if _, ok := CaptureEnvironment(os.Getenv)["AXV_TEST_UNRELATED"]; ok {
 		t.Fatal("captured unrelated shell environment")
+	}
+	if os.Getenv("AXV_REVIEW_VM_CONFIG") != "/private/test/review-vms.json" || os.Getenv("AXV_REVIEW_VM_PROJECT_ID") != "" {
+		t.Fatal("review VM settings did not retain the configured input and clear inherited values")
 	}
 }
 

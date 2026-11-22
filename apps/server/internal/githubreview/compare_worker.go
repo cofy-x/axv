@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/cofy-x/axv/apps/server/internal/compute"
@@ -38,9 +39,29 @@ func (s *Service) advanceComparison(ctx context.Context) error {
 	if !current {
 		run.Error = "The candidate comparison is no longer current. Unsubmitted work was canceled."
 	}
-	allowed := current && run.Error == ""
 	stepCtx, cancel := context.WithTimeout(ctx, 35*time.Second)
 	defer cancel()
+	if current && run.ScenarioID != "" && run.Error == "" && needsAutomaticComparisonCheckout(run) {
+		target := Target{Repository: run.Repository, Number: run.Number, BaseSHA: run.BaseSHA, HeadSHA: run.HeadSHA}
+		live, err := s.github.Current(stepCtx, target, run.Account)
+		if err != nil || !live.valid() || live.Closed || live.Draft || !strings.EqualFold(live.Repository, target.Repository) || live.Number != target.Number || live.BaseSHA != target.BaseSHA || live.HeadSHA != target.HeadSHA {
+			run.Error = "The PR's exact commits could not be verified before submitting the approved assertion."
+		}
+		if run.Error == "" {
+			// Recheck local consent after the network read. Serialize a new
+			// submission against changes to the approved configuration.
+			s.policyMu.Lock()
+			defer s.policyMu.Unlock()
+			current, err = s.store.comparisonCurrent(ctx, run)
+			if err != nil {
+				return err
+			}
+			if !current {
+				run.Error = "The approved comparison changed before submission."
+			}
+		}
+	}
+	allowed := current && run.Error == ""
 	s.advanceComparisonLeg(stepCtx, &run, allowed)
 	if err := ctx.Err(); err != nil {
 		// Compute may already have accepted the request. Replay with the same
@@ -49,6 +70,13 @@ func (s *Service) advanceComparison(ctx context.Context) error {
 	}
 	run.UpdatedAt = time.Now().UTC()
 	return s.store.saveComparison(ctx, before, run)
+}
+
+func needsAutomaticComparisonCheckout(run CandidateComparison) bool {
+	if pendingComparisonLeg(run.Baseline) {
+		return run.Baseline.TaskID == ""
+	}
+	return pendingComparisonLeg(run.Head) && run.Head.TaskID == ""
 }
 
 func pendingComparisonLeg(leg ComparisonLeg) bool {
@@ -75,8 +103,7 @@ func (s *Service) advanceComparisonLeg(ctx context.Context, run *CandidateCompar
 		case side == "head" && leg.Binding == nil:
 			// Make the pinned head dispatch durable before its first Compute
 			// write. Revocation after a lost response must recover that receipt.
-			binding := *run.Baseline.Binding
-			leg.Binding, leg.VMID, leg.ProjectID = &binding, binding.MachineID, binding.ProjectID
+			bindVMTestAttempt(&leg.VMTestAttempt, *run.Baseline.Binding, comparisonLegKey(run, side))
 			leg.Status = "running"
 		case s.vm == nil:
 			leg.Status, leg.Error = "error", "Configure a dedicated review VM on this workstation."
@@ -104,8 +131,8 @@ func (s *Service) pollComparisonLeg(ctx context.Context, run *CandidateCompariso
 	attempt.ObserveOnly = !allowed
 	target := Target{Repository: run.Repository, Number: run.Number, BaseSHA: run.BaseSHA, HeadSHA: leg.TargetSHA}
 	command := append(slices.Clone(run.Runtime.Command), run.Assertion)
-	key := reviewDigest("candidate-comparison", run.Account, run.Repository, run.Number, run.CandidateID, run.ID, side)
-	result, err := s.vm.Poll(ctx, target, command, key, attempt)
+	key := comparisonLegKey(run, side)
+	result, err := s.vmForRepository(run.Repository).Poll(ctx, target, command, key, attempt)
 	if err != nil {
 		leg.Error = safeError(err)
 		if attempt.Binding != nil {
@@ -129,6 +156,10 @@ func (s *Service) pollComparisonLeg(ctx context.Context, run *CandidateCompariso
 	default:
 		leg.Status, leg.Error = "error", "Compute returned an unknown comparison task status."
 	}
+}
+
+func comparisonLegKey(run *CandidateComparison, side string) string {
+	return reviewDigest("candidate-comparison", run.Account, run.Repository, run.Number, run.CandidateID, run.ID, side)
 }
 
 func finishComparison(run *CandidateComparison) {

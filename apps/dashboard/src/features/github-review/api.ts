@@ -16,6 +16,15 @@ export interface ComparisonRuntime {
   command: string[];
 }
 
+export interface ComparisonScenario {
+  id: string;
+  name: string;
+  path: string;
+  title: string;
+  side: 'base' | 'head';
+  sourceComparisonId: string;
+}
+
 export const shellComparisonRuntime: ComparisonRuntime = {
   id: 'shell',
   name: 'POSIX shell',
@@ -41,6 +50,7 @@ export interface ComparisonLeg {
 export interface CandidateComparison {
   id: string;
   candidateId: string;
+  scenarioId?: string;
   repository: string;
   number: number;
   baseSha: string;
@@ -63,6 +73,8 @@ export interface CandidateComparison {
 }
 
 export interface RepositoryPolicy {
+  autoCandidateValidation?: boolean;
+  comparisonScenarios?: ComparisonScenario[];
   comparisonRuntimes?: ComparisonRuntime[];
   testProfiles?: TestProfile[];
   rules: string;
@@ -70,6 +82,7 @@ export interface RepositoryPolicy {
 }
 
 export interface ReviewConfig {
+  watchOnly?: boolean;
   repositoryPolicies?: Record<string, RepositoryPolicy>;
   repositories: string[];
   publishRepositories: string[];
@@ -131,6 +144,21 @@ export interface ReviewTest {
   projectId?: string;
 }
 
+export interface TestRecommendation {
+  id: string;
+  status: 'run' | 'reuse';
+  reason: string;
+  baseSha: string;
+  headSha: string;
+  testId?: string;
+  testName: string;
+  entryPath?: string;
+  command?: string[];
+  latestAttempt: number;
+  reusableAttempt?: number;
+  reusableStatus?: 'passed' | 'failed';
+}
+
 export type FindingStatus =
   'pending' | 'confirmed' | 'false_positive' | 'resolved';
 
@@ -153,7 +181,33 @@ export interface EvidenceItem {
   url?: string;
 }
 
+export interface CandidateCommentDraft {
+  body: string;
+  revision: number;
+  updatedAt: string;
+  reviewedAt?: string;
+  baseSha: string;
+  headSha: string;
+  anchorSha: string;
+  path: string;
+  line: number;
+  side: 'base' | 'head';
+  stale: boolean;
+}
+
+export interface CandidateAutoValidation {
+  state: 'needs_review' | 'queued' | 'running' | 'verified' | 'stale';
+  reason: string;
+  scenarioId?: string;
+  scenarioName?: string;
+  comparisonId?: string;
+  reused?: boolean;
+  suggestion?: { status: 'confirmed' };
+}
+
 export interface CandidateOccurrence {
+  autoValidation?: CandidateAutoValidation;
+  commentDraft?: CandidateCommentDraft;
   comparisons?: CandidateComparison[];
   id: string;
   headSha: string;
@@ -167,6 +221,8 @@ export interface CandidateOccurrence {
 }
 
 export interface Candidate {
+  autoValidation?: CandidateAutoValidation;
+  commentDraft?: CandidateCommentDraft;
   comparisons?: CandidateComparison[];
   id: string;
   trackId: string;
@@ -199,6 +255,9 @@ export interface CandidateDecision {
 }
 
 export interface ReviewJob {
+  inboxGroup?: 'action' | 'active' | 'recent' | 'earlier';
+  queueReason?: string;
+  quickTestRecommendation?: TestRecommendation;
   evidence?: {
     review?: {
       authorContext?: {
@@ -236,29 +295,122 @@ export interface ReviewJob {
   updatedAt: string;
 }
 
+export type ReviewInboxView = 'action' | 'active' | 'history';
+
+export interface ReviewInboxPage {
+  account: string;
+  jobs: ReviewJob[];
+  nextCursor?: string;
+}
+
+export type ReviewTarget = Pick<
+  ReviewJob,
+  'repository' | 'number' | 'headSha' | 'baseSha'
+>;
+
+export interface RepositoryReviewEnvironment {
+  name: string;
+  configured: boolean;
+}
+
+export interface ReviewVMReadiness {
+  status: string;
+  message: string;
+}
+
 export interface ReviewSnapshot {
   config: ReviewConfig;
   comparisonReady?: boolean;
+  repositoryEnvironments?: Record<string, RepositoryReviewEnvironment>;
   github: ReviewConnection;
   codex: ReviewConnection;
   jobs: ReviewJob[];
+  hasJobs?: boolean;
+  reviewAccount?: string;
   budget: { used: number; resetsAt: string };
+  discovery?: {
+    scanning: boolean;
+    nextScanAt?: string;
+    lastSuccessAt?: string;
+    error?: string;
+  };
   lastPollAt?: string;
   error?: string;
 }
 
-export interface ReviewRetry extends Pick<
-  ReviewJob,
-  'repository' | 'number' | 'baseSha' | 'headSha'
-> {
+export function reviewEnvironment(
+  snapshot: ReviewSnapshot | undefined,
+  repository: string,
+): RepositoryReviewEnvironment {
+  const key = repository.toLowerCase();
+  const mapped = Object.entries(snapshot?.repositoryEnvironments ?? {}).find(
+    ([name]) => name.toLowerCase() === key,
+  );
+  return (
+    mapped?.[1] ?? {
+      name: 'Default review VM',
+      configured: Boolean(snapshot?.comparisonReady),
+    }
+  );
+}
+
+export type ReviewPR = Pick<ReviewJob, 'repository' | 'number'>;
+
+export interface ReviewPRRequest extends ReviewPR {
   revision: number;
+}
+
+export interface ReviewPRResult extends ReviewSnapshot {
+  selectedReview: ReviewTarget & Pick<ReviewJob, 'status'>;
+}
+
+export type ReviewRetry = ReviewPRRequest &
+  Pick<ReviewJob, 'baseSha' | 'headSha'>;
+
+export interface ComparisonScenarioApproval extends ReviewRetry {
+  account: string;
+  candidateId: string;
+  comparisonId: string;
+  name: string;
+  enable: boolean;
 }
 
 const path = '/github-review';
 
 export const githubReviewAPI = {
   snapshot: (signal: AbortSignal) =>
-    request<ReviewSnapshot>(path, { signal, cache: 'no-store' }),
+    request<ReviewSnapshot>(`${path}?summary=1`, { signal, cache: 'no-store' }),
+  vmReadiness: (repository: string, signal: AbortSignal) =>
+    request<ReviewVMReadiness>(
+      `${path}/vm-readiness?${new URLSearchParams({ repository })}`,
+      { signal, cache: 'no-store' },
+    ),
+  inbox: (view: ReviewInboxView, cursor: string, signal: AbortSignal) => {
+    const query = new URLSearchParams({ view });
+    if (cursor) query.set('cursor', cursor);
+    return request<ReviewInboxPage>(`${path}/inbox?${query}`, {
+      signal,
+      cache: 'no-store',
+    });
+  },
+  job: (
+    { repository, number, baseSha, headSha }: ReviewTarget,
+    signal: AbortSignal,
+  ) => {
+    const query = new URLSearchParams({
+      repository,
+      number: String(number),
+      baseSha,
+      headSha,
+    });
+    return request<{ account: string; job: ReviewJob }>(
+      `${path}/job?${query}`,
+      {
+        signal,
+        cache: 'no-store',
+      },
+    );
+  },
   save: (config: ReviewConfig, signal: AbortSignal) =>
     request<ReviewSnapshot>(`${path}/config`, {
       method: 'PUT',
@@ -276,6 +428,12 @@ export const githubReviewAPI = {
     }),
   run: (signal: AbortSignal) =>
     request<ReviewSnapshot>(`${path}/run`, { method: 'POST', signal }),
+  reviewPR: (body: ReviewPRRequest, signal: AbortSignal) =>
+    request<ReviewPRResult>(`${path}/review-pr`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+      signal,
+    }),
   refreshChecks: (retry: ReviewRetry, signal: AbortSignal) =>
     request<ReviewSnapshot>(`${path}/refresh-checks`, {
       method: 'POST',
@@ -302,10 +460,41 @@ export const githubReviewAPI = {
       body: JSON.stringify(comparison),
       signal,
     }),
+  approveComparisonScenario: (
+    approval: ComparisonScenarioApproval,
+    signal: AbortSignal,
+  ) =>
+    request<ReviewSnapshot>(`${path}/approve-comparison-scenario`, {
+      method: 'POST',
+      body: JSON.stringify(approval),
+      signal,
+    }),
   decide: (decision: CandidateDecision, signal: AbortSignal) =>
     request<ReviewSnapshot>(`${path}/candidate`, {
       method: 'POST',
       body: JSON.stringify(decision),
+      signal,
+    }),
+  saveCommentDraft: (
+    draft: ReviewRetry & { account: string; candidateId: string; body: string },
+    signal: AbortSignal,
+  ) =>
+    request<ReviewSnapshot>(`${path}/candidate-draft`, {
+      method: 'POST',
+      body: JSON.stringify(draft),
+      signal,
+    }),
+  reviewCommentDraft: (
+    draft: ReviewRetry & {
+      account: string;
+      candidateId: string;
+      reviewed: boolean;
+    },
+    signal: AbortSignal,
+  ) =>
+    request<ReviewSnapshot>(`${path}/candidate-draft-reviewed`, {
+      method: 'POST',
+      body: JSON.stringify(draft),
       signal,
     }),
   followup: (
@@ -338,6 +527,15 @@ export const githubReviewAPI = {
     request<ReviewSnapshot>(`${path}/retry-test`, {
       method: 'POST',
       body: JSON.stringify(retry),
+      signal,
+    }),
+  confirmTestRecommendation: (
+    body: ReviewRetry & { recommendationId: string },
+    signal: AbortSignal,
+  ) =>
+    request<ReviewSnapshot>(`${path}/confirm-test-recommendation`, {
+      method: 'POST',
+      body: JSON.stringify(body),
       signal,
     }),
   retry: (retry: ReviewRetry, signal: AbortSignal) =>
@@ -387,6 +585,18 @@ export function reviewPRURL(repository: string, number: number) {
   if (!slug || slug[1] === '.' || slug[1] === '..') return;
   if (!Number.isSafeInteger(number) || number < 1) return;
   return `https://github.com/${repository}/pull/${number}`;
+}
+
+export function parseReviewPRURL(value: string): ReviewPR | undefined {
+  const url = value.trim();
+  const match =
+    /^https:\/\/github\.com\/([A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9_.-]{1,100})\/pull\/([1-9]\d*)$/.exec(
+      url,
+    );
+  if (!match) return;
+  const [, repository, rawNumber] = match;
+  const number = Number(rawNumber);
+  if (reviewPRURL(repository, number) === url) return { repository, number };
 }
 
 export function reviewCommentURL(job: ReviewJob) {

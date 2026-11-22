@@ -1,0 +1,86 @@
+.review-automation-status {
+  margin-block-end: 12px;
+  border: 1px solid var(--ns-mid);
+  background: #e7ebe7;
+  font-size: var(--ns-font-size-secondary);
+}
+
+.review-automation-status dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 0;
+}
+
+.review-automation-status dl > div {
+  min-width: 0;
+  padding: 6px 9px;
+}
+
+.review-automation-status dl > div + div {
+  border-inline-start: 1px solid #bbc4bc;
+}
+
+.review-automation-status dt {
+  font-weight: 600;
+}
+
+.review-automation-status dd {
+  margin: 0;
+}
+
+.review-automation-note {
+  display: block;
+  color: #414d46;
+}
+
+.review-automation-budget {
+  margin: 0;
+  padding: 4px 9px;
+  border-top: 1px solid #bbc4bc;
+}
+
+.review-automation-status .review-automation-error {
+  color: #7a1010;
+}
+
+.review-automation-error summary {
+  padding-block: 3px;
+  cursor: pointer;
+}
+
+.review-automation-error p {
+  margin: 0;
+}
+
+.review-automation-shortcut {
+  display: block;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #163e63;
+  font: inherit;
+  text-align: start;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.review-automation-missing-vms summary {
+  cursor: pointer;
+}
+
+.review-automation-missing-vms ul {
+  margin-block: 3px;
+  padding-inline-start: 1.1em;
+}
+
+[data-review-settings-section]:focus {
+  outline: 1px dotted currentColor;
+  outline-offset: 3px;
+}
+
+@media (pointer: coarse) {
+  .review-automation-shortcut {
+    min-height: 32px;
+  }
+}

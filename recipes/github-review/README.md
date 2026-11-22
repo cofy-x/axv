@@ -21,6 +21,21 @@ Start the VM, register an empty project on its project volume, and configure the
 | `AXV_REVIEW_VM_MACHINE_ID` | Dedicated review machine ID |
 | `AXV_REVIEW_VM_PROJECT_ID` | Registered VM Project ID used for task receipts and logs |
 
+To give different repositories their own registered projects or VMs, set `AXV_REVIEW_VM_CONFIG` to an operator-owned JSON file outside the AXV checkout. Each repository entry supplies a display name and the exact Compute binding selector. Use projects served by the Compute host connected to this AXV desktop.
+
+```json
+{
+  "example/api": {
+    "name": "Go API tests",
+    "hostId": "host-REPLACE",
+    "machineId": "vm-REPLACE",
+    "projectId": "project-REPLACE"
+  }
+}
+```
+
+Repository names match case-insensitively. The three environment variables in the table supply the default for repositories without an entry. A mapped repository only uses its own selection. Provision the mirror, toolchain and operator-owned test assets on each selected VM. Settings shows the registered environment name. Compute verifies the project and machine when AXV prepares an execution. Use an absolute registry path and restart the desktop to load a changed file. A malformed or unreadable registry makes GitHub Review unavailable and records a startup diagnostic. Keep the old Compute project available while AXV is observing its existing tasks.
+
 The source preparation step fetches a single commit over credential-free HTTPS from the public GitHub repository. For private repositories or offline use, provision a root-owned readable bare mirror containing the required commits at `/opt/axv-review/mirrors/<lowercase-owner>/<lowercase-repo>.git`. Keep that mirror current using an independent trusted provisioning process. A configured mirror is authoritative; a missing commit produces a setup error. The command receives a depth-one checkout of the selected commit. Submodules and Git LFS objects require separate provisioning.
 
 Tests run with UID 65534 in a fresh filesystem and PID, IPC, UTS and network namespaces, with loopback available. They see read-only system tools under `/usr`, an empty temporary home, their checkout and any read-only fixture tree provided at `/opt/axv-review/deps`. The task omits the guest project volume, account home, credentials and guest task journal. Its syscall filter restricts socket families and further namespace creation. Build shared language runtimes into `/usr` or `/usr/local`. Keep repository-specific fixtures, tools and operator-owned test scripts in a separate directory you maintain. Provision the needed files under `/opt/axv-review/deps` on the guest image or on the dedicated VM before running reviews. Keep these files read-only during test execution and reference their guest paths in the repository's test configuration. Place a Go toolchain in `/usr/local/go` and any required modules in file proxy format under `/opt/axv-review/deps/go-proxy`. Tests use the local toolchain and resolve dependencies offline; use pinned project checksums.

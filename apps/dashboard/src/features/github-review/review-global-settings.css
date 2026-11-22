@@ -1,0 +1,79 @@
+.github-review-global-block {
+  min-inline-size: 0;
+  margin: 0;
+  padding: 5px 9px 8px;
+  border: 1px solid var(--ns-shadow);
+}
+.github-review-global-block legend {
+  font-weight: 600;
+}
+.github-review-provider-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 9px;
+}
+.github-review-provider {
+  padding-block: 4px;
+}
+.github-review-provider + .github-review-provider {
+  border-inline-start: 1px solid var(--ns-mid);
+  padding-inline-start: 9px;
+}
+.github-review-provider-row {
+  display: flex;
+  align-items: center;
+  min-height: var(--ns-control-height);
+  gap: 4px 10px;
+}
+.github-review-provider-row > strong {
+  min-inline-size: 3em;
+}
+.github-review-provider-row > .github-review-global-meta {
+  flex: 1;
+  min-inline-size: 0;
+}
+.github-review-provider-row > .ns-button {
+  flex: none;
+}
+.github-review-global-meta {
+  color: #333;
+  font-size: var(--ns-font-size-secondary);
+}
+.github-review-connection-management {
+  border-top: 1px solid var(--ns-mid);
+}
+.github-review-connection-management > summary {
+  min-height: var(--ns-control-height);
+  padding-block: 5px;
+  cursor: pointer;
+}
+.github-review-connection-management > .app-actions {
+  gap: 5px 8px;
+  margin-top: 3px;
+}
+.github-review-scan-toggle,
+.github-review-schedule-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 14px;
+}
+.github-review-schedule-fields {
+  gap: 0 24px;
+}
+.github-review-app .github-review-schedule-fields .ns-field-label {
+  margin-block: 2px;
+}
+.github-review-saved-budget {
+  margin-block: 4px 0;
+}
+@container (max-width: 500px) {
+  .github-review-provider-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .github-review-provider + .github-review-provider {
+    border-inline-start: 0;
+    border-top: 1px solid var(--ns-mid);
+    padding-inline-start: 0;
+  }
+}

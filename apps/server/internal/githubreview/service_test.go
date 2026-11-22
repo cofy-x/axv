@@ -21,7 +21,7 @@ type workerGitHub struct {
 	post    func(Target, string, string) (string, error)
 }
 
-func (g *workerGitHub) Discover(context.Context, []string, string) ([]Target, error) {
+func (g *workerGitHub) Discover(context.Context, []string, string, bool) ([]Target, error) {
 	return g.targets, nil
 }
 
@@ -463,6 +463,7 @@ func TestGitHubReviewRoutesAreLocalAndRevisionChecked(t *testing.T) {
 		send("PUT", route+"/config", "https://outside.example", local, body),
 		send("POST", route+"/connect/github", "", local, ""),
 		send("POST", route+"/retry", "https://outside.example", local, `{}`),
+		send("POST", route+"/review-pr", "https://outside.example", local, `{}`),
 	} {
 		if response.Code != 403 {
 			t.Fatalf("unsafe route returned %d: %s", response.Code, response.Body.String())

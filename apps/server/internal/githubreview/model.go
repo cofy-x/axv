@@ -25,10 +25,12 @@ var (
 )
 
 type RepositoryPolicy struct {
-	ComparisonRuntimes []ComparisonRuntime `json:"comparisonRuntimes,omitempty"`
-	TestProfiles       []TestProfile       `json:"testProfiles,omitempty"`
-	Rules              string              `json:"rules"`
-	TestCommand        []string            `json:"testCommand"`
+	AutoCandidateValidation bool                 `json:"autoCandidateValidation,omitempty"`
+	ComparisonScenarios     []ComparisonScenario `json:"comparisonScenarios,omitempty"`
+	ComparisonRuntimes      []ComparisonRuntime  `json:"comparisonRuntimes,omitempty"`
+	TestProfiles            []TestProfile        `json:"testProfiles,omitempty"`
+	Rules                   string               `json:"rules"`
+	TestCommand             []string             `json:"testCommand"`
 }
 
 type Config struct {
@@ -38,6 +40,7 @@ type Config struct {
 	IntervalMinutes     int                         `json:"intervalMinutes"`
 	DailyLimit          int                         `json:"dailyLimit"`
 	Enabled             bool                        `json:"enabled"`
+	WatchOnly           bool                        `json:"watchOnly,omitempty"`
 	Revision            uint64                      `json:"revision"`
 }
 
@@ -54,6 +57,24 @@ type RetryRequest struct {
 	Revision   uint64 `json:"revision"`
 }
 
+type reviewPRRequest struct {
+	Repository string `json:"repository"`
+	Number     int    `json:"number"`
+	Revision   uint64 `json:"revision"`
+}
+
+func (r reviewPRRequest) valid() bool {
+	return validRepository(r.Repository) && r.Number > 0 && r.Revision > 0
+}
+
+type selectedReview struct {
+	Repository string `json:"repository"`
+	Number     int    `json:"number"`
+	BaseSHA    string `json:"baseSha"`
+	HeadSHA    string `json:"headSha"`
+	Status     string `json:"status"`
+}
+
 type Target struct {
 	authorContext *AuthorContext
 	Repository    string `json:"repository"`
@@ -68,12 +89,13 @@ type Target struct {
 }
 
 type Finding struct {
-	Path     string `json:"path"`
-	Line     int    `json:"line"`
-	Side     string `json:"side,omitempty"`
-	Severity string `json:"severity"`
-	Title    string `json:"title"`
-	Body     string `json:"body"`
+	Path                   string `json:"path"`
+	Line                   int    `json:"line"`
+	Side                   string `json:"side,omitempty"`
+	Severity               string `json:"severity"`
+	Title                  string `json:"title"`
+	Body                   string `json:"body"`
+	VerificationScenarioID string `json:"verificationScenarioId,omitempty"`
 }
 
 type CheckRun struct {
@@ -122,15 +144,18 @@ type Evidence struct {
 	Tests  []VMTestAttempt  `json:"tests"`
 }
 type Job struct {
-	Followups          []Candidate           `json:"followups,omitempty"`
-	Candidates         []Candidate           `json:"candidates,omitempty"`
-	PreviousCandidates []CandidateOccurrence `json:"previousCandidates,omitempty"`
-	EvidenceOptions    []EvidenceItem        `json:"evidenceOptions,omitempty"`
-	MergeBaseSHA       string                `json:"mergeBaseSha,omitempty"`
-	ObservedBaseSHA    string                `json:"observedBaseSha,omitempty"`
-	equivalentBaseSHA  string
-	manualReview       bool
-	Evidence           *Evidence `json:"evidence,omitempty"`
+	InboxGroup              string                   `json:"inboxGroup,omitempty"`
+	QueueReason             string                   `json:"queueReason,omitempty"`
+	QuickTestRecommendation *QuickTestRecommendation `json:"quickTestRecommendation,omitempty"`
+	Followups               []Candidate              `json:"followups,omitempty"`
+	Candidates              []Candidate              `json:"candidates,omitempty"`
+	PreviousCandidates      []CandidateOccurrence    `json:"previousCandidates,omitempty"`
+	EvidenceOptions         []EvidenceItem           `json:"evidenceOptions,omitempty"`
+	MergeBaseSHA            string                   `json:"mergeBaseSha,omitempty"`
+	ObservedBaseSHA         string                   `json:"observedBaseSha,omitempty"`
+	equivalentBaseSHA       string
+	manualReview            bool
+	Evidence                *Evidence `json:"evidence,omitempty"`
 	Target
 	Status      string    `json:"status"`
 	Findings    []Finding `json:"findings,omitempty"`
@@ -157,15 +182,26 @@ type Connection struct {
 	Error     string        `json:"error,omitempty"`
 }
 
+type DiscoveryStatus struct {
+	Scanning      bool       `json:"scanning"`
+	NextScanAt    *time.Time `json:"nextScanAt,omitempty"`
+	LastSuccessAt *time.Time `json:"lastSuccessAt,omitempty"`
+	Error         string     `json:"error,omitempty"`
+}
+
 type Snapshot struct {
-	ComparisonReady bool       `json:"comparisonReady"`
-	Config          Config     `json:"config"`
-	Budget          Budget     `json:"budget"`
-	GitHub          Connection `json:"github"`
-	Codex           Connection `json:"codex"`
-	Jobs            []Job      `json:"jobs"`
-	LastPollAt      *time.Time `json:"lastPollAt,omitempty"`
-	Error           string     `json:"error,omitempty"`
+	ReviewAccount          string                         `json:"reviewAccount"`
+	ComparisonReady        bool                           `json:"comparisonReady"`
+	RepositoryEnvironments map[string]ReviewVMEnvironment `json:"repositoryEnvironments,omitempty"`
+	Config                 Config                         `json:"config"`
+	Budget                 Budget                         `json:"budget"`
+	GitHub                 Connection                     `json:"github"`
+	Codex                  Connection                     `json:"codex"`
+	Jobs                   []Job                          `json:"jobs"`
+	HasJobs                bool                           `json:"hasJobs"`
+	Discovery              DiscoveryStatus                `json:"discovery"`
+	LastPollAt             *time.Time                     `json:"lastPollAt,omitempty"`
+	Error                  string                         `json:"error,omitempty"`
 }
 
 func validRepository(repo string) bool {
@@ -228,6 +264,9 @@ func (c Config) normalized() (Config, error) {
 		}
 		policy.Rules = strings.TrimSpace(policy.Rules)
 		policy.TestProfiles = normalizeTestProfiles(policy.TestProfiles)
+		// Approved scenarios belong to the connected account and are managed by
+		// their own admission path. Settings only accept the opt-in switch.
+		policy.ComparisonScenarios = nil
 		if policy.TestCommand == nil {
 			policy.TestCommand = []string{}
 		}
@@ -241,6 +280,16 @@ func (c Config) normalized() (Config, error) {
 
 func (c Config) watches(repository string) bool {
 	return hasRepository(c.Repositories, repository)
+}
+
+func (c Config) holdsOutsideReview(job Job) bool {
+	return c.WatchOnly && job.Status == "queued" && !job.manualReview && !c.watches(job.Repository)
+}
+
+func describeReviewQueue(job *Job, config Config) {
+	if config.holdsOutsideReview(*job) {
+		job.QueueReason = "Waiting: outside watched repositories"
+	}
 }
 
 func (c Config) autoPublishes(repository string) bool {

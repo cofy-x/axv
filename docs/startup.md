@@ -612,6 +612,7 @@ The shared [desktop resolver](../apps/server/internal/config/config.go) applies 
 | Listen address | `--addr` → `ADDR` → `127.0.0.1:PORT` → `desktop.addr` → `127.0.0.1:3001` |
 | Desktop data | `--data-dir` → `DATA_DIR` → `desktop.data_dir` → `AXV_HOME/data` |
 | Compute connection | `AXV_COMPUTE_SOCKET` for an independently managed local VM service → profile `compute` |
+| GitHub Review VM selection | `AXV_REVIEW_VM_CONFIG` for per-repository bindings and `AXV_REVIEW_VM_{HOST,MACHINE,PROJECT}_ID` for the default. See the [review VM recipe](../recipes/github-review/README.md). |
 
 Empty environment variables are unset; explicit flag values cannot be empty. Start/restart overrides are not saved to the profile. Repeat them on the next invocation or persist the settings explicitly. The environment workflow can configure and activate a previously unconfigured VM service without restarting the desktop. Existing provider/storage replacement remains an explicit maintenance operation with the original ownership preserved. Desktop and agent changes can use restart. `AXV_COMPUTE_SOCKET` is shown as a read-only launch override; writing the profile does not replace it.
 

@@ -15,7 +15,7 @@ import (
 )
 
 type githubProvider interface {
-	Discover(context.Context, []string, string) ([]Target, error)
+	Discover(context.Context, []string, string, bool) ([]Target, error)
 	Checks(context.Context, Target, string, Checks) (Checks, error)
 	Current(context.Context, Target, string) (Target, error)
 	Token(context.Context, string) (string, error)
@@ -46,6 +46,21 @@ type observedConnection struct {
 // Provider adapters report only sanitized connection failures.
 type connectionError struct{ error }
 
+type discoveryObservation struct {
+	startedAt time.Time
+	successAt time.Time
+	requested bool
+	scanning  bool
+	error     string
+}
+
+func (d discoveryObservation) nextScanAt(interval int) time.Time {
+	if d.requested || d.startedAt.IsZero() {
+		return time.Time{}
+	}
+	return d.startedAt.Add(time.Duration(interval) * time.Minute)
+}
+
 type Service struct {
 	vm        VMTestRunner
 	store     *store
@@ -66,10 +81,12 @@ type Service struct {
 	cancelPublication context.CancelFunc
 	deferredOutcome   *Job // owned by the worker loop
 
-	discoveryMu sync.Mutex
-	pollMu      sync.Mutex
-	pollAt      time.Time
-	pollError   string
+	discoveryMu        sync.Mutex
+	selectedDuringScan map[string]bool
+	pollMu             sync.Mutex
+	discovery          discoveryObservation
+	pollAt             time.Time
+	pollError          string
 }
 
 func Open(parent context.Context, options Options) (*Service, error) {
@@ -107,6 +124,9 @@ func (s *Service) Close() error {
 }
 
 func (s *Service) schedule() {
+	s.pollMu.Lock()
+	s.discovery.requested = true
+	s.pollMu.Unlock()
 	select {
 	case s.wake <- struct{}{}:
 	default:
@@ -249,6 +269,10 @@ func (s *Service) observeLocked(ctx context.Context, provider string) (Connectio
 }
 
 func (s *Service) snapshot(ctx context.Context) (Snapshot, error) {
+	return s.readSnapshot(ctx, false)
+}
+
+func (s *Service) readSnapshot(ctx context.Context, summaryOnly bool) (Snapshot, error) {
 	s.authMu.Lock()
 	github, err := s.observeLocked(ctx, "github")
 	if err != nil {
@@ -275,16 +299,48 @@ func (s *Service) snapshot(ctx context.Context) (Snapshot, error) {
 	if !saved.codex {
 		codex.Connected = false
 	}
-	jobs, err := s.store.history(ctx, saved.account)
+	jobs := []Job{}
+	var hasJobs bool
+	if summaryOnly {
+		if saved.account != "" {
+			err = s.store.db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM review_jobs WHERE account=?)", saved.account).Scan(&hasJobs)
+		}
+	} else {
+		jobs, err = s.store.history(ctx, saved.account)
+		hasJobs = len(jobs) > 0
+	}
 	if err != nil {
 		return Snapshot{}, err
+	}
+	scenarios, err := approvedComparisonScenarios(ctx, s.store.db, saved.account)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	annotateCandidateValidations(jobs, &saved.Config, scenarios, s.scenarioVMReady)
+	if github.Connected {
+		for i := range jobs {
+			if vm, ok := s.vmForRepository(jobs[i].Repository).(ComputeVMTests); ok && vm.comparisonReady() {
+				jobs[i].QuickTestRecommendation = recommendQuickTest(jobs[i], saved, vm)
+			}
+		}
 	}
 	budget, err := s.store.budget(ctx, time.Now())
 	if err != nil {
 		return Snapshot{}, err
 	}
-	result := Snapshot{ComparisonReady: s.comparisonReady(), Config: saved.Config, Budget: budget, GitHub: github, Codex: codex, Jobs: jobs}
+	result := Snapshot{ReviewAccount: saved.account, ComparisonReady: s.comparisonReady(), RepositoryEnvironments: s.repositoryEnvironments(saved.Repositories),
+		Config: saved.Config, Budget: budget, GitHub: github, Codex: codex, Jobs: jobs, HasJobs: hasJobs}
 	s.pollMu.Lock()
+	result.Discovery = DiscoveryStatus{Scanning: s.discovery.scanning, Error: s.discovery.error}
+	if saved.active() && github.Connected && codex.Connected {
+		if next := s.discovery.nextScanAt(saved.IntervalMinutes); next.After(time.Now()) {
+			result.Discovery.NextScanAt = &next
+		}
+	}
+	if !s.discovery.successAt.IsZero() {
+		at := s.discovery.successAt
+		result.Discovery.LastSuccessAt = &at
+	}
 	if !s.pollAt.IsZero() {
 		at := s.pollAt
 		result.LastPollAt = &at
@@ -292,6 +348,31 @@ func (s *Service) snapshot(ctx context.Context) (Snapshot, error) {
 	result.Error = s.pollError
 	s.pollMu.Unlock()
 	return result, nil
+}
+
+func (s *Service) exactReviewJob(ctx context.Context, target Target) (ReviewJobView, error) {
+	view, err := s.store.inboxJob(ctx, target, s.scenarioVMReady)
+	if err != nil {
+		return view, err
+	}
+	if vm, ok := s.vmForRepository(view.Job.Repository).(ComputeVMTests); ok && vm.comparisonReady() {
+		s.authMu.Lock()
+		github, err := s.observeLocked(ctx, "github")
+		s.authMu.Unlock()
+		if err != nil {
+			return view, err
+		}
+		if github.Connected && strings.EqualFold(github.Account, view.Account) {
+			settings, err := s.store.settings(ctx)
+			if err != nil {
+				return view, err
+			}
+			if strings.EqualFold(settings.account, view.Account) {
+				view.Job.QuickTestRecommendation = recommendQuickTest(view.Job, settings, vm)
+			}
+		}
+	}
+	return view, nil
 }
 
 func (s *Service) checkEnrollments(ctx context.Context) {
@@ -311,21 +392,20 @@ func (s *Service) run() {
 	workers.Go(s.runReviews)
 	workers.Go(s.runEvidence)
 	workers.Go(s.runComparisons)
+	workers.Go(s.runCandidateValidations)
 	workers.Wait()
 }
 
 func (s *Service) runDiscovery() {
 	ticker := time.NewTicker(4 * time.Second)
 	defer ticker.Stop()
-	var lastScan time.Time
 	for s.ctx.Err() == nil {
 		s.checkEnrollments(s.ctx)
 		now := time.Now()
 		settings, err := s.store.settings(s.ctx)
 		if err != nil {
 			s.recordError(errStore)
-		} else if settings.active() && now.Sub(lastScan) >= time.Duration(settings.IntervalMinutes)*time.Minute {
-			lastScan = now
+		} else if settings.active() && s.discoveryDue(now, settings.IntervalMinutes) {
 			s.scan(s.ctx, settings, now)
 			s.wakeReviews()
 		}
@@ -333,10 +413,19 @@ func (s *Service) runDiscovery() {
 		case <-s.ctx.Done():
 			return
 		case <-s.wake:
-			lastScan = time.Time{}
 		case <-ticker.C:
 		}
 	}
+}
+
+func (s *Service) discoveryDue(now time.Time, interval int) bool {
+	s.pollMu.Lock()
+	defer s.pollMu.Unlock()
+	if now.Before(s.discovery.nextScanAt(interval)) {
+		return false
+	}
+	s.discovery.requested = false
+	return true
 }
 
 func (s *Service) wakeReviews() {
@@ -388,10 +477,26 @@ func githubConnectionError(err error) bool {
 
 func (s *Service) scan(ctx context.Context, settings savedSettings, now time.Time) {
 	s.discoveryMu.Lock()
-	defer s.discoveryMu.Unlock()
+	s.selectedDuringScan = make(map[string]bool)
+	s.discoveryMu.Unlock()
+	s.pollMu.Lock()
+	s.discovery.startedAt = now
+	s.discovery.scanning = true
+	s.pollMu.Unlock()
 	check, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	targets, err := s.github.Discover(check, settings.Repositories, settings.account)
+	targets, err := s.github.Discover(check, settings.Repositories, settings.account, !settings.WatchOnly)
+	s.discoveryMu.Lock()
+	// A manual lookup during discovery was allowed to update its PR first.
+	// Drop that PR from this scan so an earlier head cannot supersede it.
+	filtered := make([]Target, 0, len(targets))
+	for _, target := range targets {
+		if !s.selectedDuringScan[targetKey(target)] {
+			filtered = append(filtered, target)
+		}
+	}
+	targets = filtered
+	s.selectedDuringScan = nil
 	for _, t := range targets {
 		if t.valid() {
 			err = errors.Join(err, s.observeComparison(check, settings.account, t, now))
@@ -401,9 +506,15 @@ func (s *Service) scan(ctx context.Context, settings savedSettings, now time.Tim
 	if saveErr := s.store.enqueue(ctx, settings.account, targets, selected, now); saveErr != nil {
 		err = errStore
 	}
+	s.discoveryMu.Unlock()
 	s.pollMu.Lock()
+	s.discovery.scanning = false
+	s.discovery.error = safeError(err)
+	if err == nil {
+		s.discovery.successAt = now
+	}
 	s.pollAt = now
-	s.pollError = safeError(err)
+	s.pollError = s.discovery.error
 	s.pollMu.Unlock()
 }
 
@@ -414,7 +525,7 @@ func chooseTargets(config Config, targets []Target) []Target {
 		if !target.valid() || target.Closed || target.Draft {
 			continue
 		}
-		if target.Requested || target.Source == sourceRequested {
+		if !config.WatchOnly && (target.Requested || target.Source == sourceRequested) {
 			target.Source = sourceRequested
 		} else if config.watches(target.Repository) {
 			target.Source = sourceRepository
@@ -497,6 +608,9 @@ func (s *Service) processNext(ctx context.Context, saved savedSettings, now time
 	if !saved.connected() || (!saved.Enabled && !job.manualReview) || !strings.EqualFold(saved.account, job.account) {
 		return nil
 	}
+	if saved.holdsOutsideReview(job) {
+		return nil
+	}
 	if !matchesJob(saved.Config, job, current) {
 		return s.setOutcome(ctx, job, "stale", errOutdated)
 	}
@@ -551,6 +665,12 @@ func (s *Service) review(ctx context.Context, saved savedSettings, job Job) erro
 	run, cancel := context.WithTimeout(ctx, 12*time.Minute)
 	runner := s.runner
 	if local, ok := runner.(CodexRunner); ok {
+		offers, err := s.store.reviewScenarioOffers(run, started)
+		if err != nil {
+			cancel()
+			return s.setOutcome(ctx, job, "failed", errStore)
+		}
+		local.scenarios = offers
 		local.recordMergeBase = func(sha string) error {
 			_, err := s.store.db.ExecContext(run, `UPDATE review_jobs SET merge_base_sha=? WHERE account=? AND repository=? AND number=? AND head_sha=? AND base_sha=? AND evidence_key=?`, sha, job.account, job.Repository, job.Number, job.HeadSHA, job.BaseSHA, job.evidenceKey)
 			return err

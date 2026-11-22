@@ -173,11 +173,16 @@ func (s *Service) advanceTest(ctx context.Context, job Job, key string, now time
 					return errStore
 				}
 				latest.Status, latest.Error = "canceled", errOutdated.Error()
+			} else if latest.ExactComparison && current.BaseSHA != job.BaseSHA {
+				latest.Status, latest.Error = "canceled", "The PR comparison changed before the confirmed test was submitted."
 			} else if latest.Binding == nil && latest.Selection != "" && latest.SelectionReason == "" {
 				if err := s.selectTest(run, job, policy, &latest); err != nil {
 					latest.Status, latest.Error = "error", safeError(err)
 				}
 				command = latest.Command
+			}
+			if err == nil && latest.TaskID == "" && latest.Binding == nil && current.BaseSHA == job.BaseSHA && (latest.Status == "queued" || latest.Status == "running") {
+				latest.ReceiptBaseSHA = job.BaseSHA
 			}
 		}
 	}
@@ -190,7 +195,7 @@ func (s *Service) advanceTest(ctx context.Context, job Job, key string, now time
 		if s.vm == nil {
 			latest.Status, latest.Error = "error", "Configure a dedicated review VM on this AXV host."
 		} else {
-			result, err := s.vm.Poll(run, job.Target, command, fmt.Sprintf("%s-%d", key, latest.Attempt), latest)
+			result, err := s.vmForRepository(job.Repository).Poll(run, job.Target, command, fmt.Sprintf("%s-%d", key, latest.Attempt), latest)
 			if err != nil {
 				latest.Error = safeError(err)
 				if latest.TaskID != "" {
@@ -320,25 +325,26 @@ func (s *Service) retrySelectedTest(ctx context.Context, req RetryRequest, attem
 	if !matchesJob(settings.Config, job, current) || job.BaseSHA != req.BaseSHA || job.Status == "stale" || job.Evidence == nil {
 		return ErrRetryStale
 	}
-	tests := job.Evidence.Tests
-	if len(tests) == 0 {
-		if attempt != 0 {
-			return ErrRetryStale
-		}
-	} else {
-		last := tests[len(tests)-1]
-		if last.Attempt != attempt || last.Status == "running" || last.Status == "queued" {
-			return ErrRetryStale
-		}
+	latest, idle := lastQuickTestAttempt(job.Evidence.Tests)
+	if !idle || latest != attempt {
+		return ErrRetryStale
 	}
+	if err := queueQuickTest(ctx, tx, job, settings.policy(job.Repository), testID, attempt, false); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func queueQuickTest(ctx context.Context, tx *sql.Tx, job Job, policy RepositoryPolicy, testID string, attempt int, exactComparison bool) error {
 	now := time.Now().UTC()
-	next, err := newTestAttempt(settings.policy(job.Repository), testID, job.BaseSHA, attempt+1, now)
+	next, err := newTestAttempt(policy, testID, job.BaseSHA, attempt+1, now)
 	if err != nil {
 		return err
 	}
-	tests = append(tests, next)
+	next.ExactComparison = exactComparison
+	tests := append(job.Evidence.Tests, next)
 	if err := saveTestAttempts(ctx, tx, job, job.evidenceKey, tests, now.UnixMilli()); err != nil {
 		return errStore
 	}
-	return tx.Commit()
+	return nil
 }

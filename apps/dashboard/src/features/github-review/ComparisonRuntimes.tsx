@@ -4,16 +4,31 @@ import type { ComparisonRuntime } from './api';
 export function ComparisonRuntimes({
   runtimes,
   onChange,
+  issue,
+  errorId,
 }: {
   runtimes: ComparisonRuntime[];
   onChange: (runtimes: ComparisonRuntime[]) => void;
+  issue?: { runtimeId?: string; field?: string };
+  errorId?: string;
 }) {
   function update(id: string, patch: Partial<ComparisonRuntime>) {
     onChange(runtimes.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   }
 
+  function invalidField(runtimeId: string, field: string) {
+    const invalid = issue?.runtimeId === runtimeId && issue.field === field;
+    return {
+      'aria-invalid': invalid || undefined,
+      'aria-describedby': invalid ? errorId : undefined,
+    };
+  }
+
   return (
-    <details className="github-review-comparison-runtimes">
+    <details
+      className="github-review-comparison-runtimes"
+      data-review-runtimes=""
+    >
       <summary>Comparison runtimes</summary>
       <p className="github-review-detail">
         {runtimes.length === 0 &&
@@ -21,15 +36,21 @@ export function ComparisonRuntimes({
         Each launcher receives the assertion as its final argument.
       </p>
       {runtimes.map((runtime, index) => (
-        <fieldset key={runtime.id} className="github-review-profile-editor">
+        <fieldset
+          key={runtime.id}
+          className="github-review-profile-editor"
+          data-review-settings-item={runtime.id}
+        >
           <legend>{runtime.name.trim() || `Runtime ${index + 1}`}</legend>
           <Field
+            {...invalidField(runtime.id, 'name')}
             label="Runtime name"
             value={runtime.name}
             maxLength={80}
             onChange={(e) => update(runtime.id, { name: e.target.value })}
           />
           <TextArea
+            {...invalidField(runtime.id, 'command')}
             label="Launcher (one argument per line)"
             rows={2}
             spellCheck={false}

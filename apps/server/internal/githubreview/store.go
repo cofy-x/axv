@@ -96,10 +96,10 @@ func readSettings(ctx context.Context, db rowQuerier) (savedSettings, error) {
 	var repositories, publishRepositories, policies string
 	err := db.QueryRowContext(ctx, `
 		SELECT repositories, publish_repositories, interval_minutes, daily_limit, enabled, revision,
-			github_account, codex_connected, repository_policies
+			github_account, codex_connected, repository_policies, watch_only
 		FROM review_settings WHERE singleton=1
 	`).Scan(&repositories, &publishRepositories, &result.IntervalMinutes, &result.DailyLimit, &result.Enabled,
-		&result.Revision, &result.account, &result.codex, &policies)
+		&result.Revision, &result.account, &result.codex, &policies, &result.WatchOnly)
 	if err != nil {
 		return savedSettings{}, err
 	}
@@ -127,9 +127,9 @@ func (s *store) configure(ctx context.Context, c Config) error {
 	}
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE review_settings SET repositories=?, publish_repositories=?, interval_minutes=?, daily_limit=?,
-			enabled=?, repository_policies=?, revision=revision+1
+			enabled=?, repository_policies=?, watch_only=?, revision=revision+1
 		WHERE singleton=1 AND revision=?`, string(repositories), string(publishRepositories), c.IntervalMinutes,
-		c.DailyLimit, c.Enabled, string(policies), c.Revision)
+		c.DailyLimit, c.Enabled, string(policies), c.WatchOnly, c.Revision)
 	if err != nil {
 		return err
 	}
@@ -206,7 +206,9 @@ func (s *store) nextJob(ctx context.Context, account string, retryBefore time.Ti
 	return scanJob(s.db.QueryRowContext(ctx, "SELECT "+jobFields+`
 		FROM review_jobs WHERE account=? AND (? OR (manual_review=1 AND status='queued')) AND
 		(status='publishing' OR (? AND status='queued')) AND (attempts=0 OR updated_at<=?)
-		ORDER BY (status='publishing') DESC, (source='requested') DESC, updated_at ASC, repository, number LIMIT 1
+		AND (status<>'queued' OR manual_review=1 OR (SELECT watch_only=0 FROM review_settings WHERE singleton=1) OR
+			EXISTS (SELECT 1 FROM json_each((SELECT repositories FROM review_settings WHERE singleton=1)) WHERE value=review_jobs.repository COLLATE NOCASE))
+		ORDER BY (status='publishing') DESC, manual_review DESC, (source='requested') DESC, updated_at ASC, repository, number LIMIT 1
 	`, account, pollingEnabled, allowAnalysis, retryBefore.UnixMilli()))
 }
 
@@ -234,6 +236,9 @@ func (s *store) startReview(ctx context.Context, job Job, now time.Time) error {
 		return err
 	}
 	if !settings.connected() || (!settings.Enabled && !job.manualReview) || !strings.EqualFold(settings.account, job.account) {
+		return ErrInactive
+	}
+	if settings.WatchOnly && !job.manualReview && !settings.watches(job.Repository) {
 		return ErrInactive
 	}
 	if !settings.watches(job.Repository) && !job.Requested {
@@ -461,14 +466,14 @@ func (s *store) update(ctx context.Context, job Job) error {
 	return tx.Commit()
 }
 
-func scanJob(row interface{ Scan(...any) error }) (Job, error) {
+func scanJob(row interface{ Scan(...any) error }, extra ...any) (Job, error) {
 	var job Job
 	var findings, checks, tests, stage string
 	var policy sql.NullString
 	var updated int64
 	fields := []any{&job.account, &job.Repository, &job.Number, &job.Title, &job.BaseSHA, &job.HeadSHA,
 		&job.Source, &job.Status, &findings, &job.CommentURL, &job.Error, &job.attempts, &updated, &policy, &checks, &tests, &job.evidenceKey, &stage, &job.MergeBaseSHA, &job.ObservedBaseSHA, &job.equivalentBaseSHA, &job.manualReview}
-	err := row.Scan(fields...)
+	err := row.Scan(append(fields, extra...)...)
 	if err == nil {
 		job.UpdatedAt = time.UnixMilli(updated).UTC()
 		err = json.Unmarshal([]byte(findings), &job.Findings)

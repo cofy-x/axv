@@ -108,16 +108,21 @@ func RunContext(ctx context.Context, settings config.Config, options Options) (r
 		codexAPI.Close()
 	}()
 	application := http.NewServeMux()
-	reviews, reviewErr := githubreview.Open(ctx, githubreview.Options{
-		Directory: filepath.Join(settings.DataDir, "github-review"), ProxyURL: settings.ProxyURL,
-		VMTests: githubreview.ComputeVMTests{Gateway: computeGateway,
-			HostID: os.Getenv("AXV_REVIEW_VM_HOST_ID"), ProjectID: os.Getenv("AXV_REVIEW_VM_PROJECT_ID"),
-			MachineID: os.Getenv("AXV_REVIEW_VM_MACHINE_ID"),
-		},
-	})
+	reviewVMTargets, registryErr := githubreview.LoadReviewVMConfig(os.Getenv("AXV_REVIEW_VM_CONFIG"))
+	reviewErr := registryErr
+	var reviews *githubreview.Service
+	if reviewErr == nil {
+		reviews, reviewErr = githubreview.Open(ctx, githubreview.Options{
+			Directory: filepath.Join(settings.DataDir, "github-review"), ProxyURL: settings.ProxyURL,
+			VMTests: githubreview.ComputeVMTests{Gateway: computeGateway,
+				HostID: os.Getenv("AXV_REVIEW_VM_HOST_ID"), ProjectID: os.Getenv("AXV_REVIEW_VM_PROJECT_ID"),
+				MachineID: os.Getenv("AXV_REVIEW_VM_MACHINE_ID"), RepositoryTargets: reviewVMTargets,
+			},
+		})
+	}
 	if reviewErr != nil {
 		diagnostics.FromContext(ctx).Error("github_review.unavailable", reviewErr)
-		githubreview.RegisterUnavailable(application)
+		githubreview.RegisterUnavailable(application, registryErr != nil)
 	} else {
 		reviews.Register(application)
 		defer func() {

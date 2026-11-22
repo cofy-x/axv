@@ -130,7 +130,7 @@ func TestGitHubDiscoveryPinsAccountAndMergesSources(t *testing.T) {
 	if _, err := gh.Token(t.Context(), "someone-else"); !errors.Is(err, ErrGitHubAccountChange) {
 		t.Fatalf("changed account result = %v", err)
 	}
-	targets, err := gh.Discover(t.Context(), []string{"missing/repo", "watched/repo"}, "Reviewer")
+	targets, err := gh.Discover(t.Context(), []string{"missing/repo", "watched/repo"}, "Reviewer", true)
 	if err == nil || !strings.Contains(err.Error(), "missing/repo") || strings.Contains(err.Error(), "fixture-token") {
 		t.Fatalf("partial failure = %v", err)
 	}

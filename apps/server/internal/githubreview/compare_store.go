@@ -62,6 +62,7 @@ type ComparisonLeg struct {
 }
 
 type CandidateComparison struct {
+	ScenarioID   string            `json:"scenarioId,omitempty"`
 	ID           string            `json:"id"`
 	CandidateID  string            `json:"candidateId"`
 	Account      string            `json:"account"`
@@ -91,7 +92,11 @@ func (q comparisonRequest) validComparison() bool {
 	if !q.valid() || !githubAccountPattern.MatchString(q.Account) || !candidateIDPattern.MatchString(q.CandidateID) || !comparisonRequestID.MatchString(q.RequestID) || !testProfileID.MatchString(q.RuntimeID) {
 		return false
 	}
-	return utf8.ValidString(q.Assertion) && len(q.Assertion) <= 8192 && strings.TrimSpace(q.Assertion) != "" && strings.IndexFunc(q.Assertion, func(r rune) bool { return unicode.IsControl(r) && r != '\t' && r != '\r' && r != '\n' }) < 0
+	return validComparisonAssertion(q.Assertion)
+}
+
+func validComparisonAssertion(assertion string) bool {
+	return utf8.ValidString(assertion) && len(assertion) <= 8192 && strings.TrimSpace(assertion) != "" && strings.IndexFunc(assertion, func(r rune) bool { return unicode.IsControl(r) && r != '\t' && r != '\r' && r != '\n' }) < 0
 }
 
 func (v ComputeVMTests) comparisonReady() bool {
@@ -99,10 +104,7 @@ func (v ComputeVMTests) comparisonReady() bool {
 }
 
 func (s *Service) comparisonReady() bool {
-	if configured, ok := s.vm.(interface{ comparisonReady() bool }); ok {
-		return configured.comparisonReady()
-	}
-	return s.vm != nil
+	return reviewVMConfigured(s.vm)
 }
 
 func comparisonReplay(ctx context.Context, db rowQuerier, q comparisonRequest) (bool, error) {
@@ -143,7 +145,7 @@ func (s *Service) requestComparison(ctx context.Context, q comparisonRequest) er
 	if cfg.Revision != q.Revision || !cfg.watches(q.Repository) {
 		return ErrConflict
 	}
-	if !s.comparisonReady() {
+	if !reviewVMConfigured(s.vmForRepository(q.Repository)) {
 		return errComparisonVM
 	}
 	target := Target{Repository: q.Repository, Number: q.Number, BaseSHA: q.BaseSHA, HeadSHA: q.HeadSHA}
@@ -192,17 +194,27 @@ func (s *Service) requestComparison(ctx context.Context, q comparisonRequest) er
 	if !owned {
 		return errCandidateConflict
 	}
-	now := time.Now().UTC()
+	run := newCandidateComparison(j, q.CandidateID, q.RequestID, runtime, q.Assertion, time.Now().UTC())
+	if err := insertCandidateComparison(ctx, tx, run); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func newCandidateComparison(j Job, candidateID, id string, runtime ComparisonRuntime, assertion string, now time.Time) CandidateComparison {
 	leg := func(sha string) ComparisonLeg {
 		return ComparisonLeg{TargetSHA: sha, VMTestAttempt: VMTestAttempt{Status: "queued", UpdatedAt: now}}
 	}
-	run := CandidateComparison{ID: q.RequestID, CandidateID: q.CandidateID, Account: cfg.account, Repository: j.Repository, Number: j.Number, BaseSHA: j.BaseSHA, MergeBaseSHA: j.MergeBaseSHA, HeadSHA: j.HeadSHA,
-		Runtime: runtime, Assertion: q.Assertion, CreatedAt: now, UpdatedAt: now, Status: "queued", Baseline: leg(j.MergeBaseSHA), Head: leg(j.HeadSHA)}
+	return CandidateComparison{ID: id, CandidateID: candidateID, Account: j.account, Repository: j.Repository, Number: j.Number, BaseSHA: j.BaseSHA, MergeBaseSHA: j.MergeBaseSHA, HeadSHA: j.HeadSHA,
+		Runtime: runtime, Assertion: assertion, CreatedAt: now, UpdatedAt: now, Status: "queued", Baseline: leg(j.MergeBaseSHA), Head: leg(j.HeadSHA)}
+}
+
+func insertCandidateComparison(ctx context.Context, tx *sql.Tx, run CandidateComparison) error {
 	payload, err := json.Marshal(run)
 	if err != nil {
 		return err
 	}
-	res, err := tx.ExecContext(ctx, `INSERT INTO review_candidate_comparisons(id,candidate_id,status,updated_at,result) VALUES(?,?,'queued',?,?) ON CONFLICT DO NOTHING`, run.ID, run.CandidateID, now.UnixMilli(), string(payload))
+	res, err := tx.ExecContext(ctx, `INSERT INTO review_candidate_comparisons(id,candidate_id,status,updated_at,result) VALUES(?,?,'queued',?,?) ON CONFLICT DO NOTHING`, run.ID, run.CandidateID, run.CreatedAt.UnixMilli(), string(payload))
 	if err != nil {
 		return err
 	}
@@ -213,7 +225,7 @@ func (s *Service) requestComparison(ctx context.Context, q comparisonRequest) er
 	if n != 1 {
 		return errComparisonBusy
 	}
-	return tx.Commit()
+	return nil
 }
 
 func comparisonEligible(j Job) bool {
@@ -269,6 +281,9 @@ func (s *store) comparisonCurrent(ctx context.Context, v CandidateComparison) (b
 	}
 	if !comparisonEligible(j) || j.BaseSHA != v.BaseSHA || j.MergeBaseSHA != v.MergeBaseSHA {
 		return false, nil
+	}
+	if v.ScenarioID != "" {
+		return automaticComparisonAllowed(ctx, tx, cfg, j, v)
 	}
 	return candidateOnComparison(ctx, tx, j, v.CandidateID)
 }

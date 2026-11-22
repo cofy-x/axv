@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"net/http"
 	"slices"
 	"strconv"
 	"strings"
@@ -26,11 +27,14 @@ type VMTestAttempt struct {
 	SelectionReason  string `json:"selectionReason,omitempty"`
 	SelectionBaseSHA string `json:"selectionBaseSha,omitempty"`
 	PlanHash         string `json:"planHash,omitempty"`
+	ReceiptBaseSHA   string `json:"receiptBaseSha,omitempty"`
+	ExactComparison  bool   `json:"exactComparison,omitempty"`
 
 	Command           []string                `json:"command,omitempty"`
 	ObserveOnly       bool                    `json:"-"`
 	Attempt           int                     `json:"attempt"`
 	Status            string                  `json:"status"`
+	RequestID         string                  `json:"requestId,omitempty"`
 	TaskID            string                  `json:"taskId,omitempty"`
 	AttemptID         string                  `json:"attemptId,omitempty"`
 	VMID              string                  `json:"vmId,omitempty"`
@@ -52,9 +56,20 @@ type VMTestRunner interface {
 type ComputeVMTests struct {
 	Gateway                      *gateway.Gateway
 	HostID, ProjectID, MachineID string
+	RepositoryTargets            map[string]ReviewVMTarget
 }
 
 const reviewLogLimit = 16 << 10
+
+var reviewTaskLimits = compute.TaskLimits{TimeoutSeconds: 600, CPUs: 1, MemoryMiB: 768, MaxProcesses: 128, MaxLogBytes: 1 << 20}
+
+func verifiedVMAssertion(t VMTestAttempt) bool {
+	if t.ExitCode == nil || t.AssertionExitCode == nil || t.Error != "" {
+		return false
+	}
+	return (t.Status == "passed" && *t.ExitCode == 0 && *t.AssertionExitCode == 0) ||
+		(t.Status == "failed" && *t.ExitCode == 10 && *t.AssertionExitCode != 0 && *t.AssertionExitCode >= -127 && *t.AssertionExitCode <= 255 && !t.Truncated)
+}
 
 // The installed guest supervisor emits these two lines before the reviewed
 // checkout can execute. Read the original log prefix, never a rolling tail
@@ -102,13 +117,22 @@ func failedAssertionExit(log []byte) *int {
 func reviewTaskSpec(t Target, argv []string) compute.TaskSpec {
 	return compute.TaskSpec{
 		Argv:   append([]string{"/usr/bin/sudo", "-n", "--", "/usr/local/lib/axv/review-test", t.Repository, t.HeadSHA}, argv...),
-		Limits: compute.TaskLimits{TimeoutSeconds: 600, CPUs: 1, MemoryMiB: 768, MaxProcesses: 128, MaxLogBytes: 1 << 20},
+		Limits: reviewTaskLimits,
 	}
 }
 
 func reviewRequestID(key string) string {
 	digest := sha256.Sum256([]byte(key))
 	return "review-" + hex.EncodeToString(digest[:24])
+}
+
+func boundReviewRequestID(key string, binding compute.ProjectBinding) string {
+	return "review-" + reviewDigest("review-vm-request-v2", key, binding)[:48]
+}
+
+func bindVMTestAttempt(a *VMTestAttempt, binding compute.ProjectBinding, key string) {
+	a.Binding, a.VMID, a.ProjectID = &binding, binding.MachineID, binding.ProjectID
+	a.RequestID = boundReviewRequestID(key, binding)
 }
 
 func vmError(a VMTestAttempt, message string) (VMTestAttempt, error) {
@@ -148,13 +172,21 @@ func (v ComputeVMTests) Poll(ctx context.Context, t Target, argv []string, key s
 		if err != nil || p.Binding.HostID != hostID || p.Binding.ProjectID != projectID || p.Binding.MachineID != v.MachineID {
 			return vmError(a, "The dedicated review project is unavailable on its configured VM.")
 		}
-		a.Binding, a.VMID, a.ProjectID = &p.Binding, p.Binding.MachineID, projectID
+		bindVMTestAttempt(&a, p.Binding, key)
 		a.Status, a.Error = "running", ""
 		return a, nil
 	}
-	requestID := reviewRequestID(key)
+	requestID := a.RequestID
+	legacy := requestID == ""
+	if legacy {
+		requestID = reviewRequestID(key)
+	}
 	result, err := client.ProjectTaskByRequest(ctx, projectID, requestID)
-	if missingReceipt(err) {
+	// Compute accepts request IDs host-wide. For an old unversioned attempt,
+	// this GET compares only the project, so a conflict proves that the legacy
+	// ID cannot own a receipt in this project's scope.
+	foreignLegacyID := legacy && a.TaskID == "" && compute.ErrorCode(err) == "idempotency_conflict"
+	if missingReceipt(err) || foreignLegacyID {
 		if a.ObserveOnly && a.TaskID == "" {
 			a.Status, a.Error = "canceled", "The review changed before Compute accepted this test."
 			return a, nil
@@ -162,15 +194,21 @@ func (v ComputeVMTests) Poll(ctx context.Context, t Target, argv []string, key s
 		if a.TaskID != "" || hostID != v.HostID || projectID != v.ProjectID || a.Binding.MachineID != v.MachineID {
 			return vmError(a, "The original task receipt or its dedicated VM selection changed.")
 		}
+		if legacy {
+			// Preserve an accepted legacy receipt, but never submit under the
+			// old key. Persist the new identity before any write can be accepted.
+			a.RequestID = boundReviewRequestID(key, *a.Binding)
+			a.Status, a.Error = "running", ""
+			return a, nil
+		}
 		result, err = client.SubmitProjectTask(ctx, projectID, compute.SubmitProjectTaskRequest{
 			RequestID: requestID, Binding: *a.Binding, Spec: reviewTaskSpec(t, argv),
 		})
-		var response *computeclient.ResponseError
-		if errors.As(err, &response) && (response.StatusCode < 500 || compute.ErrorCode(err) == "unsupported" || response.StatusCode == 507) {
-			return vmError(a, "Compute declined this VM test: "+err.Error())
-		}
 	}
 	if err != nil {
+		if terminalVMRequestError(err) {
+			return vmError(a, "Compute declined this VM test: "+err.Error())
+		}
 		a.Status, a.Error = "running", "Waiting for the original Compute task receipt: "+err.Error()
 		return a, nil
 	}
@@ -183,7 +221,7 @@ func (v ComputeVMTests) Poll(ctx context.Context, t Target, argv []string, key s
 		(a.TaskID != "" && (a.TaskID != result.Task.ID || a.AttemptID != attempt.ID)) {
 		return vmError(a, "The Compute task receipt does not match the original review attempt.")
 	}
-	a.TaskID, a.AttemptID, a.ExitCode = result.Task.ID, attempt.ID, attempt.ExitCode
+	a.RequestID, a.TaskID, a.AttemptID, a.ExitCode = requestID, result.Task.ID, attempt.ID, attempt.ExitCode
 	a.Status, a.Error = "running", attempt.SyncError
 	var completeLog []byte
 	// The cached log can remain available after its guest is stopped or replaced.
@@ -229,7 +267,7 @@ func (v ComputeVMTests) Poll(ctx context.Context, t Target, argv []string, key s
 			a.AssertionExitCode = failedAssertionExit(completeLog)
 		} else {
 			a.Status = "error"
-			a.Error = "The VM could not complete test setup or execution. " + attempt.Reason
+			a.Error = vmSetupFailure(a, attempt)
 		}
 	case "cancelled":
 		a.Status, a.Error = "canceled", attempt.Reason
@@ -241,6 +279,19 @@ func (v ComputeVMTests) Poll(ctx context.Context, t Target, argv []string, key s
 	return a, nil
 }
 
+func vmSetupFailure(a VMTestAttempt, attempt compute.TaskAttempt) string {
+	if attempt.GuestFinal && attempt.ExitCode != nil && *attempt.ExitCode == 1 && a.Error == "" &&
+		(attempt.Reason == "" || attempt.Reason == "exit status 1") {
+		if a.CheckoutSHA != "" {
+			return "The VM checked out the commit, but the test command could not start. Check the executable and its dependencies."
+		}
+		if a.Log != "" && !a.Truncated {
+			return "The VM could not prepare the checkout. Check the review VM helper, GitHub access or the pinned source mirror."
+		}
+	}
+	return strings.TrimSpace("The VM could not complete test setup or execution. " + attempt.Reason)
+}
+
 func matchesVMLog(log compute.ProjectTaskLog, a VMTestAttempt, offset int64, limit int) bool {
 	return log.TaskID == a.TaskID && log.AttemptID == a.AttemptID && log.Offset == offset &&
 		len(log.Data) <= limit && log.NextOffset == offset+int64(len(log.Data))
@@ -249,4 +300,11 @@ func matchesVMLog(log compute.ProjectTaskLog, a VMTestAttempt, offset int64, lim
 func missingReceipt(err error) bool {
 	var problem *compute.Error
 	return errors.As(err, &problem) && problem.Code == "not_found"
+}
+
+func terminalVMRequestError(err error) bool {
+	var response *computeclient.ResponseError
+	return errors.As(err, &response) && ((response.StatusCode < 500 &&
+		response.StatusCode != http.StatusRequestTimeout && response.StatusCode != http.StatusTooManyRequests) ||
+		compute.ErrorCode(err) == "unsupported" || response.StatusCode == http.StatusInsufficientStorage)
 }
