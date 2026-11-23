@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/cofy-x/axv/apps/server/internal/limitedbuffer"
 )
 
 const (
@@ -101,16 +103,16 @@ func (g reviewGit) fetch(ctx context.Context, target Target, token string) (stri
 
 func (g reviewGit) output(ctx context.Context, limit int, args ...string) ([]byte, error) {
 	command := g.command(ctx, "", args...)
-	output := cliOutput{limit: limit}
+	output := limitedbuffer.Buffer{Limit: limit}
 	command.Stdout = &output
 	err := command.Run()
-	if output.truncated {
+	if output.Truncated {
 		return nil, errReviewOutputLimit
 	}
 	if err != nil {
 		return nil, err
 	}
-	return output.data, nil
+	return output.Data, nil
 }
 
 func (g reviewGit) snapshot(ctx context.Context, base, head string) (reviewSnapshot, error) {

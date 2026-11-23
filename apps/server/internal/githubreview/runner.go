@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/cofy-x/axv/apps/server/internal/limitedbuffer"
 )
 
 // CodexRunner uses the workstation owner's saved Codex CLI sign-in.
@@ -117,13 +119,13 @@ func (r CodexRunner) checkReviewLogin(ctx context.Context, env []string) error {
 	command := exec.CommandContext(ctx, r.executable(), "-c", codexCredentialStore, "login", "status")
 	command.Env = env
 	command.WaitDelay = time.Second
-	output := cliOutput{limit: 8 << 10}
+	output := limitedbuffer.Buffer{Limit: 8 << 10}
 	command.Stdout, command.Stderr = &output, &output
 	err := command.Run()
 	if errors.Is(err, exec.ErrNotFound) {
 		return errors.New("Install Codex CLI on the AXV host to review pull requests")
 	}
-	if err != nil || !containsLine(output.String(), "Logged in using ChatGPT") {
+	if err != nil || !containsLine(string(output.Data), "Logged in using ChatGPT") {
 		return reviewProcessError(ctx, "Connect a ChatGPT account with the local Codex CLI before running reviews")
 	}
 	return nil
@@ -183,18 +185,18 @@ func (r CodexRunner) analyze(ctx context.Context, env []string, work, base strin
 	command.Env = env
 	command.WaitDelay = time.Second
 	command.Stdin = &input
-	events, diagnostics := cliOutput{limit: 128 << 10}, cliOutput{limit: 32 << 10}
+	events, diagnostics := limitedbuffer.Buffer{Limit: 128 << 10}, limitedbuffer.Buffer{Limit: 32 << 10}
 	command.Stdout, command.Stderr = &events, &diagnostics
 	if err := command.Run(); err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, codexReviewError(events.String(), diagnostics.String())
+		return nil, codexReviewError(string(events.Data), string(diagnostics.Data))
 	}
 	data, err := readReviewOutput(output, 64<<10)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, codexReviewError(events.String(), diagnostics.String())
+			return nil, codexReviewError(string(events.Data), string(diagnostics.Data))
 		}
 		return nil, errors.New("Codex did not return a review within the result size limit")
 	}

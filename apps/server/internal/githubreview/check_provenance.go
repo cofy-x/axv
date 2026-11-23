@@ -231,7 +231,7 @@ func (s *Service) refreshChecks(ctx context.Context, req RetryRequest) error {
 	if job.Evidence == nil || job.Status == "stale" || job.BaseSHA != req.BaseSHA || settings.account == "" {
 		return ErrRetryStale
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE review_jobs SET checks_due=COALESCE(checks_due, ?) WHERE account=? AND repository=? AND number=? AND head_sha=?`, time.Now().UnixMilli(), settings.account, job.Repository, job.Number, job.HeadSHA)
+	_, err = tx.ExecContext(ctx, `UPDATE review_jobs SET checks_due=COALESCE(checks_due, ?) WHERE account=? AND repository=? AND number=? AND head_sha=? AND base_sha=?`, time.Now().UnixMilli(), settings.account, job.Repository, job.Number, job.HeadSHA, job.BaseSHA)
 	if err != nil {
 		return errStore
 	}

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/cofy-x/axv/apps/server/internal/limitedbuffer"
 )
 
 const (
@@ -68,25 +70,6 @@ func (g GitHubCLI) command(ctx context.Context, token string, args ...string) (*
 	return cmd, nil
 }
 
-type cliOutput struct {
-	// Keep Write as the sole input path even when os/exec uses io.Copy.
-	data      []byte
-	limit     int
-	truncated bool
-}
-
-func (out *cliOutput) Write(p []byte) (int, error) {
-	count := len(p)
-	if remaining := out.limit - len(out.data); count > remaining {
-		p = p[:remaining]
-		out.truncated = true
-	}
-	out.data = append(out.data, p...)
-	return count, nil
-}
-
-func (out *cliOutput) String() string { return string(out.data) }
-
 func (g GitHubCLI) output(ctx context.Context, token string, input io.Reader, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -94,19 +77,19 @@ func (g GitHubCLI) output(ctx context.Context, token string, input io.Reader, ar
 	if err != nil {
 		return nil, err
 	}
-	stdout := cliOutput{limit: 512 << 10}
-	stderr := cliOutput{limit: 8 << 10}
+	stdout := limitedbuffer.Buffer{Limit: 512 << 10}
+	stderr := limitedbuffer.Buffer{Limit: 8 << 10}
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = input, &stdout, &stderr
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, githubCLIError(stderr.String())
+		return nil, githubCLIError(string(stderr.Data))
 	}
-	if stdout.truncated {
+	if stdout.Truncated {
 		return nil, errors.New("The GitHub response exceeded the supported size.")
 	}
-	return stdout.data, nil
+	return stdout.Data, nil
 }
 
 func githubCLIError(stderr string) error {
@@ -376,12 +359,12 @@ func (g GitHubCLI) Discover(ctx context.Context, repositories []string, account 
 	}
 	seen := make(map[string]bool)
 	for _, target := range targets {
-		seen[githubTargetKey(target)] = true
+		seen[targetKey(target)] = true
 	}
 	for _, repository := range repositories {
 		pulls, err := g.repositoryPulls(ctx, token, account, repository)
 		for _, target := range pulls {
-			key := githubTargetKey(target)
+			key := targetKey(target)
 			if !seen[key] {
 				seen[key] = true
 				targets = append(targets, target)
@@ -395,10 +378,6 @@ func (g GitHubCLI) Discover(ctx context.Context, repositories []string, account 
 		}
 	}
 	return targets, errors.Join(failures...)
-}
-
-func githubTargetKey(target Target) string {
-	return strings.ToLower(target.Repository) + "#" + strconv.Itoa(target.Number)
 }
 
 // Restrict subprocess inputs to the device login and provider client settings.

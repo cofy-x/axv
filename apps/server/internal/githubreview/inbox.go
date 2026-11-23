@@ -69,8 +69,9 @@ func inboxBefore(account string, view inboxView, cursor string) (int64, error) {
 
 // A base-only change blocks the current PR only while it has no replacement.
 // Determine that over the whole account, before selecting a page.
-const inboxStaleBlocker = `(j.status='stale' AND j.observed_base_sha<>'' AND NOT EXISTS (
+const inboxStaleBlocker = `(j.status='stale' AND j.selected_for_head=1 AND j.observed_base_sha<>'' AND NOT EXISTS (
 	SELECT 1 FROM review_jobs newer WHERE newer.account=j.account AND newer.repository=j.repository AND newer.number=j.number
+	AND newer.selected_for_head=1
 	AND (newer.status<>'stale' OR newer.updated_at>j.updated_at OR (newer.updated_at=j.updated_at AND newer.rowid>j.rowid))
 ))`
 
@@ -386,8 +387,8 @@ func (s *store) inboxJob(ctx context.Context, target Target, vmReady func(string
 	if settings.account == "" {
 		return view, errReviewJobNotFound
 	}
-	job, err := readJob(ctx, tx, settings.account, target.Repository, target.Number, target.HeadSHA)
-	if errors.Is(err, sql.ErrNoRows) || err == nil && job.BaseSHA != target.BaseSHA {
+	job, err := readExactJob(ctx, tx, settings.account, target)
+	if errors.Is(err, sql.ErrNoRows) {
 		return view, errReviewJobNotFound
 	}
 	if err != nil {

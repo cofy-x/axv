@@ -1,8 +1,22 @@
 .review-automation-status {
-  margin-block-end: 12px;
+  margin-block-end: 6px;
   border: 1px solid var(--ns-mid);
   background: #e7ebe7;
   font-size: var(--ns-font-size-secondary);
+}
+
+.review-automation-status > .review-automation-summary {
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.review-automation-summary > span {
+  margin-inline-start: 8px;
+  color: #414d46;
+}
+
+.review-automation-status > section {
+  border-top: 1px solid #bbc4bc;
 }
 
 .review-automation-status dl {
@@ -43,13 +57,8 @@
   color: #7a1010;
 }
 
-.review-automation-error summary {
-  padding-block: 3px;
-  cursor: pointer;
-}
-
-.review-automation-error p {
-  margin: 0;
+p.review-automation-error {
+  margin: 3px 0 0;
 }
 
 .review-automation-shortcut {
@@ -80,6 +89,10 @@
 }
 
 @media (pointer: coarse) {
+  .review-automation-status > .review-automation-summary {
+    padding-block: 8px;
+  }
+
   .review-automation-shortcut {
     min-height: 32px;
   }

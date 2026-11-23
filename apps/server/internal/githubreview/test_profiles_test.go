@@ -233,7 +233,8 @@ func TestRetargetPreservesSubmittedTestAndSelectsFromNewComparison(t *testing.T)
 	}
 	step()
 	job := workerJob(t, db, target, "analyzed")
-	if job.Evidence.Tests[0].TaskID == "" {
+	originalTask := job.Evidence.Tests[0].TaskID
+	if originalTask == "" {
 		t.Fatal("expected submitted VM task")
 	}
 	newTarget := target
@@ -251,8 +252,16 @@ func TestRetargetPreservesSubmittedTestAndSelectsFromNewComparison(t *testing.T)
 	step()
 	step()
 	job = workerJob(t, db, newTarget, "queued")
-	attempts := job.Evidence.Tests
-	if len(attempts) != 2 || attempts[0].SelectionBaseSHA != target.BaseSHA || attempts[1].SelectionBaseSHA != newTarget.BaseSHA || attempts[0].TestID != sdk.ID || attempts[1].TestID != deploy.ID || attempts[0].Status != "passed" || attempts[1].Status != "passed" || len(vm.keys) != 4 || vm.keys[0] != vm.keys[1] || vm.keys[2] != vm.keys[3] || vm.keys[0] == vm.keys[2] || len(gh.compares) != 2 || gh.compares[1].BaseSHA != newTarget.BaseSHA {
-		t.Fatalf("retargeted receipts: %+v, comparisons %+v", attempts, gh.compares)
+	old, err := readExactJob(ctx, db.db, settings.account, target)
+	if err != nil || old.Status != "stale" || old.Evidence == nil || len(old.Evidence.Tests) != 1 || job.Evidence == nil || len(job.Evidence.Tests) != 1 {
+		t.Fatalf("expected one attempt on each exact comparison: old=%+v new=%+v err=%v", old.Evidence, job.Evidence, err)
+	}
+	previous, fresh := old.Evidence.Tests[0], job.Evidence.Tests[0]
+	polls := map[string]int{}
+	for _, key := range vm.keys {
+		polls[key]++
+	}
+	if previous.SelectionBaseSHA != target.BaseSHA || fresh.SelectionBaseSHA != newTarget.BaseSHA || previous.TestID != sdk.ID || fresh.TestID != deploy.ID || previous.Status != "passed" || fresh.Status != "passed" || previous.TaskID != originalTask || fresh.TaskID == originalTask || len(polls) != 2 || polls[old.evidenceKey+"-1"] != 2 || polls[job.evidenceKey+"-1"] != 2 || len(gh.compares) != 2 || gh.compares[1].BaseSHA != newTarget.BaseSHA {
+		t.Fatalf("retargeted receipts: old=%+v new=%+v comparisons=%+v", previous, fresh, gh.compares)
 	}
 }

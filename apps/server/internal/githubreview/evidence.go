@@ -145,7 +145,6 @@ func (s *Service) advanceTest(ctx context.Context, job Job, key string, now time
 	}
 	run, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	before := latest
 	command := latest.Command
 	if len(command) == 0 && latest.PlanHash == "" {
 		command = job.Evidence.Policy.TestCommand
@@ -169,7 +168,17 @@ func (s *Service) advanceTest(ctx context.Context, job Job, key string, now time
 			if err != nil {
 				latest.Status, latest.Error = "error", safeError(err)
 			} else if !matchesJob(settings.Config, job, current) {
-				if _, err = s.store.db.ExecContext(ctx, `UPDATE review_jobs SET status='stale',error=?,updated_at=? WHERE account=? AND repository=? AND number=? AND head_sha=? AND base_sha=? AND evidence_key=?`, errOutdated.Error(), now.UnixMilli(), job.account, job.Repository, job.Number, job.HeadSHA, job.BaseSHA, key); err != nil {
+				s.policyMu.Lock()
+				if current.valid() && !current.Closed && !current.Draft && strings.EqualFold(job.Repository, current.Repository) &&
+					job.Number == current.Number && job.HeadSHA == current.HeadSHA && job.BaseSHA != current.BaseSHA {
+					// Preflight can see the new base before discovery does. Preserve the
+					// completed review so selecting its exact comparison can reuse it.
+					err = s.store.recordChangedBase(ctx, job.account, current, job.BaseSHA, key, job.MergeBaseSHA, errOutdated.Error(), now)
+				} else {
+					_, err = s.store.db.ExecContext(ctx, `UPDATE review_jobs SET status='stale',error=?,updated_at=? WHERE account=? AND repository=? AND number=? AND head_sha=? AND base_sha=? AND evidence_key=?`, errOutdated.Error(), now.UnixMilli(), job.account, job.Repository, job.Number, job.HeadSHA, job.BaseSHA, key)
+				}
+				s.policyMu.Unlock()
+				if err != nil {
 					return errStore
 				}
 				latest.Status, latest.Error = "canceled", errOutdated.Error()
@@ -188,6 +197,15 @@ func (s *Service) advanceTest(ctx context.Context, job Job, key string, now time
 	}
 	firstDispatch := latest.TaskID == "" && (latest.Status == "running" || latest.Status == "queued")
 	if firstDispatch {
+		var observation VMTestAttempt
+		var reuse bool
+		if latest.Binding == nil && latest.Attempt == 1 && !latest.ExactComparison && latest.Selection == "automatic" {
+			var err error
+			observation, reuse, err = s.reuseHeadOnlyTest(run, job, latest)
+			if err != nil {
+				return err
+			}
+		}
 		// The lookup or test selection may have outlived the approved policy.
 		// Serialize final admission and dispatch against settings changes.
 		s.policyMu.Lock()
@@ -198,6 +216,8 @@ func (s *Service) advanceTest(ctx context.Context, job Job, key string, now time
 		}
 		if !allowed {
 			latest.Status, latest.Error = "canceled", "The PR or repository test configuration changed before submission."
+		} else if reuse {
+			return s.saveObservedTest(ctx, job, index, observation, now)
 		}
 	}
 	// A previous submission may have reached Compute without its receipt
@@ -228,11 +248,16 @@ func (s *Service) advanceTest(ctx context.Context, job Job, key string, now time
 			}
 		}
 	}
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
 	latest.Command = command
-	latest.Attempt = before.Attempt
+	return s.saveObservedTest(ctx, job, index, latest, now)
+}
+
+func (s *Service) saveObservedTest(ctx context.Context, job Job, index int, latest VMTestAttempt, now time.Time) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	tests := job.Evidence.Tests
+	latest.Attempt = tests[index].Attempt
 	latest.UpdatedAt = now.UTC()
 	var due any
 	switch latest.Status {
@@ -246,7 +271,7 @@ func (s *Service) advanceTest(ctx context.Context, job Job, key string, now time
 		return errors.New("The VM task adapter returned an unknown status.")
 	}
 	tests[index] = latest
-	return saveTestAttempts(ctx, s.store.db, job, key, tests, due)
+	return saveTestAttempts(ctx, s.store.db, job, job.evidenceKey, tests, due)
 }
 
 func (s *Service) quickTestDispatchAllowed(ctx context.Context, job Job, attempt VMTestAttempt, command []string) (bool, error) {
@@ -263,42 +288,6 @@ func (s *Service) quickTestDispatchAllowed(ctx context.Context, job Job, attempt
 		return false, nil
 	}
 	return err == nil && current.BaseSHA == job.BaseSHA && current.evidenceKey == job.evidenceKey && current.Status != "stale", err
-}
-
-// Head-only receipts remain valid after retargeting. A path-scoped choice was
-// made against a particular diff, so queue a new selection behind any submitted
-// task and keep its original binding observable across restarts.
-func queueRetargetedTest(ctx context.Context, tx *sql.Tx, job Job, current Target, policy RepositoryPolicy, now time.Time) error {
-	if job.Evidence == nil || job.BaseSHA == current.BaseSHA {
-		return nil
-	}
-	scoped := false
-	for _, p := range policy.TestProfiles {
-		if len(p.AppliesTo) > 0 {
-			scoped = true
-			break
-		}
-	}
-	if !scoped {
-		return nil
-	}
-	tests := job.Evidence.Tests
-	for i := range tests {
-		a := &tests[i]
-		if (a.Status == "queued" || a.Status == "running") && a.TaskID == "" && a.Binding == nil {
-			a.Status, a.Error, a.UpdatedAt = "canceled", "The PR comparison changed before test submission.", now.UTC()
-		}
-	}
-	number := 1
-	if len(tests) > 0 {
-		number = tests[len(tests)-1].Attempt + 1
-	}
-	next, err := newTestAttempt(policy, "", current.BaseSHA, number, now)
-	if err != nil {
-		return err
-	}
-	job.BaseSHA = current.BaseSHA
-	return saveTestAttempts(ctx, tx, job, job.evidenceKey, append(tests, next), now.UnixMilli())
 }
 
 type evidenceWriter interface {

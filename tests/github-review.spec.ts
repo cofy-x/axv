@@ -164,6 +164,10 @@ test('enables automatic candidate verification only for a repository with an app
     name: 'Automation status',
     exact: true,
   });
+  const automationSummary = panel.locator('.review-automation-summary');
+  await expect(automationSummary).toContainText('reviews today');
+  await expect(automation).toHaveCount(0);
+  await automationSummary.click();
   await expect(automation).toContainText('PR discovery');
   await expect(automation).toContainText('Paused in Settings');
   await expect(automation).toContainText('Candidate verification');
@@ -179,7 +183,7 @@ test('enables automatic candidate verification only for a repository with an app
   await expect(automation).toContainText('Last successful scan');
   snapshot.discovery.error = 'GitHub did not answer.';
   await panel.getByRole('button', { name: 'Refresh review status' }).click();
-  await automation.getByText('Last scan failed', { exact: true }).click();
+  await expect(automationSummary).toContainText('Scan failed');
   await expect(automation.getByText(snapshot.discovery.error)).toBeVisible();
   await expect(automation).toContainText('Last successful scan');
   delete snapshot.discovery.error;
@@ -722,6 +726,9 @@ test('configures repository policies and inspects evidence across VM retries and
     panel.getByText('3 of 3 review starts used today.'),
   ).toBeVisible();
   await inbox.click();
+  const automationSummary = panel.locator('.review-automation-summary');
+  await expect(automationSummary).toContainText('Daily limit reached');
+  await automationSummary.click();
   await expect(
     panel.getByRole('region', { name: 'Automation status' }),
   ).toContainText('Daily review limit reached.');

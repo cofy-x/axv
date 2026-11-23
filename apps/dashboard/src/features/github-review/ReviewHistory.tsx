@@ -600,6 +600,12 @@ function TestReceipt({
           review base <Commit sha={baseSha} />.
         </p>
       )}
+      {test.reusedFrom && (
+        <p className="github-review-detail">
+          Reused test attempt {test.reusedFrom.attempt} from base{' '}
+          <Commit sha={test.reusedFrom.baseSha} />.
+        </p>
+      )}
       {test.error && <p className="github-review-problem">{test.error}</p>}
       {test.status === 'failed' && test.exitCode !== undefined && (
         <p className="github-review-detail">
@@ -1410,6 +1416,11 @@ function InboxSection({
                     {group !== 'action' && (
                       <>
                         <code>{job.headSha.slice(0, 8)}</code>
+                        {(group === 'recent' || group === 'earlier') && (
+                          <span>
+                            Base <Commit sha={job.baseSha} />
+                          </span>
+                        )}
                         {summary && <span>{summary}</span>}
                         {progress && <strong>{progress}</strong>}
                       </>
@@ -1477,13 +1488,13 @@ export function ReviewHistory({
   onLatest,
   latestDisabled,
   interactive,
-  automation,
+  inboxControls,
   refreshStatus,
   dailyLimitReached,
 }: {
   onLatest: (job: ReviewJob, select: (target: ReviewTarget) => void) => void;
   latestDisabled: boolean;
-  automation: (open: (target: ReviewTarget) => void) => ReactNode;
+  inboxControls: (open: (target: ReviewTarget) => void) => ReactNode;
   dailyLimitReached: boolean;
   refreshStatus?: ReactNode;
   account: string;
@@ -1691,7 +1702,7 @@ export function ReviewHistory({
         </>
       ) : (
         <>
-          {automation(open)}
+          {inboxControls(open)}
           {(hasJobs || !!page?.jobs.length) && (
             <nav className="github-review-inbox-views" aria-label="Inbox views">
               {(Object.keys(inboxViews) as ReviewInboxView[]).map((id) => {
