@@ -19,6 +19,7 @@ import (
 	"github.com/cofy-x/axv/apps/server/internal/compute"
 	"github.com/cofy-x/axv/apps/server/internal/config"
 	"github.com/cofy-x/axv/apps/server/internal/jsonfile"
+	"github.com/cofy-x/axv/apps/server/internal/profile"
 )
 
 func hostOnlyFixture(t *testing.T) (app.Settings, manifest) {
@@ -238,6 +239,33 @@ func TestStopContinuesWhenOwnedHostCannotBeVerified(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "VM state could not be queried.") {
 		t.Fatalf("unverified inventory was reported as current VM state: %s", output.String())
+	}
+}
+
+func TestStopDoesNotQueryAnExternalHost(t *testing.T) {
+	s, m := managedHostFixture(t)
+	m.Desktop.Compute = profile.Compute{Mode: "external", Socket: s.Compute.Socket}
+	if err := jsonfile.Write(manifestPath(s.Home), m, 0600); err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("unix", s.Compute.Socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var requests atomic.Int32
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		http.NotFound(w, r)
+	})}
+	go server.Serve(listener)
+	t.Cleanup(func() { server.Close() })
+	job := m.Jobs[0]
+	manager := &hostSupervisor{loaded: map[string]bool{job.Label: true}}
+	if err := stop(t.Context(), s.Home, io.Discard, manager); err != nil {
+		t.Fatal(err)
+	}
+	if len(manager.stops) != 1 || manager.stops[0].Marker != job.Marker || requests.Load() != 0 {
+		t.Fatalf("desktop stop queried an external service or stopped the wrong job: %d requests, %#v", requests.Load(), manager.stops)
 	}
 }
 

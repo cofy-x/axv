@@ -208,20 +208,20 @@ func newManifest(s app.Settings) (manifest, error) {
 	if err = os.MkdirAll(logDir, 0700); err != nil {
 		return m, err
 	}
-	roles := []string{"desktop"}
-	for _, role := range roles {
-		marker := filepath.Join(s.RunDir(), compute.NewID(role)+".json")
-		args := []string{binary, "_desktop", "--snapshot", marker}
-		if err = jsonfile.Write(marker, snapshot, 0600); err != nil {
-			return m, err
-		}
-		label := jobLabel(s.Home, role, marker)
-		j := Job{Role: role, Label: label, Args: args, Marker: marker, Definition: filepath.Join(s.RunDir(), label+".plist"), Log: filepath.Join(logDir, role+".log"), Environment: environment(s.Home)}
-		if err = logs.PrepareLegacy(s.Home, role); err != nil {
-			return m, err
-		}
-		m.Jobs = append(m.Jobs, j)
+	const role = "desktop"
+	marker := filepath.Join(s.RunDir(), compute.NewID(role)+".json")
+	if err = jsonfile.Write(marker, snapshot, 0600); err != nil {
+		return m, err
 	}
+	label := jobLabel(s.Home, role, marker)
+	if err = logs.PrepareLegacy(s.Home, role); err != nil {
+		return m, err
+	}
+	m.Jobs = []Job{{
+		Role: role, Label: label, Args: []string{binary, "_desktop", "--snapshot", marker},
+		Marker: marker, Definition: filepath.Join(s.RunDir(), label+".plist"),
+		Log: filepath.Join(logDir, role+".log"), Environment: environment(s.Home),
+	}}
 	return m, nil
 }
 
@@ -286,28 +286,21 @@ func stop(ctx context.Context, home string, output io.Writer, supervisor supervi
 	if err != nil {
 		return err
 	}
-	hostSettings := app.Settings{Inputs: desktoplaunch.Inputs{Home: home}}
-	if m.Desktop != nil {
-		hostSettings = app.SettingsFromSnapshot(*m.Desktop)
-	}
+	var machines []compute.Machine
+	var listErr error
 	if m.OwnedHost != nil {
-		hostSettings.Host = m.OwnedHost
-		hostSettings.Compute = profile.Compute{Mode: "managed", Socket: m.OwnedHost.Socket}
+		machines, listErr = app.Machines(ctx, app.Settings{ComputeSettings: app.ComputeSettings{
+			Compute: profile.Compute{Mode: "managed", Socket: m.OwnedHost.Socket},
+			Host:    m.OwnedHost,
+		}})
 	}
-	machines, listErr := app.Machines(ctx, hostSettings)
 	for i := len(m.Jobs) - 1; i >= 0; i-- {
 		if err = supervisor.Stop(ctx, m.Jobs[i]); err != nil {
 			return err
 		}
 	}
 	fmt.Fprintln(output, "AXV background services stopped. Persistent Codex sessions, VMs and project volumes are retained.")
-	ownsHost := false
-	for _, j := range m.Jobs {
-		if j.Role == "host" {
-			ownsHost = true
-		}
-	}
-	if ownsHost {
+	if m.OwnedHost != nil {
 		if listErr == nil {
 			running := 0
 			for _, machine := range machines {

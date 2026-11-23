@@ -25,23 +25,36 @@ let testProcess;
 async function shutdown(code = 0) {
   if (stopping) return;
   stopping = true;
-  try {
-    if (testProcess) await stop(testProcess);
-    if (server) await stop(server.child);
+  const errors = [];
+  const steps = [
+    () => testProcess && stop(testProcess),
+    () => server && stop(server.child),
+    async () => {
+      if (code === 0 && errors.length === 0) return;
+      const diagnostics = await codex?.diagnostics();
+      if (diagnostics) console.error(diagnostics);
+    },
+    () => codex?.verifyIsolation(),
+    () => codex?.cleanup(),
+    () =>
+      code !== 0 || errors.length
+        ? reportRuntimeDiagnostics(profileHome)
+        : undefined,
+  ];
+  for (const step of steps) {
     try {
-      if (code !== 0) {
-        const diagnostics = await codex?.diagnostics();
-        if (diagnostics) console.error(diagnostics);
-      }
-      await codex?.verifyIsolation();
-    } finally {
-      await codex?.cleanup();
+      await step();
+    } catch (error) {
+      errors.push(error);
     }
-  } catch (error) {
-    console.error(error);
-    code = 1;
   }
-  if (code !== 0) await reportRuntimeDiagnostics(profileHome);
+  if (errors.length) {
+    console.error(
+      new AggregateError(errors, `Browser cleanup failed. Retained ${dir}.`),
+    );
+    await exitAfterCleanup(1);
+    return;
+  }
   await exitAfterCleanup(code, dir);
 }
 

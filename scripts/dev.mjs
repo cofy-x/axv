@@ -60,13 +60,18 @@ try {
       },
     },
   );
-  for (const child of [server.child, vite]) {
+  for (const [name, child] of [
+    ['AXV server', server.child],
+    ['Vite', vite],
+  ]) {
     child.on('error', (error) => {
       console.error(error);
       void shutdown(1);
     });
-    child.on('exit', (code) => {
-      if (!stopping) void shutdown(code || 0);
+    child.on('exit', (code, signal) => {
+      if (stopping) return;
+      console.error(`${name} exited unexpectedly (${signal ?? code}).`);
+      void shutdown(code || 1);
     });
   }
 } catch (error) {

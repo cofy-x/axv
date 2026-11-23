@@ -215,7 +215,7 @@ test('guest packaging verifies every distribution file and rootfs metadata', asy
     expect(result.image.provider).toBe('firecracker');
     await writeFile(join(directory, 'root.ext4'), 'tampered');
     await expect(verifyGuestBundle(directory)).rejects.toThrow(
-      /checksum mismatch/,
+      /SHA-256 mismatch for root\.ext4/,
     );
   } finally {
     await rm(directory, { recursive: true, force: true });
