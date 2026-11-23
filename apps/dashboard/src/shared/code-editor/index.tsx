@@ -3,9 +3,16 @@ import { PlainCodeEditor } from './PlainCodeEditor';
 import type { CodeEditorProps } from './types';
 import './code-editor.css';
 
-const Editor = lazy(() =>
-  import('./CodeEditor').catch(() => ({ default: PlainCodeEditor })),
-);
+let editorModule: Promise<{ default: typeof PlainCodeEditor }> | undefined;
+const loadEditor = () =>
+  (editorModule ??= import('./CodeEditor').catch(() => ({
+    default: PlainCodeEditor,
+  })));
+const Editor = lazy(loadEditor);
+
+export function preloadCodeEditor() {
+  void loadEditor();
+}
 
 export function CodeEditor(props: CodeEditorProps) {
   return (

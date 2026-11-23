@@ -1,15 +1,13 @@
-import type { DesktopAPI, DesktopProps } from '../types';
-import { createApplicationMenus } from './menus';
+import type { DesktopAPI } from '../types';
+import type { createApplicationMenus } from './menus';
 
 export function ApplicationMenu({
   api,
-  props,
+  menus,
 }: {
   api: DesktopAPI;
-  props: DesktopProps;
+  menus: NonNullable<ReturnType<typeof createApplicationMenus>>;
 }) {
-  const menus = createApplicationMenus(props, api);
-  if (!menus) return null;
   return (
     <nav className="ns-application-menu" aria-label="Application menus">
       <div className="ns-menu-title">

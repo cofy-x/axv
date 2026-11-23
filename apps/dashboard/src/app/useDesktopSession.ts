@@ -26,10 +26,7 @@ export function useDesktopSession({ bootstrap, clientId }: ReadyDesktop) {
         : { phase },
     );
   }, []);
-  const { data: appearance } = usePreferences(
-    reportConnection,
-    bootstrap.preferences,
-  );
+  const appearance = usePreferences(reportConnection, bootstrap.preferences);
   const databaseError = useSyncExternalStore(
     desktopDatabase.subscribe,
     desktopDatabase.getSnapshot,
@@ -42,8 +39,13 @@ export function useDesktopSession({ bootstrap, clientId }: ReadyDesktop) {
       const read = Symbol();
       latestRead.current = read;
       try {
-        await desktopApi.health();
+        await desktopApi.health(AbortSignal.timeout(15000));
         desktopDatabase.assertActive();
+        if (latestRead.current !== read) return;
+        setAccess((previous) =>
+          previous.phase === 'connected' ? previous : { phase: 'connected' },
+        );
+        if (retryLayout) void flushLayout();
       } catch (error) {
         if (latestRead.current !== read) return;
         if (
@@ -55,13 +57,9 @@ export function useDesktopSession({ bootstrap, clientId }: ReadyDesktop) {
             message: error.message,
           });
         } else reportConnection('offline');
-        return;
+      } finally {
+        if (latestRead.current === read) latestRead.current = null;
       }
-      if (latestRead.current !== read) return;
-      setAccess((previous) =>
-        previous.phase === 'connected' ? previous : { phase: 'connected' },
-      );
-      if (retryLayout) void flushLayout();
     },
     [flushLayout, reportConnection],
   );
@@ -73,7 +71,7 @@ export function useDesktopSession({ bootstrap, clientId }: ReadyDesktop) {
       else void refresh();
     };
     const timer = setInterval(() => {
-      if (desktopDatabase.getSnapshot()) return;
+      if (desktopDatabase.getSnapshot() || latestRead.current) return;
       void refresh(true);
     }, 5000);
     const focus = () => {

@@ -13,7 +13,8 @@ export interface Bootstrap {
 export const desktopApi = {
   bootstrap: (clientId: string) =>
     request<Bootstrap>(`/bootstrap?clientId=${encodeURIComponent(clientId)}`),
-  health: () => requestDesktop<{ status: 'ok' }>('/health'),
+  health: (signal: AbortSignal) =>
+    requestDesktop<{ status: 'ok' }>('/health', { signal }),
   layout: (clientId: string, layout: DesktopLayout) => {
     const body = JSON.stringify({ clientId, layout });
     // Browsers cap the shared keepalive request budget at 64 KiB.

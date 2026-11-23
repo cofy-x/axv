@@ -53,7 +53,7 @@ export class ComputeStore {
   };
   private readonly listeners = new Set<() => void>();
   private readonly poller: SerialPoller;
-  private probeNeeded = true;
+  private pendingProbe: symbol | undefined = Symbol();
 
   constructor(private readonly api: ComputeAPI = machinesApi) {
     this.poller = new SerialPoller({
@@ -78,7 +78,7 @@ export class ComputeStore {
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     if (this.listeners.size === 1) {
-      this.probeNeeded = true;
+      this.pendingProbe = Symbol();
       this.poller.start();
     }
     return () => {
@@ -89,7 +89,7 @@ export class ComputeStore {
   };
 
   refresh = () => {
-    this.probeNeeded = true;
+    this.pendingProbe = Symbol();
     if (!this.listeners.size) return;
     this.poller.refresh();
   };
@@ -108,7 +108,7 @@ export class ComputeStore {
     }
     // A read issued before acknowledgement must not hide the accepted work.
     this.poller.stop();
-    this.probeNeeded = true;
+    this.pendingProbe = Symbol();
     this.publish({
       machines:
         operation.action === 'create' && !observed
@@ -135,12 +135,14 @@ export class ComputeStore {
     const binding = environment.runtime;
     if (!this.snapshot.lastUpdated) this.publish({ environment });
     if (!current()) return;
+    let probe = this.pendingProbe;
     if (
-      this.probeNeeded ||
+      probe ||
       !info ||
       connectionKey(environment) !== connectionKey(this.snapshot.environment)
     ) {
-      this.probeNeeded = false;
+      probe ??= Symbol();
+      this.pendingProbe = probe;
       info = await this.api.info(signal, binding);
       if (!current()) return;
       signal.throwIfAborted();
@@ -194,7 +196,9 @@ export class ComputeStore {
       throw new Error(
         'The VM service connection changed while refreshing. Refresh this view to reconnect.',
       );
-    if (current())
+    if (current()) {
+      // Keep failed probes and newer refreshes pending until their own snapshot is verified.
+      if (this.pendingProbe === probe) this.pendingProbe = undefined;
       this.publish({
         environment: after,
         info,
@@ -203,6 +207,7 @@ export class ComputeStore {
         reloading: false,
         lastUpdated: Date.now(),
       });
+    }
   }
 }
 

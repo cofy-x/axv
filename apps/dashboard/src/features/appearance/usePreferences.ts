@@ -20,13 +20,6 @@ export function usePreferences(
       desktopDatabase.assertActive,
     ),
   );
-  const resetPreferences = useCallback(
-    (value: Preferences) => {
-      queue.reset(value);
-      setPreferences(value);
-    },
-    [queue],
-  );
   const savePreferences = useCallback(
     async (patch: Partial<Preferences>) => {
       try {
@@ -41,9 +34,8 @@ export function usePreferences(
     },
     [queue, onConnectionChange],
   );
-  const data = useMemo(
+  return useMemo(
     () => ({ preferences, savePreferences }),
     [preferences, savePreferences],
   );
-  return { data, resetPreferences };
 }

@@ -233,9 +233,8 @@ test('Application Manager keeps the directory first, preserves hidden package re
   const manager = await openManager(page, touch);
   const add = manager.getByRole('button', { name: 'Add package', exact: true });
   const packageInput = manager.getByLabel('Extension package');
-  await expect(add).toHaveAttribute('aria-expanded', 'true');
-  await expect(packageInput).toBeVisible();
-  await choose(add, touch);
+  await expect(manager.getByText('No extensions installed')).toBeVisible();
+  await expect(add).toHaveAttribute('aria-expanded', 'false');
   await expect(packageInput).toBeHidden();
   const refresh = page.waitForResponse('**/api/extensions');
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));

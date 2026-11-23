@@ -27,12 +27,14 @@ const describe = (error: unknown) =>
 export function VMProjectInitialize({
   desktop,
   interactive,
+  inventoryAvailable,
   target,
   mode,
   onCreated,
 }: {
   desktop: DesktopAPI;
   interactive: boolean;
+  inventoryAvailable: boolean;
   target: {
     hostId: string;
     volumeId: string;
@@ -41,7 +43,7 @@ export function VMProjectInitialize({
     machineName: string;
     label: string;
   } | null;
-  mode: 'create' | 'clone';
+  mode: 'open' | 'create' | 'clone';
   onCreated: () => void;
 }) {
   const namespace = useDraftNamespace();
@@ -80,6 +82,8 @@ export function VMProjectInitialize({
   const mounted = useRef(true);
   const active = useRef(interactive);
   active.current = interactive;
+  const currentMode = useRef(mode);
+  currentMode.current = mode;
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -95,7 +99,11 @@ export function VMProjectInitialize({
   }
 
   async function submit(saved?: PendingInitialization) {
-    if (busyRef.current || !active.current) return;
+    const maySubmit = () =>
+      mounted.current &&
+      active.current &&
+      (!!saved || currentMode.current !== 'open');
+    if (busyRef.current || !maySubmit()) return;
     busyRef.current = true;
     setBusy(true);
     setError('');
@@ -151,7 +159,7 @@ export function VMProjectInitialize({
         };
         await persist(operation);
       }
-      if (!mounted.current || !active.current) return;
+      if (!maySubmit()) return;
       if (!operation.submission) {
         const { project: container } = await vmProjectsAPI.register(
           operation.hostId,
@@ -203,7 +211,7 @@ export function VMProjectInitialize({
         };
         await persist(operation);
       }
-      if (!mounted.current || !active.current) return;
+      if (!maySubmit()) return;
       const submission = operation.submission!;
       let receipt: VMTaskResult;
       try {
@@ -215,7 +223,7 @@ export function VMProjectInitialize({
       } catch (error) {
         if (!(error instanceof APIError) || error.code !== 'not_found')
           throw error;
-        if (!mounted.current || !active.current) return;
+        if (!maySubmit()) return;
         receipt = await vmInitializationAPI.submit(submission);
       }
       verifyInitializationReceipt(receipt, submission);
@@ -345,22 +353,29 @@ export function VMProjectInitialize({
     }
   }
 
-  const locked = !!pending || !!recoveryError || busy || !interactive;
+  const showForm = inventoryAvailable && mode !== 'open';
+  const locked =
+    !!pending || !!recoveryError || busy || !interactive || !showForm;
+  const showRepositorySetup = showForm || !!pending;
   return (
     <section
       className="vm-project-initialize"
       aria-label="Initialize VM project"
+      hidden={!showForm && !pending && !recoveryError && !error}
+      inert={!interactive}
     >
-      <p className="vm-project-initialize-target">
-        {pending
-          ? `Original VM: ${pending.machineId} · Volume: ${pending.volumeId} · Directory: ${pending.directory}`
-          : target
-            ? target.label
-            : 'Choose a ready retained volume above.'}
-      </p>
-      {!pending && !recoveryError && (
+      {(showForm || pending) && (
+        <p className="vm-project-initialize-target">
+          {pending
+            ? `Original VM: ${pending.machineId} · Volume: ${pending.volumeId} · Directory: ${pending.directory}`
+            : target?.label || 'Choose a ready retained volume above.'}
+        </p>
+      )}
+      {!pending && !recoveryError && inventoryAvailable && (
         <form
           className="vm-project-initialize-form"
+          hidden={!showForm}
+          inert={!showForm}
           onSubmit={(event) => {
             event.preventDefault();
             void submit();
@@ -409,12 +424,14 @@ export function VMProjectInitialize({
         </form>
       )}
       {(pending ? !!pending.repository : mode === 'clone') && (
-        <VMPrivateRepositorySetup
-          desktop={desktop}
-          interactive={interactive && !busy}
-          repository={pending?.repository ?? repository}
-          target={pending || target}
-        />
+        <div hidden={!showRepositorySetup} inert={!showRepositorySetup}>
+          <VMPrivateRepositorySetup
+            desktop={desktop}
+            interactive={interactive && !busy && showRepositorySetup}
+            repository={pending?.repository ?? repository}
+            target={pending || target}
+          />
+        </div>
       )}
       {[...new Set([error, recoveryError].filter(Boolean))].map((reason) => (
         <p role="alert" key={reason}>

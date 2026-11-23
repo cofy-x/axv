@@ -5,13 +5,8 @@
   min-height: 0;
 }
 .applications-toolbar {
+  justify-content: space-between;
   flex-wrap: wrap;
-}
-.applications-toolbar > svg {
-  flex-shrink: 0;
-}
-.applications-toolbar .toolbar-caption {
-  min-width: 75px;
 }
 .applications-content {
   flex: 1;
@@ -72,9 +67,6 @@
 }
 .applications-example-actions {
   margin-top: 10px;
-}
-.applications-content .applications-access-note {
-  margin-bottom: 0;
 }
 .applications-review {
   margin-top: 12px;
@@ -179,23 +171,6 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
-}
-.applications-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-  padding: 24px 12px;
-  border: 1px solid var(--ns-mid);
-  background: var(--ns-light);
-  box-shadow: var(--ns-recessed);
-  text-align: center;
-}
-.applications-empty > p {
-  margin: 0;
-  color: var(--ns-shadow);
-  font-size: 11px;
 }
 .applications-message {
   min-height: 18px;

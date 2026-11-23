@@ -357,6 +357,36 @@ test('desktop icons use the available right edge and avoid menus, Dock and miniw
   await captureWorkArea(page, info, 'desktop-icons-miniwindow');
 });
 
+test('desktop icons activate with Enter and Space without a pointer selection', async ({
+  page,
+  hasTouch,
+}) => {
+  await showDesktop(page);
+  await showApplicationOnDesktop(page, 'Project Files', hasTouch);
+  const canvas = page.getByRole('group', { name: 'Desktop icons' });
+  const icon = canvas.getByRole('button', { name: 'Project Files' });
+  const project = page.locator('[data-app-id="project-files"]');
+  const close = project.getByRole('button', { name: 'Close Project Files' });
+
+  await canvas.focus();
+  await page.keyboard.press('Tab');
+  await expect(icon).toBeFocused();
+  await expect(icon).toHaveAttribute('aria-pressed', 'false');
+  await page.keyboard.press('Enter');
+  await expect(project).toBeVisible();
+  await close.click();
+
+  await icon.press('Space');
+  await expect(project).toBeVisible();
+  await close.click();
+
+  await icon.click();
+  await expect(icon).toHaveAttribute('aria-pressed', 'true');
+  await expect(project).toHaveCount(0);
+  await canvas.press('Enter');
+  await expect(project).toBeVisible();
+});
+
 test('compact dragging and cleanup persist independently of wide desktop positions', async ({
   page,
   request,

@@ -57,7 +57,7 @@ export function HostFolderChooser({
         className="project-folder-path"
         onSubmit={(event) => {
           event.preventDefault();
-          void browse(path.trim() || undefined);
+          void browse(path || undefined);
         }}
       >
         <Field

@@ -339,6 +339,48 @@ test('Dock pinning, order, clock and running window selection persist', async ({
     .click();
 });
 
+test('the Dock tooltip and both clock dialogs use the saved time format', async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(
+    await page.evaluate(() => new Date(2026, 10, 23, 21, 37).getTime()),
+  );
+  const dialog = page.getByRole('dialog', { name: 'Clock', exact: true });
+  const dockClock = page.getByRole('button', { name: 'Clock and date' });
+  const workspaceMenu = page.getByRole('button', { name: 'Workspace menu' });
+  for (const hour12 of [false, true]) {
+    if (hour12) {
+      await launch(page, 'appearance');
+      const preferences = page.locator('[data-app-id="appearance"]');
+      const clockFormat = preferences.getByRole('checkbox', {
+        name: '24-hour clock',
+      });
+      await clockFormat.click();
+      await expect(preferences.getByRole('status')).toHaveText('Saved.');
+      await expect(clockFormat).not.toBeChecked();
+    }
+    const expected = await page.evaluate((hour12) => {
+      const now = new Date();
+      return {
+        tooltip: now.toLocaleString(undefined, { hour12 }),
+        dialog: now.toLocaleString(undefined, {
+          dateStyle: 'full',
+          timeStyle: 'short',
+          hour12,
+        }),
+      };
+    }, hour12);
+    await expect(dockClock).toHaveAttribute('title', expected.tooltip);
+    await dockClock.click();
+    await expect(dialog).toContainText(expected.dialog);
+    await dialog.getByRole('button', { name: 'OK' }).click();
+    await workspaceMenu.click();
+    await menuItem(page, 'Clock').click();
+    await expect(dialog).toContainText(expected.dialog);
+    await dialog.getByRole('button', { name: 'OK' }).click();
+  }
+});
+
 test('Dock drag cancellation and missing clicks do not consume later activation', async ({
   page,
 }) => {
@@ -669,6 +711,43 @@ test('the application menu stays accessible above a maximized window and control
   await expect(first).toHaveCount(0);
   await expect(fileMenu).toHaveCount(0);
   await expect(second).toHaveClass(/is-active/);
+});
+
+test('a workspace shortcut is reused when its parameter order differs', async ({
+  page,
+  request,
+}) => {
+  await expect
+    .poll(async () => (await persistedLayout(page, request))?.version)
+    .toBe(2);
+  const layout = await persistedLayout(page, request);
+  const clientId = await page.evaluate(() =>
+    localStorage.getItem('nextstep-browser-id'),
+  );
+  layout.windows[0].params = { first: 'one', second: 'two' };
+  layout.workspaces[0].clip = [
+    {
+      id: 'welcome-shortcut',
+      appId: 'welcome',
+      title: 'Welcome',
+      params: { second: 'two', first: 'one' },
+    },
+  ];
+  expect(
+    (await request.put('/api/layout', { data: { clientId, layout } })).ok(),
+  ).toBeTruthy();
+  await page.reload();
+
+  await windowMenu(page, page.locator('[data-app-id="welcome"]'));
+  await menuItem(page, 'Add Workspace Shortcut').click();
+  const workspaces = await openWorkspaceControls(page);
+  await menuItem(workspaces, 'Shortcuts').click();
+  await expect(
+    menuItem(
+      page.getByRole('menu', { name: 'Shortcuts', exact: true }),
+      'Welcome',
+    ),
+  ).toHaveCount(1);
 });
 
 test('saved names and extra workspaces restore without obsolete floating menus', async ({

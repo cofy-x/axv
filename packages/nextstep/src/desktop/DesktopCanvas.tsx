@@ -69,9 +69,13 @@ export function DesktopCanvas({ icons, gestures, inert }: DesktopCanvasProps) {
               top: iconPosition(icon).y - iconArea.y,
             }}
             onPointerDown={(event) => beginIconGesture(event, icon)}
+            onKeyDown={(event) => {
+              // Keep button activation native when an icon has focus.
+              if (event.key === 'Enter') event.stopPropagation();
+            }}
             onClick={(event) => {
               event.currentTarget.focus({ preventScroll: true });
-              clickIcon(icon);
+              clickIcon(icon, event.detail === 0);
             }}
             onDoubleClick={() => doubleClickIcon(icon)}
             onContextMenu={(event) => {

@@ -92,13 +92,6 @@
   display: block;
   margin-top: 3px;
 }
-.cloudflare-setup-steps {
-  margin: 8px 0 12px;
-  padding-left: 20px;
-}
-.cloudflare-setup-steps li + li {
-  margin-top: 4px;
-}
 .cloudflare-setup-guide h3 {
   margin: 0 0 8px;
   font-size: 13px;
@@ -218,8 +211,7 @@
 .cloudflare-step {
   font-weight: bold;
 }
-.is-short .cloudflare-setup.is-wizard-open > .cloudflare-section-heading,
-.is-short .cloudflare-setup.is-wizard-open > .cloudflare-setup-areas {
+.is-short .cloudflare-setup.is-wizard-open > .cloudflare-setup-toolbar {
   display: none;
 }
 .is-short .cloudflare-setup.is-wizard-open > fieldset {
@@ -271,9 +263,15 @@
 .cloudflare-content fieldset[hidden] {
   display: none;
 }
+.cloudflare-setup-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
 .cloudflare-setup-areas {
   flex-wrap: wrap;
-  margin: 12px 0;
 }
 .cloudflare-setup-areas button[aria-pressed='true'] {
   font-weight: bold;

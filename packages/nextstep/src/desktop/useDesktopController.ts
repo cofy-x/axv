@@ -444,7 +444,7 @@ export function useDesktopController(props: DesktopProps) {
         workspace.clip.some(
           (item) =>
             item.appId === shortcut.appId &&
-            JSON.stringify(item.params) === JSON.stringify(shortcut.params),
+            sameParams(item.params, shortcut.params),
         )
           ? workspace
           : {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, ButtonGroup, Field } from '@cofy-x/axv-nextstep';
+import { Button, ButtonGroup, Field, IconButton } from '@cofy-x/axv-nextstep';
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
 import { cloudflareAPI } from './api';
 import {
@@ -290,7 +290,7 @@ export function CloudflareSetup({
       setDraft(configDraft(saved));
       setWizard(undefined);
       setResult(undefined);
-      setMessage('');
+      setMessage('Settings reloaded.');
       setReplacementToken('');
       setRotating(false);
       resource.refresh();
@@ -499,11 +499,29 @@ export function CloudflareSetup({
   );
   return (
     <div className={`cloudflare-setup ${wizardOpen ? 'is-wizard-open' : ''}`}>
-      <div className="cloudflare-section-heading">
-        <h2>Setup</h2>
-        <Button disabled={disabled} onClick={() => void reload()}>
-          Reload saved settings
-        </Button>
+      <div className="cloudflare-setup-toolbar">
+        <ButtonGroup label="Setup area" className="cloudflare-setup-areas">
+          <Button
+            aria-pressed={selectedSection === 'desktop'}
+            disabled={disabled}
+            onClick={() => onSectionChange('desktop')}
+          >
+            Desktop access
+          </Button>
+          <Button
+            aria-pressed={selectedSection === 'account'}
+            disabled={disabled}
+            onClick={() => onSectionChange('account')}
+          >
+            App publishing
+          </Button>
+        </ButtonGroup>
+        <IconButton
+          icon="refresh"
+          label="Reload saved settings"
+          disabled={disabled}
+          onClick={() => void reload()}
+        />
       </div>
       {(resource.error || error) && (
         <p className="app-error" role="alert">
@@ -517,22 +535,6 @@ export function CloudflareSetup({
         </p>
       )}
       {message && <p role="status">{message}</p>}
-      <ButtonGroup label="Setup area" className="cloudflare-setup-areas">
-        <Button
-          aria-pressed={selectedSection === 'desktop'}
-          disabled={disabled}
-          onClick={() => onSectionChange('desktop')}
-        >
-          Desktop access
-        </Button>
-        <Button
-          aria-pressed={selectedSection === 'account'}
-          disabled={disabled}
-          onClick={() => onSectionChange('account')}
-        >
-          App publishing
-        </Button>
-      </ButtonGroup>
       <fieldset
         hidden={selectedSection !== 'desktop'}
         inert={selectedSection !== 'desktop' || !active}
@@ -865,9 +867,9 @@ export function CloudflareSetup({
             >
               Save settings
             </Button>
-            <span className="fine-print">
-              {configDirty ? 'Unsaved settings' : 'Settings saved'}
-            </span>
+            {configDirty && (
+              <span className="fine-print">Unsaved settings</span>
+            )}
           </div>
         </>
       )}

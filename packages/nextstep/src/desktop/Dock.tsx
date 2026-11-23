@@ -171,8 +171,10 @@ export function Dock({ props, layout, api, setLayout, compact }: DockProps) {
             type="button"
             className="ns-dock-tile ns-clock"
             aria-label="Clock and date"
-            title={now.toLocaleString()}
-            onClick={() => showClock(api)}
+            title={now.toLocaleString(undefined, {
+              hour12: props.clock24Hour === false,
+            })}
+            onClick={() => showClock(api, props.clock24Hour)}
           >
             <span className="ns-clock-month">
               {now.toLocaleDateString('en', { month: 'short' }).toUpperCase()}

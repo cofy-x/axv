@@ -5,10 +5,6 @@ import type { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import './markdown.css';
 
-export function isMarkdownFilename(name: string): boolean {
-  return /\.(?:md|markdown)$/i.test(name);
-}
-
 function safeLink(url: string): string | undefined {
   if (Array.from(url).some((character) => character.charCodeAt(0) < 32))
     return undefined;

@@ -3,16 +3,16 @@ import type { ComponentType } from 'react';
 import { Button } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 
-type WindowContent = ComponentType<AppWindowProps>;
-
-type LoadState =
+type LoadState<Props extends AppWindowProps> =
   | { status: 'idle' | 'loading' }
-  | { status: 'ready'; Content: WindowContent }
+  | { status: 'ready'; Content: ComponentType<Props> }
   | { status: 'failed'; error: string };
 
 /** Declare once per view, outside registry factories, to retain mounted owners. */
-export function deferWindow(load: () => Promise<WindowContent>): WindowContent {
-  let state: LoadState = { status: 'idle' };
+export function deferWindow<Props extends AppWindowProps>(
+  load: () => Promise<ComponentType<Props>>,
+): ComponentType<Props> {
+  let state: LoadState<Props> = { status: 'idle' };
   const listeners = new Set<() => void>();
   const snapshot = () => state;
   const subscribe = (listener: () => void) => {
@@ -21,7 +21,7 @@ export function deferWindow(load: () => Promise<WindowContent>): WindowContent {
       listeners.delete(listener);
     };
   };
-  const publish = (next: LoadState) => {
+  const publish = (next: LoadState<Props>) => {
     state = next;
     for (const listener of listeners) listener();
   };
@@ -42,7 +42,7 @@ export function deferWindow(load: () => Promise<WindowContent>): WindowContent {
       );
   }
 
-  return function DeferredWindow(props: AppWindowProps) {
+  return function DeferredWindow(props: Props) {
     const current = useSyncExternalStore(subscribe, snapshot, snapshot);
     useEffect(() => {
       if (state.status === 'idle') start();

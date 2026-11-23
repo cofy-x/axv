@@ -3,11 +3,7 @@ import type {
   WindowCommand,
   WindowCommands,
 } from '../../shared/desktop/window-commands';
-import { deferWindow } from '../../shared/desktop/defer-window';
-
-const TerminalApp = deferWindow(() =>
-  import('./TerminalApp').then((module) => module.TerminalApp),
-);
+import { TerminalWindow } from './TerminalWindow';
 
 export function openTerminalWindow(desktop: DesktopAPI, projectPath?: string) {
   const titles = new Set(desktop.windows.map((window) => window.title));
@@ -57,7 +53,7 @@ export function createTerminalApp(commands: WindowCommands): AppDefinition {
     id: 'terminal',
     title: 'Terminal',
     icon: 'terminal',
-    component: TerminalApp,
+    component: TerminalWindow,
     launch: (desktop) => {
       openTerminalWindow(desktop);
     },

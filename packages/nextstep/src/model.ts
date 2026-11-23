@@ -40,14 +40,18 @@ export function windowIdentity(
   return `${app.id}:${app.windowKey?.(params) ?? 'main'}`;
 }
 
-/** A miniwindow shelf reserves space only while this workspace has restore icons. */
+/** Fit the window between the desktop controls, Dock and visible miniwindows. */
 export function windowWorkArea(
   viewport: Viewport,
   hasMiniwindows: boolean,
+  reserveTopRow = true,
 ): Bounds {
-  const { sideDock } = desktopLayoutMode(viewport);
+  const { mobile, sideDock } = desktopLayoutMode(viewport);
   const x = 4;
-  const y = APPLICATION_MENU_TOP + APPLICATION_MENU_HEIGHT + 2;
+  const y =
+    mobile && !reserveTopRow
+      ? APPLICATION_MENU_TOP
+      : APPLICATION_MENU_TOP + APPLICATION_MENU_HEIGHT + 2;
   const right = sideDock ? DOCK_WIDTH : 4;
   const bottom =
     (sideDock ? 8 : DOCK_HEIGHT) + (hasMiniwindows ? STRIP_HEIGHT : 0);

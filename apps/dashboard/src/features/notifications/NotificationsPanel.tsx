@@ -49,9 +49,9 @@ export function NotificationsPanel({
   const tab =
     window.viewState.notificationTab === 'browser'
       ? 'browser'
-      : window.viewState.notificationTab === 'history' || !allowed
-        ? 'history'
-        : 'settings';
+      : allowed && window.viewState.notificationTab === 'settings'
+        ? 'settings'
+        : 'history';
   const dirty =
     !!token ||
     clearToken ||
@@ -206,6 +206,16 @@ export function NotificationsPanel({
 
   const currentStore =
     !snapshot || !baseline || baseline.storeId === snapshot.storeId;
+  const deliveryStatus =
+    !snapshot || resource.error || tab === 'browser'
+      ? ''
+      : snapshot.nextSendAt
+        ? 'Pocket Alert quota cooldown.'
+        : tab === 'settings'
+          ? snapshot.config.enabled
+            ? 'Pocket Alert enabled.'
+            : 'Pocket Alert disabled.'
+          : '';
   const status = busy
     ? busy === 'test'
       ? 'Recording test…'
@@ -214,13 +224,7 @@ export function NotificationsPanel({
         : 'Saving settings…'
     : dirty
       ? 'Unsaved settings.'
-      : tab !== 'browser' && snapshot && !resource.error
-        ? snapshot.nextSendAt
-          ? 'Pocket Alert quota cooldown.'
-          : snapshot.config.enabled
-            ? 'Pocket Alert enabled.'
-            : 'Pocket Alert disabled.'
-        : '';
+      : deliveryStatus;
   return (
     <div className="notifications-app">
       <Tabs
@@ -228,11 +232,11 @@ export function NotificationsPanel({
         value={tab}
         onChange={selectTab}
         tabs={[
+          { id: 'history', label: 'History', disabled: !interactive },
+          { id: 'browser', label: 'This browser', disabled: !interactive },
           ...(allowed
             ? [{ id: 'settings', label: 'Settings', disabled: !interactive }]
             : []),
-          { id: 'browser', label: 'This browser', disabled: !interactive },
-          { id: 'history', label: 'History', disabled: !interactive },
         ]}
       >
         {resource.error && tab !== 'browser' && (

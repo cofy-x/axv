@@ -47,7 +47,7 @@ export function ProjectLauncher(props: AppWindowProps) {
     setBusy(true);
     setError('');
     try {
-      const { project } = await projectsAPI.register(root.trim());
+      const { project } = await projectsAPI.register(root);
       desktopDatabase.assertUnchanged();
       if (!mounted.current) return;
       const projects = [
@@ -153,7 +153,7 @@ export function ProjectLauncher(props: AppWindowProps) {
                 aria-expanded={choosingFolder}
                 disabled={busy || choosingFolder || !hostInteractive}
                 onClick={() => {
-                  setPickerPath(root.trim());
+                  setPickerPath(root);
                   setChoosingFolder(true);
                 }}
               >
