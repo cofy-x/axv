@@ -23,18 +23,6 @@ const tunnelExample = `ingress:
       httpHostHeader: axv.example.com
   - service: http_status:404`;
 
-export function SetupSteps() {
-  return (
-    <ol className="cloudflare-setup-steps" aria-label="Cloudflare setup steps">
-      <li>Create a Cloudflare Access application and Tunnel.</li>
-      <li>
-        Add the settings to this AXV profile’s <code>config.json</code>.
-      </li>
-      <li>Choose Refresh, then Enable.</li>
-    </ol>
-  );
-}
-
 export function SetupGuide({
   headingRef,
   interactive = true,

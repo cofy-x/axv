@@ -171,7 +171,10 @@ func (s *Service) requestRetry(ctx context.Context, request RetryRequest) error 
 	if err != nil {
 		return err
 	}
-	if err := s.store.retry(ctx, saved.account, request, current, time.Now()); err != nil {
+	s.policyMu.Lock()
+	err = s.store.retry(ctx, saved.account, request, current, time.Now())
+	s.policyMu.Unlock()
+	if err != nil {
 		return err
 	}
 	select {
@@ -339,7 +342,7 @@ func (s *Service) readSnapshot(ctx context.Context, summaryOnly bool) (Snapshot,
 
 func (s *Service) exactReviewJob(ctx context.Context, target Target) (ReviewJobView, error) {
 	view, err := s.store.inboxJob(ctx, target, s.scenarioVMReady)
-	if err != nil {
+	if err != nil || view.Job.Status == "stale" {
 		return view, err
 	}
 	if vm, ok := s.vmForRepository(view.Job.Repository).(ComputeVMTests); ok && vm.comparisonReady() {
@@ -490,7 +493,10 @@ func (s *Service) scan(ctx context.Context, settings savedSettings, now time.Tim
 		}
 	}
 	selected := chooseTargets(settings.Config, targets)
-	if saveErr := s.store.enqueue(ctx, settings.account, targets, selected, now); saveErr != nil {
+	s.policyMu.Lock()
+	saveErr := s.store.enqueue(ctx, settings.account, targets, selected, now)
+	s.policyMu.Unlock()
+	if saveErr != nil {
 		err = errStore
 	}
 	s.discoveryMu.Unlock()
@@ -633,7 +639,7 @@ func (s *Service) review(ctx context.Context, saved savedSettings, job Job) erro
 		}
 		return errStore
 	}
-	started, err := s.store.job(ctx, job.account, job.Repository, job.Number, job.HeadSHA)
+	started, err := readExactJob(ctx, s.store.db, job.account, job.Target)
 	if err != nil || started.Evidence == nil {
 		return errStore
 	}
@@ -659,8 +665,8 @@ func (s *Service) review(ctx context.Context, saved savedSettings, job Job) erro
 	findings, err := runner.Review(run, job.Target, token, started.Evidence.Policy.Rules, func(message string) error {
 		at := time.Now().UTC().Format(time.RFC3339Nano)
 		_, err := s.store.db.ExecContext(run, `UPDATE review_jobs SET review_stage=json_set(review_stage,
-  '$.messages[#]',json_object('at',?,'text',?),'$.updatedAt',?) WHERE account=? AND repository=? AND number=? AND head_sha=? AND evidence_key=?`,
-			at, message, at, job.account, job.Repository, job.Number, job.HeadSHA, started.evidenceKey)
+  '$.messages[#]',json_object('at',?,'text',?),'$.updatedAt',?) WHERE account=? AND repository=? AND number=? AND head_sha=? AND base_sha=? AND evidence_key=?`,
+			at, message, at, job.account, job.Repository, job.Number, job.HeadSHA, job.BaseSHA, started.evidenceKey)
 		if err != nil {
 			return errStore
 		}

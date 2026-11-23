@@ -78,6 +78,8 @@ func (s *Service) reviewSelected(ctx context.Context, request reviewPRRequest, d
 	if err := s.observeComparison(remote, settings.account, current, now); err != nil {
 		return selectedReview{}, err
 	}
+	s.policyMu.Lock()
+	defer s.policyMu.Unlock()
 	if err := s.store.enqueueSelected(ctx, settings.account, request.Revision, displayed, current, now); err != nil {
 		return selectedReview{}, err
 	}
@@ -92,8 +94,9 @@ func (s *Service) reviewSelected(ctx context.Context, request reviewPRRequest, d
 }
 
 func displayedReview(ctx context.Context, db rowQuerier, account string, req RetryRequest) (Job, error) {
-	job, err := readJob(ctx, db, account, req.Repository, req.Number, req.HeadSHA)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && job.BaseSHA != req.BaseSHA) {
+	target := Target{Repository: req.Repository, Number: req.Number, HeadSHA: req.HeadSHA, BaseSHA: req.BaseSHA}
+	job, err := readExactJob(ctx, db, account, target)
+	if errors.Is(err, sql.ErrNoRows) {
 		return Job{}, ErrRetryStale
 	}
 	return job, err
@@ -147,7 +150,7 @@ func (s *store) enqueueSelected(ctx context.Context, account string, revision ui
 		}
 	} else if job.Status == "queued" || job.Status == "reviewing" {
 		if _, err := tx.ExecContext(ctx, `UPDATE review_jobs SET manual_review=1
- WHERE account=? AND repository=? AND number=? AND head_sha=?`, account, current.Repository, current.Number, current.HeadSHA); err != nil {
+ WHERE account=? AND repository=? AND number=? AND head_sha=? AND base_sha=? AND selected_for_head=1`, account, job.Repository, job.Number, job.HeadSHA, job.BaseSHA); err != nil {
 			return err
 		}
 	}

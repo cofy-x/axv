@@ -680,18 +680,8 @@ export function GitHubReview({
               inert={!interactive || tab !== 'history'}
             >
               <ReviewHistory
-                automation={(openReview) => (
-                  <div className="github-review-automation-panel">
-                    <ReviewAutomationStatus
-                      snapshot={snapshot}
-                      onOpenSettings={(section) => {
-                        setSettingsNavigation({ section });
-                        desktop.updateWindowState(window.id, (state) => ({
-                          ...state,
-                          githubReviewTab: 'settings',
-                        }));
-                      }}
-                    />
+                inboxControls={(openReview) => (
+                  <>
                     <ReviewIntake
                       disabled={disabled}
                       pending={busy === 'Checking the pull request…'}
@@ -729,7 +719,17 @@ export function GitHubReview({
                       </Button>
                       {refreshStatus}
                     </ReviewIntake>
-                  </div>
+                    <ReviewAutomationStatus
+                      snapshot={snapshot}
+                      onOpenSettings={(section) => {
+                        setSettingsNavigation({ section });
+                        desktop.updateWindowState(window.id, (state) => ({
+                          ...state,
+                          githubReviewTab: 'settings',
+                        }));
+                      }}
+                    />
+                  </>
                 )}
                 dailyLimitReached={
                   snapshot.budget.used >= snapshot.config.dailyLimit

@@ -158,9 +158,24 @@ export function VMProjectLauncher({ desktop, interactive }: AppWindowProps) {
         ) : (
           <p className="project-list-empty">No VM projects yet.</p>
         ))}
+      {data && eligible?.length === 0 && (
+        <p>
+          No ready retained volumes are attached to a running VM with project
+          file access{mode !== 'open' ? ' and persistent task support' : ''}.
+        </p>
+      )}
+      {(inventory.error || eligible?.length === 0) && (
+        <Button
+          disabled={!interactive}
+          onClick={() => desktop.openApp('machines')}
+        >
+          Open Virtual Machines
+        </Button>
+      )}
       <form
         className="project-register-form"
         aria-label="VM project setup"
+        hidden={!data}
         onSubmit={(event) => {
           event.preventDefault();
           if (mode === 'open') void register();
@@ -229,37 +244,29 @@ export function VMProjectLauncher({ desktop, interactive }: AppWindowProps) {
           </div>
         )}
       </form>
-      <div hidden={mode === 'open'} inert={mode === 'open' || !interactive}>
-        <VMProjectInitialize
-          desktop={desktop}
-          interactive={!!interactive && mode !== 'open'}
-          mode={mode === 'clone' ? 'clone' : 'create'}
-          target={
-            data && volume?.machineId
-              ? {
-                  hostId: data.hostId,
-                  volumeId: volume.id,
-                  volumeRevision: volume.revision,
-                  machineId: volume.machineId,
-                  machineName:
-                    data.machines.find(
-                      (machine) => machine.id === volume.machineId,
-                    )?.spec.name || volume.machineId,
-                  label: `${volume.name} · ${data.machines.find((machine) => machine.id === volume.machineId)?.spec.name || volume.machineId}`,
-                }
-              : null
-          }
-          onCreated={() => setRefresh((value) => value + 1)}
-        />
-      </div>
+      <VMProjectInitialize
+        desktop={desktop}
+        interactive={!!interactive}
+        inventoryAvailable={!!data}
+        mode={mode}
+        target={
+          data && volume?.machineId
+            ? {
+                hostId: data.hostId,
+                volumeId: volume.id,
+                volumeRevision: volume.revision,
+                machineId: volume.machineId,
+                machineName:
+                  data.machines.find(
+                    (machine) => machine.id === volume.machineId,
+                  )?.spec.name || volume.machineId,
+                label: `${volume.name} · ${data.machines.find((machine) => machine.id === volume.machineId)?.spec.name || volume.machineId}`,
+              }
+            : null
+        }
+        onCreated={() => setRefresh((value) => value + 1)}
+      />
       {error && <p role="alert">{error}</p>}
-      {data && eligible?.length === 0 && (
-        <p>
-          No ready retained volumes are attached to a running VM with project
-          file access{mode !== 'open' ? ' and persistent task support' : ''}.
-          Manage VMs and volumes in Virtual Machines.
-        </p>
-      )}
     </section>
   );
 }

@@ -217,7 +217,7 @@ func loadCandidateView(ctx context.Context, tx *sql.Tx, j *Job) error {
 		return nil
 	}
 	var order int64
-	if err := tx.QueryRowContext(ctx, "SELECT rowid FROM review_jobs WHERE account=? AND repository=? AND number=? AND head_sha=?", j.account, j.Repository, j.Number, j.HeadSHA).Scan(&order); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT rowid FROM review_jobs WHERE account=? AND repository=? AND number=? AND head_sha=? AND base_sha=?", j.account, j.Repository, j.Number, j.HeadSHA, j.BaseSHA).Scan(&order); err != nil {
 		return err
 	}
 	positions := make(map[string]CandidateOccurrence, len(occurrences))

@@ -14,12 +14,15 @@ import {
   workspaceLabel,
 } from './model';
 import { DialogOverlay, MenuOverlay } from './overlays';
-import type { DesktopProps, Point } from './types';
+import type { Bounds, DesktopProps, Point } from './types';
 import { Dock } from './desktop/Dock';
 import { DesktopCanvas } from './desktop/DesktopCanvas';
 import { ApplicationMenu } from './desktop/MenuPanels';
 import { WindowFrame } from './desktop/WindowFrame';
-import { createDesktopContextMenu } from './desktop/menus';
+import {
+  createApplicationMenus,
+  createDesktopContextMenu,
+} from './desktop/menus';
 import { useDesktopController } from './desktop/useDesktopController';
 import { useDesktopGestures } from './desktop/useDesktopGestures';
 import { useViewport } from './desktop/useViewport';
@@ -39,8 +42,18 @@ export function Desktop(props: DesktopProps) {
     overviewButton.current?.focus({ preventScroll: true });
   };
   const desktopProps = { ...props, icons: controller.icons };
+  const applicationMenus = overview
+    ? undefined
+    : createApplicationMenus(desktopProps, api);
   const minimized = minimizedWindows(layout.windows, layout.currentWorkspaceId);
-  const baseWorkArea = windowWorkArea(viewport, minimized.length > 0);
+  const hasMiniwindows = minimized.length > 0;
+  const overlayReservesTopRow = overview || controller.persistenceBlocked;
+  const areaWithTopRow = windowWorkArea(viewport, hasMiniwindows);
+  const areaWithoutTopRow = windowWorkArea(viewport, hasMiniwindows, false);
+  const baseWorkArea =
+    applicationMenus || overlayReservesTopRow
+      ? areaWithTopRow
+      : areaWithoutTopRow;
   const statusRef = useRef<HTMLDivElement>(null);
   const [statusHeight, setStatusHeight] = useState(0);
   const [noticeFocusRevision, setNoticeFocusRevision] = useState(0);
@@ -86,11 +99,12 @@ export function Desktop(props: DesktopProps) {
     };
   }, [hasStatus]);
   const reservedStatusHeight = hasStatus ? statusHeight + 16 : 0;
-  const workArea = {
-    ...baseWorkArea,
-    height: Math.max(1, baseWorkArea.height - reservedStatusHeight),
-  };
-  const baseIconArea = iconWorkArea(viewport, minimized.length > 0);
+  const reserveStatusSpace = (area: Bounds) => ({
+    ...area,
+    height: Math.max(1, area.height - reservedStatusHeight),
+  });
+  const workArea = reserveStatusSpace(baseWorkArea);
+  const baseIconArea = iconWorkArea(viewport, hasMiniwindows);
   const desktopItems = (ids: string[]) =>
     createDesktopContextMenu(desktopProps, api, ids);
   const gestures = useDesktopGestures({
@@ -98,10 +112,7 @@ export function Desktop(props: DesktopProps) {
     layout,
     setLayout: controller.setLayout,
     workArea,
-    iconArea: {
-      ...baseIconArea,
-      height: Math.max(1, baseIconArea.height - reservedStatusHeight),
-    },
+    iconArea: reserveStatusSpace(baseIconArea),
     mobile,
     overview,
     dismissOverview,
@@ -134,6 +145,10 @@ export function Desktop(props: DesktopProps) {
     document.addEventListener('focusin', capture);
     return () => document.removeEventListener('focusin', capture);
   }, []);
+  useEffect(() => {
+    for (const [id, element] of focusedElements.current)
+      if (!element.isConnected) focusedElements.current.delete(id);
+  }, [layout.windows]);
   useEffect(() => {
     const contextChanged =
       focusedContext.current.windowId !== layout.activeWindowId ||
@@ -278,7 +293,9 @@ export function Desktop(props: DesktopProps) {
           gestures={gestures}
           inert={overview || undefined}
         />
-        {!overview && <ApplicationMenu api={api} props={desktopProps} />}
+        {applicationMenus && (
+          <ApplicationMenu api={api} menus={applicationMenus} />
+        )}
         {controller.persistenceBlocked && (
           <div className="ns-recovery" role="alert">
             This desktop layout is damaged or uses a newer version. Changes are
@@ -295,6 +312,15 @@ export function Desktop(props: DesktopProps) {
         )}
         {layout.windows.map((win, index) => {
           const app = resolveApplication(props.apps, win.appId);
+          // Keep mounted content fitted for its own application menu while
+          // hidden or shaded so switching windows does not resize it.
+          const inactiveArea = app.menu ? areaWithTopRow : areaWithoutTopRow;
+          const frameArea =
+            mobile &&
+            !overlayReservesTopRow &&
+            (win.id !== layout.activeWindowId || win.shaded)
+              ? reserveStatusSpace(inactiveArea)
+              : workArea;
           return (
             <WindowFrame
               key={win.id}
@@ -302,7 +328,7 @@ export function Desktop(props: DesktopProps) {
               app={app}
               index={overview ? index : workspace.order.indexOf(win.id)}
               api={api}
-              workArea={workArea}
+              workArea={frameArea}
               mobile={mobile}
               overview={overview}
               inputBlocked={!!menu || !!dialogRequest}

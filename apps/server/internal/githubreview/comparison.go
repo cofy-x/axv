@@ -11,10 +11,10 @@ import (
 // A base branch can advance without changing the three-dot diff. Keep the raw
 // base of the original review and cache only equivalence verified for this head.
 func (s *Service) observeComparison(ctx context.Context, account string, target Target, now time.Time) error {
-	var base, merge, equivalent, observed string
-	err := s.store.db.QueryRowContext(ctx, `SELECT base_sha,merge_base_sha,equivalent_base_sha,observed_base_sha FROM review_jobs
- WHERE account=? AND repository=? AND number=? AND head_sha=? AND (policy IS NOT NULL OR status IN ('analyzed','clean','published'))`,
-		account, target.Repository, target.Number, target.HeadSHA).Scan(&base, &merge, &equivalent, &observed)
+	var base, merge, equivalent, observed, evidenceKey string
+	err := s.store.db.QueryRowContext(ctx, `SELECT base_sha,merge_base_sha,equivalent_base_sha,observed_base_sha,COALESCE(evidence_key,'') FROM review_jobs
+ WHERE account=? AND repository=? AND number=? AND head_sha=? AND selected_for_head=1 AND (policy IS NOT NULL OR status IN ('analyzed','clean','published'))`,
+		account, target.Repository, target.Number, target.HeadSHA).Scan(&base, &merge, &equivalent, &observed, &evidenceKey)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
@@ -40,6 +40,10 @@ func (s *Service) observeComparison(ctx context.Context, account string, target 
 			same = err == nil && commitSHA.MatchString(merge) && latest == merge
 		}
 	}
+	// Invalidation and the final quick-test submission check share this lock.
+	// The GitHub lookup above does not hold it.
+	s.policyMu.Lock()
+	defer s.policyMu.Unlock()
 	if same {
 		// Restore only completed work. An interrupted review or publication
 		// needs an explicit retry even if its comparison later matches again.
@@ -47,18 +51,24 @@ func (s *Service) observeComparison(ctx context.Context, account string, target 
  status=CASE WHEN status='stale' AND comparison_saved_status<>'' THEN comparison_saved_status ELSE status END,
  error=CASE WHEN status='stale' AND comparison_saved_status<>'' THEN '' ELSE error END, comparison_saved_status='',
  observed_base_sha=CASE WHEN status<>'stale' OR comparison_saved_status<>'' THEN '' ELSE observed_base_sha END
- WHERE account=? AND repository=? AND number=? AND head_sha=? AND base_sha=? AND observed_base_sha=?`, merge, target.BaseSHA, account, target.Repository, target.Number, target.HeadSHA, base, observed)
+ WHERE account=? AND repository=? AND number=? AND head_sha=? AND base_sha=? AND selected_for_head=1
+ AND COALESCE(evidence_key,'')=? AND observed_base_sha=?`, merge, target.BaseSHA, account, target.Repository, target.Number, target.HeadSHA, base, evidenceKey, observed)
 		return err
 	}
 	reason := "The comparison base changed. Review this head again against the current target."
 	if err != nil || !ok {
 		reason = "The target changed and its comparison base could not be verified. Review this head again."
 	}
-	_, saveErr := s.store.db.ExecContext(s.ctx, `UPDATE review_jobs SET comparison_saved_status=CASE WHEN status IN ('clean','analyzed','published') THEN status ELSE comparison_saved_status END,status='stale',error=?,updated_at=?,observed_base_sha=?,equivalent_base_sha='',
+	return errors.Join(err, s.store.recordChangedBase(s.ctx, account, target, base, evidenceKey, merge, reason, now))
+}
+
+func (s *store) recordChangedBase(ctx context.Context, account string, target Target, previousBase, evidenceKey, merge, reason string, now time.Time) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE review_jobs SET comparison_saved_status=CASE WHEN status IN ('clean','analyzed','published') THEN status ELSE comparison_saved_status END,status='stale',error=?,updated_at=?,observed_base_sha=?,equivalent_base_sha='',
  merge_base_sha=CASE WHEN merge_base_sha='' THEN ? ELSE merge_base_sha END
- WHERE account=? AND repository=? AND number=? AND head_sha=? AND base_sha=? AND (observed_base_sha<>? OR status<>'stale')`,
-		reason, now.UnixMilli(), target.BaseSHA, merge, account, target.Repository, target.Number, target.HeadSHA, base, target.BaseSHA)
-	return errors.Join(err, saveErr)
+ WHERE account=? AND repository=? AND number=? AND head_sha=? AND base_sha=? AND selected_for_head=1
+ AND COALESCE(evidence_key,'')=? AND (observed_base_sha<>? OR status<>'stale')`,
+		reason, now.UnixMilli(), target.BaseSHA, merge, account, target.Repository, target.Number, target.HeadSHA, previousBase, evidenceKey, target.BaseSHA)
+	return err
 }
 
 func (g GitHubCLI) MergeBase(ctx context.Context, account string, t Target) (string, error) {

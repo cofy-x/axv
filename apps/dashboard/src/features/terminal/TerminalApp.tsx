@@ -9,7 +9,6 @@ import { Button, IconButton, PixelIcon, StatusBar } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { request } from '../../shared/api/http';
 import { useWindowCommands } from '../../shared/desktop/WindowCommandsContext';
 import { useTerminalPaste } from '../../shared/terminal/use-terminal-paste';
 import { canTransferWindowFocus } from '../../shared/desktop/focus-transfer';
@@ -26,7 +25,10 @@ export function TerminalApp({
   window,
   desktop,
   interactive = true,
-}: AppWindowProps) {
+  getInfo,
+}: AppWindowProps & {
+  getInfo: (signal: AbortSignal) => Promise<TerminalInfo>;
+}) {
   const projectPath = window.params.projectPath;
   const screen = useRef<HTMLDivElement>(null);
   const terminal = useRef<Terminal | null>(null);
@@ -128,7 +130,7 @@ export function TerminalApp({
     const connection = new TerminalSession({
       baseURL: globalThis.location.href,
       projectPath,
-      getInfo: (signal) => request<TerminalInfo>('/terminal/info', { signal }),
+      getInfo,
       createSocket: (url) => new WebSocket(url),
       write: (data, done) => term.write(data, done),
       onState: (next) => {
@@ -228,7 +230,7 @@ export function TerminalApp({
       terminal.current = null;
       session.current = null;
     };
-  }, [generation, projectPath, invalidatePaste, recordPasteInput]);
+  }, [generation, projectPath, getInfo, invalidatePaste, recordPasteInput]);
 
   useEffect(
     () =>

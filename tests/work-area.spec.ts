@@ -120,7 +120,7 @@ test('work area keeps drag, resize and maximize edges consistent without changin
   await activate(page, project);
   await expectRect(project, normal);
   await page.setViewportSize({ width: 390, height: 844 });
-  await expectRect(project, { x: 4, y: 64, width: 382, height: 720 });
+  await expectRect(project, { x: 4, y: 30, width: 382, height: 754 });
   await expect(
     project.getByRole('button', { name: /^Close / }),
   ).toBeInViewport();

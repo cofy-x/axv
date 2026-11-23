@@ -1,12 +1,36 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
+import type { ComponentType } from 'react';
 import { Button, IconButton, PixelIcon, StatusBar } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { canTransferWindowFocus } from '../../shared/desktop/focus-transfer';
 import { useDesktopResource as useResource } from '../../shared/api/useDesktopResource';
-import { MarkdownPreview, isMarkdownFilename } from '../../shared/markdown';
-import { CodeEditor } from '../../shared/code-editor';
+import { isMarkdownFilename } from '../../shared/markdown/filename';
+import type { MarkdownPreviewProps } from '../../shared/markdown';
+import { CodeEditor, preloadCodeEditor } from '../../shared/code-editor';
 import { projectsAPI } from './api';
 import { projectFileLocation } from './navigation';
+
+function MarkdownPreviewUnavailable() {
+  return (
+    <p role="alert">
+      Markdown preview could not load. Choose Source to read this file.
+    </p>
+  );
+}
+
+const loadMarkdown = () =>
+  import('../../shared/markdown').then(
+    ({ MarkdownPreview }) => ({ default: MarkdownPreview }),
+    () => ({ default: MarkdownPreviewUnavailable }),
+  );
+const MarkdownPreview = lazy<ComponentType<MarkdownPreviewProps>>(loadMarkdown);
 
 export function HostProjectFiles({
   window,
@@ -39,6 +63,8 @@ export function HostProjectFiles({
   const [raw, setRaw] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState('');
+  const markdown = isMarkdownFilename(file);
+  const showMarkdown = markdown && !raw;
   const load = useCallback(
     () => projectsAPI.files(id, folder, cursor),
     [id, folder, cursor],
@@ -57,6 +83,12 @@ export function HostProjectFiles({
       reading: false,
     });
   const selected = content.data;
+
+  useEffect(() => {
+    if (!file) return;
+    if (showMarkdown) void loadMarkdown();
+    else preloadCodeEditor();
+  }, [file, showMarkdown]);
 
   useEffect(() => {
     mounted.current = true;
@@ -155,6 +187,7 @@ export function HostProjectFiles({
             label="More project actions"
             aria-haspopup="menu"
             onClick={(event) => {
+              event.currentTarget.focus({ preventScroll: true });
               const rect = event.currentTarget.getBoundingClientRect();
               const path = file;
               desktop.contextMenu(
@@ -177,7 +210,10 @@ export function HostProjectFiles({
                   },
                 ],
                 { x: rect.left, y: rect.bottom },
-                { title: path.split('/').pop() || 'Project actions' },
+                {
+                  title: path.split('/').pop() || 'Project actions',
+                  ownerWindowId: window.id,
+                },
               );
             }}
           />
@@ -288,7 +324,7 @@ export function HostProjectFiles({
           </div>
         </nav>
         <section
-          className={`project-preview${selected && (!isMarkdownFilename(file) || raw) ? ' project-code-preview' : ''}`}
+          className={`project-preview${selected && !showMarkdown ? ' project-code-preview' : ''}`}
           aria-label="Project file preview"
           ref={preview}
           tabIndex={0}
@@ -309,7 +345,7 @@ export function HostProjectFiles({
             <>
               <div className="project-preview-heading">
                 <code>{file}</code>
-                {isMarkdownFilename(file) && (
+                {markdown && (
                   <Button onClick={() => setRaw((value) => !value)}>
                     {raw ? 'Preview' : 'Source'}
                   </Button>
@@ -327,8 +363,12 @@ export function HostProjectFiles({
                 </>
               ) : !selected ? (
                 <p role="status">Loading file…</p>
-              ) : isMarkdownFilename(file) && !raw ? (
-                <MarkdownPreview content={selected.content} />
+              ) : showMarkdown ? (
+                <Suspense
+                  fallback={<p role="status">Loading Markdown preview…</p>}
+                >
+                  <MarkdownPreview content={selected.content} />
+                </Suspense>
               ) : (
                 <CodeEditor
                   documentId={`${id}:${file}`}

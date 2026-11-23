@@ -1,11 +1,8 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import {
-  isMarkdownFilename,
-  MarkdownPreview,
-  MAX_MARKDOWN_PREVIEW_BYTES,
-} from './index';
+import { isMarkdownFilename } from './filename';
+import { MarkdownPreview, MAX_MARKDOWN_PREVIEW_BYTES } from './index';
 
 function render(content: string) {
   return renderToStaticMarkup(createElement(MarkdownPreview, { content }));

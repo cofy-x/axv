@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -15,7 +16,15 @@ import unittest
 class ReviewSandboxTest(unittest.TestCase):
     def test_mirror_and_test_command_receipts(self):
         assets = Path(__file__).resolve().parent
-        with tempfile.TemporaryDirectory() as fixture:
+        default_root = assets.parents[1] / ".data" / "test"
+        test_root = Path(os.environ.get("AXV_TEST_TMPDIR") or default_root).absolute()
+        test_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        info = test_root.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
+            raise RuntimeError(
+                "AXV_TEST_TMPDIR must be a real, private directory owned by the current user."
+            )
+        with tempfile.TemporaryDirectory(prefix="review-vm-", dir=test_root) as fixture:
             mirror = Path(fixture, "source.git")
             subprocess.run(["git", "init", "--quiet", "--bare", mirror], check=True)
             git = ["git", "--git-dir=" + str(mirror)]

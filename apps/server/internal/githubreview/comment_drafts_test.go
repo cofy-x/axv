@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -93,22 +94,63 @@ func TestCandidateCommentDraftRevisionsAndHistory(t *testing.T) {
 	}
 }
 
-func TestCandidateCommentDraftMigrationPreservesSettings(t *testing.T) {
+func TestReviewMigrationsPreserveSettingsAndCandidateIdentity(t *testing.T) {
 	ctx := t.Context()
 	filename := filepath.Join(t.TempDir(), "review.sqlite")
-	initial, err := migrations.ReadFile("migrations/0001_initial.sql")
-	if err != nil {
-		t.Fatal(err)
+	names, err := fs.Glob(migrations, "migrations/*.sql")
+	if err != nil || len(names) < 8 {
+		t.Fatalf("expected the exact review migration and its predecessors: %v, %v", names, err)
+	}
+	versionSeven := fstest.MapFS{}
+	for _, name := range names[:7] {
+		data, err := migrations.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		versionSeven[name] = &fstest.MapFile{Data: data}
 	}
 	previous, err := sql.Open("sqlite", filename)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = previous.Close() })
-	if err := sqlitemigrate.Apply(ctx, previous, fstest.MapFS{"migrations/0001_initial.sql": &fstest.MapFile{Data: initial}}, reviewDatabaseFormat, nil); err != nil {
+	if err := sqlitemigrate.Apply(ctx, previous, versionSeven, reviewDatabaseFormat, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := (&store{db: previous}).attach(ctx, "github", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	target := workerTestTarget("owner/alpha", 7, sourceRepository)
+	job := Job{Target: target, account: "owner", evidenceKey: "original-review", Findings: []Finding{{Path: "config.go", Line: 7, Side: "head", Title: "Handle default values"}}}
+	findings, err := json.Marshal(job.Findings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := previous.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	const originalRow = 42
+	if _, err := tx.ExecContext(ctx, `INSERT INTO review_jobs (rowid,account,repository,number,title,base_sha,head_sha,source,status,findings,updated_at,evidence_key)
+		VALUES (?,?,?,?,?,?,?,?, 'analyzed',?,?,?)`, originalRow, job.account, job.Repository, job.Number, "Original review", job.BaseSHA, job.HeadSHA, job.Source, string(findings), time.Now().UnixMilli(), job.evidenceKey); err != nil {
+		t.Fatal(err)
+	}
+	if err := indexCandidates(ctx, tx, job); err != nil {
+		t.Fatal(err)
+	}
+	const note = "Original decision retained."
+	id := candidateID(job, 0)
+	if _, err := tx.ExecContext(ctx, "UPDATE review_candidates SET note=?,status='confirmed',revision=2 WHERE id=?", note, id); err != nil {
+		t.Fatal(err)
+	}
+	const draft = "Original reviewed draft."
+	at := time.Now().UnixMilli()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO review_candidate_comment_drafts(candidate_id,body,anchor_sha,updated_at,reviewed_at,revision)
+		VALUES(?,?,?,?,?,3)`, id, draft, job.HeadSHA, at, at); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
 	if err := previous.Close(); err != nil {
@@ -119,8 +161,22 @@ func TestCandidateCommentDraftMigrationPreservesSettings(t *testing.T) {
 		t.Fatalf("account changed during upgrade: %q", got)
 	}
 	var version int
-	if err := upgraded.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil || version != 7 {
-		t.Fatalf("schema version = %d, %v; want 7", version, err)
+	if err := upgraded.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil || version != 8 {
+		t.Fatalf("schema version = %d, %v; want 8", version, err)
+	}
+	view, err := upgraded.inboxJob(ctx, target, nil)
+	if err != nil || len(view.Job.Candidates) != 1 {
+		t.Fatalf("review or candidate changed during migration: %+v, %v", view.Job, err)
+	}
+	candidate := view.Job.Candidates[0]
+	if candidate.ID != id || candidate.Note != note || candidate.Status != "confirmed" || candidate.Revision != 2 || candidate.order != originalRow || candidate.CommentDraft == nil ||
+		candidate.CommentDraft.Body != draft || candidate.CommentDraft.Revision != 3 || candidate.CommentDraft.ReviewedAt == nil || candidate.CommentDraft.ReviewedAt.UnixMilli() != at || candidate.CommentDraft.Stale {
+		t.Fatalf("candidate or draft changed during migration: %+v", candidate)
+	}
+	var storedRow int
+	var selected bool
+	if err := upgraded.db.QueryRowContext(ctx, "SELECT rowid,selected_for_head FROM review_jobs WHERE base_sha=? AND head_sha=?", job.BaseSHA, job.HeadSHA).Scan(&storedRow, &selected); err != nil || storedRow != originalRow || !selected {
+		t.Fatalf("review identity or selection changed during migration: %d, %t, %v", storedRow, selected, err)
 	}
 }
 

@@ -260,6 +260,21 @@ describe('dynamic window work areas', () => {
       width: 382,
       height: 644,
     });
+    expect(windowWorkArea(mobile, false, false)).toEqual({
+      x: 4,
+      y: 30,
+      width: 382,
+      height: 754,
+    });
+    expect(windowWorkArea(mobile, true, false)).toEqual({
+      x: 4,
+      y: 30,
+      width: 382,
+      height: 678,
+    });
+    expect(windowWorkArea(viewport, false, false)).toEqual(
+      windowWorkArea(viewport, false),
+    );
   });
 
   it('keeps one Dock width across pointer modes without changing saved geometry', () => {

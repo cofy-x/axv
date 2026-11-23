@@ -19,9 +19,6 @@ export function createPreferenceQueue(
   let current = initial;
   let queue: Promise<unknown> = Promise.resolve();
   return {
-    reset(value: Preferences) {
-      current = value;
-    },
     save(patch: Partial<Preferences>): Promise<Preferences> {
       const pending = queue.then(async () => {
         assertCurrent?.();

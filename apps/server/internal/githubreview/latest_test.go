@@ -99,9 +99,11 @@ func TestReviewLatestWhilePausedSurvivesRestartAndHonorsBudget(t *testing.T) {
 func TestReviewLatestWithChangingBase(t *testing.T) {
 	ctx := t.Context()
 	ledger := testReviewStore(t, filepath.Join(t.TempDir(), "jobs.sqlite"), true)
-	saved := workerSettings(t, ledger)
 	current := workerTestTarget("owner/alpha", 174, sourceRepository)
 	first := current
+	cfg := workerSettings(t, ledger).Config
+	cfg.RepositoryPolicies = map[string]RepositoryPolicy{first.Repository: {TestCommand: []string{"go", "test", "./pkg"}}}
+	saved := configureWorker(t, ledger, cfg)
 	github := &workerGitHub{
 		current: func(Target) (Target, error) { return current, nil },
 		merge:   func(target Target) (string, error) { return target.BaseSHA, nil },
@@ -120,6 +122,12 @@ func TestReviewLatestWithChangingBase(t *testing.T) {
 	}
 	workerJob(t, ledger, first, "analyzed")
 	current.BaseSHA = strings.Repeat("d", 40)
+	if err := service.advanceEvidence(ctx, "test", time.Now().Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if expired := workerJob(t, ledger, first, "stale"); expired.ObservedBaseSHA != current.BaseSHA {
+		t.Fatalf("VM test preflight did not record the changed comparison: %+v", expired.Target)
+	}
 	if _, err := service.reviewLatest(ctx, ref); err != nil {
 		t.Fatal(err)
 	}
@@ -132,6 +140,28 @@ func TestReviewLatestWithChangingBase(t *testing.T) {
 	workerJob(t, ledger, current, "analyzed")
 	if len(runner.numbers) != 2 {
 		t.Fatalf("wanted both comparisons reviewed, got %v", runner.numbers)
+	}
+	second := current
+	current.BaseSHA = strings.Repeat("e", 40)
+	equivalentBase := current.BaseSHA
+	github.merge = func(target Target) (string, error) {
+		if target.BaseSHA == equivalentBase {
+			return second.BaseSHA, nil
+		}
+		return target.BaseSHA, nil
+	}
+	if selected, err := service.reviewLatest(ctx, ref); err != nil || selected.BaseSHA != second.BaseSHA || selected.Status != "analyzed" {
+		t.Fatalf("equivalent base did not reuse its review: %+v, %v", selected, err)
+	}
+	current = first
+	if selected, err := service.reviewLatest(ctx, ref); err != nil || selected.BaseSHA != first.BaseSHA || selected.Status != "analyzed" {
+		t.Fatalf("returning to a completed base did not reuse its review: %+v, %v", selected, err)
+	}
+	if err := service.processNext(ctx, saved, time.Now()); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("reuse queued another review: %v", err)
+	}
+	if budget, err := ledger.budget(ctx, time.Now()); err != nil || budget.Used != 2 {
+		t.Fatalf("equivalent or restored base consumed budget: %+v, %v", budget, err)
 	}
 }
 

@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"github.com/cofy-x/axv/apps/server/internal/limitedbuffer"
 )
 
 const fixtureGH = `#!/bin/sh
@@ -97,13 +99,13 @@ func TestCLIOutputBoundsProcessStdout(t *testing.T) {
 			payload := strings.Repeat("x", tc.size)
 			cmd := exec.CommandContext(t.Context(), "cat")
 			cmd.Stdin = strings.NewReader(payload)
-			out := cliOutput{limit: limit}
+			out := limitedbuffer.Buffer{Limit: limit}
 			cmd.Stdout = &out
 			if err := cmd.Run(); err != nil {
 				t.Fatal(err)
 			}
-			if out.String() != payload[:min(tc.size, limit)] || out.truncated != tc.truncated {
-				t.Fatalf("captured %d of %d bytes; truncated = %v", len(out.String()), tc.size, out.truncated)
+			if string(out.Data) != payload[:min(tc.size, limit)] || out.Truncated != tc.truncated {
+				t.Fatalf("captured %d of %d bytes; truncated = %v", len(out.Data), tc.size, out.Truncated)
 			}
 		})
 	}

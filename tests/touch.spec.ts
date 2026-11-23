@@ -334,8 +334,8 @@ test('touch work area releases the miniwindow row while keeping the Dock and win
   await dockEntry(page, 'project-files').locator('.ns-dock-tile').tap();
   const project = page.locator('[data-app-id="project-files"]');
   const welcome = page.locator('[data-app-id="welcome"]');
-  const fullArea = { x: 4, y: 64, width: 382, height: 720 };
-  const reservedArea = { ...fullArea, height: 644 };
+  const fullArea = { x: 4, y: 30, width: 382, height: 754 };
+  const reservedArea = { ...fullArea, height: 678 };
   await expectRect(project, fullArea);
   for (const action of ['Miniaturize', 'Shade', 'Maximize', 'Close'])
     await expect(

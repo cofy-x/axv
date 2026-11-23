@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { Locator, Page } from '@playwright/test';
 import {
@@ -140,6 +140,33 @@ async function openLauncher(page: Page) {
   return page.locator('[data-window-id="project-files:projects"]');
 }
 
+test('VM projects link to host setup when project actions are unavailable', async ({
+  page,
+  hasTouch,
+}) => {
+  await page.route('**/api/compute/info', (route) =>
+    route.fulfill({
+      json: { configured: false, reason: 'VM hosting is not configured.' },
+    }),
+  );
+  const launcher = await openLauncher(page);
+  await choose(
+    launcher.getByRole('tab', { name: 'VM', exact: true }),
+    hasTouch,
+  );
+  await expect(launcher.getByRole('alert')).toHaveText(
+    'VM hosting is not configured.',
+  );
+  await expect(launcher.getByLabel('Project action')).toBeHidden();
+  await choose(
+    launcher.getByRole('button', { name: 'Open Virtual Machines' }),
+    hasTouch,
+  );
+  await expect(page.locator('[data-app-id="machines"]')).toHaveClass(
+    /is-active/,
+  );
+});
+
 async function openRegisteredHostProject(
   page: Page,
   rootPath: string,
@@ -160,7 +187,9 @@ async function openRegisteredHostProject(
   );
   const response = await registration;
   expect(response.ok(), await response.text()).toBeTruthy();
-  const { project } = (await response.json()) as { project: { id: string } };
+  const { project } = (await response.json()) as {
+    project: { id: string; rootPath: string };
+  };
   return {
     project,
     browser: page.locator(`[data-window-id="project-files:${project.id}"]`),
@@ -619,12 +648,11 @@ test('project download reports API failures inline and preserves the original fi
     });
     await choose(more, hasTouch);
     await expect(downloadItem).toBeVisible();
-    // Retain the menu while closing its owner to exercise the stale action.
+    // Close the owner while the menu is active.
     await browser.locator('.ns-close').evaluate((button) => {
       (button as HTMLButtonElement).click();
     });
     await expect(browser).toHaveCount(0);
-    await choose(downloadItem, hasTouch);
     await expect(page.locator('.ns-menu-layer')).toHaveCount(0);
     expect(
       await page.evaluate(() =>
@@ -634,5 +662,68 @@ test('project download reports API failures inline and preserves the original fi
     expect(downloads).toBe(2);
   } finally {
     await rm(fixture, { force: true });
+  }
+});
+
+test('host project paths preserve trailing spaces through registration and the folder chooser', async ({
+  page,
+  request,
+  hasTouch,
+}) => {
+  const projectPath = process.env.E2E_CODEX_PROJECT || '';
+  test.skip(
+    !projectPath,
+    'Host projects require the isolated POSIX workspace.',
+  );
+  const fixture = await mkdtemp(join(projectPath, 'path-identity-'));
+  const exact = join(fixture, 'repo ');
+  const sibling = join(fixture, 'repo');
+  try {
+    await Promise.all([mkdir(exact), mkdir(sibling)]);
+    const response = await request.get('/api/host/directories', {
+      params: { path: exact },
+    });
+    expect(response.ok()).toBeTruthy();
+    expect((await response.json()).path).toBe(exact);
+
+    const { project, browser } = await openRegisteredHostProject(
+      page,
+      exact,
+      hasTouch,
+    );
+    expect(project.rootPath).toBe(exact);
+    await choose(browser.getByRole('button', { name: /^Close / }), hasTouch);
+
+    const launcher = page.locator('[data-window-id="project-files:projects"]');
+    await choose(
+      launcher.getByRole('button', { name: 'Choose Folder', exact: true }),
+      hasTouch,
+    );
+    const picker = launcher.getByRole('region', {
+      name: 'Choose a host folder',
+    });
+    const path = picker.getByRole('textbox', { name: 'Folder path' });
+    const useFolder = picker.getByRole('button', { name: 'Use Folder' });
+    await expect(useFolder).toBeEnabled();
+    await expect(path).toHaveValue(exact);
+
+    await choose(
+      picker.getByRole('button', { name: 'Up', exact: true }),
+      hasTouch,
+    );
+    await expect(path).toHaveValue(fixture);
+    await path.fill(exact);
+    await choose(
+      picker.getByRole('button', { name: 'Go', exact: true }),
+      hasTouch,
+    );
+    await expect(useFolder).toBeEnabled();
+    await expect(path).toHaveValue(exact);
+    await choose(useFolder, hasTouch);
+    await expect(launcher.getByLabel('Host project directory')).toHaveValue(
+      exact,
+    );
+  } finally {
+    await rm(fixture, { recursive: true });
   }
 });

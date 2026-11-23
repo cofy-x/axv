@@ -217,6 +217,32 @@ test('closing a loading window cannot start a shell or revive the cancelled wind
     'Unopened terminal and Markdown views must stay outside startup requests.',
   ).toEqual([]);
 
+  await page.evaluate(() => {
+    const fetch = globalThis.fetch;
+    const reads: AbortSignal[] = [];
+    Reflect.set(globalThis, 'terminalInfoReads', reads);
+    globalThis.fetch = (input, options) => {
+      if (input === '/api/terminal/info' && options?.signal) {
+        const signal = options.signal;
+        reads.push(signal);
+        if (reads.length === 1) {
+          // Keep the first availability read pending until its owner closes.
+          return new Promise((_resolve, reject) => {
+            signal.addEventListener('abort', () => reject(signal.reason), {
+              once: true,
+            });
+          });
+        }
+      }
+      return fetch(input, options);
+    };
+  });
+  const infoReads = () =>
+    page.evaluate(() =>
+      (Reflect.get(globalThis, 'terminalInfoReads') as AbortSignal[]).map(
+        (signal) => signal.aborted,
+      ),
+    );
   const sockets: string[] = [];
   page.on('websocket', (socket) => {
     if (new URL(socket.url()).pathname === '/api/terminal')
@@ -230,9 +256,11 @@ test('closing a loading window cannot start a shell or revive the cancelled wind
     const cancelledId = await pending.getAttribute('data-window-id');
     await expect(pending.getByRole('status')).toHaveText('Loading…');
     await expect.poll(gate.requests).toBe(1);
+    await expect.poll(infoReads).toEqual([false]);
     expect(sockets).toEqual([]);
     await choose(pending.getByRole('button', { name: /^Close / }), hasTouch);
     await expect(page.locator('[data-app-id="terminal"]')).toHaveCount(0);
+    await expect.poll(infoReads).toEqual([true]);
     gate.release();
 
     const fresh = await launchTerminal(page, hasTouch);
@@ -244,6 +272,7 @@ test('closing a loading window cannot start a shell or revive the cancelled wind
     expect(await fresh.getAttribute('data-window-id')).not.toBe(cancelledId);
     await expect(page.locator('[data-app-id="terminal"]')).toHaveCount(1);
     expect(sockets).toHaveLength(1);
+    expect(await infoReads()).toEqual([true, false]);
     expect(gate.requests()).toBe(1);
     const welcome = page.locator('[data-app-id="welcome"]');
     await activate(page, welcome, hasTouch);
@@ -393,6 +422,64 @@ for (const kind of ['host', 'vm'] as const) {
     });
   }
 }
+
+test('restoring host source loads the editor during the read and defers Markdown', async ({
+  page,
+  request,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const { window, content } = await restoreProjectPreview(
+    page,
+    request,
+    'host',
+  );
+  const chunks = await bundleChunks();
+  const editorAsset = chunks.find((chunk) =>
+    chunk.modules.some(
+      (module) =>
+        module.id === 'apps/dashboard/src/shared/code-editor/CodeEditor.tsx',
+    ),
+  );
+  expect(editorAsset).toBeDefined();
+  const markdownAssets = chunks.filter((chunk) =>
+    chunk.modules.some(
+      (module) =>
+        module.renderedLength > 0 && module.id.includes('react-markdown'),
+    ),
+  );
+  expect(markdownAssets.length).toBeGreaterThan(0);
+  const requested = new Set<string>();
+  page.on('request', (entry) => requested.add(new URL(entry.url()).pathname));
+  const path = '/api/projects/loading-focus-project/file';
+  const match = routeAsset(path);
+  let release = () => {};
+  const reading = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const handler = async (route: Route) => {
+    await reading;
+    await route.fallback();
+  };
+  await page.route(match, handler);
+  try {
+    await page.reload();
+    await expect(
+      window.getByText('Loading file…', { exact: true }),
+    ).toBeVisible();
+    await expect.poll(() => requested.has(path)).toBe(true);
+    await expect
+      .poll(() => requested.has(`/${editorAsset!.fileName}`))
+      .toBe(true);
+    release();
+    await expectEditorText(codeEditor(window, 'Project file source'), content);
+    expect(
+      markdownAssets.filter((asset) => requested.has(`/${asset.fileName}`)),
+    ).toEqual([]);
+  } finally {
+    release();
+    await page.unroute(match, handler);
+  }
+});
 
 codexTest(
   'loading a Codex terminal preserves desktop focus and its exact run',
@@ -560,21 +647,52 @@ test('a failed module retries without reloading or replacing an existing VM draf
   });
   const documentOrigin = await page.evaluate(() => performance.timeOrigin);
   const asset = routeAsset(await featureAsset('terminal/TerminalApp.tsx'));
+  const infoEndpoint = routeAsset('/api/terminal/info');
+  let initialInfoStarted = () => {};
+  const initialInfo = new Promise<void>((resolve) => {
+    initialInfoStarted = resolve;
+  });
+  let infoAttempts = 0;
+  let retrying = false;
+  const infoHandler = async (route: Route) => {
+    infoAttempts += 1;
+    initialInfoStarted();
+    if (!retrying)
+      await route.fulfill({
+        status: 503,
+        json: { error: 'Shell availability temporarily unavailable.' },
+      });
+    else await route.continue();
+  };
   let attempts = 0;
   const handler = async (route: Route) => {
     attempts += 1;
-    if (attempts === 1)
+    if (attempts === 1) {
+      await initialInfo;
       await route.fulfill({
         status: 503,
         contentType: 'text/javascript',
         headers: { 'Cache-Control': 'no-store' },
         body: 'Temporarily unavailable',
       });
-    else await route.continue();
+    } else await route.continue();
   };
+  await page.route(infoEndpoint, infoHandler);
   await page.route(asset, handler);
   try {
     const terminal = await launchTerminal(page, hasTouch);
+    await expect(terminal.getByRole('alert')).toContainText(
+      'Could not load this window.',
+    );
+    await choose(
+      page
+        .getByRole('navigation', { name: 'Application menus' })
+        .getByRole('button', { name: 'File', exact: true }),
+      hasTouch,
+    );
+    await choose(menuItem(page, 'New Terminal Window'), hasTouch);
+    const terminals = page.locator('[data-app-id="terminal"]');
+    await expect(terminals).toHaveCount(2);
     await expect(terminal.getByRole('alert')).toContainText(
       'Could not load this window.',
     );
@@ -583,16 +701,19 @@ test('a failed module retries without reloading or replacing an existing VM draf
       exact: true,
     });
     await expect(retry).toBeEnabled();
+    retrying = true;
     if (hasTouch) await retry.tap();
     else {
       await retry.focus();
       await retry.press('Enter');
     }
-    await expect(terminal.getByTestId('terminal-status')).toHaveAttribute(
-      'data-state',
-      'connected',
-    );
+    for (const window of await terminals.all())
+      await expect(window.getByTestId('terminal-status')).toHaveAttribute(
+        'data-state',
+        'connected',
+      );
     expect(attempts).toBe(2);
+    expect(infoAttempts).toBe(3);
     expect(await page.evaluate(() => performance.timeOrigin)).toBe(
       documentOrigin,
     );
@@ -612,6 +733,8 @@ test('a failed module retries without reloading or replacing an existing VM draf
     ).toBeVisible();
     expect(saved()).toBe(source);
   } finally {
+    initialInfoStarted();
+    await page.unroute(infoEndpoint, infoHandler);
     await page.unroute(asset, handler);
   }
 });

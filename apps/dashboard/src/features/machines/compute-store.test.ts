@@ -164,6 +164,78 @@ describe('shared compute inventory', () => {
     expect(store.getSnapshot().refreshing).toBe(false);
   });
 
+  it('retains a failed capability refresh until a fresh probe completes for the same binding', async () => {
+    const { store, api, subscribe } = harness();
+    const runtime: NonNullable<ComputeEnvironment['runtime']> = {
+      state: 'ready',
+      mode: 'managed',
+      hostId: machine.hostId,
+      generation: 1,
+      readOnly: false,
+    };
+    api.environment.mockResolvedValue({ ...environment, runtime });
+    subscribe();
+    await vi.advanceTimersByTimeAsync(0);
+    const complete = store.getSnapshot();
+    let resolve!: (value: HostInfo) => void;
+    api.info
+      .mockRejectedValueOnce(new Error('Capability probe failed'))
+      .mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      );
+    store.refresh();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.getSnapshot()).toMatchObject({
+      info: complete.info,
+      machines: [machine],
+      lastUpdated: complete.lastUpdated,
+      error: 'Capability probe failed',
+    });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(api.info).toHaveBeenCalledTimes(3);
+    expect(api.info.mock.lastCall?.[1]).toEqual(runtime);
+    expect(api.machines).toHaveBeenCalledOnce();
+    expect(store.getSnapshot()).toMatchObject({
+      info: complete.info,
+      machines: [machine],
+      lastUpdated: complete.lastUpdated,
+      error: 'Capability probe failed',
+    });
+
+    const refreshed = { ...info, hostArch: 'arm64' };
+    resolve(refreshed);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.getSnapshot().info).toMatchObject(refreshed);
+    expect(store.getSnapshot().lastUpdated).toBeGreaterThan(
+      complete.lastUpdated!,
+    );
+    expect(store.getSnapshot().error).toBeUndefined();
+  });
+
+  it('probes again when a new refresh is requested during a capability check', async () => {
+    const { store, api, subscribe } = harness();
+    subscribe();
+    await vi.advanceTimersByTimeAsync(0);
+    let resolve!: (value: HostInfo) => void;
+    api.info.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    store.refresh();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(api.info).toHaveBeenCalledTimes(2);
+
+    store.refresh();
+    resolve(info);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(api.info).toHaveBeenCalledTimes(3);
+  });
+
   it('publishes a VM acknowledgement and retires inventory read before it', async () => {
     const { store, api, subscribe } = harness();
     subscribe();

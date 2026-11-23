@@ -369,9 +369,13 @@ export function useDesktopGestures({
       },
     );
   };
-  const clickIcon = (icon: DesktopIcon) => {
+  const clickIcon = (icon: DesktopIcon, withoutPointer: boolean) => {
     const pending = pendingTouchActivation.current;
     pendingTouchActivation.current = null;
+    if (withoutPointer) {
+      openIcon(icon);
+      return;
+    }
     if (pending?.id !== icon.id || Date.now() - pending.time >= 700) return;
     // Open after the touch-generated click has its target, so it cannot hit
     // an action in the newly opened window at the same screen position.

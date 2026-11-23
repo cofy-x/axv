@@ -318,12 +318,30 @@ test('clone recovers its original task after reload and opens the initialized pr
   await setup.locator(':scope > summary').click();
   await expect(setup).toContainText('https://example.com/repository.git');
   await expect(setup).toContainText(binding.bootId);
-  await panel.getByRole('button', { name: 'Recover', exact: true }).click();
+  await panel.getByLabel('Project action').selectOption('open');
+  await page.route('**/api/compute/info', (route) =>
+    route.fulfill({
+      json: { configured: false, reason: 'VM host temporarily unavailable.' },
+    }),
+  );
+  const reloadProjects = panel.getByRole('button', {
+    name: 'Refresh VM projects',
+  });
+  await reloadProjects.click();
+  await expect(
+    panel.getByText('VM host temporarily unavailable.'),
+  ).toBeVisible();
+  await expect(panel.getByLabel('Project action')).toBeHidden();
+  const recover = panel.getByRole('button', { name: 'Recover', exact: true });
+  await expect(recover).toBeVisible();
+  await recover.click();
   await expect(
     panel
       .getByRole('region', { name: 'Initialize VM project', exact: true })
       .getByRole('status'),
   ).toHaveText('Initialization: running · initiali');
+  await page.unroute('**/api/compute/info');
+  await reloadProjects.click();
   await expect(
     panel.getByRole('button', { name: /^Volume workspace · Work/ }),
   ).toBeVisible();
@@ -591,6 +609,10 @@ test('authentication terminal errors remain visible and a changed boot never ope
   await expect(setup.getByRole('alert')).toContainText(
     'Guest connection lost.',
   );
+  await panel.getByRole('button', { name: 'Refresh VM projects' }).click();
+  await expect(setup.getByRole('alert')).toContainText(
+    'Guest connection lost.',
+  );
   await page.unroute('**/guest/terminals');
   state.restartDuringTerminalCreation();
   await setup
@@ -628,7 +650,7 @@ test('authentication refuses guest service replacement between preflight and ter
 test('switching project modes preserves the draft and keeps hidden input inactive', async ({
   page,
 }) => {
-  await fixture(page);
+  const state = await fixture(page);
   const panel = await launcher(page);
   const action = panel.getByLabel('Project action');
   await action.selectOption('clone');
@@ -654,6 +676,24 @@ test('switching project modes preserves the draft and keeps hidden input inactiv
   await expect(directory).not.toBeFocused();
   await panel.getByRole('tab', { name: 'VM', exact: true }).click();
   await expect(directory).toHaveValue('unfinished-repository');
+
+  await panel.getByLabel('Project volume').selectOption(parent.volumeId);
+  let releaseHealth!: () => void;
+  const healthGate = new Promise<void>((resolve) => (releaseHealth = resolve));
+  await page.route('**/guest/health', async (route) => {
+    await healthGate;
+    await route.fallback();
+  });
+  try {
+    const health = page.waitForRequest('**/guest/health');
+    await panel.getByRole('button', { name: 'Clone', exact: true }).click();
+    await health;
+    await action.selectOption('open');
+  } finally {
+    releaseHealth();
+  }
+  await expect(panel.getByRole('button', { name: 'Recover' })).toBeEnabled();
+  expect(state.submissions).toHaveLength(0);
 });
 
 test('initialization does not adopt a new boot between workspace registration and submission', async ({

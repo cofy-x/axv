@@ -84,6 +84,10 @@ func normalizeTestProfiles(profiles []TestProfile) []TestProfile {
 	return out
 }
 
+func usesChangedPaths(policy RepositoryPolicy) bool {
+	return slices.ContainsFunc(policy.TestProfiles, func(p TestProfile) bool { return len(p.AppliesTo) > 0 })
+}
+
 // Existing unguarded commands still run as configured. Infer only a direct
 // invocation of a repository script, never options, shell code or Go packages.
 func legacyTestEntry(argv []string) string {

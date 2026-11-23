@@ -76,7 +76,7 @@ export function ApplicationsManager({ desktop }: AppWindowProps) {
   );
   const { builtins } = useApplicationCatalog();
   const panelId = useId();
-  const [addPanelOpen, setAddPanelOpen] = useState<boolean>();
+  const [addPanelOpen, setAddPanelOpen] = useState(false);
   const [review, setReview] = useState<PackageReview>();
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
@@ -86,11 +86,6 @@ export function ApplicationsManager({ desktop }: AppWindowProps) {
   const removed = snapshot.apps.filter((app) => !app.installed);
   const unavailable = snapshot.loading || !!snapshot.error || !snapshot.storeId;
   const disabled = !!busy || unavailable;
-
-  // Resolve the initial empty state once; later catalog polls keep the user's
-  // explicit choice, including a closed panel with an unfinished review.
-  if (addPanelOpen === undefined && !unavailable)
-    setAddPanelOpen(installed.length === 0);
 
   function focusAddPackageFromPanel() {
     if (document.getElementById(panelId)?.contains(document.activeElement))
@@ -379,11 +374,10 @@ export function ApplicationsManager({ desktop }: AppWindowProps) {
   return (
     <div className="applications-app">
       <div className="app-toolbar applications-toolbar">
-        <PixelIcon name="applications" size={32} />
-        <strong className="toolbar-caption">Applications</strong>
         <Button
+          primary
           id={`${panelId}-toggle`}
-          aria-expanded={!!addPanelOpen}
+          aria-expanded={addPanelOpen}
           aria-controls={panelId}
           onClick={() => setAddPanelOpen(!addPanelOpen)}
         >
@@ -420,7 +414,9 @@ export function ApplicationsManager({ desktop }: AppWindowProps) {
             <h2 id={`${panelId}-heading`}>Add an extension</h2>
             <Button onClick={hideAddPanel}>Close</Button>
           </div>
-          <p>Choose a package to review before installing.</p>
+          <p className="applications-meta">
+            Install packages from the AXV host.
+          </p>
           <Field
             label="Extension package"
             className="applications-package-input"
@@ -457,14 +453,7 @@ export function ApplicationsManager({ desktop }: AppWindowProps) {
             >
               Download example
             </Button>
-            <span className="applications-meta">
-              Original Checklist example · Private storage
-            </span>
           </div>
-          <p className="applications-access-note applications-meta">
-            Install, enable and remove applications from the computer running
-            AXV.
-          </p>
           {review && (
             <div className="applications-review">
               <h3>Review {review.package.manifest.title}</h3>
@@ -519,7 +508,7 @@ export function ApplicationsManager({ desktop }: AppWindowProps) {
         <section aria-labelledby="applications-extensions-heading">
           <div className="applications-heading">
             <h2 id="applications-extensions-heading">Installed extensions</h2>
-            <span>{installed.length} installed</span>
+            {installed.length > 0 && <span>{installed.length} installed</span>}
           </div>
           {installed.length ? (
             <ul className="applications-list">
@@ -578,21 +567,13 @@ export function ApplicationsManager({ desktop }: AppWindowProps) {
               ))}
             </ul>
           ) : (
-            <div className="applications-empty">
-              <PixelIcon name="applications" size={40} />
-              <strong>
-                {snapshot.loading
-                  ? 'Loading applications…'
-                  : snapshot.error
-                    ? 'Application list unavailable'
-                    : 'No extensions installed'}
-              </strong>
-              <p>
-                {snapshot.error
-                  ? 'Refresh to retry.'
-                  : !snapshot.loading && 'Add a package or try Checklist.'}
-              </p>
-            </div>
+            <p className="applications-meta">
+              {snapshot.loading
+                ? 'Loading applications…'
+                : snapshot.error
+                  ? 'Application list unavailable'
+                  : 'No extensions installed'}
+            </p>
           )}
         </section>
         {!!removed.length && (
@@ -684,14 +665,7 @@ export function ApplicationsManager({ desktop }: AppWindowProps) {
           {message}
         </p>
       </div>
-      <StatusBar>
-        {busy ||
-          (snapshot.loading
-            ? 'Loading applications…'
-            : snapshot.error
-              ? 'Application list unavailable'
-              : `${installed.length} extensions · ${builtins.length} built-in applications`)}
-      </StatusBar>
+      {busy && <StatusBar>{busy}</StatusBar>}
     </div>
   );
 }

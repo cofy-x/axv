@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cofy-x/axv/apps/server/internal/limitedbuffer"
 )
 
 const (
@@ -93,15 +95,15 @@ func (a *Auth) account(ctx context.Context, provider, path string) (string, erro
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	cmd := a.codexCommand(ctx, path, "-c", codexCredentialStore, "login", "status")
-	output := cliOutput{limit: 8192}
+	output := limitedbuffer.Buffer{Limit: 8 << 10}
 	cmd.Stdout, cmd.Stderr = &output, &output
 	err := cmd.Run()
 	switch {
-	case err == nil && containsLine(output.String(), "Logged in using ChatGPT"):
+	case err == nil && containsLine(string(output.Data), "Logged in using ChatGPT"):
 		return "ChatGPT", nil
 	case ctx.Err() != nil:
 		return "", ctx.Err()
-	case err != nil && containsLine(output.String(), "Not logged in"):
+	case err != nil && containsLine(string(output.Data), "Not logged in"):
 		return "", errCodexLoginRequired
 	case err == nil:
 		return "", errors.New("Codex is using a different sign-in method. Sign in with ChatGPT on the AXV machine to use subscription usage.")
@@ -278,7 +280,7 @@ func (a *Auth) finishLogin(provider string, attempt *authAttempt, connection Con
 
 type deviceTranscript struct {
 	provider string
-	output   cliOutput
+	output   limitedbuffer.Buffer
 	onPrompt func(url, code string)
 }
 
@@ -286,12 +288,12 @@ func (p *deviceTranscript) Write(chunk []byte) (int, error) {
 	if p.onPrompt == nil {
 		return len(chunk), nil
 	}
-	p.output.limit = 16 << 10
+	p.output.Limit = 16 << 10
 	n, _ := p.output.Write(chunk)
-	if url, code := parseDevicePrompt(p.provider, p.output.String()); url != "" {
+	if url, code := parseDevicePrompt(p.provider, string(p.output.Data)); url != "" {
 		p.onPrompt(url, code)
 		p.onPrompt = nil
-		p.output = cliOutput{}
+		p.output = limitedbuffer.Buffer{}
 	}
 	return n, nil
 }

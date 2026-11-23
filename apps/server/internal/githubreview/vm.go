@@ -20,15 +20,16 @@ import (
 
 // VMTestAttempt retains the original execution binding even before delivery is acknowledged.
 type VMTestAttempt struct {
-	TestID           string `json:"testId,omitempty"`
-	TestName         string `json:"testName,omitempty"`
-	EntryPath        string `json:"entryPath,omitempty"`
-	Selection        string `json:"selection,omitempty"`
-	SelectionReason  string `json:"selectionReason,omitempty"`
-	SelectionBaseSHA string `json:"selectionBaseSha,omitempty"`
-	PlanHash         string `json:"planHash,omitempty"`
-	ReceiptBaseSHA   string `json:"receiptBaseSha,omitempty"`
-	ExactComparison  bool   `json:"exactComparison,omitempty"`
+	TestID           string           `json:"testId,omitempty"`
+	TestName         string           `json:"testName,omitempty"`
+	EntryPath        string           `json:"entryPath,omitempty"`
+	Selection        string           `json:"selection,omitempty"`
+	SelectionReason  string           `json:"selectionReason,omitempty"`
+	SelectionBaseSHA string           `json:"selectionBaseSha,omitempty"`
+	PlanHash         string           `json:"planHash,omitempty"`
+	ReceiptBaseSHA   string           `json:"receiptBaseSha,omitempty"`
+	ExactComparison  bool             `json:"exactComparison,omitempty"`
+	ReusedFrom       *QuickTestOrigin `json:"reusedFrom,omitempty"`
 
 	Command           []string                `json:"command,omitempty"`
 	ObserveOnly       bool                    `json:"-"`
@@ -47,6 +48,11 @@ type VMTestAttempt struct {
 	AssertionExitCode *int                    `json:"assertionExitCode,omitempty"`
 	Truncated         bool                    `json:"truncated,omitempty"`
 	UpdatedAt         time.Time               `json:"updatedAt"`
+}
+
+type QuickTestOrigin struct {
+	BaseSHA string `json:"baseSha"`
+	Attempt int    `json:"attempt"`
 }
 
 type VMTestRunner interface {

@@ -171,7 +171,7 @@ func newRoot(version string) *cobra.Command {
 	root.AddCommand(&cobra.Command{Use: "internal-codex-run <manifest>", Hidden: true, Args: arguments(cobra.ExactArgs(1)), RunE: func(_ *cobra.Command, args []string) error { return runner.Run(args[0]) }})
 	var snapshot string
 	desktop := &cobra.Command{Use: "_desktop", Hidden: true, Args: arguments(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error {
-		return runDesktopSnapshot(cmd.Context(), []string{"--snapshot", snapshot}, cmd.OutOrStdout())
+		return runDesktopSnapshot(cmd.Context(), snapshot, cmd.OutOrStdout())
 	}}
 	desktop.Flags().StringVar(&snapshot, "snapshot", "", "immutable desktop snapshot")
 	root.AddCommand(desktop)
@@ -192,11 +192,9 @@ func nonemptyFlags(cmd *cobra.Command, names ...string) error {
 	return nil
 }
 
-func serveFlags(flags *pflag.FlagSet, options *serveOptions, guest bool) {
+func serveFlags(flags *pflag.FlagSet, options *serveOptions) {
 	flags.StringVar(&options.addr, "addr", "", "desktop HTTP listen address")
 	flags.StringVar(&options.dataDir, "data-dir", "", "directory containing desktop.sqlite")
-	if guest {
-	}
 }
 
 func newServe() *cobra.Command {
@@ -211,7 +209,7 @@ func newServe() *cobra.Command {
 		}
 		return app.ServeContext(cmd.Context(), settings, cmd.OutOrStdout(), true)
 	}}
-	serveFlags(cmd.Flags(), &options, true)
+	serveFlags(cmd.Flags(), &options)
 	return cmd
 }
 
@@ -248,7 +246,7 @@ func newDaemon() *cobra.Command {
 			}
 		}}
 		if action == "start" || action == "restart" {
-			serveFlags(child.Flags(), &options, false)
+			serveFlags(child.Flags(), &options)
 			child.Flags().BoolVar(&open, "open", false, "open the verified desktop in a browser")
 		}
 		cmd.AddCommand(child)

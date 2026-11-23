@@ -311,6 +311,7 @@ test('automation shortcuts show the relevant settings and preserve unsaved revie
     exact: true,
   });
 
+  await panel.locator('.review-automation-summary').click();
   await expect(automation).toContainText('Paused in Settings');
   await expect(automation).toContainText('Review VM needs setup');
   await expect(automation).toContainText('Codex reviews today · 1 of 1.');
@@ -485,6 +486,7 @@ test('confirms the displayed test once and presents its reusable receipt without
     status: 'passed',
     checkoutSha: headSha,
     log: 'Verified worker behavior.',
+    reusedFrom: { baseSha: 'c'.repeat(40), attempt: 4 },
   };
   job.quickTestRecommendation = {
     ...recommendation,
@@ -501,6 +503,9 @@ test('confirms the displayed test once and presents its reusable receipt without
   await expect(recommended).toHaveCount(0);
   await expect(quick.getByLabel('Test output for attempt 2')).toHaveText(
     'Verified worker behavior.',
+  );
+  await expect(quick).toContainText(
+    'Reused test attempt 4 from base cccccccccccc.',
   );
   evidence.tests.push({ attempt: 3, status: 'error' });
   job.quickTestRecommendation = {
@@ -526,6 +531,7 @@ test('prioritizes actionable pull requests and preserves completed and supersede
   const repository = 'example/worker';
   const headSha = 'a'.repeat(40);
   const baseSha = 'b'.repeat(40);
+  const priorBaseSha = 'c'.repeat(40);
   const updatedAt = '2026-11-20T03:00:00Z';
   const policy: RepositoryPolicy = { rules: '', testCommand: [] };
   const evidence: NonNullable<ReviewJob['evidence']> = {
@@ -587,8 +593,8 @@ test('prioritizes actionable pull requests and preserves completed and supersede
       }),
       job(6, {
         status: 'stale',
-        headSha: 'd'.repeat(40),
-        observedBaseSha: 'e'.repeat(40),
+        baseSha: priorBaseSha,
+        observedBaseSha: baseSha,
       }),
       job(2, {
         evidence: {
@@ -738,15 +744,21 @@ test('prioritizes actionable pull requests and preserves completed and supersede
   await expect(row('In progress', 5)).toBeVisible();
   await filter('History').click();
   await expect(row('Completed', 6)).toContainText('Checks: Passed');
+  await expect(row('Completed', 6)).toContainText(
+    `Base ${baseSha.slice(0, 12)}`,
+  );
   await expect(row('Completed', 11)).toContainText('Checks: No checks');
   await expect(row('Superseded', 8)).toBeVisible();
-  const earlier = row('Superseded', 6, 'd'.repeat(40));
+  const earlier = row('Superseded', 6);
+  await expect(earlier).toContainText(`Base ${priorBaseSha.slice(0, 12)}`);
   await earlier.click();
   await expect(back).toBeFocused();
   await panel.getByText('View evidence', { exact: true }).click();
   await expect(
     panel.getByRole('button', { name: 'Review latest commit' }),
   ).toBeVisible();
+  await panel.getByText('Commits and review rules', { exact: true }).click();
+  await expect(panel.getByText(priorBaseSha, { exact: true })).toBeVisible();
   await back.click();
   await expect(earlier).toBeFocused();
 });

@@ -2,6 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { Button, Checkbox, StatusBar } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { runCommand } from '../../shared/desktop/dialogs';
+import { openNotificationSettings } from '../notifications/definition';
 import { consumeRemoteAccessRequest } from './navigation';
 import { useAppearanceData } from './PreferencesContext';
 
@@ -129,7 +130,7 @@ export function Appearance({ desktop, interactive, window }: AppWindowProps) {
             <h2 id={`${sectionId}-notifications`}>Notifications</h2>
             <Button
               aria-label="Open Notifications"
-              onClick={() => desktop.openApp('notifications')}
+              onClick={() => openNotificationSettings(desktop)}
             >
               Open
             </Button>

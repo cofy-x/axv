@@ -132,6 +132,7 @@ export interface ReviewTest {
   command?: string[];
   attempt: number;
   status: string;
+  reusedFrom?: { baseSha: string; attempt: number };
   taskId?: string;
   attemptId?: string;
   checkoutSha?: string;

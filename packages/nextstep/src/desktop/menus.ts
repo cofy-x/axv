@@ -13,12 +13,13 @@ import type {
 } from '../types';
 import { resolveApplication } from './applications';
 
-export function showClock(api: DesktopAPI) {
+export function showClock(api: DesktopAPI, clock24Hour = true) {
   void api.dialog({
     title: 'Clock',
     message: new Date().toLocaleString(undefined, {
       dateStyle: 'full',
       timeStyle: 'short',
+      hour12: !clock24Hour,
     }),
     buttons: [{ label: 'OK', value: 'ok', default: true }],
   });
@@ -253,7 +254,7 @@ export function createDesktopContextMenu(
     },
     { separator: true },
     { label: 'Arrange Icons', action: api.arrangeIcons },
-    { label: 'Clock', action: () => showClock(api) },
+    { label: 'Clock', action: () => showClock(api, props.clock24Hour) },
     ...(props.onAppearance
       ? [{ label: 'Preferences', action: props.onAppearance }]
       : []),

@@ -159,6 +159,16 @@ test('Preferences opens optional Pocket Alert settings with explicit save, write
 }, info) => {
   const touch = info.project.use.hasTouch === true;
   const state = await fixture(page);
+  await open(page, touch);
+  await expect(
+    panel(page).getByRole('tab', { name: 'History', exact: true }),
+  ).toHaveAttribute('aria-selected', 'true');
+  await expect(
+    panel(page).getByText('No notifications recorded.'),
+  ).toBeVisible();
+  await expect(
+    panel(page).getByLabel('Application ID', { exact: true }),
+  ).toBeHidden();
   await select(
     page.getByRole('button', { name: 'Workspace menu', exact: true }),
     touch,
@@ -172,6 +182,9 @@ test('Preferences opens optional Pocket Alert settings with explicit save, write
     }),
     touch,
   );
+  await expect(
+    panel(page).getByRole('tab', { name: 'Settings', exact: true }),
+  ).toHaveAttribute('aria-selected', 'true');
   await panel(page).screenshot({
     path: info.outputPath('notifications-settings-top.png'),
   });
@@ -615,14 +628,19 @@ test('a failed settings save preserves the draft and clears the password without
       json: { code: 'notification_conflict', error: token },
     }),
   );
-  await open(page, info.project.use.hasTouch === true);
+  const touch = info.project.use.hasTouch === true;
+  await open(page, touch);
+  await select(
+    panel(page).getByRole('tab', { name: 'Settings', exact: true }),
+    touch,
+  );
   await panel(page)
     .getByLabel('Application ID', { exact: true })
     .fill('unsaved-application');
   await panel(page).getByLabel('API token', { exact: true }).fill(token);
   await select(
     panel(page).getByRole('button', { name: 'Save', exact: true }),
-    info.project.use.hasTouch === true,
+    touch,
   );
   await expect(
     panel(page).getByText(/Notification settings or storage changed/),

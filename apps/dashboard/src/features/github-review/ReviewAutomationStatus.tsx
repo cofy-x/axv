@@ -97,6 +97,13 @@ export function ReviewAutomationStatus({
       ? 'connections'
       : undefined;
   const verification = verificationStatus(snapshot);
+  const limitReached = budget.used >= config.dailyLimit;
+  const warning = [
+    discovery?.error && 'Scan failed',
+    limitReached && 'Daily limit reached',
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   function settingsShortcut(section: ReviewSettingsDestination) {
     return (
@@ -111,61 +118,65 @@ export function ReviewAutomationStatus({
   }
 
   return (
-    <section
-      className="review-automation-status"
-      aria-label="Automation status"
-    >
-      <dl>
-        <div>
-          <dt>PR discovery</dt>
-          <dd>
-            {discoverySummary(snapshot)}
-            {discovery?.lastSuccessAt && (
-              <span className="review-automation-note">
-                Last successful scan <ScanTime at={discovery.lastSuccessAt} />
-              </span>
+    <details className="review-automation-status">
+      <summary className="review-automation-summary">
+        <strong>Automation status</strong>
+        <span className={warning ? 'review-automation-error' : undefined}>
+          {warning || `${budget.used} of ${config.dailyLimit} reviews today`}
+        </span>
+      </summary>
+      <section aria-label="Automation status">
+        <dl>
+          <div>
+            <dt>PR discovery</dt>
+            <dd>
+              {discoverySummary(snapshot)}
+              {discovery?.lastSuccessAt && (
+                <span className="review-automation-note">
+                  Last successful scan <ScanTime at={discovery.lastSuccessAt} />
+                </span>
+              )}
+              {discovery?.error && (
+                <p className="review-automation-error">{discovery.error}</p>
+              )}
+              {discoveryDestination && settingsShortcut(discoveryDestination)}
+            </dd>
+          </div>
+          <div>
+            <dt>Candidate verification</dt>
+            <dd>
+              {verification.summary}
+              {!!verification.missingVMs?.length && (
+                <details className="review-automation-note review-automation-missing-vms">
+                  <summary>
+                    VM setup needed for {verification.missingVMs.length}
+                  </summary>
+                  <ul>
+                    {verification.missingVMs.map((repository) => (
+                      <li key={repository}>{repository}</li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+              {verification.destination &&
+                verification.destination !== discoveryDestination &&
+                settingsShortcut(verification.destination)}
+            </dd>
+          </div>
+        </dl>
+        {warning && (
+          <p className="review-automation-note review-automation-budget">
+            Codex reviews today · {budget.used} of {config.dailyLimit}.
+            {limitReached && (
+              <>
+                {' '}
+                Daily review limit reached. New Codex reviews wait until{' '}
+                <ScanTime at={budget.resetsAt} />.
+              </>
             )}
-            {discovery?.error && (
-              <details className="review-automation-error">
-                <summary>Last scan failed</summary>
-                <p>{discovery.error}</p>
-              </details>
-            )}
-            {discoveryDestination && settingsShortcut(discoveryDestination)}
-          </dd>
-        </div>
-        <div>
-          <dt>Candidate verification</dt>
-          <dd>
-            {verification.summary}
-            {!!verification.missingVMs?.length && (
-              <details className="review-automation-note review-automation-missing-vms">
-                <summary>
-                  VM setup needed for {verification.missingVMs.length}
-                </summary>
-                <ul>
-                  {verification.missingVMs.map((repository) => (
-                    <li key={repository}>{repository}</li>
-                  ))}
-                </ul>
-              </details>
-            )}
-            {verification.destination &&
-              verification.destination !== discoveryDestination &&
-              settingsShortcut(verification.destination)}
-          </dd>
-        </div>
-      </dl>
-      <p className="review-automation-note review-automation-budget">
-        Codex reviews today · {budget.used} of {config.dailyLimit}.
-        {budget.used >= config.dailyLimit && (
-          <>
-            {' '}
-            Daily review limit reached. New Codex reviews wait until{' '}
-            <ScanTime at={budget.resetsAt} />.
-          </>
+          </p>
         )}
-      </p>
-    </section>
+      </section>
+    </details>
   );
 }

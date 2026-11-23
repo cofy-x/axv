@@ -9,10 +9,8 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	cfhttpapi "github.com/cofy-x/axv/apps/server/internal/cloudflare/httpapi"
@@ -39,21 +37,12 @@ import (
 type Options struct {
 	LaunchID           string
 	RunnerExecutable   string
-	ComputeGateway     *computegateway.Gateway
 	PreparationHandler http.Handler
-	ComputeSocket      string
 	InstanceID         string
 	Ready              func(string) error
 }
 
-// Run serves the desktop until a shutdown signal or listener error occurs.
-func Run(settings config.Config) error {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	return RunContext(ctx, settings, Options{ComputeSocket: os.Getenv("AXV_COMPUTE_SOCKET")})
-}
-
-func RunContext(ctx context.Context, settings config.Config, options Options) (result error) {
+func RunContext(ctx context.Context, settings config.Config, computeGateway *computegateway.Gateway, options Options) (result error) {
 	listener, err := net.Listen("tcp", settings.Addr)
 	if err != nil {
 		return err
@@ -75,12 +64,6 @@ func RunContext(ctx context.Context, settings config.Config, options Options) (r
 	extensionManager := extensions.New(extensionStore)
 	terminals := terminal.New()
 	defer terminals.Close()
-	computeGateway := options.ComputeGateway
-	if computeGateway == nil {
-		computeGateway = computegateway.NewGateway(options.ComputeSocket, computegateway.GatewayOptions{
-			ConfigPath: settings.ConfigPath, ProfileHome: settings.Home,
-		})
-	}
 	defer computeGateway.Close()
 	codexSessions, err := codex.New(store, codex.Options{
 		DataDir:          settings.DataDir,

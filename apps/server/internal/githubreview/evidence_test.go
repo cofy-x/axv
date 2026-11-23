@@ -109,6 +109,99 @@ func TestQuickTestRevokedDuringPRLookupCanOnlyObserveOriginalReceipt(t *testing.
 	}
 }
 
+func TestBaseSelectionOrdersAfterInFlightQuickTestAdmission(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	db := testReviewStore(t, filepath.Join(t.TempDir(), "run.sqlite"), true)
+	first := workerTestTarget("owner/alpha", 7, sourceRepository)
+	next := first
+	next.BaseSHA = strings.Repeat("f", 40)
+	cfg := workerSettings(t, db).Config
+	cfg.RepositoryPolicies = map[string]RepositoryPolicy{first.Repository: {TestCommand: []string{"go", "test", "./pkg"}}}
+	saved := configureWorker(t, db, cfg)
+	dispatching, releaseDispatch, verifiedNextBase := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	g := &workerGitHub{
+		targets: []Target{first},
+		current: func(Target) (Target, error) {
+			select {
+			case <-dispatching:
+				return next, nil
+			default:
+				return first, nil
+			}
+		},
+		merge: func(target Target) (string, error) {
+			if target.BaseSHA == next.BaseSHA {
+				close(verifiedNextBase)
+			}
+			return target.BaseSHA, nil
+		},
+	}
+	s := newService(ctx, func() {}, db, g, connectedCLI{}, &evidenceReviewer{})
+	binding := compute.ProjectBinding{MachineID: "original-vm", ProjectID: "original-project"}
+	s.vm = quickTestPollFunc(func(_ Target, _ []string, key string, attempt VMTestAttempt) VMTestAttempt {
+		if attempt.Binding == nil {
+			bindVMTestAttempt(&attempt, binding, key)
+			attempt.Status = "running"
+			return attempt
+		}
+		close(dispatching)
+		select {
+		case <-releaseDispatch:
+		case <-ctx.Done():
+		}
+		attempt.TaskID = "original-task"
+		return attempt
+	})
+	now := time.Now()
+	s.scan(ctx, saved, now)
+	if err := s.processNext(ctx, saved, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.advanceEvidence(ctx, "test", now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	dispatched := make(chan error, 1)
+	go func() { dispatched <- s.advanceEvidence(ctx, "test", now.Add(time.Minute)) }()
+	select {
+	case <-dispatching:
+	case <-ctx.Done():
+		t.Fatal("the original test did not start dispatch")
+	}
+	selected := make(chan error, 1)
+	go func() {
+		_, err := s.reviewLatest(ctx, latestReviewRef(first, saved.Revision))
+		selected <- err
+	}()
+	select {
+	case <-verifiedNextBase:
+	case <-ctx.Done():
+		close(releaseDispatch)
+		t.Fatal("the new base was not verified")
+	}
+	select {
+	case err := <-selected:
+		close(releaseDispatch)
+		<-dispatched
+		t.Fatalf("the new comparison was selected during the original test dispatch: %v", err)
+	case <-time.After(250 * time.Millisecond):
+		close(releaseDispatch)
+	}
+	if err := <-dispatched; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-selected; err != nil {
+		t.Fatal(err)
+	}
+	original, err := readExactJob(ctx, db.db, saved.account, first)
+	if err != nil || original.Status != "stale" || original.Evidence == nil || len(original.Evidence.Tests) != 1 || original.Evidence.Tests[0].TaskID != "original-task" {
+		t.Fatalf("the accepted task did not stay with its original comparison: %+v, %v", original, err)
+	}
+	if current := workerJob(t, db, next, "queued"); current.BaseSHA != next.BaseSHA || current.Evidence != nil {
+		t.Fatalf("new comparison inherited the old dispatch: %+v", current)
+	}
+}
+
 func TestRepositoryEvidenceAndIsolatedTestRetrySurviveRestart(t *testing.T) {
 	ctx := t.Context()
 	filename := filepath.Join(t.TempDir(), "run.sqlite")
@@ -276,4 +369,42 @@ func TestHeadChangeWhileModelRunningDoesNotReviveOrRunOldTest(t *testing.T) {
 		t.Fatalf("incorrect supersession: %+v", old)
 	}
 	workerJob(t, db, next, "queued")
+}
+
+func TestAnalysisFinishingAfterBaseChangeKeepsItsOriginalComparison(t *testing.T) {
+	ctx := t.Context()
+	db := testReviewStore(t, filepath.Join(t.TempDir(), "jobs.sqlite"), true)
+	first := workerTestTarget("owner/alpha", 1, sourceRepository)
+	next := first
+	next.BaseSHA = strings.Repeat("e", 40)
+	current := first
+	settings := workerSettings(t, db)
+	g := &workerGitHub{
+		current: func(Target) (Target, error) { return current, nil },
+		merge:   func(t Target) (string, error) { return t.BaseSHA, nil },
+		targets: []Target{first},
+	}
+	s := newService(ctx, func() {}, db, g, connectedCLI{}, nil)
+	s.runner = duringReview(func() {
+		current = next
+		if selected, err := s.reviewLatest(ctx, latestReviewRef(first, settings.Revision)); err != nil || selected.BaseSHA != next.BaseSHA {
+			t.Fatalf("new base was not selected while analysis was running: %+v, %v", selected, err)
+		}
+	})
+	now := time.Now()
+	s.scan(ctx, settings, now)
+	if err := s.processNext(ctx, settings, now); err != nil {
+		t.Fatal(err)
+	}
+	prior, err := db.inboxJob(ctx, first, nil)
+	if err != nil || prior.Job.Status != "stale" || prior.Job.Evidence == nil || prior.Job.Evidence.Review.Status != "completed" || len(prior.Job.Candidates) != 1 {
+		t.Fatalf("late result lost its original comparison: %+v, %v", prior.Job, err)
+	}
+	if queued := workerJob(t, db, next, "queued"); queued.Evidence != nil || len(queued.Findings) != 0 {
+		t.Fatalf("late result crossed to the new comparison: %+v", queued)
+	}
+	current = first
+	if selected, err := s.reviewLatest(ctx, latestReviewRef(next, settings.Revision)); err != nil || selected.BaseSHA != first.BaseSHA || selected.Status != "analyzed" {
+		t.Fatalf("the original completed result could not be reused: %+v, %v", selected, err)
+	}
 }

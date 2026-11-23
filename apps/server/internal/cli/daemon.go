@@ -40,15 +40,15 @@ func resolveProfileSettings(options serveOptions, p profile.Profile) (app.Settin
 	return app.Resolve(p, desktop)
 }
 
-func runDesktopSnapshot(ctx context.Context, args []string, output io.Writer) error {
+func runDesktopSnapshot(ctx context.Context, path string, output io.Writer) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if len(args) != 2 || args[0] != "--snapshot" || !filepath.IsAbs(args[1]) {
+	if !filepath.IsAbs(path) {
 		return fmt.Errorf("invalid internal desktop service arguments")
 	}
 	var snapshot launch.Snapshot
-	if err := jsonfile.Read(args[1], &snapshot); err != nil {
+	if err := jsonfile.Read(path, &snapshot); err != nil {
 		return err
 	}
 	settings := app.SettingsFromSnapshot(snapshot)

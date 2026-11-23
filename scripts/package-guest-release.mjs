@@ -112,8 +112,12 @@ export async function verifyGuestBundle(directory) {
   // Check logical disk length before hashing, copying or compressing its bytes.
   // Sparse allocation does not reduce the uploaded raw asset's file size.
   await verifyGuestReleaseAsset(join(directory, image.rootfs.file));
+  // The shared Go validator checks the rootfs against the same digest below.
   for (const [path, expected] of sums)
-    if ((await digest(join(directory, path))) !== expected)
+    if (
+      path !== image.rootfs.file &&
+      (await digest(join(directory, path))) !== expected
+    )
       throw new Error(`Bundle checksum mismatch: ${path}`);
   // Import, builder and release validation share the Go image contract. This
   // also checks rootfs size/integrity and the current capability set.

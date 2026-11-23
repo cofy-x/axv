@@ -1112,7 +1112,7 @@ test('Access validation and revision conflicts preserve drafts until explicit re
   );
   await expect(origin).toHaveValue(savedOrigin);
   await expect(
-    panel(page).getByText('Settings saved', { exact: true }),
+    panel(page).getByText('Settings reloaded.', { exact: true }),
   ).toBeVisible();
 });
 

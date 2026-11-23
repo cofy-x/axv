@@ -63,3 +63,8 @@ export function openNotification(
     notificationReference: reference,
   }));
 }
+
+export function openNotificationSettings(desktop: DesktopAPI) {
+  const id = desktop.openApp('notifications');
+  desktop.updateWindowState(id, { notificationTab: 'settings' });
+}

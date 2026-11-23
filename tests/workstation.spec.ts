@@ -16,6 +16,64 @@ import {
 } from './helpers';
 import { applicationMenu } from './desktop-application-helpers';
 import { expect, openCodexManager, test } from './codex-helpers';
+import { expectRect } from './work-area-helpers';
+
+test('compact windows fit the visible application menu row as window focus changes', async ({
+  page,
+}, info) => {
+  const touch = info.project.use.hasTouch === true;
+  const choose = (target: Locator) => (touch ? target.tap() : target.click());
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  await choose(page.getByRole('button', { name: 'Workspace menu' }));
+  await choose(menuItem(page, 'Applications'));
+  await choose(
+    page
+      .getByRole('menu', { name: 'Applications', exact: true })
+      .getByRole('menuitem', { name: 'GitHub Review', exact: true }),
+  );
+  const review = page.locator('[data-app-id="github-review"]');
+  const pullRequests = review.getByRole('tab', {
+    name: 'Pull requests',
+    exact: true,
+  });
+  await choose(pullRequests);
+  const menus = page.getByRole('navigation', { name: 'Application menus' });
+  const withoutMenu = { x: 4, y: 30, width: 382, height: 754 };
+  const withMenu = { ...withoutMenu, y: 64, height: 720 };
+  await expect(menus).toHaveCount(0);
+  await expectRect(review, withoutMenu);
+
+  await launch(page, 'machines');
+  const machines = page.locator('[data-app-id="machines"]');
+  const viewMenu = menus.getByRole('button', { name: 'View', exact: true });
+  await expect(viewMenu).toBeVisible();
+  await expectRect(machines, withMenu);
+  await expect(review).toBeHidden();
+  await expect(review).toHaveCSS('height', `${withoutMenu.height}px`);
+  expect((await bounds(menus)).height).toBe(32);
+  await choose(viewMenu);
+  await expect(menuItem(page, 'VM Host')).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  await choose(
+    machines.getByRole('button', { name: 'Shade Virtual Machines' }),
+  );
+  await expect(menus).toHaveCount(0);
+  await expect.poll(async () => (await bounds(machines)).y).toBe(withMenu.y);
+  await choose(
+    machines.getByRole('button', { name: 'Unshade Virtual Machines' }),
+  );
+  await expectRect(machines, withMenu);
+  await expect(viewMenu).toBeVisible();
+
+  await activate(page, review, touch);
+  await expect(menus).toHaveCount(0);
+  await expectRect(review, withoutMenu);
+  await expect(machines).toBeHidden();
+  await expect(machines).toHaveCSS('height', `${withMenu.height}px`);
+  await expect(pullRequests).toHaveAttribute('aria-selected', 'true');
+});
 
 test('compact Workspace commands remain reachable with selected desktop icons', async ({
   page,
@@ -568,7 +626,7 @@ test('short desktops preserve application space, shell commands and saved geomet
   await activate(page, welcome, touch);
   await expect
     .poll(() => bounds(welcome))
-    .toEqual({ x: 4, y: 64, width: 500, height: 172 });
+    .toEqual({ x: 4, y: 30, width: 500, height: 206 });
   const miniature = page.getByRole('button', {
     name: `Restore ${title}`,
     exact: true,

@@ -626,6 +626,44 @@ test('expired authorization has a recoverable notice and retains editor focus an
   expect(saved()).toBe(original);
 });
 
+test('a slow periodic health probe can report authorization expiry', async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.reload();
+  await expect(
+    page.getByRole('complementary', { name: 'Application Dock' }),
+  ).toBeVisible();
+  let probes = 0;
+  let finish = () => {};
+  const pending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  await page.route('**/api/health', async (route) => {
+    if (++probes === 1) {
+      await pending;
+      await route.fulfill({
+        status: 401,
+        json: { code: 'cloudflare_unauthorized' },
+      });
+      return;
+    }
+    await route.fulfill({ json: { status: 'ok' } });
+  });
+  try {
+    await page.clock.fastForward(5000);
+    await expect.poll(() => probes).toBe(1);
+    await page.clock.fastForward(5000);
+    finish();
+    await expect(
+      page.getByRole('region', { name: 'Desktop notices' }),
+    ).toContainText('Authorization is required.');
+    expect(probes).toBe(1);
+  } finally {
+    finish();
+  }
+});
+
 for (const expired of [false, true]) {
   test(`a late health probe cannot override ${expired ? 'newer authorization expiry' : 'a newer healthy desktop response'}`, async ({
     page,

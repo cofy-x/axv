@@ -171,26 +171,28 @@ func enqueueJobs(ctx context.Context, tx *sql.Tx, account string, observations, 
 		}
 		if _, err := tx.ExecContext(ctx, `
     UPDATE review_jobs SET status='stale', error='Newer pull request version discovered.', updated_at=?
-    WHERE account=? AND repository=? AND number=? AND head_sha<>? AND status<>'stale'
+    WHERE account=? AND repository=? AND number=? AND head_sha<>? AND status<>'stale' AND selected_for_head=1
    `, now.UnixMilli(), account, t.Repository, t.Number, t.HeadSHA); err != nil {
 			return err
 		}
 	}
 	for _, t := range targets {
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO review_jobs (account, repository, number, title, base_sha, head_sha, source, status, updated_at)
-			VALUES (?,?,?,?,?,?,?,'queued',?)
-			ON CONFLICT(account,repository,number,head_sha)
-			DO UPDATE SET title=excluded.title, source=excluded.source,
-    checks_due=CASE WHEN review_jobs.policy IS NOT NULL AND review_jobs.status<>'stale'
-      AND review_jobs.checks_due IS NULL THEN excluded.updated_at ELSE review_jobs.checks_due END,
-				base_sha=CASE WHEN (review_jobs.status='queued' AND review_jobs.policy IS NULL) OR (review_jobs.status='stale' AND review_jobs.observed_base_sha='' AND review_jobs.findings='[]' AND review_jobs.policy IS NULL)
-					THEN excluded.base_sha ELSE review_jobs.base_sha END,
-				status=CASE WHEN review_jobs.status='stale' AND review_jobs.observed_base_sha='' AND review_jobs.findings='[]' AND review_jobs.policy IS NULL
-					THEN 'queued' ELSE review_jobs.status END,
-				error=CASE WHEN review_jobs.status='stale' AND review_jobs.observed_base_sha='' AND review_jobs.findings='[]' AND review_jobs.policy IS NULL
-					THEN '' ELSE review_jobs.error END
-		`, account, t.Repository, t.Number, t.Title, t.BaseSHA, t.HeadSHA, t.Source, now.UnixMilli()); err != nil {
+		var base string
+		var canRetarget, manual bool
+		err := tx.QueryRowContext(ctx, `
+            UPDATE review_jobs SET title=?, source=?,
+                checks_due=CASE WHEN policy IS NOT NULL AND status<>'stale' AND checks_due IS NULL THEN ? ELSE checks_due END,
+                status=CASE WHEN status='stale' AND observed_base_sha='' AND findings='[]' AND policy IS NULL THEN 'queued' ELSE status END,
+                error=CASE WHEN status='stale' AND observed_base_sha='' AND findings='[]' AND policy IS NULL THEN '' ELSE error END
+            WHERE account=? AND repository=? AND number=? AND head_sha=? AND selected_for_head=1
+            RETURNING base_sha, status='queued' AND policy IS NULL, manual_review
+        `, t.Title, t.Source, now.UnixMilli(), account, t.Repository, t.Number, t.HeadSHA).Scan(&base, &canRetarget, &manual)
+		if errors.Is(err, sql.ErrNoRows) {
+			err = selectReviewComparison(ctx, tx, account, "", t, false, now)
+		} else if err == nil && canRetarget && base != t.BaseSHA {
+			err = selectReviewComparison(ctx, tx, account, base, t, manual, now)
+		}
+		if err != nil {
 			return err
 		}
 	}
@@ -199,7 +201,7 @@ func enqueueJobs(ctx context.Context, tx *sql.Tx, account string, observations, 
 
 func (s *store) nextJob(ctx context.Context, account string, retryBefore time.Time, allowAnalysis, pollingEnabled bool) (Job, error) {
 	return scanJob(s.db.QueryRowContext(ctx, "SELECT "+jobFields+`
-		FROM review_jobs WHERE account=? AND status='queued' AND (? OR manual_review=1) AND
+	FROM review_jobs WHERE account=? AND status='queued' AND selected_for_head=1 AND (? OR manual_review=1) AND
 		? AND (attempts=0 OR updated_at<=?)
 		AND (manual_review=1 OR (SELECT watch_only=0 FROM review_settings WHERE singleton=1) OR
 			EXISTS (SELECT 1 FROM json_each((SELECT repositories FROM review_settings WHERE singleton=1)) WHERE value=review_jobs.repository COLLATE NOCASE))
@@ -252,7 +254,7 @@ func (s *store) startReview(ctx context.Context, job Job, now time.Time) error {
 	}
 	result, err := tx.ExecContext(ctx, `
   UPDATE review_jobs SET status='reviewing', error='', updated_at=?, review_stage=?
-		WHERE account=? AND repository=? AND number=? AND base_sha=? AND head_sha=? AND status='queued'
+		WHERE account=? AND repository=? AND number=? AND base_sha=? AND head_sha=? AND status='queued' AND selected_for_head=1
 	`, now.UnixMilli(), string(stage), job.account, job.Repository, job.Number, job.BaseSHA, job.HeadSHA)
 	if err != nil {
 		return err
@@ -279,8 +281,14 @@ func (s *store) job(ctx context.Context, account, repository string, number int,
 
 func readJob(ctx context.Context, db rowQuerier, account, repository string, number int, headSHA string) (Job, error) {
 	return scanJob(db.QueryRowContext(ctx, "SELECT "+jobFields+`
-		FROM review_jobs WHERE account=? AND repository=? AND number=? AND head_sha=?
+		FROM review_jobs WHERE account=? AND repository=? AND number=? AND head_sha=? AND selected_for_head=1
 	`, account, repository, number, headSHA))
+}
+
+func readExactJob(ctx context.Context, db rowQuerier, account string, target Target) (Job, error) {
+	return scanJob(db.QueryRowContext(ctx, "SELECT "+jobFields+`
+        FROM review_jobs WHERE account=? AND repository=? AND number=? AND head_sha=? AND base_sha=?
+    `, account, target.Repository, target.Number, target.HeadSHA, target.BaseSHA))
 }
 
 func (s *store) retry(ctx context.Context, account string, request RetryRequest, current Target, now time.Time) error {
@@ -326,8 +334,24 @@ func (s *store) retry(ctx context.Context, account string, request RetryRequest,
 }
 
 func resetReviewForRetry(ctx context.Context, tx *sql.Tx, settings savedSettings, job Job, current Target, manual bool, now time.Time) error {
+	current.Source = sourceRepository
+	if current.Requested {
+		current.Source = sourceRequested
+	}
+	if job.BaseSHA != current.BaseSHA {
+		if err := selectReviewComparison(ctx, tx, job.account, job.BaseSHA, current, manual, now); err != nil {
+			return err
+		}
+		// Keep observing already submitted tests on the original comparison.
+		// Path-scoped tests can select a new command while analysis is queued.
+		policy := settings.policy(current.Repository)
+		if job.Evidence != nil && usesChangedPaths(policy) {
+			return seedEvidence(ctx, tx, Job{Target: current, account: job.account}, policy, now)
+		}
+		return nil
+	}
 	status, findings := "queued", "[]"
-	if job.Status == "failed" && len(job.Findings) > 0 && job.BaseSHA == current.BaseSHA {
+	if job.Status == "failed" && len(job.Findings) > 0 {
 		status = "analyzed"
 		encoded, err := json.Marshal(job.Findings)
 		if err != nil {
@@ -335,26 +359,39 @@ func resetReviewForRetry(ctx context.Context, tx *sql.Tx, settings savedSettings
 		}
 		findings = string(encoded)
 	}
-	source := sourceRepository
-	if current.Requested {
-		source = sourceRequested
-	}
-	policy, err := json.Marshal(settings.policy(current.Repository))
-	if err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE review_jobs SET base_sha=?, title=?, source=?, status=?, findings=?, comment_url='', error='',
-			merge_base_sha=CASE WHEN base_sha<>? THEN '' ELSE merge_base_sha END,
-        policy=CASE WHEN base_sha<>? AND policy IS NOT NULL THEN ? ELSE policy END,
+	_, err := tx.ExecContext(ctx, `
+		UPDATE review_jobs SET title=?, source=?, status=?, findings=?, comment_url='', error='',
         observed_base_sha='', equivalent_base_sha='',comparison_saved_status='',
-        checks_due=CASE WHEN base_sha<>? AND policy IS NOT NULL THEN ? ELSE checks_due END,
-        manual_review=?, attempts=0, updated_at=? WHERE account=? AND repository=? AND number=? AND head_sha=?
-	`, current.BaseSHA, current.Title, source, status, findings, current.BaseSHA, current.BaseSHA, string(policy), current.BaseSHA, now.UnixMilli(), manual, now.UnixMilli(), job.account, job.Repository,
-		job.Number, job.HeadSHA); err != nil {
-		return err
+		manual_review=?, attempts=0, updated_at=?
+		WHERE account=? AND repository=? AND number=? AND head_sha=? AND base_sha=? AND selected_for_head=1
+	`, current.Title, current.Source, status, findings, manual, now.UnixMilli(), job.account, job.Repository, job.Number, job.HeadSHA, job.BaseSHA)
+	return err
+}
+
+// Selecting another base changes the queue target without rewriting the older
+// row. A previously completed exact comparison can be selected again.
+func selectReviewComparison(ctx context.Context, tx *sql.Tx, account, previousBase string, current Target, manual bool, now time.Time) error {
+	if previousBase != "" {
+		if _, err := tx.ExecContext(ctx, `
+            UPDATE review_jobs SET selected_for_head=0, status='stale',
+                comparison_saved_status=CASE WHEN status IN ('clean','analyzed','published') THEN status ELSE comparison_saved_status END,
+                error='The pull request has a different comparison base.', observed_base_sha=?, equivalent_base_sha='', updated_at=?
+            WHERE account=? AND repository=? AND number=? AND head_sha=? AND base_sha=? AND selected_for_head=1
+        `, current.BaseSHA, now.UnixMilli(), account, current.Repository, current.Number, current.HeadSHA, previousBase); err != nil {
+			return err
+		}
 	}
-	return queueRetargetedTest(ctx, tx, job, current, settings.policy(current.Repository), now)
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO review_jobs (account,repository,number,title,base_sha,head_sha,source,status,updated_at,manual_review)
+		VALUES (?,?,?,?,?,?,?,'queued',?,?)
+		ON CONFLICT(account,repository,number,head_sha,base_sha) DO UPDATE SET
+			selected_for_head=1, title=excluded.title, source=excluded.source,
+			status=COALESCE(NULLIF(review_jobs.comparison_saved_status,''),'queued'),
+			comparison_saved_status='', observed_base_sha='', equivalent_base_sha='', error='',
+			attempts=0, updated_at=excluded.updated_at, manual_review=excluded.manual_review,
+			checks_due=CASE WHEN review_jobs.policy IS NOT NULL THEN COALESCE(review_jobs.checks_due,excluded.updated_at) ELSE review_jobs.checks_due END
+	`, account, current.Repository, current.Number, current.Title, current.BaseSHA, current.HeadSHA, current.Source, now.UnixMilli(), manual)
+	return err
 }
 
 func (s *store) history(ctx context.Context, account string) ([]Job, error) {
@@ -432,12 +469,14 @@ func (s *store) update(ctx context.Context, job Job) error {
 	result, err := tx.ExecContext(ctx, `
   UPDATE review_jobs SET status=CASE WHEN status='stale' THEN status ELSE ? END,
   findings=?,comment_url=?,error=CASE WHEN status='stale' THEN error ELSE ? END,attempts=?,updated_at=?,
+  comparison_saved_status=CASE WHEN status='stale' AND observed_base_sha<>'' AND ? IN ('analyzed','clean','published')
+    THEN ? ELSE comparison_saved_status END,
   review_stage=CASE WHEN ?<>'' AND json_extract(review_stage,'$.status') IN ('running','queued')
     THEN json_set(review_stage,'$.status',?,'$.updatedAt',?,'$.error',?,
      '$.messages[#]',json_object('at',?,'text',?)) ELSE review_stage END
   WHERE account=? AND repository=? AND number=? AND base_sha=? AND head_sha=?
   AND (status<>'stale' OR (?<>'' AND evidence_key=?))
-  `, job.Status, string(findings), job.CommentURL, job.Error, job.attempts, job.UpdatedAt.UnixMilli(), reviewStatus, reviewStatus,
+  `, job.Status, string(findings), job.CommentURL, job.Error, job.attempts, job.UpdatedAt.UnixMilli(), job.Status, job.Status, reviewStatus, reviewStatus,
 		job.UpdatedAt.UTC().Format(time.RFC3339Nano), job.Error, job.UpdatedAt.UTC().Format(time.RFC3339Nano), message, job.account, job.Repository, job.Number, job.BaseSHA, job.HeadSHA, job.evidenceKey, job.evidenceKey)
 	if err != nil {
 		return err
@@ -447,7 +486,7 @@ func (s *store) update(ctx context.Context, job Job) error {
 		return err
 	}
 	if count == 1 && len(job.Findings) > 0 {
-		persisted, err := readJob(ctx, tx, job.account, job.Repository, job.Number, job.HeadSHA)
+		persisted, err := readExactJob(ctx, tx, job.account, job.Target)
 		if err != nil {
 			return err
 		}

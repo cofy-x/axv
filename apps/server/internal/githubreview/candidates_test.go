@@ -3,7 +3,10 @@ package githubreview
 import (
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -40,7 +43,7 @@ func candidateTestView(t *testing.T, db *store, target Target) Job {
 		t.Fatal(err)
 	}
 	for _, j := range jobs {
-		if j.Repository == target.Repository && j.Number == target.Number && j.HeadSHA == target.HeadSHA {
+		if j.Repository == target.Repository && j.Number == target.Number && j.HeadSHA == target.HeadSHA && j.BaseSHA == target.BaseSHA {
 			return j
 		}
 	}
@@ -193,25 +196,68 @@ func TestSameHeadCanBeReviewedAgainstAnotherBase(t *testing.T) {
 	ctx := t.Context()
 	filename := filepath.Join(t.TempDir(), "review.sqlite")
 	db := testReviewStore(t, filename, true)
-	target := workerTestTarget("owner/alpha", 30, sourceRepository)
+	first := workerTestTarget("owner/alpha", 30, sourceRepository)
+	current := first
 	f := Finding{Title: "Invalid defaults prevent startup", Path: "app/config.go", Severity: "medium", Body: "The old config has no defaults.", Line: 80, Side: "head"}
-	c := reviewedCandidates(t, db, target, []Finding{f}).Candidates[0]
-	req := candidateDecision{Target: target, Account: "owner", CandidateID: c.ID, Revision: c.Revision, Status: "confirmed", Note: "Old configuration verified", EvidenceIDs: []string{}}
+	original := reviewedCandidates(t, db, first, []Finding{f})
+	if _, err := db.db.ExecContext(ctx, `UPDATE review_jobs SET checks='{"status":"passed","runs":[{"name":"Old base check","status":"completed","conclusion":"success"}]}' WHERE number=30`); err != nil {
+		t.Fatal(err)
+	}
+	original = candidateTestView(t, db, first)
+	c := original.Candidates[0]
+	req := candidateDecision{Target: first, Account: "owner", CandidateID: c.ID, Revision: c.Revision, Status: "confirmed", Note: "Old configuration verified", EvidenceIDs: []string{original.EvidenceOptions[0].ID}}
 	if err := db.saveCandidate(ctx, req); err != nil {
 		t.Fatal(err)
 	}
-	target.BaseSHA = strings.Repeat("f", 40)
-	// Simulate the version change after a re-analysis request is accepted.
-	if _, err := db.db.ExecContext(ctx, `UPDATE review_jobs SET base_sha=?,policy=NULL,evidence_key=NULL,findings='[]',status='queued' WHERE number=30`, target.BaseSHA); err != nil {
+	draft := candidateCommentDraftRequest{Account: "owner", Target: first, CandidateID: c.ID, Body: "Please initialize defaults here."}
+	if err := db.saveCandidateCommentDraft(ctx, draft, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	after := reviewedCandidates(t, db, target, []Finding{f}).Candidates[0]
+	g := &workerGitHub{
+		current: func(Target) (Target, error) { return current, nil },
+		merge:   func(target Target) (string, error) { return target.BaseSHA, nil },
+	}
+	s := newService(ctx, func() {}, db, g, connectedCLI{}, &countedReviewer{})
+	current.BaseSHA = strings.Repeat("f", 40)
+	if _, err := s.reviewLatest(ctx, latestReviewRef(first, workerSettings(t, db).Revision)); err != nil {
+		t.Fatal(err)
+	}
+	f.Line++
+	after := reviewedCandidates(t, db, current, []Finding{f}).Candidates[0]
 	if after.ID == c.ID || after.TrackID != c.TrackID || after.Status != "pending" || after.Note != "" || len(after.Evidence) != 0 || len(after.History) != 1 || after.History[0].BaseSHA != c.BaseSHA || after.History[0].Note != "Old configuration verified" {
 		t.Fatalf("old base leaked into new decision: %+v", after)
+	}
+	if err := db.db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db = testReviewStore(t, filename, false)
+	mux := http.NewServeMux()
+	newService(ctx, func() {}, db, g, connectedCLI{}, &countedReviewer{}).Register(mux)
+	read := func(target Target) Job {
+		t.Helper()
+		query := url.Values{"repository": {target.Repository}, "number": {strconv.Itoa(target.Number)}, "baseSha": {target.BaseSHA}, "headSha": {target.HeadSHA}}
+		response := reviewRequest(t, mux, "GET", route+"/job?"+query.Encode(), "", "127.0.0.1:39282", "")
+		var view ReviewJobView
+		if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &view) != nil || view.Job.BaseSHA != target.BaseSHA || len(view.Job.Candidates) != 1 {
+			t.Fatalf("exact review lookup: %d %s", response.Code, response.Body)
+		}
+		return view.Job
+	}
+	old, next := read(first), read(current)
+	prior := old.Candidates[0]
+	if old.Status != "stale" || old.Evidence.Review.Status != "completed" || prior.ID != c.ID || prior.Status != "confirmed" || prior.Note != req.Note || len(prior.Evidence) != 1 || prior.Evidence[0].Label != "Old base check" || prior.CommentDraft == nil || prior.CommentDraft.Body != draft.Body || !prior.CommentDraft.Stale {
+		t.Fatalf("old link lost its review evidence: %+v", old)
+	}
+	if next.Status != "analyzed" || next.Candidates[0].ID != after.ID || next.Candidates[0].CommentDraft != nil {
+		t.Fatalf("new link lost its own review: %+v", next)
 	}
 	req.Revision = 2
 	if err := db.saveCandidate(ctx, req); !errors.Is(err, errCandidateConflict) {
 		t.Fatal("superseded write accepted", err)
+	}
+	req.Target, req.CandidateID, req.Revision, req.EvidenceIDs = current, after.ID, after.Revision, []string{}
+	if err := db.saveCandidate(ctx, req); err != nil {
+		t.Fatalf("current comparison was not editable: %v", err)
 	}
 }
 
