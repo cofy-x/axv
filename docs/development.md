@@ -219,6 +219,8 @@ E2E_SKIP_BUILD=1 make test-e2e E2E_ARGS="--project=chromium tests/desktop.spec.t
 
 Use `E2E_SKIP_BUILD=1` only when the existing production binary includes the changes under test. Focused runs complement the required full suite.
 
+The `chromium-dpr2` and `chromium-touch` projects set both Chromium's native device scale and Playwright's emulated scale to 2 so sandboxed frames use the same scale for rendering and pointer input. Extension editing and draft-rejection checks exercise this path through native clicks and taps.
+
 ### Focused VM UI review
 
 Run `make test-vm-ui` for the VM interface checks marked `@vm-ui`. It uses the regular isolated Playwright launcher with desktop and touch Chromium and fixture VM data. The `--output` option keeps a named set of screenshots for review.
