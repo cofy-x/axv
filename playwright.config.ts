@@ -96,7 +96,14 @@ export default defineConfig({
         '**/machines-forms.spec.ts',
         '**/machines-preparation.spec.ts',
       ],
-      use: { browserName: 'chromium', deviceScaleFactor: 2 },
+      use: {
+        browserName: 'chromium',
+        deviceScaleFactor: 2,
+        launchOptions: {
+          // Match native and emulated DPR for sandboxed iframe hit testing.
+          args: ['--force-device-scale-factor=2'],
+        },
+      },
     },
     {
       name: 'chromium-touch',
@@ -105,6 +112,7 @@ export default defineConfig({
         browserName: 'chromium',
         viewport: { width: 390, height: 844 },
         deviceScaleFactor: 2,
+        launchOptions: { args: ['--force-device-scale-factor=2'] },
         hasTouch: true,
         isMobile: true,
       },

@@ -219,6 +219,8 @@ E2E_SKIP_BUILD=1 make test-e2e E2E_ARGS="--project=chromium tests/desktop.spec.t
 
 Use `E2E_SKIP_BUILD=1` only when the existing production binary includes the changes under test. Focused runs complement the required full suite.
 
+The `chromium-dpr2` and `chromium-touch` projects set both Chromium's native device scale and Playwright's emulated scale to 2 so sandboxed frames use the same scale for rendering and pointer input. Extension editing and draft-rejection checks exercise this path through native clicks and taps.
+
 ### Focused VM UI review
 
 Run `make test-vm-ui` for the VM interface checks marked `@vm-ui`. It uses the regular isolated Playwright launcher with desktop and touch Chromium and fixture VM data. The `--output` option keeps a named set of screenshots for review.
@@ -292,8 +294,6 @@ Review dependency changes with their lockfiles and run the same verification mat
 Upgrade Go, Node.js and pnpm deliberately in one change, keeping the version files, manifests, Makefile, Go workspace/modules, README and lockfiles aligned. The npm configuration excludes `node` and `pnpm` updates and `@types/node` major updates. Keep Node.js declarations in the pinned runtime's major version and upgrade them together when selecting a new Node.js major; compatible minor and patch declaration updates remain eligible. A dependency that requires a newer toolchain needs this coordinated upgrade before it can pass CI.
 
 ### Dependency patches
-
-The version-scoped `minimatch` override in [pnpm-workspace.yaml](../pnpm-workspace.yaml) replaces versions affected by [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249) with 11.0.1. ESLint, its configuration array and the TypeScript parser still request vulnerable 10.x versions; the override also crosses a major version, so verify frozen installation, lint, types, tests and production builds together. Remove it once the upstream dependency ranges and regenerated lockfile select patched versions without it. It does not override dependencies that already request unaffected versions.
 
 The `patchedDependencies` entry in [pnpm-workspace.yaml](../pnpm-workspace.yaml) applies the checked-in xterm.js 6.0.0 patch during installation. It corrects empty alternate-screen buffer capacity after shrinking, so an in-flight terminal repaint cannot lose the final row after the screen grows again. The patch keeps the upstream source and both published JavaScript entry points consistent; it does not change the pinned version or license. [Third-party notices](../THIRD_PARTY_NOTICES.md#application-distributions) records its upstream source and attribution.
 
