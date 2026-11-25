@@ -1,6 +1,7 @@
 import type { Locator, Request, WebSocket } from '@playwright/test';
 import {
   activate,
+  bounds,
   menuItem,
   persistedLayout,
   switchWorkspace,
@@ -461,6 +462,49 @@ test('the Codex Session menu ends the selected run without affecting another sam
   await selectWindow(first.window);
   await first.window.getByRole('button', { name: /^Close / }).click();
   await expect(menu).toHaveCount(0);
+});
+
+test('dragging a Codex window sends distinct sizes and keeps its tmux terminal attached', async ({
+  page,
+}) => {
+  const sockets: WebSocket[] = [];
+  const sizes: string[] = [];
+  page.on('websocket', (socket) => {
+    if (!socket.url().includes('/api/host/codex/')) return;
+    sockets.push(socket);
+    socket.on('framesent', ({ payload }) => {
+      if (typeof payload !== 'string') return;
+      const { resize } = JSON.parse(payload);
+      if (resize) sizes.push(resize.join('x'));
+    });
+  });
+  const { window } = await startCodex(page);
+  await runCodex(window, 'lines');
+  await expect(codexOutput(window)).toContainText('HISTORY 099');
+
+  for (const [dx, dy] of [
+    [180, 120],
+    [-240, -160],
+  ]) {
+    const before = sizes.length;
+    const { width } = await bounds(window);
+    const corner = await bounds(window.locator('[data-resize="se"]'));
+    const x = corner.x + corner.width / 2;
+    const y = corner.y + corner.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + dx, y + dy, { steps: 24 });
+    await page.mouse.up();
+    await expect
+      .poll(async () => (await bounds(window)).width)
+      .toBe(width + dx);
+    await expect.poll(() => sizes.length).toBeGreaterThan(before);
+    await runCodex(window, 'size');
+    await expect(codexOutput(window)).toContainText(`SIZE ${sizes.at(-1)}`);
+    const sent = sizes.slice(before);
+    expect(sent).toHaveLength(new Set(sent).size);
+  }
+  expect(sockets).toHaveLength(1);
 });
 
 test('Codex wheel scrolling moves tmux history without sending arrow keys to its composer', async ({

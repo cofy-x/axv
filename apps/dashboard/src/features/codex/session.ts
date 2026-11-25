@@ -50,6 +50,7 @@ interface Options {
 const INPUT_LIMIT = 1024 * 1024;
 const OUTPUT_LIMIT = 4 * 1024 * 1024;
 const HIGH_WATER = 64 * 1024;
+const RESIZE_SETTLE_MS = 120;
 
 function dimension(value: number, min: number, max: number) {
   return Math.max(
@@ -80,6 +81,7 @@ export class CodexConnection {
   private timeout?: ReturnType<typeof setTimeout>;
   private retryTimer?: ReturnType<typeof setTimeout>;
   private inputTimer?: ReturnType<typeof setTimeout>;
+  private resizeTimer?: ReturnType<typeof setTimeout>;
 
   constructor(private readonly options: Options) {}
 
@@ -163,10 +165,20 @@ export class CodexConnection {
   }
 
   resize(cols: number, rows: number) {
-    this.cols = dimension(cols, 2, 500);
-    this.rows = dimension(rows, 1, 200);
+    const nextCols = dimension(cols, 2, 500);
+    const nextRows = dimension(rows, 1, 200);
+    if (this.disposed || (nextCols === this.cols && nextRows === this.rows))
+      return;
+    this.cols = nextCols;
+    this.rows = nextRows;
     this.resizePending = true;
-    this.flushInput();
+    if (this.state.phase !== 'connected') return;
+    // A tmux resize redraws the remote screen. Coalesce sizes during a drag.
+    clearTimeout(this.resizeTimer);
+    this.resizeTimer = setTimeout(() => {
+      this.resizeTimer = undefined;
+      this.flushInput();
+    }, RESIZE_SETTLE_MS);
   }
 
   sendText(text: string) {
@@ -188,6 +200,7 @@ export class CodexConnection {
     )
       return false;
     try {
+      this.flushResize(this.socket);
       this.socket.send(
         JSON.stringify({
           scroll: Math.max(-200, Math.min(200, Math.trunc(lines))),
@@ -250,6 +263,8 @@ export class CodexConnection {
     clearTimeout(this.timeout);
     clearTimeout(this.retryTimer);
     clearTimeout(this.inputTimer);
+    clearTimeout(this.resizeTimer);
+    this.resizeTimer = undefined;
     this.abort?.abort();
     this.input = [];
     this.inputBytes = 0;
@@ -490,6 +505,14 @@ export class CodexConnection {
     return true;
   }
 
+  private flushResize(socket: CodexSocket) {
+    if (!this.resizePending) return;
+    socket.send(JSON.stringify({ resize: [this.cols, this.rows] }));
+    this.resizePending = false;
+    clearTimeout(this.resizeTimer);
+    this.resizeTimer = undefined;
+  }
+
   private flushInput() {
     const socket = this.socket;
     if (
@@ -501,16 +524,17 @@ export class CodexConnection {
       return;
     clearTimeout(this.inputTimer);
     try {
-      if (socket.bufferedAmount < HIGH_WATER && this.resizePending) {
-        socket.send(JSON.stringify({ resize: [this.cols, this.rows] }));
-        this.resizePending = false;
-      }
+      const resizeReady =
+        this.resizePending &&
+        (this.resizeTimer === undefined || this.input.length > 0);
+      if (resizeReady && socket.bufferedAmount < HIGH_WATER)
+        this.flushResize(socket);
       while (this.input.length && socket.bufferedAmount < HIGH_WATER) {
         const data = this.input.shift()!;
         this.inputBytes -= data.byteLength;
         socket.send(data);
       }
-      if (this.input.length || this.resizePending)
+      if (this.input.length || (resizeReady && this.resizePending))
         this.inputTimer = setTimeout(() => this.flushInput(), 16);
     } catch {
       this.retry(
