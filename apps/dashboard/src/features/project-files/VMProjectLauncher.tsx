@@ -12,6 +12,7 @@ import type { VMProject } from './vm-api';
 import { VMProjectInitialize } from './VMProjectInitialize';
 import {
   canOpenVMProjectVolume,
+  sameVMProjectVolume,
   vmProjectVolumeScope,
 } from './vm-project-volume';
 
@@ -48,6 +49,8 @@ export function VMProjectLauncher({
   });
   const requests = useRef(new RequestIdentity(`${databaseId}:vm-projects`));
   const mounted = useRef(false);
+  const latestDesktop = useRef(desktop);
+  latestDesktop.current = desktop;
   const canOpen = useRef(active && canInteract);
   canOpen.current = active && canInteract;
   useEffect(() => {
@@ -122,9 +125,46 @@ export function VMProjectLauncher({
   );
 
   function open(project: VMProject) {
+    const desktop = latestDesktop.current;
+    const existing =
+      scope &&
+      desktop.windows.find(
+        ({ appId, params }) =>
+          appId === 'project-files' &&
+          params.hostId === project.hostId &&
+          params.vmProjectId === project.id,
+      );
+    if (
+      scope &&
+      existing &&
+      !sameVMProjectVolume(scope, vmProjectVolumeScope(existing.params))
+    ) {
+      void desktop
+        .dialog({
+          title: 'Project already open',
+          message:
+            'To open the project for this VM, close its existing Project Files window first.',
+          buttons: [
+            { label: 'Cancel', value: 'cancel', cancel: true },
+            { label: 'Show Window', value: 'show', default: true },
+          ],
+        })
+        .then((answer) => {
+          if (mounted.current && answer?.button === 'show')
+            desktop.focusWindow(existing.id);
+        });
+      return;
+    }
     desktop.openApp(
       'project-files',
-      { vmProjectId: project.id, hostId: project.hostId },
+      {
+        vmProjectId: project.id,
+        hostId: project.hostId,
+        ...(scope && {
+          machineId: scope.machineId,
+          vmProjectVolumeId: scope.volumeId,
+        }),
+      },
       { title: `VM · ${project.name}` },
     );
   }

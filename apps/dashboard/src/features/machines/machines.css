@@ -835,6 +835,10 @@
   align-items: center;
   margin-bottom: 12px;
 }
+.machines-inspector-body > .machines-empty-status {
+  padding: 0;
+  border-top: 0;
+}
 .machines-inspector-body > .machines-technical {
   margin-block: 0;
   padding-block: 0;

@@ -52,13 +52,20 @@ export function MachineInspector({
   const snapshot =
     data.info?.hostId === hostId ? data : originalSnapshot.current;
   const machine = snapshot.machines.find(
-    (item) => !!hostId && item.id === id && item.hostId === hostId,
+    (item) =>
+      !!hostId &&
+      item.id === id &&
+      item.hostId === hostId &&
+      item.status !== 'deleted',
   );
   const name = machine?.spec.name;
   useEffect(() => {
     if (name) setTitle(window.id, `${name} — Inspector`);
   }, [name, setTitle, window.id]);
   const connected = !!hostId && data.info?.hostId === hostId && !data.error;
+  const hasIdentity = !!hostId && !!id;
+  const otherHost =
+    !!hostId && !!data.info?.hostId && data.info.hostId !== hostId;
   const terminalReason = !connected
     ? 'Reconnect to the original host before opening a guest terminal.'
     : guestTerminalReason(machine);
@@ -276,7 +283,7 @@ export function MachineInspector({
       <div className="app-toolbar machines-toolbar">
         <IconButton
           icon="back"
-          label="Virtual Machines"
+          label="Back to Virtual Machines"
           onClick={() => desktop.openApp('machines')}
         />
         <div className="machines-toolbar-actions">
@@ -292,13 +299,13 @@ export function MachineInspector({
         </div>
       </div>
       <div className="app-pad machines-scroll machines-inspector-body">
-        {data.error && (
+        {machine && data.error && (
           <p className="machines-error" role="alert">
             VM service unavailable. {data.error} Showing the last known VM
             state.
           </p>
         )}
-        {hostId && data.info?.hostId && data.info.hostId !== hostId && (
+        {machine && otherHost && (
           <p className="machines-warning" role="alert">
             Original host unavailable. This window is read-only until its host
             reconnects.
@@ -512,27 +519,22 @@ export function MachineInspector({
             </details>
           </>
         ) : (
-          <div className="machines-empty">
+          <div className="machines-empty-status">
             <h2>
-              {!hostId
+              {!hasIdentity
                 ? 'VM identity unavailable'
-                : data.info?.hostId && data.info.hostId !== hostId
+                : otherHost
                   ? 'Original host unavailable'
-                  : data.loading || data.refreshing
+                  : data.loading && !data.error
                     ? 'Loading VM…'
-                    : !connected
-                      ? 'VM details unavailable'
-                      : 'This VM is no longer available'}
+                    : connected
+                      ? 'VM not found'
+                      : 'VM host unavailable'}
             </h2>
-            <p>
-              {!hostId
-                ? 'Open this VM again from Virtual Machines to bind it to its host.'
-                : data.info?.hostId && data.info.hostId !== hostId
-                  ? 'This window belongs to a different host. Open Virtual Machines to choose a VM on the current host.'
-                  : data.error
-                    ? 'Refresh to reconnect to the host.'
-                    : 'Open Virtual Machines to view the current inventory.'}
-            </p>
+            {!hasIdentity && <p>Open the VM from Virtual Machines.</p>}
+            {!otherHost && hasIdentity && data.error && (
+              <p role="alert">{data.error}</p>
+            )}
           </div>
         )}
       </div>

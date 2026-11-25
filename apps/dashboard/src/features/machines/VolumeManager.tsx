@@ -1,4 +1,11 @@
-import { Fragment, useCallback, useId, useRef, useState } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from 'react';
 import {
   Button,
   Checkbox,
@@ -42,15 +49,19 @@ export function VolumeManager({
   data,
   desktop,
   windowId,
+  visible,
   onShowActivity,
 }: {
   data: ReturnType<typeof useCompute>;
   desktop: DesktopAPI;
   windowId: string;
+  visible: boolean;
   onShowActivity?: (id: string) => void;
 }) {
-  const [selectedId, setSelected] = useState('');
-  const [selectedHost, setSelectedHost] = useState('');
+  const [selectedVolume, selectVolume] = useState<{
+    id: string;
+    hostId: string;
+  }>();
   const [editor, setEditor] = useState<VolumeEditor>();
   const [attachId, setAttach] = useState('');
   const [attachment, setAttachment] = useState('');
@@ -76,7 +87,37 @@ export function VolumeManager({
   const [accepted, setAccepted] = useState<{
     operation: Operation;
     label: string;
+    hostId: string;
+    deletedVolumeId?: string;
   }>();
+  const currentOperation =
+    accepted &&
+    (data.operations.find(
+      (operation) => operation.id === accepted.operation.id,
+    ) ||
+      accepted.operation);
+  const deleted =
+    !!accepted?.deletedVolumeId &&
+    currentOperation?.status === 'succeeded' &&
+    data.info?.hostId === accepted.hostId &&
+    !data.volumes.some((volume) => volume.id === accepted.deletedVolumeId);
+  useEffect(() => {
+    if (!deleted || !accepted) return;
+    selectVolume((current) =>
+      current?.id === accepted.deletedVolumeId &&
+      current?.hostId === accepted.hostId
+        ? undefined
+        : current,
+    );
+    const clear = () =>
+      setAccepted((current) => (current === accepted ? undefined : current));
+    if (!visible) {
+      clear();
+      return;
+    }
+    const timer = setTimeout(clear, 5000);
+    return () => clearTimeout(timer);
+  }, [accepted, deleted, visible]);
   const [requests] = useState(
     () =>
       new OperationRequest<
@@ -103,8 +144,8 @@ export function VolumeManager({
   );
   const hostId = data.info?.hostId || '';
   const selected =
-    selectedHost === hostId
-      ? data.volumes.find((volume) => volume.id === selectedId)
+    selectedVolume?.hostId === hostId
+      ? data.volumes.find((volume) => volume.id === selectedVolume.id)
       : undefined;
   const resourceKey = (id: string, host = hostId) => JSON.stringify([host, id]);
   const selectedKey = selected && resourceKey(selected.id);
@@ -303,7 +344,13 @@ export function VolumeManager({
       const result = input
         ? await requests.submit(input, requestLabel)
         : await requests.retry();
-      setAccepted({ operation: result.operation, label: requestLabel });
+      setAccepted({
+        operation: result.operation,
+        label: requestLabel,
+        hostId: latest.info.hostId,
+        deletedVolumeId:
+          originalInput.kind === 'delete' ? originalInput.volume.id : undefined,
+      });
       if (originalInput?.kind === 'action')
         setLastChanges((current) => ({
           ...current,
@@ -315,10 +362,8 @@ export function VolumeManager({
         originalInput.change.action === 'attach'
       )
         setAttachment('');
-      if (result.volume) {
-        setSelected(result.volume.id);
-        setSelectedHost(originalInput.binding.hostId || '');
-      }
+      if (result.volume)
+        selectVolume({ id: result.volume.id, hostId: latest.info.hostId });
       setEditor(undefined);
       data.refresh();
     } catch (failure) {
@@ -456,11 +501,19 @@ export function VolumeManager({
           {error}
         </p>
       )}
-      <OperationFeedback
-        accepted={accepted}
-        operations={data.operations}
-        onShowActivity={onShowActivity}
-      />
+      {deleted ? (
+        <p className="machines-message" role="status">
+          Volume deleted.
+        </p>
+      ) : (
+        <OperationFeedback
+          accepted={
+            accepted?.hostId === data.info?.hostId ? accepted : undefined
+          }
+          operations={data.operations}
+          onShowActivity={onShowActivity}
+        />
+      )}
       {requests.pending && !busy && (
         <div className="machines-operation-feedback">
           <p>
@@ -838,8 +891,7 @@ export function VolumeManager({
                           aria-pressed={selected?.id === volume.id}
                           onClick={() => {
                             if (selected === volume) return;
-                            setSelected(volume.id);
-                            setSelectedHost(hostId);
+                            selectVolume({ id: volume.id, hostId });
                             setAttach('');
                             setAttachment('');
                           }}
@@ -931,12 +983,18 @@ export function VolumeManager({
           {createsVolumesWithVMs && <p>Create a VM to add a project volume.</p>}
         </div>
       ) : null}
-      {selectedId && !selected && (
-        <p className="machines-warning">
-          The selected volume is no longer present. Select another volume
-          explicitly.
-        </p>
-      )}
+      {selectedVolume &&
+        !selected &&
+        !(
+          deleted &&
+          selectedVolume.id === accepted?.deletedVolumeId &&
+          selectedVolume.hostId === accepted.hostId
+        ) && (
+          <p className="machines-warning">
+            The selected volume is no longer present. Select another volume
+            explicitly.
+          </p>
+        )}
     </div>
   );
 }

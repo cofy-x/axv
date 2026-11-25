@@ -24,6 +24,7 @@ import {
   usePageVisibility,
 } from '../shared/desktop/usePageVisibility';
 import {
+  closeMissingMachineInspectors,
   createMachineDesktopIcons,
   createMachineDesktopMenu,
 } from '../features/machines/desktop-icons';
@@ -161,6 +162,10 @@ function DesktopApp({ bootstrap, clientId }: ReadyDesktop) {
     pageVisible ? computeStore.subscribeDesktop : inactiveSubscription,
     computeStore.getDesktopSnapshot,
   );
+  useEffect(() => {
+    if (pageVisible && desktopRef.current)
+      closeMissingMachineInspectors(compute, desktopRef.current);
+  }, [compute, pageVisible]);
   const builtins = useMemo(() => createAppRegistry(commands), [commands]);
   const extensions = useSyncExternalStore(
     extensionStore.subscribe,
@@ -302,6 +307,11 @@ function DesktopApp({ bootstrap, clientId }: ReadyDesktop) {
               }
               onReady={(desktop) => {
                 desktopRef.current = desktop;
+                if (pageVisible)
+                  closeMissingMachineInspectors(
+                    computeStore.getDesktopSnapshot(),
+                    desktop,
+                  );
                 if (pendingPushReference.current) {
                   openNotification(desktop, pendingPushReference.current);
                   void takePendingPushOpen(pendingPushReference.current).catch(

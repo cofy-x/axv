@@ -9,14 +9,13 @@ export const projectFilesApp: AppDefinition = {
   icon: 'project',
   component: ProjectFiles,
   windowKey: (params) => {
+    if (params.vmTasksProjectId)
+      return `vm-tasks:${params.hostId}:${params.vmTasksProjectId}`;
+    if (params.vmProjectId) return `vm:${params.hostId}:${params.vmProjectId}`;
     const scope = vmProjectVolumeScope(params);
     if (scope)
       return `vm-volume:${JSON.stringify([scope.hostId, scope.machineId, scope.volumeId])}`;
-    return params.vmTasksProjectId
-      ? `vm-tasks:${params.hostId}:${params.vmTasksProjectId}`
-      : params.vmProjectId
-        ? `vm:${params.hostId}:${params.vmProjectId}`
-        : params.projectId || 'projects';
+    return params.projectId || 'projects';
   },
   defaultSize: { width: 800, height: 540 },
   minSize: { width: 310, height: 300 },

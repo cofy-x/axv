@@ -858,6 +858,9 @@ export function Machines({
                 data={data}
                 desktop={desktop}
                 windowId={window.id}
+                visible={
+                  windowVisible !== false && !showHost && tab === 'volumes'
+                }
                 onShowActivity={showActivity}
               />
             </div>

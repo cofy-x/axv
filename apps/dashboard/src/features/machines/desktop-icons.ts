@@ -14,6 +14,29 @@ export function openMachineInspector(desktop: DesktopAPI, machine: Machine) {
   );
 }
 
+export function closeMissingMachineInspectors(
+  snapshot: DesktopComputeSnapshot,
+  desktop: DesktopAPI,
+) {
+  const hostId = snapshot.info?.hostId;
+  if (!hostId || !snapshot.info?.configured || snapshot.error) return;
+  for (const { id, appId, params } of desktop.windows) {
+    if (
+      appId !== 'machine-inspector' ||
+      params.hostId !== hostId ||
+      !params.machineId
+    )
+      continue;
+    const present = snapshot.machines.some(
+      (machine) =>
+        machine.hostId === hostId &&
+        machine.id === params.machineId &&
+        machine.status !== 'deleted',
+    );
+    if (!present) void desktop.closeWindow(id);
+  }
+}
+
 function machineStatus(
   machine: Machine,
   unavailable: boolean,

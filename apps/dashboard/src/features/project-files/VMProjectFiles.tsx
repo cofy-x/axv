@@ -6,17 +6,17 @@ import {
   StatusBar,
   Tabs,
 } from '@cofy-x/axv-nextstep';
-import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { useResource } from '../../shared/api/useResource';
 import { APIError } from '../../shared/api/http';
 import { CodeEditor } from '../../shared/code-editor';
 import type { CodeEditorHandle } from '../../shared/code-editor';
-import { useDraftNamespace } from '../../shared/drafts/context';
 import { downloadDraft } from '../../shared/drafts/download';
 import { nameDialog, runCommand } from '../../shared/desktop/dialogs';
 import { canTransferWindowFocus } from '../../shared/desktop/focus-transfer';
 import { vmProjectsAPI } from './vm-api';
 import type { VMProjectBinding } from './vm-api';
+import type { VMProjectFileProps } from './VMProjectWindows';
+import { sameVMProjectVolume, vmProjectVolumeScope } from './vm-project-volume';
 import { openVMProjectCodex } from '../codex/definition';
 import { VMProjectPreviews } from './VMProjectPreviews';
 import { VMProjectBackups } from './VMProjectBackups';
@@ -84,7 +84,9 @@ export function VMProjectFiles({
   desktop,
   visible: windowVisible,
   interactive: windowInteractive,
-}: AppWindowProps) {
+  recoveryKey,
+  registerFileGuard,
+}: VMProjectFileProps) {
   const id = window.params.vmProjectId!;
   const hostId = window.params.hostId || '';
   const section =
@@ -107,14 +109,6 @@ export function VMProjectFiles({
   const [githubNotice, setGitHubNotice] = useState<'' | 'error' | 'working'>(
     '',
   );
-  const namespace = useDraftNamespace();
-  const recoveryKey = JSON.stringify([
-    'axv-vm-project-draft',
-    namespace.databaseId,
-    namespace.clientId,
-    hostId,
-    id,
-  ]);
   const [recovery] = useState(() => {
     try {
       const raw = sessionStorage.getItem(recoveryKey);
@@ -172,15 +166,27 @@ export function VMProjectFiles({
   const cursor =
     typeof window.viewState.cursor === 'string' ? window.viewState.cursor : '';
   const isReading = window.viewState.reading !== false && !!file;
-  const loadBinding = useCallback(() => {
-    if (!hostId)
-      return Promise.reject(
-        new Error(
+  const { machineId, vmProjectVolumeId } = window.params;
+  const loadBinding = useCallback(
+    async (signal: AbortSignal) => {
+      if (!hostId)
+        throw new Error(
           'This VM project has no recorded host identity. Open it from Projects.',
-        ),
-      );
-    return vmProjectsAPI.binding(id, hostId);
-  }, [id, hostId]);
+        );
+      const result = await vmProjectsAPI.binding(id, hostId, signal);
+      const scope = vmProjectVolumeScope({
+        hostId,
+        machineId,
+        vmProjectVolumeId,
+      });
+      if (scope && !sameVMProjectVolume(scope, result.binding))
+        throw new Error(
+          'The project volume is unavailable on the original VM. Close this window and reopen the project from Projects to use its current VM.',
+        );
+      return result;
+    },
+    [id, hostId, machineId, vmProjectVolumeId],
+  );
   const connection = useResource(`${hostId}:${id}:${reconnect}`, loadBinding);
   const binding = originalBinding || connection.data?.binding || null;
   const loadDirectory = useCallback(
@@ -439,44 +445,19 @@ export function VMProjectFiles({
     };
   }, [id, binding, file, pendingRecovery, readRequest]);
 
-  useEffect(() => {
-    const prevent = (event: BeforeUnloadEvent) => {
-      if (
-        inputPending() ||
-        latest.current.dirty ||
-        latest.current.saving ||
-        latest.current.pendingRecovery ||
-        latest.current.blockedRecovery
-      ) {
-        event.preventDefault();
-        event.returnValue = '';
-      }
-    };
-    globalThis.addEventListener('beforeunload', prevent);
-    return () => globalThis.removeEventListener('beforeunload', prevent);
-  }, []);
-
   useEffect(
     () =>
-      desktop.beforeClose(window.id, async () => {
-        if (savingRef.current || inputPending()) return false;
-        if (!latest.current.dirty && !latest.current.pendingRecovery)
-          return true;
-        const answer = await desktop.dialog({
-          title: 'Close VM project?',
-          message:
-            'Unsaved changes remain in this tab’s recovery storage. Discard removes that recovery copy.',
-          buttons: [
-            { label: 'Cancel', value: 'cancel', cancel: true },
-            { label: 'Keep Draft', value: 'keep', default: true },
-            { label: 'Discard', value: 'discard' },
-          ],
-        });
-        if (answer?.button === 'keep')
-          return latest.current.editor ? persist(latest.current.editor) : true;
-        return answer?.button === 'discard' && persist(null);
-      }),
-    [desktop, window.id, persist],
+      registerFileGuard(() => ({
+        busy: savingRef.current || latest.current.saving || inputPending(),
+        dirty:
+          latest.current.dirty ||
+          !!latest.current.pendingRecovery ||
+          latest.current.blockedRecovery,
+        keep: () =>
+          latest.current.editor ? persist(latest.current.editor) : true,
+        discard: () => persist(null),
+      })),
+    [registerFileGuard, persist],
   );
 
   useEffect(() => {

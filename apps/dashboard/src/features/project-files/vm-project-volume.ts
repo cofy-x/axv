@@ -15,6 +15,18 @@ export function vmProjectVolumeScope(
     return { hostId, machineId, volumeId: vmProjectVolumeId };
 }
 
+export function sameVMProjectVolume(
+  scope: VMProjectVolumeScope,
+  other: VMProjectVolumeScope | undefined,
+) {
+  return (
+    !!other &&
+    scope.hostId === other.hostId &&
+    scope.machineId === other.machineId &&
+    scope.volumeId === other.volumeId
+  );
+}
+
 export function canOpenVMProjectVolume(machine: Machine, volume: Volume) {
   return (
     volume.retain &&
