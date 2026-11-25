@@ -1,23 +1,41 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Field, IconButton, Select } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { useResource } from '../../shared/api/useResource';
 import { RequestIdentity } from '../../shared/api/request-identity';
+import { desktopDatabase } from '../../shared/api/desktop';
+import { usePageVisibility } from '../../shared/desktop/usePageVisibility';
 import { useDraftNamespace } from '../../shared/drafts/context';
 import { machinesApi } from '../machines/api';
 import { vmProjectsAPI } from './vm-api';
 import type { VMProject } from './vm-api';
 import { VMProjectInitialize } from './VMProjectInitialize';
+import {
+  canOpenVMProjectVolume,
+  vmProjectVolumeScope,
+} from './vm-project-volume';
 
-export function VMProjectLauncher({ desktop, interactive }: AppWindowProps) {
+export function VMProjectLauncher({
+  desktop,
+  window,
+  visible,
+  interactive,
+}: AppWindowProps) {
+  const scope = vmProjectVolumeScope(window.params);
+  const scopedHostId = scope?.hostId;
+  const pageVisible = usePageVisibility();
+  const active =
+    pageVisible && visible !== false && desktop.activeWindowId === window.id;
+  const canInteract = !!interactive;
   const [refresh, setRefresh] = useState(0);
-  const [volumeId, setVolumeId] = useState('');
+  const [selection, setSelection] = useState(scope);
   const [root, setRoot] = useState('');
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const { databaseId, clientId } = useDraftNamespace();
   const [mode, setMode] = useState<'open' | 'create' | 'clone'>(() => {
+    if (scope) return 'open';
     try {
       return localStorage.getItem(
         JSON.stringify(['axv-vm-project-initialization', databaseId, clientId]),
@@ -30,43 +48,78 @@ export function VMProjectLauncher({ desktop, interactive }: AppWindowProps) {
   });
   const requests = useRef(new RequestIdentity(`${databaseId}:vm-projects`));
   const mounted = useRef(false);
+  const canOpen = useRef(active && canInteract);
+  canOpen.current = active && canInteract;
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
     };
   }, []);
-  const load = useCallback(async () => {
-    const info = await machinesApi.info();
-    if (!info.configured || !info.hostId)
-      throw new Error(info.reason || 'Start a VM host to open VM projects.');
-    const binding = { hostId: info.hostId };
-    const [{ machines }, { volumes }, { projects }] = await Promise.all([
-      machinesApi.machines(undefined, binding),
-      machinesApi.volumes(undefined, binding),
-      vmProjectsAPI.list(info.hostId),
-    ]);
-    return { hostId: info.hostId, machines, volumes, projects };
-  }, []);
-  const inventory = useResource(`vm-projects:${refresh}`, load);
-  const data = inventory.data;
-  const eligible = data?.volumes.filter(
-    (volume) =>
-      volume.retain &&
-      volume.status === 'ready' &&
-      data.machines.some(
-        (machine) =>
-          machine.id === volume.machineId &&
-          machine.hostId === data.hostId &&
-          machine.status === 'running' &&
-          machine.ready &&
-          machine.guestCapabilities?.includes('project-files') &&
-          (mode === 'open' ||
-            (machine.guestCapabilities?.includes('project-tasks') &&
-              machine.guestCapabilities?.includes('project-initialization'))),
-      ),
+  const load = useCallback(
+    async (signal: AbortSignal) => {
+      const info = await machinesApi.info(
+        signal,
+        scopedHostId ? { hostId: scopedHostId } : undefined,
+      );
+      if (!info.configured || !info.hostId)
+        throw new Error(info.reason || 'Start a VM host to open VM projects.');
+      if (scopedHostId && info.hostId !== scopedHostId)
+        throw new Error(
+          'Reconnect to the original VM host to open these project files.',
+        );
+      const binding = { hostId: info.hostId };
+      const [{ machines }, { volumes }, { projects }] = await Promise.all([
+        machinesApi.machines(signal, binding),
+        machinesApi.volumes(signal, binding),
+        vmProjectsAPI.list(info.hostId, signal),
+      ]);
+      return { hostId: info.hostId, machines, volumes, projects };
+    },
+    [scopedHostId],
   );
-  const volume = eligible?.find((item) => item.id === volumeId);
+  // Each return to this view rechecks eligibility while the form owns its draft.
+  const request = useMemo(
+    () => (active ? { refresh } : null),
+    [active, refresh],
+  );
+  const inventory = useResource(request, load, desktopDatabase.assertActive, {
+    keepPreviousData: true,
+  });
+  const data = inventory.data;
+  const verified =
+    active && canInteract && !inventory.pending && !inventory.error;
+  const eligible = data?.volumes.flatMap((volume) => {
+    const machine = data.machines.find(
+      (item) => item.id === volume.machineId && item.hostId === data.hostId,
+    );
+    if (!machine || !canOpenVMProjectVolume(machine, volume)) return [];
+    if (
+      scope &&
+      (volume.id !== scope.volumeId || machine.id !== scope.machineId)
+    )
+      return [];
+    if (
+      mode !== 'open' &&
+      (!machine.guestCapabilities?.includes('project-tasks') ||
+        !machine.guestCapabilities.includes('project-initialization'))
+    )
+      return [];
+    return [{ volume, machine }];
+  });
+  const selected =
+    selection && data?.hostId === selection.hostId
+      ? eligible?.find(
+          ({ volume, machine }) =>
+            volume.id === selection.volumeId &&
+            machine.id === selection.machineId,
+        )
+      : undefined;
+  const projects = data?.projects.filter(
+    (item) =>
+      item.hostId === data.hostId &&
+      (!scope || item.volumeId === scope.volumeId),
+  );
 
   function open(project: VMProject) {
     desktop.openApp(
@@ -77,14 +130,15 @@ export function VMProjectLauncher({ desktop, interactive }: AppWindowProps) {
   }
 
   async function register() {
-    if (!data || !volume || !volume.machineId || busy || !interactive) return;
+    if (!data || !selected || busy || !verified) return;
+    const { volume, machine } = selected;
     setBusy(true);
     setError('');
     try {
       const values = {
         volumeId: volume.id,
         volumeRevision: volume.revision,
-        machineId: volume.machineId,
+        machineId: machine.id,
         root,
         ...(name.trim() ? { name: name.trim() } : {}),
       };
@@ -96,11 +150,15 @@ export function VMProjectLauncher({ desktop, interactive }: AppWindowProps) {
         ...values,
         requestId,
       });
+      if (project.hostId !== data.hostId || project.volumeId !== volume.id)
+        throw new Error(
+          'The project receipt does not match the original volume.',
+        );
       if (!mounted.current) return;
       if (!requests.current.complete(requestId))
         setError('Project saved. Its retry identity could not be cleared.');
       setRefresh((value) => value + 1);
-      open(project);
+      if (canOpen.current) open(project);
     } catch (error) {
       if (mounted.current)
         setError(error instanceof Error ? error.message : String(error));
@@ -116,7 +174,7 @@ export function VMProjectLauncher({ desktop, interactive }: AppWindowProps) {
         <IconButton
           icon="refresh"
           label="Refresh VM projects"
-          disabled={busy || !interactive}
+          disabled={busy || !active || !canInteract || !!inventory.pending}
           onClick={() => setRefresh((value) => value + 1)}
         />
       </div>
@@ -124,20 +182,23 @@ export function VMProjectLauncher({ desktop, interactive }: AppWindowProps) {
       {inventory.error && inventory.error !== error && (
         <p role="alert">{inventory.error}</p>
       )}
-      {data &&
-        (data.projects.length > 0 ? (
+      {projects &&
+        (projects.length > 0 ? (
           <ul
             className="project-list"
             role="list"
             aria-label="Registered VM projects"
           >
-            {data.projects.map((project) => {
-              const projectVolume = data.volumes.find(
+            {projects.map((project) => {
+              const projectVolume = data?.volumes.find(
                 (item) => item.id === project.volumeId,
               );
               return (
                 <li key={project.id}>
-                  <Button disabled={!interactive} onClick={() => open(project)}>
+                  <Button
+                    disabled={!verified || (!!scope && !selected)}
+                    onClick={() => open(project)}
+                  >
                     <strong>
                       {project.root === ''
                         ? `Volume workspace · ${project.name}`
@@ -158,15 +219,19 @@ export function VMProjectLauncher({ desktop, interactive }: AppWindowProps) {
         ) : (
           <p className="project-list-empty">No VM projects yet.</p>
         ))}
-      {data && eligible?.length === 0 && (
-        <p>
-          No ready retained volumes are attached to a running VM with project
-          file access{mode !== 'open' ? ' and persistent task support' : ''}.
-        </p>
-      )}
-      {(inventory.error || eligible?.length === 0) && (
+      {data &&
+        !inventory.pending &&
+        !inventory.error &&
+        eligible?.length === 0 && (
+          <p>
+            {scope
+              ? 'The original VM project volume is unavailable.'
+              : `No ready retained volumes are attached to a running VM with project file access${mode !== 'open' ? ' and persistent task support' : ''}.`}
+          </p>
+        )}
+      {(inventory.error || (!inventory.pending && eligible?.length === 0)) && (
         <Button
-          disabled={!interactive}
+          disabled={!canInteract}
           onClick={() => desktop.openApp('machines')}
         >
           Open Virtual Machines
@@ -175,58 +240,74 @@ export function VMProjectLauncher({ desktop, interactive }: AppWindowProps) {
       <form
         className="project-register-form"
         aria-label="VM project setup"
+        aria-busy={inventory.pending || undefined}
         hidden={!data}
         onSubmit={(event) => {
           event.preventDefault();
           if (mode === 'open') void register();
         }}
       >
+        {scope && selected && (
+          <p className="project-register-volume">{selected.volume.name}</p>
+        )}
         <div className="project-register-fields">
-          <Select
-            label="Project action"
-            value={mode}
-            disabled={busy || !interactive}
-            onChange={(event) =>
-              setMode(event.target.value as 'open' | 'create' | 'clone')
-            }
-          >
-            <option value="open">Open Folder</option>
-            <option value="create">Create Project</option>
-            <option value="clone">Clone Repository</option>
-          </Select>
-          <Select
-            label="Project volume"
-            value={volumeId}
-            disabled={busy || !interactive}
-            onChange={(event) => setVolumeId(event.target.value)}
-          >
-            <option value="">Choose a ready volume</option>
-            {eligible?.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name} ·{' '}
-                {
-                  data?.machines.find(
-                    (machine) => machine.id === item.machineId,
-                  )?.spec.name
-                }{' '}
-                · {item.id.slice(0, 8)}
-              </option>
-            ))}
-          </Select>
+          {!scope && (
+            <>
+              <Select
+                label="Project action"
+                value={mode}
+                disabled={busy || !canInteract}
+                onChange={(event) =>
+                  setMode(event.target.value as 'open' | 'create' | 'clone')
+                }
+              >
+                <option value="open">Open Folder</option>
+                <option value="create">Create Project</option>
+                <option value="clone">Clone Repository</option>
+              </Select>
+              <Select
+                label="Project volume"
+                value={selected?.volume.id || ''}
+                disabled={busy || !canInteract}
+                onChange={(event) => {
+                  const choice = eligible?.find(
+                    ({ volume }) => volume.id === event.target.value,
+                  );
+                  setSelection(
+                    choice
+                      ? {
+                          hostId: choice.machine.hostId,
+                          machineId: choice.machine.id,
+                          volumeId: choice.volume.id,
+                        }
+                      : undefined,
+                  );
+                }}
+              >
+                <option value="">Choose a ready volume</option>
+                {eligible?.map(({ volume, machine }) => (
+                  <option key={volume.id} value={volume.id}>
+                    {volume.name} · {machine.spec.name} ·{' '}
+                    {volume.id.slice(0, 8)}
+                  </option>
+                ))}
+              </Select>
+            </>
+          )}
           {mode === 'open' && (
             <>
               <Field
                 label="Directory"
                 value={root}
                 placeholder="Blank for volume root"
-                disabled={busy || !interactive}
+                disabled={busy || !canInteract}
                 onChange={(event) => setRoot(event.target.value)}
               />
               <Field
                 label="Project name"
                 value={name}
                 placeholder="Optional"
-                disabled={busy || !interactive}
+                disabled={busy || !canInteract}
                 onChange={(event) => setName(event.target.value)}
               />
             </>
@@ -236,7 +317,7 @@ export function VMProjectLauncher({ desktop, interactive }: AppWindowProps) {
           <div className="project-register-actions">
             <Button
               type="submit"
-              disabled={!volume || busy || !interactive}
+              disabled={!selected || busy || !verified}
               primary
             >
               {busy ? 'Opening…' : 'Open'}
@@ -244,28 +325,27 @@ export function VMProjectLauncher({ desktop, interactive }: AppWindowProps) {
           </div>
         )}
       </form>
-      <VMProjectInitialize
-        desktop={desktop}
-        interactive={!!interactive}
-        inventoryAvailable={!!data}
-        mode={mode}
-        target={
-          data && volume?.machineId
-            ? {
-                hostId: data.hostId,
-                volumeId: volume.id,
-                volumeRevision: volume.revision,
-                machineId: volume.machineId,
-                machineName:
-                  data.machines.find(
-                    (machine) => machine.id === volume.machineId,
-                  )?.spec.name || volume.machineId,
-                label: `${volume.name} · ${data.machines.find((machine) => machine.id === volume.machineId)?.spec.name || volume.machineId}`,
-              }
-            : null
-        }
-        onCreated={() => setRefresh((value) => value + 1)}
-      />
+      {!scope && (
+        <VMProjectInitialize
+          desktop={desktop}
+          interactive={active && canInteract}
+          inventoryAvailable={!!data}
+          mode={mode}
+          target={
+            selected && verified
+              ? {
+                  hostId: selected.machine.hostId,
+                  volumeId: selected.volume.id,
+                  volumeRevision: selected.volume.revision,
+                  machineId: selected.machine.id,
+                  machineName: selected.machine.spec.name,
+                  label: `${selected.volume.name} · ${selected.machine.spec.name}`,
+                }
+              : null
+          }
+          onCreated={() => setRefresh((value) => value + 1)}
+        />
+      )}
       {error && <p role="alert">{error}</p>}
     </section>
   );

@@ -925,16 +925,12 @@ export function VolumeManager({
             })}
           </tbody>
         </table>
-      ) : (
-        !editor && (
-          <div className="machines-empty">
-            <h2>No project volumes yet</h2>
-            {createsVolumesWithVMs && (
-              <p>AXV creates a project volume with your first VM.</p>
-            )}
-          </div>
-        )
-      )}
+      ) : !editor && !data.loading && !data.error ? (
+        <div className="machines-empty-status">
+          <h2>No project volumes yet</h2>
+          {createsVolumesWithVMs && <p>Create a VM to add a project volume.</p>}
+        </div>
+      ) : null}
       {selectedId && !selected && (
         <p className="machines-warning">
           The selected volume is no longer present. Select another volume

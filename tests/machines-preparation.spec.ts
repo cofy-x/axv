@@ -1154,9 +1154,11 @@ for (const automatic of [true, false]) {
     await expect(
       manager.getByRole('heading', { name: 'No project volumes yet' }),
     ).toBeVisible();
-    await expect(
-      manager.getByText('AXV creates a project volume with your first VM.'),
-    ).toBeVisible();
+    const volumeHint = manager.getByText(
+      'Create a VM to add a project volume.',
+      { exact: true },
+    );
+    await expect(volumeHint).toBeVisible();
     await expect(manager.getByRole('table')).toHaveCount(0);
     await expect(
       manager.getByRole('button', { name: 'New Volume', exact: true }),
@@ -1223,6 +1225,9 @@ for (const automatic of [true, false]) {
     const newVM = manager.getByRole('button', { name: 'New VM', exact: true });
     await expect(newVM).toBeEnabled();
     await expect(manager.getByRole('alert')).toHaveCount(0);
+    await choose(manager.getByRole('button', { name: 'Volumes', exact: true }));
+    await expect(volumeHint).toBeVisible();
+    if (automatic) await capture(page, info, 'vm-firecracker-volumes-empty');
     await choose(manager.getByRole('button', { name: 'Images', exact: true }));
     await expect(
       manager.getByRole('button', { name: 'More image actions' }),

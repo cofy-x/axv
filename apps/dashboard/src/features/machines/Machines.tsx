@@ -54,10 +54,15 @@ import {
   operationTarget,
 } from './presentation';
 
-export function Machines({ window, desktop, interactive }: AppWindowProps) {
+export function Machines({
+  window,
+  desktop,
+  visible: windowVisible,
+  interactive,
+}: AppWindowProps) {
   const { setTitle, updateWindowState } = desktop;
   const commands = useWindowCommands();
-  const data = useCompute();
+  const data = useCompute(windowVisible);
   const refreshData = data.refresh;
   const tab =
     (window.viewState.vmTab as
@@ -132,6 +137,7 @@ export function Machines({ window, desktop, interactive }: AppWindowProps) {
     data.info?.providers?.filter((item) => item.available) || [];
   const hasReadyImage = creationImages(data.info).length > 0;
   const canCreate = !!data.info?.configured && !data.error && !!hasReadyImage;
+  const emptyInventory = canCreate && !data.loading && !data.machines.length;
   const canImportImages = availableProviders.some((item) => item.images);
   const imageSetupCommand =
     !hasReadyImage &&
@@ -569,6 +575,7 @@ export function Machines({ window, desktop, interactive }: AppWindowProps) {
           ) : (
             !data.error && (
               <Button
+                primary={emptyInventory && tab === 'machines' && !showHost}
                 disabled={!canCreate || busy}
                 title={
                   !canCreate
@@ -785,7 +792,11 @@ export function Machines({ window, desktop, interactive }: AppWindowProps) {
                   ))}
                 </div>
               ) : data.error && !data.machines.length ? null : (
-                <div className="machines-empty">
+                <div
+                  className={
+                    emptyInventory ? 'machines-empty-status' : 'machines-empty'
+                  }
+                >
                   <h2>
                     {data.machines.length
                       ? 'No VMs match your filters'

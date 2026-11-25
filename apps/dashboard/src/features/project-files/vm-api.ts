@@ -56,8 +56,11 @@ function operation<T>(
 }
 
 export const vmProjectsAPI = {
-  list: (hostId: string) =>
-    request<{ projects: VMProject[] }>(base, { headers: headers(hostId) }),
+  list: (hostId: string, signal?: AbortSignal) =>
+    request<{ projects: VMProject[] }>(base, {
+      headers: headers(hostId),
+      signal,
+    }),
   register: (
     hostId: string,
     values: {

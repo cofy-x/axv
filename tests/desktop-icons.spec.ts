@@ -197,6 +197,7 @@ test('VM desktop icons retain identity, expose status and remain read-only', asy
   request,
 }, info) => {
   await page.setViewportSize({ width: 1440, height: 900 });
+  await page.clock.install();
   const state = await desktopVMHost(page);
   await showApplicationOnDesktop(page, 'Virtual Machines');
   const canvas = page.getByRole('group', { name: 'Desktop icons' });
@@ -241,6 +242,7 @@ test('VM desktop icons retain identity, expose status and remain read-only', asy
     name: 'Renamed desktop VM — Ready',
     exact: true,
   });
+  await page.clock.fastForward(30_000);
   await expect(renamed).toBeVisible();
   await expect(renamed).toHaveAttribute('data-icon-id', id);
   await expectIconContentsFit(renamed);
@@ -253,6 +255,7 @@ test('VM desktop icons retain identity, expose status and remain read-only', asy
   await expectIconContentsFit(renamed);
   await captureWorkArea(page, info, 'vm-desktop-narrow');
   state.offline = true;
+  await page.clock.fastForward(30_000);
   await expect(
     canvas.getByRole('button', {
       name: 'Renamed desktop VM — Unavailable',
@@ -261,6 +264,7 @@ test('VM desktop icons retain identity, expose status and remain read-only', asy
   ).toBeVisible();
   state.offline = false;
   state.machines = [{ ...state.machines[0], status: 'deleted' }];
+  await page.clock.fastForward(30_000);
   await expect(canvas.locator('[data-icon-id^="machine:"]')).toHaveCount(0);
   expect(state.mutations).toEqual([]);
   expect(state.preparationReads).toBe(0);
@@ -437,8 +441,12 @@ test('overflow icons stay scrollable and open through pointer or touch', async (
   isMobile,
   browserName,
 }, info) => {
+  await page.clock.install();
   const state = await desktopVMHost(page);
   await page.setViewportSize({ width: 390, height: 420 });
+  await expect(
+    page.getByRole('button', { name: 'Desktop VM — Stopped', exact: true }),
+  ).toBeVisible();
   const machine = state.machines[0]!;
   state.machines = Array.from({ length: 20 }, (_, index) => {
     const number = String(index).padStart(2, '0');
@@ -452,6 +460,7 @@ test('overflow icons stay scrollable and open through pointer or touch', async (
     name: 'Overflow VM 19 — Stopped',
     exact: true,
   });
+  await page.clock.fastForward(30_000);
   await expect(icon).toBeVisible();
   const canvas = page.getByRole('group', { name: 'Desktop icons' });
   expect(

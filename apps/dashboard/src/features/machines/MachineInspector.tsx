@@ -14,6 +14,7 @@ import {
 import { computeStore } from './compute-store';
 import { MachineActions, MachineExpiry } from './MachineActions';
 import { MachineSettings } from './MachineSettings';
+import { canOpenVMProjectVolume } from '../project-files/vm-project-volume';
 import {
   activeVMOperation,
   confirmVMAction,
@@ -43,7 +44,7 @@ export function MachineInspector({
   interactive,
 }: AppWindowProps) {
   const { setTitle, updateWindowState } = desktop;
-  const data = useCompute();
+  const data = useCompute(visible);
   const id = window.params.machineId || '';
   const hostId = window.params.hostId || '';
   const originalSnapshot = useRef(data);
@@ -351,6 +352,23 @@ export function MachineInspector({
                 onAction={(action) => void lifecycle(action)}
                 onTerminal={() => void newTerminal()}
                 onResume={liveTerminals.length ? resumeTerminal : undefined}
+                onProjectFiles={
+                  connected &&
+                  !transition &&
+                  volume &&
+                  canOpenVMProjectVolume(machine, volume)
+                    ? () =>
+                        desktop.openApp(
+                          'project-files',
+                          {
+                            hostId,
+                            machineId: id,
+                            vmProjectVolumeId: volume.id,
+                          },
+                          { title: `${machine.spec.name} — Project Files` },
+                        )
+                    : undefined
+                }
               />
             </div>
             {!transition &&

@@ -1,6 +1,6 @@
 import type { DesktopAPI, DesktopIcon, MenuItem } from '@cofy-x/axv-nextstep';
 import type { Machine } from './api';
-import type { ComputeSnapshot } from './compute-store';
+import type { DesktopComputeSnapshot } from './compute-store';
 
 export function machineDesktopId(machine: Pick<Machine, 'hostId' | 'id'>) {
   return `machine:${JSON.stringify([machine.hostId, machine.id])}`;
@@ -34,7 +34,7 @@ function machineStatus(
 
 /** Stable host-bound projections of the shared inventory; these are not documents. */
 export function createMachineDesktopIcons(
-  snapshot: ComputeSnapshot,
+  snapshot: DesktopComputeSnapshot,
   getDesktop: () => DesktopAPI | null,
 ): DesktopIcon[] {
   return snapshot.machines

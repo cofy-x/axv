@@ -174,7 +174,7 @@ export interface DesktopAPI {
 export interface AppWindowProps {
   window: DesktopWindow;
   desktop: DesktopAPI;
-  /** Whether the content is displayed, independently of keyboard activation. */
+  /** Whether content is presented for use, independently of activation and overview thumbnails. */
   visible?: boolean;
   /** Keyboard input is suspended for inactive, hidden, folded or covered content. */
   interactive?: boolean;
@@ -199,6 +199,8 @@ export interface AppDefinition {
   defaultSize?: Size;
   minSize?: Size;
   windowKey?: (params: WindowParams) => string;
+  /** Short identifier for a shared title in compact Window Overview. */
+  overviewReference?: (window: DesktopWindow) => string | undefined;
   component: ComponentType<AppWindowProps>;
   menu?: (window: DesktopWindow, desktop: DesktopAPI) => MenuGroup[];
 }

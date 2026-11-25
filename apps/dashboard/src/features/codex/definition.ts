@@ -152,6 +152,10 @@ export function createCodexApp(commands: WindowCommands): AppDefinition {
         : params.vmProjectId
           ? `vm:${params.hostId}:${params.vmProjectId}`
           : 'manager',
+    overviewReference: ({ params }) =>
+      params.sessionId && params.runId
+        ? `Run ${params.runId.slice(0, 8)}`
+        : undefined,
     launch: (desktop) => {
       desktop.openApp('codex');
     },

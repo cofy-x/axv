@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { ComponentType } from 'react';
 import { Button } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
@@ -44,10 +44,15 @@ export function deferWindow<Props extends AppWindowProps>(
 
   return function DeferredWindow(props: Props) {
     const current = useSyncExternalStore(subscribe, snapshot, snapshot);
+    const visible = props.visible !== false;
+    const [presented, setPresented] = useState(false);
+    // Once rendered, a view keeps its mounted owner even when its window is hidden.
+    if (visible && current.status === 'ready' && !presented) setPresented(true);
     useEffect(() => {
-      if (state.status === 'idle') start();
-    }, []);
+      if (visible && state.status === 'idle') start();
+    }, [visible]);
 
+    if (!visible && !presented) return null;
     if (current.status === 'ready') {
       const Content = current.Content;
       return <Content {...props} />;

@@ -1,6 +1,7 @@
 import { switchWorkspace } from './helpers';
 import { terminalAction } from './terminal-helpers';
 import {
+  choose,
   codexOutput,
   codexSessionAction,
   codexWindow,
@@ -12,9 +13,65 @@ import {
   readState,
   runCodex,
   session,
+  startCodex,
   startCodexInFolder,
   test,
 } from './codex-helpers';
+
+test('compact Window Overview distinguishes Codex windows with the same title', async ({
+  page,
+  hasTouch,
+}, info) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const overview = page.getByRole('button', {
+    name: 'Window Overview',
+    exact: true,
+  });
+  const list = page.getByRole('list', { name: 'Open windows', exact: true });
+  const first = await startCodex(page, hasTouch);
+  const title = await first.window.getAttribute('aria-label');
+  await choose(overview, hasTouch);
+  await expect(
+    list.getByRole('button', { name: `Switch to ${title}`, exact: true }),
+  ).toHaveText(title!);
+  await choose(
+    page.getByRole('button', { name: 'Close Window Overview', exact: true }),
+    hasTouch,
+  );
+
+  const second = await startCodex(page, hasTouch);
+  await expect(second.window).toHaveAccessibleName(title!);
+  const manager = await openCodexManager(page, hasTouch);
+  for (const { runId } of [first, second]) {
+    await expect(
+      manager.locator(`[data-run-id="${runId}"]`).getByTestId('codex-run-id'),
+    ).toHaveText(`Run ${runId.slice(0, 8)}`);
+  }
+
+  await choose(overview, hasTouch);
+  const option = (runId: string) =>
+    list.getByRole('button', {
+      name: `Switch to ${title} · Run ${runId.slice(0, 8)}`,
+      exact: true,
+    });
+  for (const { runId } of [first, second]) {
+    const row = option(runId);
+    await expect(row).toBeInViewport({ ratio: 1 });
+    await expect(
+      row.getByText(`Run ${runId.slice(0, 8)}`, { exact: true }),
+    ).toBeVisible();
+  }
+  await page.screenshot({
+    path: info.outputPath('390x844-overview-same-name.png'),
+  });
+
+  await page.setViewportSize({ width: 320, height: 568 });
+  await choose(option(first.runId), hasTouch);
+  await expect(first.window).toHaveClass(/is-active/);
+  await choose(overview, hasTouch);
+  await choose(option(second.runId), hasTouch);
+  await expect(second.window).toHaveClass(/is-active/);
+});
 
 test('touch Codex supports project selection, history, session organization, project terminals and explicit continuation', async ({
   page,

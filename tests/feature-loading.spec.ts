@@ -192,6 +192,66 @@ async function restoreProjectPreview(
   return { window: page.locator(`[data-window-id="${id}"]`), content };
 }
 
+test('a minimized terminal restored from layout waits until it is selected', async ({
+  page,
+  request,
+  hasTouch,
+}) => {
+  test.skip(process.platform === 'win32', 'Host shells require POSIX here.');
+  await expect
+    .poll(async () => !!(await persistedLayout(page, request)))
+    .toBe(true);
+  const layout = await persistedLayout(page, request);
+  const original = layout.windows[0];
+  const restored = {
+    ...original,
+    id: 'terminal:restored',
+    appId: 'terminal',
+    title: 'Restored Terminal',
+    minimized: true,
+    params: {},
+    viewState: {},
+  };
+  layout.windows.push(restored);
+  const workspace = layout.workspaces.find(
+    (item: { id: string }) => item.id === restored.workspaceId,
+  );
+  workspace.order.push(restored.id);
+  await restoreLayoutOnNextLoad(page, layout);
+
+  const asset = await featureAsset('terminal/TerminalApp.tsx');
+  const requests: string[] = [];
+  const sockets: string[] = [];
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path === asset || path === '/api/terminal/info') requests.push(path);
+  });
+  page.on('websocket', (socket) => {
+    if (new URL(socket.url()).pathname === '/api/terminal')
+      sockets.push(socket.url());
+  });
+  await page.reload();
+  await choose(
+    page.getByRole('button', { name: 'Window Overview', exact: true }),
+    hasTouch,
+  );
+  const pick = page.getByRole('button', {
+    name: 'Switch to Restored Terminal',
+    exact: true,
+  });
+  await expect(pick).toBeVisible();
+  expect(requests).toEqual([]);
+  expect(sockets).toEqual([]);
+  await choose(pick, hasTouch);
+  const terminal = page.locator('[data-window-id="terminal:restored"]');
+  await expect(terminal.getByTestId('terminal-status')).toHaveAttribute(
+    'data-state',
+    'connected',
+  );
+  expect(requests).toContain(asset);
+  expect(sockets).toHaveLength(1);
+});
+
 test('closing a loading window cannot start a shell or revive the cancelled window', async ({
   page,
   hasTouch,
@@ -707,11 +767,19 @@ test('a failed module retries without reloading or replacing an existing VM draf
       await retry.focus();
       await retry.press('Enter');
     }
-    for (const window of await terminals.all())
+    const compact = page.viewportSize()!.width < 600;
+    if (compact)
+      await expect(
+        terminals.first().getByTestId('terminal-status'),
+      ).toHaveCount(0);
+    for (const window of (await terminals.all()).reverse()) {
+      if (compact && !(await window.isVisible()))
+        await activate(page, window, hasTouch);
       await expect(window.getByTestId('terminal-status')).toHaveAttribute(
         'data-state',
         'connected',
       );
+    }
     expect(attempts).toBe(2);
     expect(infoAttempts).toBe(3);
     expect(await page.evaluate(() => performance.timeOrigin)).toBe(

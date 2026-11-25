@@ -13,6 +13,7 @@ import type {
 import {
   activate,
   actionMenu,
+  bounds,
   expect,
   launch,
   menuItem,
@@ -160,6 +161,7 @@ async function mockHost(page: Page, state: HostFixture) {
       '/volumes': { volumes: state.volumes },
       '/images': { images: state.images },
       '/operations': { operations: state.operations },
+      '/projects': { projects: [] },
     };
     if (path.endsWith('/guest/terminals')) {
       state.guestReads.push(route.request().headers()['x-axv-host-id']);
@@ -310,6 +312,7 @@ test(
       manager.getByRole('heading', { name: 'VM provider unavailable' }),
     ).toBeVisible();
     await expect(newVM).toBeDisabled();
+    await expect(newVM).not.toHaveClass(/\bns-default\b/);
     await manager.getByRole('button', { name: 'View environment' }).click();
     await expect(
       manager.getByText('Install the required Lima release.', {
@@ -335,7 +338,7 @@ test(
       .getByRole('button', { name: 'Activity', exact: true })
       .click();
     await expect(
-      manager.getByText('No activity yet.', { exact: false }),
+      manager.getByRole('cell', { name: 'No activity yet.', exact: true }),
     ).toBeVisible();
 
     state.images = [image];
@@ -347,7 +350,32 @@ test(
     await expect(manager.getByText(/Choose New VM to select/)).toHaveCount(0);
     await expect(newVM).toHaveCount(1);
     await expect(newVM).toBeEnabled();
+    await expect(newVM).toHaveClass(/\bns-default\b/);
+    expect((await bounds(empty)).x).toBeCloseTo((await bounds(newVM)).x);
     await captureSizes(page, info, empty, 'vm-empty-state');
+
+    await manager.getByRole('button', { name: 'Volumes', exact: true }).click();
+    const emptyVolumes = manager.getByRole('heading', {
+      name: 'No project volumes yet',
+    });
+    const newVolume = manager.getByRole('button', {
+      name: 'New Volume',
+      exact: true,
+    });
+    await expect(emptyVolumes).toBeVisible();
+    await expect(newVolume).toBeEnabled();
+    await expect(newVM).not.toHaveClass(/\bns-default\b/);
+    await expect(
+      manager.getByText('Create a VM to add a project volume.'),
+    ).toHaveCount(0);
+    expect((await bounds(emptyVolumes)).x).toBeCloseTo(
+      (await bounds(newVolume)).x,
+    );
+    await captureSizes(page, info, emptyVolumes, 'volume-empty-state');
+    await newVolume.click();
+    await expect(manager.getByLabel('Volume name')).toBeVisible();
+    await manager.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await manager.getByRole('button', { name: 'VMs', exact: true }).click();
     await newVM.click();
     const create = page.locator('[data-window-id="machine-create:main"]');
     await expect(create.getByText(image.name, { exact: true })).toBeVisible();
@@ -1123,6 +1151,49 @@ test('filtering a selected VM disables its actions without choosing another VM',
     .getByRole('combobox', { name: 'State', exact: true })
     .selectOption('all');
   await expect(row).toHaveAttribute('aria-pressed', 'true');
+  expect(state.writes).toEqual([]);
+});
+
+test('Inspector opens project files for its original VM volume', async ({
+  page,
+}) => {
+  const state = fixture();
+  const machine = state.machines[1]!;
+  machine.guestCapabilities?.push('project-files');
+  const manager = await host(page, state);
+  await manager
+    .getByRole('button', { name: 'Task VM lima', exact: true })
+    .click();
+  await manager.getByRole('button', { name: 'Inspect', exact: true }).click();
+  const inspector = page.getByRole('region', {
+    name: 'Task VM — Inspector',
+    exact: true,
+  });
+  await inspector
+    .getByRole('button', { name: 'Project Files', exact: true })
+    .click();
+  const files = page.getByRole('region', {
+    name: 'Task VM — Project Files',
+    exact: true,
+  });
+  const open = files.getByRole('button', { name: 'Open', exact: true });
+  await expect(
+    files.getByText('Task VM project', { exact: true }),
+  ).toBeVisible();
+  await expect(open).toBeEnabled();
+  await expect(files.getByLabel('Project action')).toHaveCount(0);
+
+  const volume = state.volumes.find(
+    (item) => item.id === machine.spec.volumeId,
+  )!;
+  volume.machineId = state.machines[0]!.id;
+  await files
+    .getByRole('button', { name: 'Refresh VM projects', exact: true })
+    .click();
+  await expect(
+    files.getByText('The original VM project volume is unavailable.'),
+  ).toBeVisible();
+  await expect(open).toBeDisabled();
   expect(state.writes).toEqual([]);
 });
 

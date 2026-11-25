@@ -6,7 +6,7 @@ import { useDesktopResource as useResource } from '../../shared/api/useDesktopRe
 import { projectsAPI } from './api';
 import { projectLabel } from './presentation';
 import { HostFolderChooser } from './HostFolderChooser';
-import { VMProjectLauncher } from './VMProjectLauncher';
+import { VMProjectLauncherView } from './ProjectFiles';
 
 export function ProjectLauncher(props: AppWindowProps) {
   const { desktop, interactive } = props;
@@ -187,8 +187,9 @@ export function ProjectLauncher(props: AppWindowProps) {
           hidden={location !== 'vm'}
           inert={!interactive || location !== 'vm'}
         >
-          <VMProjectLauncher
+          <VMProjectLauncherView
             {...props}
+            visible={props.visible !== false && location === 'vm'}
             interactive={interactive && location === 'vm'}
           />
         </div>

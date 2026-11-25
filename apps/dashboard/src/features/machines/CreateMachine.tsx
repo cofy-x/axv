@@ -23,9 +23,9 @@ import { RequestDetails } from './OperationFeedback';
 import { openMachineInspector } from './desktop-icons';
 import { volumeAvailableForMachine } from './volume-policy';
 
-export function CreateMachine({ desktop, window }: AppWindowProps) {
+export function CreateMachine({ desktop, window, visible }: AppWindowProps) {
   const { setTitle } = desktop;
-  const data = useCompute();
+  const data = useCompute(visible);
   const [name, setName] = useState('');
   const [binding, setBinding] = useState<ComputeBinding>();
   const [imageId, setImageId] = useState('');

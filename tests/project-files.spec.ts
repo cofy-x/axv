@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import type { Locator, Page } from '@playwright/test';
+import type { Locator, Page, Route } from '@playwright/test';
 import {
   actionMenu,
   expect,
@@ -22,6 +22,7 @@ const machineId = 'launcher-machine';
 
 async function launcherFixture(page: Page) {
   const registrations: Record<string, unknown>[] = [];
+  let running = true;
   let release: (() => void) | undefined;
   const pending = new Promise<void>((resolve) => {
     release = resolve;
@@ -72,10 +73,10 @@ async function launcherFixture(page: Page) {
               retainVolume: true,
             },
             revision: 1,
-            desired: 'running',
-            status: 'running',
-            ready: true,
-            guestState: 'ready',
+            desired: running ? 'running' : 'stopped',
+            status: running ? 'running' : 'stopped',
+            ready: running,
+            guestState: running ? 'ready' : 'unavailable',
             guestCapabilities: ['project-files'],
             reserved: true,
             createdAt: '2026-10-21T00:00:00Z',
@@ -128,7 +129,13 @@ async function launcherFixture(page: Page) {
       })),
     });
   });
-  return { registrations, release: () => release?.() };
+  return {
+    registrations,
+    release: () => release?.(),
+    setRunning: (value: boolean) => {
+      running = value;
+    },
+  };
 }
 
 async function openLauncher(page: Page) {
@@ -196,7 +203,7 @@ async function openRegisteredHostProject(
   };
 }
 
-async function expectOnlyLauncherCode(page: Page) {
+async function expectOnlyLauncherCode(page: Page, vmOpened = false) {
   const reportPath = process.env.AXV_BUNDLE_REPORT
     ? resolve(process.env.AXV_BUNDLE_REPORT)
     : resolve(
@@ -213,6 +220,7 @@ async function expectOnlyLauncherCode(page: Page) {
     'VMProjectFiles.tsx',
     'VMProjectTasks.tsx',
     'HostProjectFiles.tsx',
+    ...(vmOpened ? [] : ['VMProjectLauncher.tsx']),
   ].map((name) => `apps/dashboard/src/features/project-files/${name}`);
   const workspaceAssets = report.chunks.filter((chunk) =>
     chunk.modules.some(
@@ -241,6 +249,7 @@ test('project location switching preserves both forms and an in-flight registrat
   isMobile,
 }, testInfo) => {
   const fixture = await launcherFixture(page);
+  fixture.setRunning(false);
   const launcher = await openLauncher(page);
   await expect(
     launcher.getByRole('tablist', { name: 'Project location' }),
@@ -302,6 +311,16 @@ test('project location switching preserves both forms and an in-flight registrat
   const savedVM = vmProjects.getByRole('button', {
     name: /Shared name · aaaaaaaa/,
   });
+  await expect(launcher.getByText(/No ready retained volumes/)).toBeVisible();
+  await choose(host);
+  fixture.setRunning(true);
+  await choose(vm);
+  await expect(
+    launcher
+      .getByRole('combobox', { name: 'Project volume' })
+      .getByRole('option', { name: /Project VM/ })
+      .first(),
+  ).toHaveCount(1);
   await expect(savedVM).toBeInViewport();
   expect((await vmProjects.boundingBox())!.y).toBeLessThan(
     (await vmPath.boundingBox())!.y,
@@ -320,6 +339,31 @@ test('project location switching preserves both forms and an in-flight registrat
   await launcher.screenshot({
     path: testInfo.outputPath('project-launcher-vm.png'),
   });
+  const projectEndpoint = '**/api/compute/projects';
+  let resumeRefresh = () => {};
+  const delayedRefresh = new Promise<void>((resolve) => {
+    resumeRefresh = resolve;
+  });
+  const waitForRefresh = async (route: Route) => {
+    await delayedRefresh;
+    return route.fallback();
+  };
+  await page.route(projectEndpoint, waitForRefresh);
+  const openFolder = launcher.getByRole('button', {
+    name: 'Open',
+    exact: true,
+  });
+  try {
+    await choose(launcher.getByRole('button', { name: 'Refresh VM projects' }));
+    await expect(openFolder).toBeDisabled();
+    await expect(vmPath).toBeVisible();
+    await expect(vmPath).toBeEditable();
+    await expect(vmPath).toHaveValue(' repo ');
+  } finally {
+    resumeRefresh();
+  }
+  await expect(openFolder).toBeEnabled();
+  await page.unroute(projectEndpoint, waitForRefresh);
   await choose(host);
   await expect(hostPath).toHaveValue('/fixture/host-draft');
   await expect(pickerPath).toHaveValue('/fixture/unfinished-picker');
@@ -359,7 +403,7 @@ test('project location switching preserves both forms and an in-flight registrat
     name: 'Draft project',
     requestId: expect.any(String),
   });
-  await expectOnlyLauncherCode(page);
+  await expectOnlyLauncherCode(page, true);
 });
 
 test('closing the host launcher keeps a completed registration without reopening its project', async ({

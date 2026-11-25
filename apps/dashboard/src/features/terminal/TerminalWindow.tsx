@@ -22,6 +22,8 @@ const readInfo = (signal: AbortSignal) =>
   request<TerminalInfo>('/terminal/info', { signal });
 
 export function TerminalWindow(props: AppWindowProps) {
+  const visible = props.visible !== false;
+  const requestedInfo = useRef(false);
   const initial = useRef<{
     controller: AbortController;
     result: Promise<TerminalInfo>;
@@ -30,19 +32,23 @@ export function TerminalWindow(props: AppWindowProps) {
 
   useEffect(() => {
     const moduleSignal = moduleAttempt.signal;
-    if (moduleSignal.aborted) return;
+    if (!visible || requestedInfo.current || moduleSignal.aborted) return;
     const controller = new AbortController();
     const result = readInfo(AbortSignal.any([controller.signal, moduleSignal]));
     initial.current = { controller, result, moduleSignal };
     // The view may still be downloading when the read fails.
     void result.catch(() => {});
     return () => {
-      initial.current = null;
-      controller.abort();
+      // After the renderer takes this read, its own lifetime controls it.
+      if (initial.current?.controller === controller) {
+        initial.current = null;
+        controller.abort();
+      }
     };
-  }, []);
+  }, [visible]);
 
   const getInfo = useCallback((signal: AbortSignal) => {
+    requestedInfo.current = true;
     const pending = initial.current;
     initial.current = null;
     if (!pending || pending.moduleSignal.aborted) return readInfo(signal);

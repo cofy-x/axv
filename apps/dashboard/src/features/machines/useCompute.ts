@@ -1,4 +1,8 @@
-import { useEffect, useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from 'react';
+import {
+  inactiveSubscription,
+  usePageVisibility,
+} from '../../shared/desktop/usePageVisibility';
 import { computeStore } from './compute-store';
 import { preparationStore } from './preparation-store';
 
@@ -9,16 +13,15 @@ function refresh() {
 
 export type { ComputeSnapshot } from './compute-store';
 
-export function useCompute() {
-  useEffect(() => {
-    if (computeStore.getSnapshot().lastUpdated) computeStore.refresh();
-  }, []);
+export function useCompute(visible = true) {
+  const pageVisible = usePageVisibility();
+  const observe = visible && pageVisible;
   const snapshot = useSyncExternalStore(
-    computeStore.subscribe,
+    observe ? computeStore.subscribe : inactiveSubscription,
     computeStore.getSnapshot,
   );
   const preparation = useSyncExternalStore(
-    preparationStore.subscribe,
+    observe ? preparationStore.subscribe : inactiveSubscription,
     preparationStore.getSnapshot,
   );
   return {

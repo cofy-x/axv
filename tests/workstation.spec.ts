@@ -364,6 +364,41 @@ test('Window Overview restores a lone minimized window across workspaces and kee
   expect(await bounds(overview)).toEqual(buttonBounds);
 });
 
+test('compact Window Overview names windows and offers a visible exit', async ({
+  page,
+}, info) => {
+  const touch = info.project.use.hasTouch === true;
+  const choose = (control: Locator) =>
+    touch ? control.tap() : control.click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const overview = page.getByRole('button', {
+    name: 'Window Overview',
+    exact: true,
+  });
+  const welcome = page.locator('[data-app-id="welcome"]');
+  await choose(welcome.getByRole('button', { name: 'Miniaturize Welcome' }));
+  await switchWorkspace(page, 2, touch);
+  await choose(overview);
+  const list = page.getByRole('list', { name: 'Open windows', exact: true });
+  const pick = list.getByRole('button', {
+    name: 'Switch to Welcome',
+    exact: true,
+  });
+  await expect(pick).toHaveText(/Welcome.*Workspace 1/);
+  await expect(pick).toBeInViewport({ ratio: 1 });
+  await expect(welcome).toBeHidden();
+  await choose(
+    page.getByRole('button', { name: 'Close Window Overview', exact: true }),
+  );
+  await expect(overview).toBeFocused();
+  await expect(list).toHaveCount(0);
+  await choose(overview);
+  await choose(pick);
+  await expectCurrentWorkspace(page, 1);
+  await expect(welcome).toHaveClass(/is-active/);
+  await expect(welcome).not.toHaveAttribute('data-minimized', 'true');
+});
+
 test('context-only Dock entries do not offer unusable standalone launchers', async ({
   page,
 }, info) => {
@@ -794,6 +829,9 @@ for (const viewport of [
       .toBe(true);
     await page.reload();
     await expect(machines).toBeAttached();
-    await expect(codex).toBeAttached();
+    const codexFrame = page.locator('[data-window-id="codex:manager"]');
+    await expect(codexFrame).toBeAttached();
+    await activate(page, codexFrame, info.project.use.hasTouch === true);
+    await expect(codex).toBeVisible();
   });
 }

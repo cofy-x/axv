@@ -20,6 +20,10 @@ import { useBootstrap } from './useBootstrap';
 import type { ReadyDesktop } from './useBootstrap';
 import { computeStore } from '../features/machines/compute-store';
 import {
+  inactiveSubscription,
+  usePageVisibility,
+} from '../shared/desktop/usePageVisibility';
+import {
   createMachineDesktopIcons,
   createMachineDesktopMenu,
 } from '../features/machines/desktop-icons';
@@ -152,9 +156,10 @@ function DesktopApp({ bootstrap, clientId }: ReadyDesktop) {
   }, []);
   const [commands] = useState(createWindowCommands);
   useSyncExternalStore(commands.subscribe, commands.getSnapshot);
+  const pageVisible = usePageVisibility();
   const compute = useSyncExternalStore(
-    computeStore.subscribe,
-    computeStore.getSnapshot,
+    pageVisible ? computeStore.subscribeDesktop : inactiveSubscription,
+    computeStore.getDesktopSnapshot,
   );
   const builtins = useMemo(() => createAppRegistry(commands), [commands]);
   const extensions = useSyncExternalStore(
@@ -182,8 +187,14 @@ function DesktopApp({ bootstrap, clientId }: ReadyDesktop) {
     }),
     [builtins, clientId],
   );
-  const machineIcons = createMachineDesktopIcons(compute, getDesktop);
-  const icons = [...createDesktopIcons(getDesktop), ...machineIcons];
+  const machineIcons = useMemo(
+    () => createMachineDesktopIcons(compute, getDesktop),
+    [compute, getDesktop],
+  );
+  const icons = useMemo(
+    () => [...createDesktopIcons(getDesktop), ...machineIcons],
+    [getDesktop, machineIcons],
+  );
 
   return (
     <DraftNamespaceContext.Provider

@@ -25,6 +25,11 @@ export interface ComputeSnapshot {
   lastUpdated?: number;
 }
 
+export type DesktopComputeSnapshot = Pick<
+  ComputeSnapshot,
+  'machines' | 'info' | 'error'
+>;
+
 type ComputeAPI = Pick<
   typeof machinesApi,
   'environment' | 'info' | 'machines' | 'volumes' | 'operations' | 'images'
@@ -41,6 +46,28 @@ function connectionKey(environment?: ComputeEnvironment) {
   ]);
 }
 
+function sameDesktopInventory(
+  previous: DesktopComputeSnapshot,
+  next: ComputeSnapshot,
+) {
+  return (
+    previous.info?.hostId === next.info?.hostId &&
+    !!previous.error === !!next.error &&
+    previous.machines.length === next.machines.length &&
+    previous.machines.every((item, index) => {
+      const machine = next.machines[index];
+      return (
+        item.id === machine.id &&
+        item.hostId === machine.hostId &&
+        item.status === machine.status &&
+        item.ready === machine.ready &&
+        item.spec?.name === machine.spec?.name &&
+        item.createdAt === machine.createdAt
+      );
+    })
+  );
+}
+
 /** One inventory and poller for every VM window in this browser. */
 export class ComputeStore {
   private snapshot: ComputeSnapshot = {
@@ -51,14 +78,16 @@ export class ComputeStore {
     loading: true,
     refreshing: false,
   };
+  private desktopSnapshot: DesktopComputeSnapshot = { machines: [] };
   private readonly listeners = new Set<() => void>();
+  private readonly desktopListeners = new Set<() => void>();
   private readonly poller: SerialPoller;
   private pendingProbe: symbol | undefined = Symbol();
 
   constructor(private readonly api: ComputeAPI = machinesApi) {
     this.poller = new SerialPoller({
       timeoutMs: 15000,
-      intervalMs: () => (this.snapshot.reloading ? 1000 : 5000),
+      intervalMs: () => this.pollInterval(),
       onStart: () => this.publish({ refreshing: true }),
       read: (context) => this.load(context),
       onError: (error) =>
@@ -75,22 +104,53 @@ export class ComputeStore {
 
   getSnapshot = () => this.snapshot;
 
-  subscribe = (listener: () => void) => {
-    this.listeners.add(listener);
-    if (this.listeners.size === 1) {
+  getDesktopSnapshot = () => this.desktopSnapshot;
+
+  subscribe = (listener: () => void) => this.listen(this.listeners, listener);
+
+  subscribeDesktop = (listener: () => void) =>
+    this.listen(this.desktopListeners, listener);
+
+  private get observed() {
+    return this.listeners.size > 0 || this.desktopListeners.size > 0;
+  }
+
+  private listen(set: Set<() => void>, listener: () => void) {
+    const first = !this.observed;
+    set.add(listener);
+    if (first) {
       this.pendingProbe = Symbol();
       this.poller.start();
-    }
+    } else if (set === this.listeners && set.size === 1) this.refresh();
     return () => {
-      this.listeners.delete(listener);
-      if (this.listeners.size) return;
-      this.poller.stop();
+      if (!set.delete(listener)) return;
+      if (!this.observed) {
+        this.poller.stop();
+        if (this.snapshot.refreshing) this.publish({ refreshing: false });
+      } else if (set === this.listeners && !set.size) this.poller.reschedule();
     };
-  };
+  }
+
+  private pollInterval() {
+    if (!this.listeners.size) return 30_000;
+    const { error, reloading, machines, operations } = this.snapshot;
+    const transitioning =
+      !error &&
+      (operations.some(
+        (op) => op.status === 'queued' || op.status === 'running',
+      ) ||
+        machines.some(
+          (vm) =>
+            vm.status === 'running' &&
+            !vm.ready &&
+            vm.guestState === 'unavailable' &&
+            Date.now() - Date.parse(vm.updatedAt) < 30_000,
+        ));
+    return reloading || transitioning ? 1000 : 5000;
+  }
 
   refresh = () => {
     this.pendingProbe = Symbol();
-    if (!this.listeners.size) return;
     this.poller.refresh();
   };
 
@@ -118,11 +178,16 @@ export class ComputeStore {
         (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
       ),
     });
-    if (this.listeners.size) this.poller.start();
+    if (this.observed) this.poller.start();
   }
 
   private publish(update: Partial<ComputeSnapshot>) {
     this.snapshot = { ...this.snapshot, ...update };
+    if (!sameDesktopInventory(this.desktopSnapshot, this.snapshot)) {
+      const { machines, info, error } = this.snapshot;
+      this.desktopSnapshot = { machines, info, error };
+      for (const listener of this.desktopListeners) listener();
+    }
     for (const listener of this.listeners) listener();
   }
 

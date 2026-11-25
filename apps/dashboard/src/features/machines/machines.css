@@ -565,6 +565,27 @@
   font-size: 13px;
   line-height: 1.5;
 }
+.machines-empty-status {
+  padding: 12px 9px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.machines-empty-status:first-child {
+  border-top: 1px solid var(--ns-shadow);
+}
+.machines-empty-status h2 {
+  margin: 0;
+  font: inherit;
+}
+.machines-empty-status p {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+@media (max-width: 599px) {
+  .machines-empty-status {
+    padding-inline: 7px;
+  }
+}
 .machines-table {
   table-layout: fixed;
 }

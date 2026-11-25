@@ -760,6 +760,54 @@ select:disabled {
   color: white;
   padding: 8px 14px;
 }
+.ns-overview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.has-side-dock .ns-overview-header {
+  margin-inline-end: calc(var(--ns-dock-width) + 12px);
+}
+.is-mobile .ns-overview-backdrop {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: calc(var(--ns-dock-size) + 16px);
+}
+.is-mobile.has-side-dock .ns-overview-backdrop {
+  padding-bottom: 8px;
+}
+.is-mobile.has-side-dock .ns-overview-list {
+  margin-inline-end: calc(var(--ns-dock-width) + 12px);
+}
+.ns-overview-list {
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+.ns-overview-list li + li {
+  margin-block-start: 4px;
+}
+.ns-overview-window.ns-button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  height: auto;
+  min-height: 44px;
+  padding-block: 5px;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.ns-overview-window small {
+  margin-inline-start: auto;
+}
 .ns-overview-pick {
   position: absolute;
   inset: 0;
