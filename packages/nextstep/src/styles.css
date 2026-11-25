@@ -760,6 +760,54 @@ select:disabled {
   color: white;
   padding: 8px 14px;
 }
+.ns-overview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.has-side-dock .ns-overview-header {
+  margin-inline-end: calc(var(--ns-dock-width) + 12px);
+}
+.is-mobile .ns-overview-backdrop {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: calc(var(--ns-dock-size) + 16px);
+}
+.is-mobile.has-side-dock .ns-overview-backdrop {
+  padding-bottom: 8px;
+}
+.is-mobile.has-side-dock .ns-overview-list {
+  margin-inline-end: calc(var(--ns-dock-width) + 12px);
+}
+.ns-overview-list {
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+.ns-overview-list li + li {
+  margin-block-start: 4px;
+}
+.ns-overview-window.ns-button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  height: auto;
+  min-height: 44px;
+  padding-block: 5px;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.ns-overview-window small {
+  margin-inline-start: auto;
+}
 .ns-overview-pick {
   position: absolute;
   inset: 0;
@@ -1020,6 +1068,54 @@ select:disabled {
 }
 .ns-button-group > .ns-button:focus-visible {
   z-index: 2;
+}
+.ns-disclosure {
+  --ns-disclosure-indicator-size: 22px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: var(--ns-control-height);
+  padding-block: 4px;
+  padding-inline: 4px calc(var(--ns-disclosure-indicator-size) + 4px);
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  list-style: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.ns-disclosure::-webkit-details-marker {
+  display: none;
+}
+.ns-disclosure:focus-visible {
+  outline-offset: -2px;
+}
+.ns-disclosure::before,
+.ns-disclosure::after {
+  position: absolute;
+  inset-block-start: 50%;
+  pointer-events: none;
+  content: '';
+}
+.ns-disclosure::before {
+  inset-inline-end: 0;
+  width: var(--ns-disclosure-indicator-size);
+  height: var(--ns-disclosure-indicator-size);
+  transform: translateY(-50%);
+}
+.ns-disclosure::after {
+  inset-inline-end: calc((var(--ns-disclosure-indicator-size) - 7px) / 2);
+  width: 7px;
+  height: 7px;
+  border: solid currentColor;
+  border-width: 0 1.5px 1.5px 0;
+  transform: translateY(calc(-50% - 2px)) rotate(45deg);
+}
+details[open] > .ns-disclosure::after {
+  transform: translateY(calc(-50% + 2px)) rotate(225deg);
+}
+@media (hover: hover) {
+  .ns-disclosure:hover::before {
+    background-color: rgb(0 0 0 / 8%);
+  }
 }
 .ns-field-label {
   display: flex;

@@ -1011,6 +1011,60 @@ test('a completed file creation preserves the location and input of an open nami
   }
 });
 
+test('a restored shaded VM project protects its draft before loading the editor', async ({
+  page,
+  request,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const state = await fixture(page);
+  const text = await openProject(page);
+  await editVMFile(browser(page));
+  const draft = 'Keep this draft while the project is shaded.';
+  await text.fill(draft);
+  await expectEditorText(text, draft);
+  const hasDraft = () =>
+    page.evaluate(
+      (value) =>
+        Object.entries(sessionStorage).some(
+          ([key, record]) =>
+            key.includes('axv-vm-project-draft') && record.includes(value),
+        ),
+      draft,
+    );
+  await expect.poll(hasDraft).toBe(true);
+  await browser(page)
+    .getByRole('button', { name: /^Shade / })
+    .click();
+  await expect
+    .poll(async () =>
+      (await persistedLayout(page, request))?.windows.some(
+        (item: { id: string; shaded?: boolean }) =>
+          item.id === browserId && item.shaded,
+      ),
+    )
+    .toBe(true);
+  const loaded = state.bindingRequests;
+  page.once('dialog', (dialog) => void dialog.accept());
+  await page.reload();
+  await expect(browser(page)).toHaveClass(/is-shaded/);
+  await expect.poll(() => blocksTabClose(page)).toBe(true);
+
+  const close = browser(page).getByRole('button', { name: /^Close / });
+  const prompt = page.getByRole('dialog', {
+    name: 'Close VM project?',
+    exact: true,
+  });
+  await close.click();
+  await prompt.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(browser(page)).toHaveClass(/is-shaded/);
+  await close.click();
+  await prompt.getByRole('button', { name: 'Keep Draft', exact: true }).click();
+  await expect(browser(page)).toHaveCount(0);
+  expect(state.bindingRequests).toBe(loaded);
+  expect(await hasDraft()).toBe(true);
+  expect(state.writes).toEqual([]);
+});
+
 test('unreadable VM draft recovery is retained until explicit discard', async ({
   page,
   request,
@@ -2189,6 +2243,11 @@ test('native composition settles across a desktop menu and preserves newer input
     await page.keyboard.press('Escape');
     await expect(menuItem(page, 'Applications')).toHaveCount(0);
     await expect(text).toBeEditable();
+    const saveButton = browser(page).getByRole('button', {
+      name: 'Save',
+      exact: true,
+    });
+    await expect(saveButton).toBeEnabled();
     const save = state.delayWrite();
     await text.press('ControlOrMeta+s');
     await save.pending;
@@ -2202,9 +2261,7 @@ test('native composition settles across a desktop menu and preserves newer input
     await protocol.send('Input.insertText', { text: '续' });
     await expectEditorText(text, '续\n');
     save.release();
-    await expect(
-      browser(page).getByRole('button', { name: 'Save', exact: true }),
-    ).toBeEnabled();
+    await expect(saveButton).toBeEnabled();
     await expectEditorText(text, '续\n');
     await text.press('ControlOrMeta+s');
     await expect.poll(() => state.writes.length).toBe(2);

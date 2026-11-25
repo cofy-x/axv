@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { PixelIcon, WindowControlIcon } from './controls';
+import { Button, PixelIcon, WindowControlIcon } from './controls';
 import {
   APPLICATION_MENU_HEIGHT,
   APPLICATION_MENU_TOP,
@@ -36,6 +36,11 @@ export function Desktop(props: DesktopProps) {
   const { layout, setOverview, api, menu, dialogRequest } = controller;
   const windowCount = layout.windows.length;
   const overview = controller.overview && windowCount > 0;
+  const compactOverview = overview && mobile;
+  const titleCounts = compactOverview ? new Map<string, number>() : undefined;
+  if (titleCounts)
+    for (const { title } of layout.windows)
+      titleCounts.set(title, (titleCounts.get(title) ?? 0) + 1);
   const overviewButton = useRef<HTMLButtonElement>(null);
   const dismissOverview = () => {
     setOverview(false);
@@ -306,8 +311,64 @@ export function Desktop(props: DesktopProps) {
           </div>
         )}
         {overview && (
-          <div className="ns-overview-backdrop" onClick={dismissOverview}>
-            <span>Choose a window · Escape to return</span>
+          <div
+            className="ns-overview-backdrop"
+            role="region"
+            aria-label="Window Overview"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) dismissOverview();
+            }}
+          >
+            <div className="ns-overview-header">
+              <strong>Window Overview</strong>
+              <Button
+                aria-label="Close Window Overview"
+                onClick={dismissOverview}
+              >
+                Done
+              </Button>
+            </div>
+            {compactOverview && (
+              <ul className="ns-overview-list" aria-label="Open windows">
+                {layout.windows.map((win) => {
+                  const app = resolveApplication(props.apps, win.appId);
+                  const reference =
+                    (titleCounts?.get(win.title) ?? 0) > 1
+                      ? app.overviewReference?.(win)
+                      : undefined;
+                  const workspaceIndex = layout.workspaces.findIndex(
+                    (item) => item.id === win.workspaceId,
+                  );
+                  const workspace = layout.workspaces[workspaceIndex];
+                  const workspaceName =
+                    workspace &&
+                    !win.sticky &&
+                    win.workspaceId !== layout.currentWorkspaceId
+                      ? workspaceLabel(workspace, workspaceIndex)
+                      : undefined;
+                  const detail = [reference, workspaceName]
+                    .filter(Boolean)
+                    .join(' · ');
+                  return (
+                    <li key={win.id}>
+                      <Button
+                        className="ns-overview-window"
+                        aria-label={
+                          detail
+                            ? `Switch to ${win.title} · ${detail}`
+                            : `Switch to ${win.title}`
+                        }
+                        onClick={() => api.focusWindow(win.id)}
+                      >
+                        <PixelIcon name={app.icon} size={24} />
+                        <span>{win.title}</span>
+                        {detail && <small>{detail}</small>}
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
         )}
         {layout.windows.map((win, index) => {
@@ -340,7 +401,7 @@ export function Desktop(props: DesktopProps) {
             />
           );
         })}
-        {minimized.length > 0 && (
+        {minimized.length > 0 && !compactOverview && (
           <div
             className="ns-miniwindow-shelf"
             aria-label="Miniaturized windows"

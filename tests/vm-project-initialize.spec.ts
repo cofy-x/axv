@@ -331,7 +331,10 @@ test('clone recovers its original task after reload and opens the initialized pr
   await expect(
     panel.getByText('VM host temporarily unavailable.'),
   ).toBeVisible();
-  await expect(panel.getByLabel('Project action')).toBeHidden();
+  await expect(panel.getByLabel('Project action')).toHaveValue('open');
+  await expect(
+    panel.getByRole('button', { name: 'Open', exact: true }),
+  ).toBeDisabled();
   const recover = panel.getByRole('button', { name: 'Recover', exact: true });
   await expect(recover).toBeVisible();
   await recover.click();
@@ -378,9 +381,10 @@ test('empty project creation exposes the volume workspace and supports narrow sc
   });
   try {
     await panel.getByRole('button', { name: 'Create', exact: true }).click();
+    await expect(panel.getByLabel('Project action')).toHaveValue('create');
     await expect(
-      panel.getByRole('status').filter({ hasText: 'Loading VM projects…' }),
-    ).toHaveText('Loading VM projects…');
+      panel.getByRole('button', { name: 'Refresh VM projects' }),
+    ).toBeDisabled();
     await expect(
       panel
         .getByRole('region', { name: 'Initialize VM project', exact: true })

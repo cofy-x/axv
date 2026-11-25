@@ -200,6 +200,7 @@ async function createPage(viewport, layout) {
 }
 
 async function sample(target, metadata, action, ready) {
+  const navigation = metadata.stage === 'cold' || metadata.stage === 'cached';
   const responses = [];
   const failedRequests = [];
   const collect = (response) => {
@@ -219,10 +220,9 @@ async function sample(target, metadata, action, ready) {
   );
   target.page.on('response', collect);
   target.page.on('requestfailed', failed);
-  const stageStart =
-    metadata.stage === 'first-open'
-      ? await target.page.evaluate(() => globalThis.performance.now())
-      : 0;
+  const stageStart = navigation
+    ? 0
+    : await target.page.evaluate(() => globalThis.performance.now());
   const started = performance.now();
   await action();
   await expect(
@@ -240,7 +240,6 @@ async function sample(target, metadata, action, ready) {
       item.value,
     ]),
   );
-  const navigation = metadata.stage !== 'first-open';
   const metrics = Object.fromEntries(
     [
       'ScriptDuration',
@@ -444,12 +443,23 @@ try {
               target.page.locator('[data-app-id="welcome"]'),
             ).toBeVisible();
           if (scenario === 'restored-codex-project') {
-            await expect(
-              target.page.getByTestId('codex-status'),
-            ).toHaveAttribute('data-state', 'connected');
-            await expect(
-              target.page.locator('.project-preview .cm-editor'),
-            ).toHaveCount(1);
+            await target.page.waitForFunction(
+              () => {
+                const source = globalThis.document.querySelector(
+                  '.project-preview .cm-editor',
+                );
+                return (
+                  !!source?.getClientRects().length &&
+                  globalThis.getComputedStyle(source).visibility === 'visible'
+                );
+              },
+              undefined,
+              { timeout: 15_000 },
+            );
+            if (viewport.width >= 600)
+              await expect(
+                target.page.getByTestId('codex-status'),
+              ).toHaveAttribute('data-state', 'connected');
           }
         };
         await sample(
@@ -464,6 +474,24 @@ try {
           () => target.page.reload(),
           ready,
         );
+        if (scenario === 'restored-codex-project' && viewport.width < 600)
+          await sample(
+            target,
+            { viewport, iteration, scenario, stage: 'activate-codex' },
+            async () => {
+              await target.page
+                .getByRole('button', { name: 'Window Overview', exact: true })
+                .click();
+              await target.page
+                .getByRole('button', { name: /^Switch to Codex/ })
+                .click();
+            },
+            () =>
+              expect(target.page.getByTestId('codex-status')).toHaveAttribute(
+                'data-state',
+                'connected',
+              ),
+          );
         await target.context.close();
       }
       for (const name of ['Codex', 'Terminal', 'Project Files']) {
@@ -537,7 +565,7 @@ try {
             origin: 'local HTTP, production embedded UI',
           },
           interpretation:
-            'Controlled local Chromium samples, no real VM/model, private HTTPS or physical mobile performance claim. Narrow viewports emulate touch. Cold means a fresh browser context and asset cache; restored layouts contain a live deterministic host Codex fixture and a registered host Python preview. First-open starts from an empty desktop with initial assets already idle; resource entries and long tasks retain their document timeline, while assets and CDP duration deltas cover the measured first-open. Timings include the action and explicit readiness but exclude the subsequent network-idle settling period; no timing threshold is enforced.',
+            'Controlled local Chromium samples, no real VM/model, private HTTPS or physical mobile performance claim. Narrow viewports emulate touch. Cold means a fresh browser context and asset cache; restored layouts contain a live deterministic host Codex fixture and a registered host Python preview. Wide restoration waits for both views. Narrow restoration waits for the active Python preview and measures selecting Codex separately after cached restoration. First-open starts from an empty desktop with initial assets already idle. Resource entries and long tasks retain their document timeline, while assets and CDP duration deltas cover the current stage. Timings include the action and explicit readiness but exclude the subsequent network-idle settling period; no timing threshold is enforced.',
           samplesRequested: options.samples,
           measurements,
           runtimeErrors,

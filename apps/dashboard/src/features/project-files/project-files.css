@@ -179,6 +179,10 @@
   gap: 12px;
   margin-block: 12px;
 }
+.project-register-volume {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
 .project-list + .project-register-form {
   border-block-start: 1px solid var(--ns-mid);
   padding-block-start: 12px;

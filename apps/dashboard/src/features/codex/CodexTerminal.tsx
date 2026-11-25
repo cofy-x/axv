@@ -363,16 +363,17 @@ export function CodexTerminal({
             Math.max(2, Math.min(500, dimensions.cols)),
             Math.max(1, Math.min(200, dimensions.rows)),
           );
-        session.resize(term.cols, term.rows);
-        void session.start();
-        if (
-          firstOpen &&
-          activeRef.current &&
-          interactiveRef.current &&
-          mayFocus() &&
-          canTransferWindowFocus(host!)
-        )
-          term.focus();
+        if (firstOpen) {
+          session.resize(term.cols, term.rows);
+          void session.start();
+          if (
+            activeRef.current &&
+            interactiveRef.current &&
+            mayFocus() &&
+            canTransferWindowFocus(host!)
+          )
+            term.focus();
+        }
       });
     }
 

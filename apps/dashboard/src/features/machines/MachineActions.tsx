@@ -33,6 +33,7 @@ interface MachineActionsProps {
   onTerminal: () => void;
   onResume?: () => void;
   onInspect?: () => void;
+  onProjectFiles?: () => void;
 }
 
 export function MachineActions(props: MachineActionsProps) {
@@ -49,6 +50,7 @@ export function MachineActions(props: MachineActionsProps) {
     onTerminal,
     onResume,
     onInspect,
+    onProjectFiles,
   } = props;
   const current = useRef(props);
   current.current = props;
@@ -95,6 +97,9 @@ export function MachineActions(props: MachineActionsProps) {
         </Button>
       )}
       {onInspect && <Button onClick={onInspect}>Inspect</Button>}
+      {onProjectFiles && (
+        <Button onClick={onProjectFiles}>Project Files</Button>
+      )}
       {!transition && (
         <IconButton
           icon="more"

@@ -1,18 +1,14 @@
 # Documentation map
 
-Use this page to choose context and find the owner of a fact. [AGENTS.md](../AGENTS.md) owns repository-wide working rules; [project status](../README.md#project-status) records current availability. Read the relevant sections and follow their source links rather than loading every reference.
+Find the document that owns the fact you are changing. [AGENTS.md](../AGENTS.md) holds repository-wide rules and [project status](../README.md#project-status) records current availability.
 
 ## Choose context
 
-**Understand the project:** Read the [project README](../README.md) introduction and relevant status entries, then [ownership and dependencies](architecture.md#ownership-and-dependencies) and the [lifetime comparison](architecture.md#codex-attachment-and-process-lifetime). For lifecycle and transition work, use [state ownership](architecture.md#state-ownership) to locate the affected owners. Read [product direction](product.md) when the task concerns goals, scope or open decisions. Use a feature reference only to go deeper into that area.
+- **Orientation** starts with the [README](../README.md), [ownership overview](architecture.md#ownership-and-dependencies) and [lifetime comparison](architecture.md#codex-attachment-and-process-lifetime). Use [product direction](product.md) for scope and goals.
+- **Feature work** starts with the ownership overview and one row in [Read by task](#read-by-task). Read that owner's affected sections and implementation links. Trace the caller, state, execution and tests that the change touches. Use the [API map](api/README.md#find-the-implementation) for route work and [state ownership](architecture.md#state-ownership) for lifecycle changes.
+- **Documentation work** starts with [Content ownership](#content-ownership) and the implementation or tests that establish the facts.
 
-**Change a feature or fix a bug:**
-
-1. Before application changes, read the compact [ownership overview](architecture.md#ownership-and-dependencies), then choose one primary owner from the task table below. Documentation-only changes start with the [existing content owner](#content-ownership) and its implementation links.
-2. Read the owner's affected sections and implementation map, where provided. Follow its source links and use `rg` within those directories to trace the affected caller, handler/service and persistence or execution path. Inspect nearby tests before editing. For API work, the [API implementation map](api/README.md#find-the-implementation) locates route adapters and domain owners.
-3. Add the [cross-cutting context](#cross-cutting-context) only when that boundary is affected. Choose the required checks from [verification](development.md#verification), implement within the existing owner, and update changed documentation using [Maintain the map](#maintain-the-map).
-
-Start editing once you can identify the owner, affected call/state path, identities and lifetimes to preserve, and required checks. Expand the reading scope when the implementation reveals another affected boundary.
+Add [cross-cutting context](#cross-cutting-context) for each affected boundary. Choose the required [checks](development.md#verification) and follow [Maintain the map](#maintain-the-map) for affected docs.
 
 ## Read by task
 
@@ -53,7 +49,7 @@ Contribution, support, conduct and vulnerability-reporting paths are linked from
 
 Apply these reads only to affected boundaries:
 
-- For UI and interaction changes, see [Design](design.md), including [interface copy](design.md#interface-copy) and [acceptance checks](design.md#acceptance-checks).
+- For UI changes, read the relevant [design rules](design.md), including [settings and disclosures](design.md#settings-and-disclosures), [interface copy](design.md#interface-copy) and [acceptance checks](design.md#acceptance-checks).
 - Service startup/lifecycle, deployment, environment or configuration changes: [Startup](startup.md).
 - HTTP, WebSocket or guest protocol changes: shared rules in the [API index](api/README.md) and the affected contract.
 - Product boundary changes: [Product direction](product.md). Existing implementation work does not require rereading unrelated goals.
@@ -92,19 +88,10 @@ Manifests and lockfiles declare toolchain versions; the README summarizes them. 
 
 ## Maintain the map
 
-For each change:
-
-1. Find the owner above and verify changed claims against handlers, models, configuration or tests. Update that owner first; remove or shorten duplicate explanations in callers and link to the owner. Keep useful cross-audience consequences.
-2. Update affected dependents. Capability changes also need the README, Welcome, About and page metadata aligned. Contract changes need the API page; visible behavior needs usage/design; configuration and CLI changes need startup. Do not touch unrelated pages merely to repeat the update.
-3. Review relative links and anchors, then run the [documentation checks](development.md#verification). Preserve useful anchors or update all inbound links when moving a section.
-
-Keep the structure small:
-
-- Extend an existing owner before adding a page. Split for a distinct responsibility or reading task, then update this map and any affected API navigation. Do not add parallel rule files or summaries that track the same facts.
-- Keep `AGENTS.md` short and applicable across the repository. Keep context selection here and dependency direction in the architecture overview; put feature mechanisms in their owner. Add scoped rules only for a real directory-specific requirement.
-- Link to a few stable implementation entry points and nearby tests. Avoid exhaustive file inventories, line-number links and copied source declarations. Keep exact values where callers/operators need them, with a source link for review.
-- Use descriptive headings, relative links, tables for comparable values and Mermaid for relationships. Examples must match current interfaces.
-- Use the repository's Releases page for download navigation and relative documentation links for setup. Keep exact tags and asset URLs in reproducible recipes, compatibility constraints and release evidence. Select application and Guest assets explicitly from their shared catalog; required toolchain and runtime pins remain intentional.
-- Link provider pricing, quotas and account eligibility to authoritative pages. Keep limits required by a workflow and configured or tested versions exact; record dated observations in task/PR evidence.
-- For main desktop layout or workflow changes, attach sanitized visual evidence to the pull request. Use a representative desktop scene with Welcome and Codex, leaving room for icon labels. Keep provider update notices, startup tips and version/model banners outside the capture using settings scoped to the demo. Keep screenshots out of commits.
-- Keep plans, audit findings, historical counts and validation diaries in task/PR history. References describe current behavior; product owns intent, and the README owns status.
+- Verify claims against their implementation or tests and update the owner first. Use brief links from other pages. Keep user consequences where the workflow needs them.
+- Keep repeatable UI rules in [Design](design.md) and action paths and outcomes in [Usage](usage.md). Put implementation in the feature owner and exact values in the runbook, API or manifest that needs them. Keep README, Welcome, About and metadata consistent when capabilities change.
+- Extend an existing owner before adding a page. Split only for a distinct responsibility or reading task. Keep `AGENTS.md` short and reserve scoped rules for directory-specific requirements.
+- Link to stable source entry points and tests. Prefer descriptive headings, relative links, tables for comparisons and Mermaid for relationships. Keep examples current.
+- Use Releases for downloads and select the intended application or Guest asset from the shared catalog. Keep exact tags and URLs in reproducible procedures and release evidence. Link provider pricing, quotas and eligibility to their authorities.
+- Keep plans, audits and dated validation in task or PR history. For major desktop changes, attach sanitized visual evidence to the PR. A representative scene with Welcome and Codex should leave room for icon labels. Use demo-scoped settings for provider notices and banners. Keep screenshots outside commits.
+- Preserve anchors or update inbound links when moving a section, then run the [documentation checks](development.md#documentation-review).

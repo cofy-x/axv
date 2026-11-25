@@ -467,11 +467,20 @@ test('a retryable status reserves space without rewriting queued geometry or rem
   const clientId = await page.evaluate(() =>
     localStorage.getItem('nextstep-browser-id'),
   );
+  const welcomeId = 'welcome:main';
+  const welcome = page.locator(`[data-window-id="${welcomeId}"]`);
   const writes: unknown[] = [];
   let fail = true;
   await page.route('**/api/layout*', async (route) => {
     if (route.request().method() !== 'PUT') return route.continue();
-    writes.push(route.request().postDataJSON());
+    const payload = route.request().postDataJSON() as {
+      layout: DesktopLayout;
+    };
+    // Editor initialization can still be saving its layout. Inject the
+    // outage on the Welcome activation this test intends to retry.
+    if (!writes.length && payload.layout.activeWindowId !== welcomeId)
+      return route.continue();
+    writes.push(payload);
     if (fail)
       return route.fulfill({
         status: 503,
@@ -480,7 +489,6 @@ test('a retryable status reserves space without rewriting queued geometry or rem
     return route.continue();
   });
   await expect(page.locator('.ns-status-overlay')).toHaveCount(0);
-  const welcome = page.locator('[data-app-id="welcome"]');
   await activate(page, welcome, hasTouch);
   const banner = page.locator('.desktop-warnings .persistence-warning');
   await expect(banner).toContainText('temporarily unavailable');

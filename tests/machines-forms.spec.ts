@@ -318,9 +318,17 @@ test(
       exact: true,
     });
     const advanced = create.getByText('Advanced', { exact: true });
+    const vmType = create.getByRole('combobox', {
+      name: 'VM type',
+      exact: true,
+    });
     await expect(name).toHaveValue('my-vm');
+    await expect(vmType).toHaveValue('development');
+    await expect(vmType).toBeVisible();
     await expect(create.getByLabel('CPUs', { exact: true })).toBeHidden();
     await page.setViewportSize({ width: 320, height: 568 });
+    await expect(name).toBeInViewport({ ratio: 1 });
+    await expect(vmType).toBeInViewport({ ratio: 1 });
     await expect(submit).toBeInViewport({ ratio: 1 });
     await expect(stopped).toBeInViewport({ ratio: 1 });
     const compact = info.outputPath('new-vm-default-320.png');
@@ -330,24 +338,17 @@ test(
       contentType: 'image/png',
     });
     await page.setViewportSize({ width: 1440, height: 900 });
-    await advanced.click();
-    const vmType = create.getByRole('combobox', {
-      name: 'VM type',
-      exact: true,
-    });
-    await expect(vmType).toHaveValue('development');
     await expect(vmType).toHaveCount(1);
     await expect(
       create.getByRole('group', { name: 'VM type', exact: true }),
     ).toHaveCount(0);
     await expect(create.getByText(/even while running/)).toHaveCount(0);
     await vmType.selectOption('task');
-    await expect(
-      create.getByLabel('Auto-delete after (minutes)'),
-    ).toBeVisible();
-    await advanced.click();
     await expect(create.getByText(/even while running/)).toBeVisible();
-    await advanced.click();
+    const lease = create.getByLabel('Auto-delete after (minutes)');
+    await expect(lease).toBeHidden();
+    await advanced.press('Enter');
+    await expect(lease).toBeVisible();
     await vmType.selectOption('development');
     await expect(create.getByLabel('CPUs', { exact: true })).toHaveValue('3');
     await expect(

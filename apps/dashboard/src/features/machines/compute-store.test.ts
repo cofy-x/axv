@@ -55,6 +55,52 @@ afterEach(() => {
 });
 
 describe('shared compute inventory', () => {
+  it('refreshes when a VM view appears and slows the shared poller when it leaves', async () => {
+    const { store, api, subscribe } = harness();
+    const desktop = vi.fn();
+    subscriptions.push(store.subscribeDesktop(desktop));
+    await vi.advanceTimersByTimeAsync(0);
+    const desktopInventory = store.getDesktopSnapshot();
+    expect(api.machines).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(api.machines).toHaveBeenCalledOnce();
+
+    const view = subscribe();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(api.machines).toHaveBeenCalledTimes(2);
+    expect(api.info).toHaveBeenCalledTimes(2);
+    view.unsubscribe();
+    await vi.advanceTimersByTimeAsync(29_000);
+    expect(api.machines).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(api.machines).toHaveBeenCalledTimes(3);
+    expect(store.getDesktopSnapshot()).toBe(desktopInventory);
+    expect(desktop).toHaveBeenCalledOnce();
+  });
+
+  it('checks for operation completion promptly while a VM view is visible', async () => {
+    const { store, api, subscribe } = harness();
+    const operation: Operation = {
+      id: 'start-vm',
+      machineId: machine.id,
+      action: 'start',
+      status: 'running',
+      createdAt: '2026-10-17T00:00:00Z',
+    };
+    api.operations.mockResolvedValueOnce({ operations: [operation] });
+    subscribe();
+    await vi.advanceTimersByTimeAsync(0);
+    api.operations.mockResolvedValue({
+      operations: [{ ...operation, status: 'succeeded' }],
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(store.getSnapshot().operations[0]?.status).toBe('succeeded');
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(api.operations).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(api.operations).toHaveBeenCalledTimes(3);
+  });
+
   it('shares one poller across windows and probes dependencies only on explicit refresh', async () => {
     const { store, api, subscribe } = harness();
     const first = subscribe();

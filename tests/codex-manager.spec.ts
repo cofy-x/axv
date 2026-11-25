@@ -1,8 +1,9 @@
-import { menuItem, switchWorkspace } from './helpers';
+import { bounds, menuItem, switchWorkspace } from './helpers';
 import { applicationMenu } from './desktop-application-helpers';
 import {
   choose,
   codexWindow,
+  defaultProjectPath,
   endCodex,
   expect,
   openCodexEnvironment,
@@ -84,6 +85,151 @@ test('host launch keeps its original request after uncertain refusal and databas
           .hostStartUUIDs,
     ),
   ).toEqual([attempts[0].requestId]);
+});
+
+test('the compact launch group keeps the default path and folder picker separate', async ({
+  page,
+  hasTouch,
+}, info) => {
+  const home = '/home/fixture';
+  await page.route('**/api/host/directories*', (route) =>
+    route.fulfill({
+      json: {
+        path: home,
+        homePath: home,
+        parentPath: '/home',
+        directories: ['.cache', '.config', 'Apps', 'Projects'].map((name) => ({
+          name,
+          path: `${home}/${name}`,
+        })),
+        truncated: false,
+      },
+    }),
+  );
+  let directoryReads = 0;
+  page.on('request', (request) => {
+    if (request.url().includes('/api/host/directories')) directoryReads++;
+  });
+  for (const width of [590, 320]) {
+    await page.setViewportSize({ width, height: 854 });
+    const manager = await openCodexManager(page, hasTouch);
+    const launch = manager.locator('.codex-manager-launch-context');
+    const summary = launch.locator('.codex-default-project > summary');
+    const indicator = () =>
+      summary.evaluate((element) => {
+        const area = getComputedStyle(element, '::before');
+        return {
+          rowBackground: getComputedStyle(element).backgroundColor,
+          background: area.backgroundColor,
+          width: parseFloat(area.width),
+          inset: area.insetInlineEnd,
+          direction: getComputedStyle(element, '::after').transform,
+        };
+      });
+    const path = launch.getByTestId('codex-default-project');
+    const start = manager.getByRole('button', {
+      name: 'New Session',
+      exact: true,
+    });
+    const folder = manager.getByRole('button', {
+      name: 'New in Folder',
+      exact: true,
+    });
+    const refresh = manager.getByRole('button', {
+      name: 'Refresh',
+      exact: true,
+    });
+    const sessions = manager.getByRole('region', { name: 'Codex sessions' });
+    await expect(summary).toContainText('Default folder');
+    await expect(path).toHaveText(defaultProjectPath);
+    await expect(path).toBeHidden();
+    const [
+      startBox,
+      folderBox,
+      refreshBox,
+      launchBox,
+      summaryBox,
+      sessionsBox,
+    ] = await Promise.all(
+      [start, folder, refresh, launch, summary, sessions].map(bounds),
+    );
+    expect(Math.abs(startBox.y - folderBox.y)).toBeLessThanOrEqual(1);
+    expect(Math.abs(startBox.y - refreshBox.y)).toBeLessThanOrEqual(1);
+    expect(summaryBox.y).toBeGreaterThanOrEqual(startBox.y + startBox.height);
+    expect(summaryBox.width / launchBox.width).toBeGreaterThan(0.85);
+    expect(sessionsBox.y).toBeGreaterThanOrEqual(
+      launchBox.y + launchBox.height - 1,
+    );
+    const screenshot = info.outputPath(`codex-compact-${width}.png`);
+    await page.screenshot({ path: screenshot });
+    await info.attach(`Compact Codex at ${width}px`, {
+      path: screenshot,
+      contentType: 'image/png',
+    });
+
+    if (!hasTouch) await refresh.hover();
+    const resting = await indicator();
+    expect(resting.inset).toBe('0px');
+    expect(resting.width).toBeGreaterThan(0);
+    expect(resting.width).toBeLessThan(summaryBox.width / 10);
+    if (!hasTouch) {
+      await summary.hover({ position: { x: 12, y: 12 } });
+      const hovered = await indicator();
+      expect(hovered.rowBackground).toBe(resting.rowBackground);
+      expect(hovered.background).not.toBe(resting.background);
+    }
+    const reads = directoryReads;
+    await choose(summary, hasTouch);
+    await expect(path).toBeVisible();
+    await expect(path).toHaveCSS('user-select', 'text');
+    const expanded = await indicator();
+    expect(expanded.direction).not.toBe(resting.direction);
+    if (hasTouch) expect(expanded.background).toBe(resting.background);
+    await expect(folder).toHaveAttribute('aria-expanded', 'false');
+    expect(directoryReads).toBe(reads);
+    await refresh.focus();
+    await page.keyboard.press('Tab');
+    await expect(summary).toBeFocused();
+    await expect(summary).toHaveCSS('outline-style', 'solid');
+    await expect(summary).toHaveCSS('outline-width', '2px');
+    await expect(summary).toHaveCSS('outline-offset', '-2px');
+    await page.keyboard.press('Enter');
+    await expect(path).toBeHidden();
+    await page.keyboard.press('Enter');
+    await expect(path).toBeVisible();
+    if (width === 320) {
+      await applicationMenu(page, 'Sessions', hasTouch);
+      await choose(menuItem(page, 'New in Folder'), hasTouch);
+    } else await choose(folder, hasTouch);
+    const picker = launch.getByRole('region', { name: 'New Codex session' });
+    await expect(
+      picker.getByRole('button', { name: 'Start Here', exact: true }),
+    ).toBeEnabled();
+    await expect(path).toBeHidden();
+    await expect(
+      picker.getByLabel('Project directory', { exact: true }),
+    ).toHaveValue(home);
+    await expect(
+      picker.getByLabel('Host folders').getByRole('button'),
+    ).toHaveText(['Apps', 'Projects', '.cache', '.config']);
+    const pickerScreenshot = info.outputPath(
+      `codex-folder-picker-${width}.png`,
+    );
+    await page.screenshot({ path: pickerScreenshot });
+    await info.attach(`Folder picker at ${width}px`, {
+      path: pickerScreenshot,
+      contentType: 'image/png',
+    });
+    await choose(summary, hasTouch);
+    await expect(path).toBeVisible();
+    await expect(picker).toBeVisible();
+    await choose(summary, hasTouch);
+    await choose(
+      picker.getByRole('button', { name: 'Cancel', exact: true }),
+      hasTouch,
+    );
+    await expect(folder).toBeFocused();
+  }
 });
 
 test('closing and reopening the folder picker preserves an unsubmitted path', async ({

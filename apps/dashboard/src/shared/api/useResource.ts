@@ -1,32 +1,40 @@
 import { useEffect, useState } from 'react';
 
+interface ResourceState<T> {
+  key: string | object | null;
+  data?: T;
+  error?: string;
+  pending?: true;
+}
+
 export function useResource<T>(
-  key: string,
-  load: () => Promise<T>,
+  key: ResourceState<T>['key'],
+  load: (signal: AbortSignal) => Promise<T>,
   assertCurrent?: () => void,
-) {
-  const [state, setState] = useState<{
-    key: string;
-    data?: T;
-    error?: string;
-  }>({ key: '' });
+  { keepPreviousData = false }: { keepPreviousData?: boolean } = {},
+): ResourceState<T> {
+  const [state, setState] = useState<ResourceState<T>>({ key: null });
   useEffect(() => {
-    let current = true;
-    void load()
+    if (key === null) return;
+    const controller = new AbortController();
+    const { signal } = controller;
+    void load(signal)
       .then((data) => {
+        if (signal.aborted) return;
         assertCurrent?.();
-        if (current) setState({ key, data });
+        setState({ key, data });
       })
       .catch((error: unknown) => {
-        if (current)
-          setState({
+        if (!signal.aborted)
+          setState((previous) => ({
             key,
+            data: keepPreviousData ? previous.data : undefined,
             error: error instanceof Error ? error.message : String(error),
-          });
+          }));
       });
-    return () => {
-      current = false;
-    };
-  }, [key, load, assertCurrent]);
-  return state.key === key ? state : { key };
+    return () => controller.abort();
+  }, [key, load, assertCurrent, keepPreviousData]);
+  return key === null || state.key === key
+    ? state
+    : { key, data: keepPreviousData ? state.data : undefined, pending: true };
 }

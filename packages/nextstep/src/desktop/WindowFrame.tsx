@@ -53,8 +53,9 @@ export function WindowFrame({
       : visibleBounds(preview ?? win, workArea, app.minSize);
   const active = api.activeWindowId === win.id;
   const visible = inWorkspace(win, api.currentWorkspaceId) && !win.minimized;
-  const hidden = !overview && (!visible || (mobile && !active));
-  const shaded = win.shaded && !overview;
+  const previewing = overview && !mobile;
+  const hidden = overview ? !previewing : !visible || (mobile && !active);
+  const shaded = win.shaded && !previewing;
   const Content = app.component;
   const menuButton = useRef<HTMLButtonElement>(null);
   const menu = (point: { x: number; y: number }) => {
@@ -89,7 +90,7 @@ export function WindowFrame({
         // in Firefox, which display:none can discard even with stable React keys.
         visibility: hidden ? 'hidden' : undefined,
         pointerEvents: hidden ? 'none' : undefined,
-        transform: overview
+        transform: previewing
           ? overviewTransform(bounds, index, api.windows.length, workArea)
           : undefined,
       }}
@@ -188,7 +189,7 @@ export function WindowFrame({
           <Content
             window={win}
             desktop={api}
-            visible={!hidden && !shaded}
+            visible={!hidden && !shaded && !overview}
             interactive={
               active && !hidden && !shaded && !overview && !inputBlocked
             }
@@ -209,7 +210,7 @@ export function WindowFrame({
           ))}
         </>
       )}
-      {overview && (
+      {previewing && (
         <button
           type="button"
           className="ns-overview-pick"

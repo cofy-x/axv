@@ -13,6 +13,7 @@ import type {
 import {
   activate,
   actionMenu,
+  bounds,
   expect,
   launch,
   menuItem,
@@ -160,6 +161,7 @@ async function mockHost(page: Page, state: HostFixture) {
       '/volumes': { volumes: state.volumes },
       '/images': { images: state.images },
       '/operations': { operations: state.operations },
+      '/projects': { projects: [] },
     };
     if (path.endsWith('/guest/terminals')) {
       state.guestReads.push(route.request().headers()['x-axv-host-id']);
@@ -310,6 +312,7 @@ test(
       manager.getByRole('heading', { name: 'VM provider unavailable' }),
     ).toBeVisible();
     await expect(newVM).toBeDisabled();
+    await expect(newVM).not.toHaveClass(/\bns-default\b/);
     await manager.getByRole('button', { name: 'View environment' }).click();
     await expect(
       manager.getByText('Install the required Lima release.', {
@@ -335,7 +338,7 @@ test(
       .getByRole('button', { name: 'Activity', exact: true })
       .click();
     await expect(
-      manager.getByText('No activity yet.', { exact: false }),
+      manager.getByRole('cell', { name: 'No activity yet.', exact: true }),
     ).toBeVisible();
 
     state.images = [image];
@@ -347,7 +350,32 @@ test(
     await expect(manager.getByText(/Choose New VM to select/)).toHaveCount(0);
     await expect(newVM).toHaveCount(1);
     await expect(newVM).toBeEnabled();
+    await expect(newVM).toHaveClass(/\bns-default\b/);
+    expect((await bounds(empty)).x).toBeCloseTo((await bounds(newVM)).x);
     await captureSizes(page, info, empty, 'vm-empty-state');
+
+    await manager.getByRole('button', { name: 'Volumes', exact: true }).click();
+    const emptyVolumes = manager.getByRole('heading', {
+      name: 'No project volumes yet',
+    });
+    const newVolume = manager.getByRole('button', {
+      name: 'New Volume',
+      exact: true,
+    });
+    await expect(emptyVolumes).toBeVisible();
+    await expect(newVolume).toBeEnabled();
+    await expect(newVM).not.toHaveClass(/\bns-default\b/);
+    await expect(
+      manager.getByText('Create a VM to add a project volume.'),
+    ).toHaveCount(0);
+    expect((await bounds(emptyVolumes)).x).toBeCloseTo(
+      (await bounds(newVolume)).x,
+    );
+    await captureSizes(page, info, emptyVolumes, 'volume-empty-state');
+    await newVolume.click();
+    await expect(manager.getByLabel('Volume name')).toBeVisible();
+    await manager.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await manager.getByRole('button', { name: 'VMs', exact: true }).click();
     await newVM.click();
     const create = page.locator('[data-window-id="machine-create:main"]');
     await expect(create.getByText(image.name, { exact: true })).toBeVisible();
@@ -518,6 +546,10 @@ test(
       manager.getByRole('button', { name: 'More image actions' }),
     ).toHaveCount(0);
     const images = page.getByRole('dialog', { name: 'Image Details' });
+    const removeImage = images.getByRole('button', {
+      name: 'Remove',
+      exact: true,
+    });
     await manager
       .getByRole('button', { name: 'Image details for Ubuntu LTS' })
       .click();
@@ -525,9 +557,7 @@ test(
     await expect(
       images.locator('.ns-dialog-main > .ns-pixel-icon'),
     ).toHaveCount(0);
-    await expect(images.getByRole('button', { name: 'Remove…' })).toHaveCount(
-      0,
-    );
+    await expect(removeImage).toHaveCount(0);
     await images.getByRole('button', { name: 'Close', exact: true }).click();
     const workshopImage = manager.getByRole('button', {
       name: 'Image details for Workshop Guest',
@@ -536,7 +566,7 @@ test(
     await expect(
       images.getByText('workshop-image-id', { exact: true }),
     ).toBeVisible();
-    await images.getByRole('button', { name: 'Remove…' }).click();
+    await removeImage.click();
     const removal = page.getByRole('dialog', { name: 'Remove image?' });
     await expect(removal).toContainText(
       'Remove “Workshop Guest” from the image catalog?',
@@ -590,7 +620,7 @@ test(
       page,
       manager,
       'Volume actions for Workshop storage',
-      'Delete…',
+      'Delete',
       hasTouch,
     );
     const deletion = page.getByRole('dialog', {
@@ -979,6 +1009,16 @@ test(
       inspector.getByText('Configuration', { exact: true }),
     ).toHaveCount(1);
     await expect(inspector.getByText('Provider', { exact: true })).toBeHidden();
+    const technical = inspector.locator('summary').filter({
+      hasText: /^Technical details$/,
+    });
+    const vmID = inspector.getByText('VM ID', { exact: true });
+    await expect(technical).toHaveClass('ns-disclosure');
+    await expect(vmID).toBeHidden();
+    await technical.click();
+    await expect(vmID).toBeVisible();
+    await technical.press('Enter');
+    await expect(vmID).toBeHidden();
     await captureSizes(
       page,
       info,
@@ -1124,6 +1164,274 @@ test('filtering a selected VM disables its actions without choosing another VM',
     .selectOption('all');
   await expect(row).toHaveAttribute('aria-pressed', 'true');
   expect(state.writes).toEqual([]);
+});
+
+test('Inspector opens project files for its original VM volume', async ({
+  page,
+}) => {
+  const state = fixture();
+  const machine = state.machines[1]!;
+  machine.guestCapabilities?.push('project-files');
+  const manager = await host(page, state);
+  await manager
+    .getByRole('button', { name: 'Task VM lima', exact: true })
+    .click();
+  await manager.getByRole('button', { name: 'Inspect', exact: true }).click();
+  const inspector = page.getByRole('region', {
+    name: 'Task VM — Inspector',
+    exact: true,
+  });
+  await inspector
+    .getByRole('button', { name: 'Project Files', exact: true })
+    .click();
+  const files = page.getByRole('region', {
+    name: 'Task VM — Project Files',
+    exact: true,
+  });
+  const open = files.getByRole('button', { name: 'Open', exact: true });
+  await expect(
+    files.getByText('Task VM project', { exact: true }),
+  ).toBeVisible();
+  await expect(open).toBeEnabled();
+  await expect(files.getByLabel('Project action')).toHaveCount(0);
+
+  const volume = state.volumes.find(
+    (item) => item.id === machine.spec.volumeId,
+  )!;
+  volume.machineId = state.machines[0]!.id;
+  await files
+    .getByRole('button', { name: 'Refresh VM projects', exact: true })
+    .click();
+  await expect(
+    files.getByText('The original VM project volume is unavailable.'),
+  ).toBeVisible();
+  await expect(open).toBeDisabled();
+  expect(state.writes).toEqual([]);
+});
+
+test('an Inspector project chooser rejects a new volume attachment', async ({
+  page,
+}) => {
+  const state = fixture();
+  const replacement = state.machines[0]!;
+  const original = state.machines[1]!;
+  original.guestCapabilities?.push('project-files');
+  const volume = state.volumes.find(
+    (item) => item.id === original.spec.volumeId,
+  )!;
+  const project = {
+    id: 'existing-project',
+    hostId: original.hostId,
+    name: 'Existing repo',
+    kind: 'vm',
+    volumeId: volume.id,
+    root: 'repo',
+    rootIdentity: 'repo-root',
+    revision: 1,
+    createdAt: original.createdAt,
+  };
+  const manager = await host(page, state);
+  await page.route('**/api/compute/projects', (route) =>
+    route.fulfill({ json: { projects: [project] } }),
+  );
+  const binding = () => ({
+    hostId: project.hostId,
+    projectId: project.id,
+    projectRevision: project.revision,
+    volumeId: volume.id,
+    volumeRevision: volume.revision,
+    machineId: volume.machineId,
+    bootId: `boot-${volume.machineId}`,
+    instanceId: `guest-${volume.machineId}`,
+  });
+  await page.route(
+    '**/api/compute/projects/existing-project/binding',
+    (route) => route.fulfill({ json: { project, binding: binding() } }),
+  );
+  const fileTargets: string[] = [];
+  await page.route(
+    '**/api/compute/projects/existing-project/files/list',
+    (route) => {
+      fileTargets.push(route.request().postDataJSON().binding.machineId);
+      return route.fulfill({
+        json: { project, binding: binding(), entries: [] },
+      });
+    },
+  );
+  await manager
+    .getByRole('button', { name: 'Task VM lima', exact: true })
+    .click();
+  await manager.getByRole('button', { name: 'Inspect', exact: true }).click();
+  const inspector = page.getByRole('region', {
+    name: 'Task VM — Inspector',
+    exact: true,
+  });
+  await inspector
+    .getByRole('button', { name: 'Project Files', exact: true })
+    .click();
+  const chooser = page.getByRole('region', {
+    name: 'Task VM — Project Files',
+    exact: true,
+  });
+  const open = chooser.getByRole('button', { name: /^Existing repo ·/ });
+  await expect(open).toBeEnabled();
+
+  original.spec.volumeId = undefined;
+  replacement.spec.volumeId = volume.id;
+  replacement.status = replacement.desired = 'running';
+  replacement.ready = true;
+  replacement.guestState = 'ready';
+  replacement.guestCapabilities = ['project-files'];
+  volume.machineId = replacement.id;
+  volume.revision++;
+
+  await open.click();
+  const files = page.getByRole('region', {
+    name: 'VM · Existing repo',
+    exact: true,
+  });
+  await expect(files.getByRole('alert')).toContainText(
+    'The project volume is unavailable on the original VM.',
+  );
+  expect(fileTargets).toEqual([]);
+});
+
+test('volume deletion leaves a brief confirmation and an Activity record @vm-ui', async ({
+  page,
+  hasTouch,
+}, info) => {
+  const state = fixture();
+  const provider = state.info.providers![0]!;
+  provider.provider = 'firecracker';
+  provider.volumes = false;
+  provider.images = false;
+  state.environment.platform = 'linux';
+  state.environment.automaticSetupSupported = false;
+  state.info.hostArch = 'amd64';
+  const image = state.images[0]!;
+  image.provider = 'firecracker';
+  image.arch = 'amd64';
+  state.info.defaults = creationDefaultsFixture(image.id, 'firecracker');
+  state.machines = [];
+  const volume = {
+    ...state.volumes[0]!,
+    name: 'Workshop storage',
+    provider: 'firecracker',
+    machineId: undefined,
+  };
+  state.volumes = [volume];
+  const operation: Operation = {
+    id: 'activity-delete-volume',
+    action: 'delete-volume',
+    machineId: '',
+    volumeId: volume.id,
+    status: 'queued',
+    createdAt: '2026-10-16T00:02:00Z',
+  };
+  await page.clock.install();
+  const manager = await host(page, state);
+  await page.route(`**/api/compute/volumes/${volume.id}/delete`, (route) => {
+    expect(route.request().method()).toBe('POST');
+    state.operations = [operation];
+    return route.fulfill({ status: 202, json: operation });
+  });
+  const volumes = manager.getByRole('button', { name: 'Volumes', exact: true });
+  await volumes.click();
+  await actionMenu(
+    page,
+    manager,
+    'Volume actions for Workshop storage',
+    'Delete',
+    hasTouch,
+  );
+  await page
+    .getByRole('dialog', { name: 'Delete project volume?' })
+    .getByRole('button', { name: 'Delete Volume', exact: true })
+    .click();
+  await expect(manager.getByRole('status')).toContainText(
+    'Delete “Workshop storage” · Queued',
+  );
+  await expect(
+    manager.getByRole('button', { name: 'View Activity' }),
+  ).toBeVisible();
+
+  state.volumes = [];
+  state.operations = [{ ...operation, status: 'succeeded' }];
+  const empty = manager.getByRole('heading', {
+    name: 'No project volumes yet',
+  });
+  const confirmation = manager.getByText('Volume deleted.', { exact: true });
+  await expect(empty).toBeVisible();
+  await expect(confirmation).toBeVisible();
+  await expect(
+    manager.getByRole('button', { name: 'View Activity' }),
+  ).toHaveCount(0);
+  await page.clock.fastForward(5000);
+  await expect(confirmation).toHaveCount(0);
+  await captureSizes(page, info, empty, 'volume-after-delete');
+
+  await manager.getByRole('button', { name: 'Activity', exact: true }).click();
+  await expect(
+    manager.getByRole('row', { name: /Delete volume.*Succeeded/ }),
+  ).toBeVisible();
+  await volumes.click();
+  await expect(empty).toBeVisible();
+  await expect(confirmation).toHaveCount(0);
+});
+
+test('confirmed VM removal closes its Inspector and Dock entry @vm-ui', async ({
+  page,
+  hasTouch,
+}, info) => {
+  const state = fixture();
+  const machine = state.machines[0]!;
+  state.machines = [machine];
+  const manager = await host(page, state);
+  const operation: Operation = {
+    id: 'activity-delete-machine',
+    machineId: machine.id,
+    action: 'delete',
+    status: 'queued',
+    createdAt: '2026-10-16T00:02:00Z',
+  };
+  await page.route(`**/api/compute/machines/${machine.id}/actions`, (route) => {
+    const { action } = route.request().postDataJSON();
+    expect(action).toBe('delete');
+    state.operations = [operation];
+    return route.fulfill({ status: 202, json: { machine, operation } });
+  });
+  await manager
+    .getByRole('button', { name: 'Build VM lima', exact: true })
+    .click();
+  await manager.getByRole('button', { name: 'Inspect', exact: true }).click();
+  const inspector = page.getByRole('region', {
+    name: 'Build VM — Inspector',
+    exact: true,
+  });
+  const dockEntry = page.getByRole('button', { name: /^VM Inspector ·/ });
+  await expect(dockEntry).toBeVisible();
+  await actionMenu(page, inspector, 'More VM actions', 'Delete', hasTouch);
+  await page
+    .getByRole('dialog', { name: 'Delete VM?' })
+    .getByRole('button', { name: 'Delete VM', exact: true })
+    .click();
+  await expect(
+    inspector.getByRole('heading', { name: 'Deleting…' }),
+  ).toBeVisible();
+
+  state.machines = [];
+  state.operations = [{ ...operation, status: 'succeeded' }];
+  await expect(
+    page.locator('[data-app-id="machine-inspector"][data-window-id]'),
+  ).toHaveCount(0);
+  await expect(dockEntry).toHaveCount(0);
+  await expect(manager).toHaveClass(/is-active/);
+  const empty = manager.getByRole('heading', { name: 'No VMs yet' });
+  await captureSizes(page, info, empty, 'vm-after-delete');
+  await manager.getByRole('button', { name: 'Activity', exact: true }).click();
+  await expect(
+    manager.getByRole('row', { name: /Delete.*Succeeded/ }),
+  ).toBeVisible();
 });
 
 test('VM Host and tabs preserve mounted volume and image drafts', async ({

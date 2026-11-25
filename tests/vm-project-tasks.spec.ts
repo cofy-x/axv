@@ -344,7 +344,7 @@ async function fixture(
   };
 }
 
-async function openTasks(page: Page) {
+async function openTasks(page: Page, { fileDraft = true } = {}) {
   await page
     .getByRole('button', { name: 'Workspace menu', exact: true })
     .click();
@@ -358,13 +358,15 @@ async function openTasks(page: Page) {
     .locator('[data-window-id="project-files:projects"]')
     .getByRole('button', { name: /^Task repository ·/ })
     .click();
-  await filesWindow(page)
-    .getByRole('button', { name: 'main.ts', exact: true })
-    .click();
   const editor = codeEditor(filesWindow(page));
-  await expectEditorText(editor, 'Saved file');
-  await editVMFile(filesWindow(page));
-  await editor.fill('Keep unsaved file typing');
+  if (fileDraft) {
+    await filesWindow(page)
+      .getByRole('button', { name: 'main.ts', exact: true })
+      .click();
+    await expectEditorText(editor, 'Saved file');
+    await editVMFile(filesWindow(page));
+    await editor.fill('Keep unsaved file typing');
+  }
   await filesWindow(page)
     .getByRole('button', { name: 'Tasks', exact: true })
     .click();
@@ -738,12 +740,13 @@ test('task polling pauses when hidden and keeps cached logs after connection and
   expect(state.queriedHosts.every((id) => id === binding.hostId)).toBe(true);
 });
 
-test('a lost submission response recovers the original receipt after reload without launching twice', async ({
+test('a lost submission response survives a hidden task window reload and recovers once', async ({
   page,
   request,
+  hasTouch,
 }) => {
   const state = await fixture(page);
-  await openTasks(page);
+  await openTasks(page, { fileDraft: false });
   const panel = tasksWindow(page);
   state.loseSubmission();
   await panel
@@ -753,15 +756,32 @@ test('a lost submission response recovers the original receipt after reload with
   await expect(
     panel.getByRole('button', { name: 'Recover Submission', exact: true }),
   ).toBeEnabled();
+  await switchWorkspace(page, 2, hasTouch);
   await expect
-    .poll(async () =>
-      (await persistedLayout(page, request))?.windows.some(
-        (item: { id: string }) => item.id === taskWindowId,
-      ),
+    .poll(async () => {
+      const layout = await persistedLayout(page, request);
+      return (
+        layout?.currentWorkspaceId === layout?.workspaces[1]?.id &&
+        layout?.windows.some((item: { id: string }) => item.id === taskWindowId)
+      );
+    })
+    .toBe(true);
+  const loaded = state.bindingReads;
+  page.once('dialog', (dialog) => void dialog.accept());
+  await page.reload();
+  await expect(panel).toHaveCount(1);
+  await expect(panel).toBeHidden();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const event = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(event);
+        return event.defaultPrevented;
+      }),
     )
     .toBe(true);
-  page.on('dialog', (dialog) => void dialog.accept());
-  await page.reload();
+  expect(state.bindingReads).toBe(loaded);
+  await switchWorkspace(page, 1, hasTouch);
   await panel
     .getByRole('button', { name: 'Recover Submission', exact: true })
     .click();

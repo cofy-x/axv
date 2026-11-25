@@ -1,6 +1,6 @@
 import type { DesktopAPI, DesktopIcon, MenuItem } from '@cofy-x/axv-nextstep';
 import type { Machine } from './api';
-import type { ComputeSnapshot } from './compute-store';
+import type { DesktopComputeSnapshot } from './compute-store';
 
 export function machineDesktopId(machine: Pick<Machine, 'hostId' | 'id'>) {
   return `machine:${JSON.stringify([machine.hostId, machine.id])}`;
@@ -12,6 +12,29 @@ export function openMachineInspector(desktop: DesktopAPI, machine: Machine) {
     { hostId: machine.hostId, machineId: machine.id },
     { title: `${machine.spec.name} — Inspector` },
   );
+}
+
+export function closeMissingMachineInspectors(
+  snapshot: DesktopComputeSnapshot,
+  desktop: DesktopAPI,
+) {
+  const hostId = snapshot.info?.hostId;
+  if (!hostId || !snapshot.info?.configured || snapshot.error) return;
+  for (const { id, appId, params } of desktop.windows) {
+    if (
+      appId !== 'machine-inspector' ||
+      params.hostId !== hostId ||
+      !params.machineId
+    )
+      continue;
+    const present = snapshot.machines.some(
+      (machine) =>
+        machine.hostId === hostId &&
+        machine.id === params.machineId &&
+        machine.status !== 'deleted',
+    );
+    if (!present) void desktop.closeWindow(id);
+  }
 }
 
 function machineStatus(
@@ -34,7 +57,7 @@ function machineStatus(
 
 /** Stable host-bound projections of the shared inventory; these are not documents. */
 export function createMachineDesktopIcons(
-  snapshot: ComputeSnapshot,
+  snapshot: DesktopComputeSnapshot,
   getDesktop: () => DesktopAPI | null,
 ): DesktopIcon[] {
   return snapshot.machines

@@ -128,6 +128,8 @@ The frontend owns xterm, bounded queues, sizing, scrolling and reconnect backoff
 
 Attachment startup waits for the spawned tmux client to register against the recorded session before announcing terminal readiness. This keeps the browser's initial resize behind client initialization; cancellation, early exit or an unconfirmed attachment closes only that client.
 
+The browser coalesces terminal size changes as the user resizes the window. It sends the latest size when resizing settles or before sending keyboard input or scroll controls.
+
 PTY startup failures retain the failing stage (start, descriptor duplication or nonblocking setup) and native cause in the private diagnostic logger, with the exact run ID and executable. Browser messages remain safe and do not include native diagnostics. Logs use the shared sanitizer and contain no terminal streams, provider configuration or environment snapshots; see [service diagnostics](startup.md#configuration-and-storage).
 
 `--no-alt-screen` retains tmux history; reattachment/fresh input leave copy mode. History scrolling sends scroll commands, never composer keystrokes. Hidden input, focus and owner-bound commands follow [desktop contracts](desktop.md).

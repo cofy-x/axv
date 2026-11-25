@@ -56,8 +56,11 @@ function operation<T>(
 }
 
 export const vmProjectsAPI = {
-  list: (hostId: string) =>
-    request<{ projects: VMProject[] }>(base, { headers: headers(hostId) }),
+  list: (hostId: string, signal?: AbortSignal) =>
+    request<{ projects: VMProject[] }>(base, {
+      headers: headers(hostId),
+      signal,
+    }),
   register: (
     hostId: string,
     values: {
@@ -75,10 +78,15 @@ export const vmProjectsAPI = {
       body: JSON.stringify(values),
       signal: AbortSignal.timeout(30000),
     }),
-  binding: (id: string, hostId: string) =>
+  binding: (id: string, hostId: string, signal?: AbortSignal) =>
     request<{ project: VMProject; binding: VMProjectBinding }>(
       `${projectPath(id)}/binding`,
-      { headers: headers(hostId), signal: AbortSignal.timeout(30000) },
+      {
+        headers: headers(hostId),
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
+          : AbortSignal.timeout(30000),
+      },
     ),
   files: (id: string, binding: VMProjectBinding, path: string, cursor = '') =>
     operation<{

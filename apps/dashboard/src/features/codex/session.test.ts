@@ -315,6 +315,48 @@ describe('persistent Codex connections', () => {
     });
   });
 
+  it('coalesces changing terminal sizes and ignores unchanged dimensions', async () => {
+    vi.useFakeTimers();
+    const { connection, sockets } = harness();
+    await connection.start();
+    const [socket] = sockets;
+    socket.ready();
+    socket.send.mockClear();
+
+    connection.resize(90, 28);
+    vi.advanceTimersByTime(80);
+    connection.resize(104, 32);
+    vi.advanceTimersByTime(80);
+    expect(socket.send).not.toHaveBeenCalled();
+
+    vi.runOnlyPendingTimers();
+    connection.resize(104.5, 32.5);
+    vi.runOnlyPendingTimers();
+    expect(socket.send).toHaveBeenCalledExactlyOnceWith('{"resize":[104,32]}');
+  });
+
+  it('sends the pending terminal size before typing or scrolling', async () => {
+    vi.useFakeTimers();
+    const { connection, sockets } = harness();
+    await connection.start();
+    const [socket] = sockets;
+    socket.ready();
+    socket.send.mockClear();
+
+    connection.resize(92, 28);
+    expect(connection.sendText('size')).toBe(true);
+    connection.resize(84, 24);
+    expect(connection.scroll(4)).toBe(true);
+    vi.runOnlyPendingTimers();
+
+    expect(socket.send.mock.calls).toEqual([
+      ['{"resize":[92,28]}'],
+      [new TextEncoder().encode('size')],
+      ['{"resize":[84,24]}'],
+      ['{"scroll":4}'],
+    ]);
+  });
+
   it.each(['ended', 'lost', 'failed'] as const)(
     'never reopens or replaces a %s session',
     async (status) => {

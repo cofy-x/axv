@@ -53,6 +53,29 @@ export class SerialPoller {
     void this.run();
   }
 
+  reschedule() {
+    if (this.state.phase !== 'waiting') return;
+    clearTimeout(this.state.timer);
+    this.wait();
+  }
+
+  private wait() {
+    const interval =
+      typeof this.options.intervalMs === 'function'
+        ? this.options.intervalMs()
+        : this.options.intervalMs;
+    if (!interval) {
+      this.state = { phase: 'idle' };
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (this.state.phase !== 'waiting' || this.state.timer !== timer) return;
+      this.state = { phase: 'idle' };
+      void this.run();
+    }, interval);
+    this.state = { phase: 'waiting', timer };
+  }
+
   private async run() {
     if (this.state.phase !== 'idle') return;
     const reading = {
@@ -86,27 +109,7 @@ export class SerialPoller {
         // Only this exact idle transition may schedule its next read.
         if (this.state === idle) {
           if (reading.refreshQueued) void this.run();
-          else {
-            const interval =
-              typeof this.options.intervalMs === 'function'
-                ? this.options.intervalMs()
-                : this.options.intervalMs;
-            if (interval) {
-              const timer = setTimeout(() => {
-                if (
-                  this.state.phase !== 'waiting' ||
-                  this.state.timer !== timer
-                )
-                  return;
-                this.state = { phase: 'idle' };
-                void this.run();
-              }, interval);
-              this.state = {
-                phase: 'waiting',
-                timer,
-              };
-            }
-          }
+          else this.wait();
         }
       }
     }

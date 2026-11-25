@@ -13,8 +13,7 @@ import {
   StatusBar,
   TextArea,
 } from '@cofy-x/axv-nextstep';
-import type { AppWindowProps } from '@cofy-x/axv-nextstep';
-import { useDraftNamespace } from '../../shared/drafts/context';
+import type { VMProjectTaskProps } from './VMProjectWindows';
 import { vmProjectsAPI } from './vm-api';
 import type { VMProject, VMProjectBinding } from './vm-api';
 import {
@@ -55,17 +54,10 @@ export function VMProjectTasks({
   window,
   desktop,
   interactive,
-}: AppWindowProps) {
+  recoveryKey,
+}: VMProjectTaskProps) {
   const projectId = window.params.vmTasksProjectId!;
   const hostId = window.params.hostId || '';
-  const namespace = useDraftNamespace();
-  const recoveryKey = JSON.stringify([
-    'axv-vm-task-submission',
-    namespace.databaseId,
-    namespace.clientId,
-    hostId,
-    projectId,
-  ]);
   const mounted = useRef(false);
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
@@ -278,17 +270,6 @@ export function VMProjectTasks({
       current = false;
     };
   }, [projectId, hostId]);
-
-  useEffect(() => {
-    const prevent = (event: BeforeUnloadEvent) => {
-      if (requests.getSnapshot().recovery.kind !== 'empty') {
-        event.preventDefault();
-        event.returnValue = '';
-      }
-    };
-    globalThis.addEventListener('beforeunload', prevent);
-    return () => globalThis.removeEventListener('beforeunload', prevent);
-  }, [requests]);
 
   useEffect(() => {
     if (!interactive || !hostId) return;

@@ -41,7 +41,13 @@ export function useHostFolderPicker() {
         pending.current === controller &&
         !controller.signal.aborted
       ) {
-        setDirectories(result);
+        setDirectories({
+          ...result,
+          directories: [
+            ...result.directories.filter(({ name }) => !name.startsWith('.')),
+            ...result.directories.filter(({ name }) => name.startsWith('.')),
+          ],
+        });
         if (!preserveDraft && draftRevision.current === revision)
           setPath(result.path);
       }

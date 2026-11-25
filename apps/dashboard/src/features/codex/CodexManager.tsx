@@ -100,6 +100,7 @@ export function CodexManager({
   );
   const [showAttention, setShowAttention] = useState(false);
   const managerElement = useRef<HTMLDivElement>(null);
+  const defaultFolder = useRef<HTMLDetailsElement>(null);
   const actionFocus = useRef<HTMLElement | null>(null);
   const actionFocusRow = useRef(0);
   const browseFocus = useRef<HTMLElement | null>(null);
@@ -242,6 +243,17 @@ export function CodexManager({
     browseFocus.current = null;
     returnFolderFocus.current = restoreFocus;
     closeFolderPicker();
+  };
+  const toggleFolderPicker = () => {
+    if (choosingFolder) {
+      closePicker(true);
+      return;
+    }
+    if (defaultFolder.current) {
+      defaultFolder.current.open = false;
+      defaultFolder.current.scrollIntoView({ block: 'nearest' });
+    }
+    showFolderPicker();
   };
   useLayoutEffect(() => {
     if (!choosingFolder && returnFolderFocus.current) {
@@ -635,10 +647,7 @@ export function CodexManager({
   useLayoutEffect(() => {
     menuActions.current = {
       create: () => create(),
-      folder: () => {
-        if (choosingFolder) closePicker(true);
-        else showFolderPicker();
-      },
+      folder: toggleFolderPicker,
       refresh: async () => {
         await Promise.all([refresh(), refreshProjects()]);
       },
@@ -687,7 +696,9 @@ export function CodexManager({
 
   return (
     <div
-      className="codex-manager"
+      className={
+        vmProjectId ? 'codex-manager' : 'codex-manager codex-host-manager'
+      }
       data-testid="codex-manager"
       ref={managerElement}
       onFocusCapture={(event) => {
@@ -717,7 +728,7 @@ export function CodexManager({
       }}
     >
       <div className="app-toolbar codex-manager-toolbar">
-        <PixelIcon name="companion" size={16} />
+        {vmProjectId && <PixelIcon name="companion" size={16} />}
         <Button
           primary
           disabled={!canCreateSession}
@@ -734,13 +745,10 @@ export function CodexManager({
             disabled={!canChooseFolder}
             aria-expanded={choosingFolder}
             aria-controls="codex-folder-picker"
-            onClick={() => {
-              if (choosingFolder) closePicker(true);
-              else showFolderPicker();
-            }}
+            onClick={toggleFolderPicker}
           >
             New in Folder
-            <span aria-hidden="true">▾</span>
+            <span className="codex-folder-chevron" aria-hidden="true" />
           </Button>
         )}
         {vmProjectId && (
@@ -787,301 +795,319 @@ export function CodexManager({
         </div>
       </div>
       <div className="codex-manager-content">
-        {vmProjectId ? (
-          <section className="codex-vm-project" aria-label="VM project context">
-            <strong>VM · {vmName}</strong>
-            <p>
-              Codex runs on the host. The AXV Skill guides it to read and edit
-              this VM project and run persistent tasks through AXV. Host-agent
-              permissions remain unchanged.
-            </p>
-            {vm.pending ? (
-              <p role="status">
-                The previous start is unconfirmed. Resolve Start checks the same
-                request for VM <code>{vm.pending.binding.machineId}</code>; it
-                does not select another environment.
-              </p>
-            ) : vm.data ? (
+        <div className="codex-manager-launch-context">
+          {vmProjectId ? (
+            <section
+              className="codex-vm-project"
+              aria-label="VM project context"
+            >
+              <strong>VM · {vmName}</strong>
               <p>
-                New session environment:{' '}
-                <code>{vm.data.binding.machineId}</code> ·{' '}
-                {vm.data.project.root || 'Volume root'}
+                Codex runs on the host. The AXV Skill guides it to read and edit
+                this VM project and run persistent tasks through AXV. Host-agent
+                permissions remain unchanged.
               </p>
-            ) : (
-              !vm.error && <p role="status">Connecting to VM project…</p>
-            )}
-            {(vm.error || vm.recoveryError) && (
-              <p className="app-error" role="alert">
-                {vm.recoveryError || vm.error}
-              </p>
-            )}
-            <details>
-              <summary>Details</summary>
-              <dl className="info-list">
-                <dt>Host</dt>
-                <dd>
-                  <code>{vmHostId}</code>
-                </dd>
-                <dt>Project</dt>
-                <dd>
-                  <code>{vmProjectId}</code>
-                </dd>
-                {vm.data && (
-                  <>
-                    <dt>Volume</dt>
-                    <dd>
-                      <code>{vm.data.binding.volumeId}</code>
-                    </dd>
-                    <dt>Boot / instance</dt>
-                    <dd>
-                      <code>
-                        {vm.data.binding.bootId} / {vm.data.binding.instanceId}
-                      </code>
-                    </dd>
-                  </>
-                )}
-              </dl>
-            </details>
-          </section>
-        ) : (
-          <details className="codex-default-project">
-            <summary title={defaultProjectPath}>
-              Default:{' '}
-              <span data-testid="codex-default-project-name">
-                {defaultProjectPath
-                  ? projectName(defaultProjectPath)
-                  : loading
-                    ? 'Loading…'
-                    : 'Unavailable'}
-              </span>
-            </summary>
-            {defaultProjectPath ? (
-              <code data-testid="codex-default-project">
-                {defaultProjectPath}
-              </code>
-            ) : (
-              <p>Check Environment for the default host folder.</p>
-            )}
-          </details>
-        )}
-        {environmentIssue && (
-          <div className="app-error codex-environment-notice" role="alert">
-            <p>{environmentIssue}</p>
-            <Button onClick={() => openCodexEnvironment(desktop)}>
-              Environment
-            </Button>
-          </div>
-        )}
-        {!vmProjectId && projectError && !choosingFolder && (
-          <p className="app-error" role="alert">
-            {projectError}
-          </p>
-        )}
-        {choosingFolder && (
-          <section
-            id="codex-folder-picker"
-            className="codex-section codex-folder-picker"
-            aria-label="New Codex session"
-            onKeyDown={(event) => {
-              if (
-                event.key === 'Escape' &&
-                !event.nativeEvent.isComposing &&
-                creating === null
-              ) {
-                event.preventDefault();
-                event.stopPropagation();
-                closePicker(true);
-              }
-            }}
-          >
-            <form
-              className="codex-path-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void browse(path);
-              }}
-            >
-              <Field
-                label="Project directory"
-                value={path}
-                disabled={creating !== null}
-                onChange={(event) => changePath(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-                    event.preventDefault();
-                    if (!browsing && creating === null) browse(path);
-                  }
-                }}
-              />
-              <div className="codex-directory-actions">
-                <Button type="submit" disabled={browsing || creating !== null}>
-                  Go
-                </Button>
-                <Button
-                  disabled={browsing || creating !== null}
-                  onClick={() => void browse()}
-                >
-                  Home
-                </Button>
-                <IconButton
-                  icon="up"
-                  label="Up"
-                  disabled={
-                    browsing ||
-                    creating !== null ||
-                    !directories?.parentPath ||
-                    !!directoryError
-                  }
-                  onClick={() =>
-                    void browse(directories?.parentPath || undefined)
-                  }
-                />
-                {(recentProjects.length > 0 || projectError) && (
-                  <section
-                    className="codex-recent"
-                    aria-label="Recent projects"
-                  >
-                    <Button
-                      aria-haspopup="menu"
-                      disabled={creating !== null || !recentProjects.length}
-                      onKeyDown={(event) => {
-                        if (
-                          event.key === 'ArrowDown' &&
-                          !event.altKey &&
-                          !event.ctrlKey &&
-                          !event.metaKey &&
-                          !event.nativeEvent.isComposing
-                        ) {
-                          event.preventDefault();
-                          event.currentTarget.click();
-                        }
-                      }}
-                      onClick={(event) => {
-                        const rect =
-                          event.currentTarget.getBoundingClientRect();
-                        desktop.contextMenu(
-                          recentProjects.map((project) => {
-                            // Host projects use canonical POSIX paths; a
-                            // backslash can be part of a directory name.
-                            const separator = project.path.lastIndexOf('/');
-                            return {
-                              label:
-                                project.path.slice(separator + 1) ||
-                                project.path,
-                              description:
-                                project.path === '/'
-                                  ? undefined
-                                  : project.path.slice(0, separator) || '/',
-                              action: () => {
-                                changePath(project.path);
-                                browse(project.path);
-                              },
-                            };
-                          }),
-                          { x: rect.right, y: rect.bottom },
-                          {
-                            title: 'Recent Projects',
-                            ownerWindowId: window.id,
-                            align: 'end',
-                            width: 'wide',
-                          },
-                        );
-                      }}
-                    >
-                      Recent Projects{projectError && ' · Outdated'}
-                      <span aria-hidden="true">▾</span>
-                    </Button>
-                  </section>
-                )}
-              </div>
-            </form>
-            {projectError && (
-              <p className="app-error" role="alert">
-                {projectError}
-              </p>
-            )}
-            {directoryError && (
-              <p className="app-error" role="alert">
-                {directoryError}
-              </p>
-            )}
-            {!browsing && directories && path !== directories.path && (
-              <p
-                className="codex-note codex-directory-context"
-                data-testid="codex-directory-context"
-              >
-                Showing: <code>{directories.path}</code>
-              </p>
-            )}
-            <div
-              className="codex-directory-list"
-              aria-label="Host folders"
-              aria-busy={browsing}
-            >
-              {!browsing && directoryError && directories && (
-                <p className="codex-note">
-                  Previous folder contents · Outdated
+              {vm.pending ? (
+                <p role="status">
+                  The previous start is unconfirmed. Resolve Start checks the
+                  same request for VM{' '}
+                  <code>{vm.pending.binding.machineId}</code>; it does not
+                  select another environment.
+                </p>
+              ) : vm.data ? (
+                <p>
+                  New session environment:{' '}
+                  <code>{vm.data.binding.machineId}</code> ·{' '}
+                  {vm.data.project.root || 'Volume root'}
+                </p>
+              ) : (
+                !vm.error && <p role="status">Connecting to VM project…</p>
+              )}
+              {(vm.error || vm.recoveryError) && (
+                <p className="app-error" role="alert">
+                  {vm.recoveryError || vm.error}
                 </p>
               )}
-              {browsing ? (
-                <p role="status">Loading folders…</p>
+              <details>
+                <summary>Details</summary>
+                <dl className="info-list">
+                  <dt>Host</dt>
+                  <dd>
+                    <code>{vmHostId}</code>
+                  </dd>
+                  <dt>Project</dt>
+                  <dd>
+                    <code>{vmProjectId}</code>
+                  </dd>
+                  {vm.data && (
+                    <>
+                      <dt>Volume</dt>
+                      <dd>
+                        <code>{vm.data.binding.volumeId}</code>
+                      </dd>
+                      <dt>Boot / instance</dt>
+                      <dd>
+                        <code>
+                          {vm.data.binding.bootId} /{' '}
+                          {vm.data.binding.instanceId}
+                        </code>
+                      </dd>
+                    </>
+                  )}
+                </dl>
+              </details>
+            </section>
+          ) : (
+            <details className="codex-default-project" ref={defaultFolder}>
+              <summary className="ns-disclosure" title={defaultProjectPath}>
+                <span className="codex-default-project-name">
+                  <span>Default folder</span>
+                  <strong data-testid="codex-default-project-name">
+                    {defaultProjectPath
+                      ? projectName(defaultProjectPath)
+                      : loading
+                        ? 'Loading…'
+                        : 'Unavailable'}
+                  </strong>
+                </span>
+              </summary>
+              {defaultProjectPath ? (
+                <code data-testid="codex-default-project">
+                  {defaultProjectPath}
+                </code>
               ) : (
-                directories?.directories.map((directory) => (
-                  <button
-                    type="button"
-                    key={directory.path}
-                    disabled={creating !== null || !!directoryError}
-                    aria-label={`Open folder ${directory.name}`}
-                    onClick={() => void browse(directory.path)}
-                  >
-                    <PixelIcon name="folder" size={16} />
-                    <span>{directory.name}</span>
-                  </button>
-                ))
+                <p>Check Environment for the default host folder.</p>
               )}
-              {!browsing && directories?.directories.length === 0 && (
-                <p>No subfolders.</p>
-              )}
+            </details>
+          )}
+          {environmentIssue && (
+            <div className="app-error codex-environment-notice" role="alert">
+              <p>{environmentIssue}</p>
+              <Button onClick={() => openCodexEnvironment(desktop)}>
+                Environment
+              </Button>
             </div>
-            {directories?.truncated && (
-              <p className="codex-note">
-                Some folders are not shown. Enter a full path to browse.
-              </p>
-            )}
-            <div className="codex-project-choice">
-              <Button
-                disabled={creating !== null}
-                onClick={() => {
+          )}
+          {!vmProjectId && projectError && !choosingFolder && (
+            <p className="app-error" role="alert">
+              {projectError}
+            </p>
+          )}
+          {choosingFolder && (
+            <section
+              id="codex-folder-picker"
+              className="codex-section codex-folder-picker"
+              aria-label="New Codex session"
+              onKeyDown={(event) => {
+                if (
+                  event.key === 'Escape' &&
+                  !event.nativeEvent.isComposing &&
+                  creating === null
+                ) {
+                  event.preventDefault();
+                  event.stopPropagation();
                   closePicker(true);
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                primary
-                disabled={
-                  !canStart ||
-                  !directories ||
-                  browsing ||
-                  !!directoryError ||
-                  creating !== null ||
-                  path !== directories.path
                 }
-                onClick={() => {
-                  if (directories) void create(directories.path);
+              }}
+            >
+              <form
+                className="codex-path-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void browse(path);
                 }}
               >
-                {creating === 'folder' ? 'Starting…' : 'Start Here'}
-              </Button>
-            </div>
-          </section>
-        )}
-        {actionError && (
-          <p className="app-error" role="alert">
-            {actionError}
-          </p>
-        )}
-        <section className="codex-section" aria-label="Codex sessions">
+                <Field
+                  label="Project directory"
+                  value={path}
+                  disabled={creating !== null}
+                  onChange={(event) => changePath(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (
+                      event.key === 'Enter' &&
+                      !event.nativeEvent.isComposing
+                    ) {
+                      event.preventDefault();
+                      if (!browsing && creating === null) browse(path);
+                    }
+                  }}
+                />
+                <div className="codex-directory-actions">
+                  <Button
+                    type="submit"
+                    disabled={browsing || creating !== null}
+                  >
+                    Go
+                  </Button>
+                  <Button
+                    disabled={browsing || creating !== null}
+                    onClick={() => void browse()}
+                  >
+                    Home
+                  </Button>
+                  <IconButton
+                    icon="up"
+                    label="Up"
+                    disabled={
+                      browsing ||
+                      creating !== null ||
+                      !directories?.parentPath ||
+                      !!directoryError
+                    }
+                    onClick={() =>
+                      void browse(directories?.parentPath || undefined)
+                    }
+                  />
+                  {(recentProjects.length > 0 || projectError) && (
+                    <section
+                      className="codex-recent"
+                      aria-label="Recent projects"
+                    >
+                      <Button
+                        aria-haspopup="menu"
+                        disabled={creating !== null || !recentProjects.length}
+                        onKeyDown={(event) => {
+                          if (
+                            event.key === 'ArrowDown' &&
+                            !event.altKey &&
+                            !event.ctrlKey &&
+                            !event.metaKey &&
+                            !event.nativeEvent.isComposing
+                          ) {
+                            event.preventDefault();
+                            event.currentTarget.click();
+                          }
+                        }}
+                        onClick={(event) => {
+                          const rect =
+                            event.currentTarget.getBoundingClientRect();
+                          desktop.contextMenu(
+                            recentProjects.map((project) => {
+                              // Host projects use canonical POSIX paths; a
+                              // backslash can be part of a directory name.
+                              const separator = project.path.lastIndexOf('/');
+                              return {
+                                label:
+                                  project.path.slice(separator + 1) ||
+                                  project.path,
+                                description:
+                                  project.path === '/'
+                                    ? undefined
+                                    : project.path.slice(0, separator) || '/',
+                                action: () => {
+                                  changePath(project.path);
+                                  browse(project.path);
+                                },
+                              };
+                            }),
+                            { x: rect.right, y: rect.bottom },
+                            {
+                              title: 'Recent Projects',
+                              ownerWindowId: window.id,
+                              align: 'end',
+                              width: 'wide',
+                            },
+                          );
+                        }}
+                      >
+                        Recent Projects{projectError && ' · Outdated'}
+                        <span aria-hidden="true">▾</span>
+                      </Button>
+                    </section>
+                  )}
+                </div>
+              </form>
+              {projectError && (
+                <p className="app-error" role="alert">
+                  {projectError}
+                </p>
+              )}
+              {directoryError && (
+                <p className="app-error" role="alert">
+                  {directoryError}
+                </p>
+              )}
+              {!browsing && directories && path !== directories.path && (
+                <p
+                  className="codex-note codex-directory-context"
+                  data-testid="codex-directory-context"
+                >
+                  Showing: <code>{directories.path}</code>
+                </p>
+              )}
+              <div
+                className="codex-directory-list"
+                aria-label="Host folders"
+                aria-busy={browsing}
+              >
+                {!browsing && directoryError && directories && (
+                  <p className="codex-note">
+                    Previous folder contents · Outdated
+                  </p>
+                )}
+                {browsing ? (
+                  <p role="status">Loading folders…</p>
+                ) : (
+                  directories?.directories.map((directory) => (
+                    <button
+                      type="button"
+                      key={directory.path}
+                      disabled={creating !== null || !!directoryError}
+                      aria-label={`Open folder ${directory.name}`}
+                      onClick={() => void browse(directory.path)}
+                    >
+                      <PixelIcon name="folder" size={16} />
+                      <span>{directory.name}</span>
+                    </button>
+                  ))
+                )}
+                {!browsing && directories?.directories.length === 0 && (
+                  <p>No subfolders.</p>
+                )}
+              </div>
+              {directories?.truncated && (
+                <p className="codex-note">
+                  Some folders are not shown. Enter a full path to browse.
+                </p>
+              )}
+              <div className="codex-project-choice">
+                <Button
+                  disabled={creating !== null}
+                  onClick={() => {
+                    closePicker(true);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  primary
+                  disabled={
+                    !canStart ||
+                    !directories ||
+                    browsing ||
+                    !!directoryError ||
+                    creating !== null ||
+                    path !== directories.path
+                  }
+                  onClick={() => {
+                    if (directories) void create(directories.path);
+                  }}
+                >
+                  {creating === 'folder' ? 'Starting…' : 'Start Here'}
+                </Button>
+              </div>
+            </section>
+          )}
+          {actionError && (
+            <p className="app-error" role="alert">
+              {actionError}
+            </p>
+          )}
+        </div>
+        <section
+          className="codex-section codex-sessions"
+          aria-label="Codex sessions"
+        >
           {startNotice && (
             <p
               className="codex-note"

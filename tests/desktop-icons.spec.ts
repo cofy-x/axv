@@ -197,6 +197,7 @@ test('VM desktop icons retain identity, expose status and remain read-only', asy
   request,
 }, info) => {
   await page.setViewportSize({ width: 1440, height: 900 });
+  await page.clock.install();
   const state = await desktopVMHost(page);
   await showApplicationOnDesktop(page, 'Virtual Machines');
   const canvas = page.getByRole('group', { name: 'Desktop icons' });
@@ -241,6 +242,7 @@ test('VM desktop icons retain identity, expose status and remain read-only', asy
     name: 'Renamed desktop VM — Ready',
     exact: true,
   });
+  await page.clock.fastForward(30_000);
   await expect(renamed).toBeVisible();
   await expect(renamed).toHaveAttribute('data-icon-id', id);
   await expectIconContentsFit(renamed);
@@ -253,6 +255,7 @@ test('VM desktop icons retain identity, expose status and remain read-only', asy
   await expectIconContentsFit(renamed);
   await captureWorkArea(page, info, 'vm-desktop-narrow');
   state.offline = true;
+  await page.clock.fastForward(30_000);
   await expect(
     canvas.getByRole('button', {
       name: 'Renamed desktop VM — Unavailable',
@@ -261,6 +264,7 @@ test('VM desktop icons retain identity, expose status and remain read-only', asy
   ).toBeVisible();
   state.offline = false;
   state.machines = [{ ...state.machines[0], status: 'deleted' }];
+  await page.clock.fastForward(30_000);
   await expect(canvas.locator('[data-icon-id^="machine:"]')).toHaveCount(0);
   expect(state.mutations).toEqual([]);
   expect(state.preparationReads).toBe(0);
@@ -320,6 +324,63 @@ test('VM desktop activation opens only the exact host Inspector across host chan
   expect(ids).toContain(
     'machine-inspector:["desktop-host-two","desktop-vm-one"]',
   );
+  expect(state.mutations).toEqual([]);
+});
+
+test('only a verified inventory removes a restored miniaturized VM Inspector', async ({
+  page,
+  request,
+}) => {
+  const state = await desktopVMHost(page);
+  const canvas = page.getByRole('group', { name: 'Desktop icons' });
+  await canvas
+    .getByRole('button', { name: 'Desktop VM — Stopped', exact: true })
+    .dblclick();
+  const inspector = page.locator(
+    '[data-app-id="machine-inspector"][data-window-id]',
+  );
+  const windowId = (await inspector.getAttribute('data-window-id'))!;
+  const dockEntry = page.getByRole('button', { name: /^VM Inspector ·/ });
+  await inspector
+    .getByRole('button', {
+      name: 'Miniaturize Desktop VM — Inspector',
+      exact: true,
+    })
+    .click();
+  await expect
+    .poll(
+      async () =>
+        (await persistedLayout(page, request))?.windows.find(
+          (item: { id: string }) => item.id === windowId,
+        )?.minimized,
+    )
+    .toBe(true);
+
+  state.machines = [];
+  state.offline = true;
+  await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/api/compute/info') &&
+        response.status() === 503,
+    ),
+    page.reload(),
+  ]);
+  await expect(inspector).toHaveAttribute('data-minimized', 'true');
+  await expect(dockEntry).toBeVisible();
+
+  state.offline = false;
+  await page.reload();
+  await expect
+    .poll(async () =>
+      (await persistedLayout(page, request))?.windows.some(
+        (item: { id: string }) => item.id === windowId,
+      ),
+    )
+    .toBe(false);
+  await expect(inspector).toHaveCount(0);
+  await expect(dockEntry).toHaveCount(0);
+  await expect(canvas.locator('[data-icon-id^="machine:"]')).toHaveCount(0);
   expect(state.mutations).toEqual([]);
 });
 
@@ -437,8 +498,12 @@ test('overflow icons stay scrollable and open through pointer or touch', async (
   isMobile,
   browserName,
 }, info) => {
+  await page.clock.install();
   const state = await desktopVMHost(page);
   await page.setViewportSize({ width: 390, height: 420 });
+  await expect(
+    page.getByRole('button', { name: 'Desktop VM — Stopped', exact: true }),
+  ).toBeVisible();
   const machine = state.machines[0]!;
   state.machines = Array.from({ length: 20 }, (_, index) => {
     const number = String(index).padStart(2, '0');
@@ -452,13 +517,14 @@ test('overflow icons stay scrollable and open through pointer or touch', async (
     name: 'Overflow VM 19 — Stopped',
     exact: true,
   });
+  await page.clock.fastForward(30_000);
   await expect(icon).toBeVisible();
   const canvas = page.getByRole('group', { name: 'Desktop icons' });
-  expect(
-    await canvas.evaluate(
-      (element) => element.scrollHeight > element.clientHeight,
-    ),
-  ).toBe(true);
+  await expect
+    .poll(() =>
+      canvas.evaluate((element) => element.scrollHeight > element.clientHeight),
+    )
+    .toBe(true);
   const visibleArea = await bounds(canvas);
   // Start over an icon: a full grid must remain scrollable without aiming
   // for the narrow gaps between its cells.

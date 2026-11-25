@@ -471,22 +471,53 @@
   min-height: 0;
 }
 .machines-create-body {
+  container: vm-create / inline-size;
   font-size: 13px;
 }
+.machines-create-identity {
+  display: grid;
+  gap: 10px;
+  align-items: end;
+}
+@container vm-create (min-width: 360px) {
+  .machines-create-identity {
+    grid-template-columns: minmax(0, 2fr) minmax(135px, 1fr);
+  }
+}
 .machines-create-summary {
-  margin-block: 16px;
+  margin-block: 10px 14px;
   line-height: 1.45;
+}
+.machines-create-summary dt {
+  font-weight: normal;
 }
 .machines-create-summary dd {
   min-width: 0;
 }
 .machines-create-advanced {
-  margin-bottom: 0;
+  border-top: 1px solid var(--ns-shadow);
 }
-.machines-create-advanced > summary,
-.machines-inspector-body > .machines-technical > summary {
-  min-height: var(--ns-control-height);
-  padding-block: 6px;
+.machines-create-settings {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border-top: 1px solid var(--ns-mid);
+  background: color-mix(in srgb, var(--ns-face), var(--ns-light) 25%);
+}
+.machines-create-body .machines-create-settings > fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
+.machines-create-settings legend {
+  width: 100%;
+  margin: 0 0 8px;
+  padding: 0 0 5px;
+  border-bottom: 1px solid var(--ns-shadow);
+  background: transparent;
+  font-size: var(--ns-font-size-secondary);
+  font-weight: 600;
 }
 .machines-create-footer {
   flex: 0 0 auto;
@@ -564,6 +595,27 @@
   padding: 28px 20px;
   font-size: 13px;
   line-height: 1.5;
+}
+.machines-empty-status {
+  padding: 12px 9px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.machines-empty-status:first-child {
+  border-top: 1px solid var(--ns-shadow);
+}
+.machines-empty-status h2 {
+  margin: 0;
+  font: inherit;
+}
+.machines-empty-status p {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+@media (max-width: 599px) {
+  .machines-empty-status {
+    padding-inline: 7px;
+  }
 }
 .machines-table {
   table-layout: fixed;
@@ -814,36 +866,16 @@
   align-items: center;
   margin-bottom: 12px;
 }
+.machines-inspector-body > .machines-empty-status {
+  padding: 0;
+  border-top: 0;
+}
 .machines-inspector-body > .machines-technical {
   margin-block: 0;
   padding-block: 0;
 }
 .machines-inspector-body > .machines-technical[open] {
   padding-bottom: 10px;
-}
-.machines-inspector-body > .machines-technical > summary {
-  position: relative;
-  padding-inline-end: 22px;
-  list-style: none;
-}
-.machines-inspector-body
-  > .machines-technical
-  > summary::-webkit-details-marker {
-  display: none;
-}
-.machines-inspector-body > .machines-technical > summary::after {
-  position: absolute;
-  inset-block-start: calc(50% - 5px);
-  inset-inline-end: 4px;
-  width: 7px;
-  height: 7px;
-  border: solid currentColor;
-  border-width: 0 1.5px 1.5px 0;
-  transform: rotate(45deg);
-  content: '';
-}
-.machines-inspector-body > .machines-technical[open] > summary::after {
-  transform: translateY(3px) rotate(225deg);
 }
 .machines-inspector-body > .machines-technical[open] > summary + * {
   margin-block-start: 8px;

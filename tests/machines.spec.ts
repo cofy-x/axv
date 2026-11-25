@@ -724,7 +724,10 @@ test(
     await page
       .getByRole('button', { name: 'Window Overview', exact: true })
       .click();
-    await first.getByRole('button', { name: /^Switch to / }).click();
+    const firstTitle = await first.getAttribute('aria-label');
+    await page
+      .getByRole('button', { name: `Switch to ${firstTitle}`, exact: true })
+      .click();
     await expect(first).toHaveClass(/is-active/);
     await actionMenu(
       page,
