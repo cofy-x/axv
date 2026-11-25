@@ -354,8 +354,8 @@ export function Desktop(props: DesktopProps) {
                       <Button
                         className="ns-overview-window"
                         aria-label={
-                          reference
-                            ? `Switch to ${win.title} · ${reference}`
+                          detail
+                            ? `Switch to ${win.title} · ${detail}`
                             : `Switch to ${win.title}`
                         }
                         onClick={() => api.focusWindow(win.id)}

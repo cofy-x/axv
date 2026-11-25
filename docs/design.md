@@ -114,7 +114,7 @@ Use one scrolling Preferences page with titled, divided sections. Group desktop 
 
 Fit windows to the usable area and restore desktop geometry at wider sizes. Keep launch, workspace and primary actions reachable as the viewport shrinks or an on-screen keyboard opens. Constrain menus and dialogs to the visual viewport. Give long text and overflow an appropriate local scroll or wrap.
 
-Keep the active workspace, Window Overview and each Dock add control reachable. Give Window Overview a stable position and a pressed state while open. Dock tiles keep a running indicator and show a count for multiple windows. Keep minimized windows in their own strip. Desktop icons keep readable names, text status and matching actions. Touch scrolling stays separate from activation. See [desktop geometry](desktop.md#geometry-and-desktop-icons) for sizes, placement and persisted positions.
+Keep the active workspace, Window Overview and each Dock add control reachable. Give Window Overview a stable position and a pressed state while open. Include its visible workspace and run references in the accessible window choices. Dock tiles keep a running indicator and show a count for multiple windows. Keep minimized windows in their own strip. Desktop icons keep readable names, text status and matching actions. Touch scrolling stays separate from activation. See [desktop geometry](desktop.md#geometry-and-desktop-icons) for sizes, placement and persisted positions.
 
 Use semantic labels, visible focus and consistent hit areas. Indicate selection, errors and availability beyond color. Respect reduced motion.
 

@@ -381,7 +381,7 @@ test('compact Window Overview names windows and offers a visible exit', async ({
   await choose(overview);
   const list = page.getByRole('list', { name: 'Open windows', exact: true });
   const pick = list.getByRole('button', {
-    name: 'Switch to Welcome',
+    name: 'Switch to Welcome · Workspace 1',
     exact: true,
   });
   await expect(pick).toHaveText(/Welcome.*Workspace 1/);
