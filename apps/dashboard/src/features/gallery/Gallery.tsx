@@ -168,6 +168,10 @@ export function Gallery({ desktop }: AppWindowProps) {
                 Progress
                 <progress value={checked ? 65 : 30} max="100" />
               </label>
+              <details>
+                <summary className="ns-disclosure">Default folder</summary>
+                <code>/projects/workspace</code>
+              </details>
             </div>
           )}
           {tab === 'dialogs' && (

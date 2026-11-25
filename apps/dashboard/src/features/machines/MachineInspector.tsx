@@ -408,7 +408,7 @@ export function MachineInspector({
               inert={!terminals.length}
               className="machines-technical"
             >
-              <summary>Guest terminals</summary>
+              <summary className="ns-disclosure">Guest terminals</summary>
               <p className="fine-print">
                 Closing a terminal window detaches it. Stopping the VM ends its
                 running sessions.
@@ -435,7 +435,7 @@ export function MachineInspector({
               })}
             </details>
             <details className="machines-technical">
-              <summary>Configuration</summary>
+              <summary className="ns-disclosure">Configuration</summary>
               <dl className="info-list machines-details">
                 <dt>VM type</dt>
                 <dd>{humanize(machine.spec.kind)}</dd>
@@ -472,7 +472,7 @@ export function MachineInspector({
               />
             </details>
             <details className="machines-technical">
-              <summary>Recent operations</summary>
+              <summary className="ns-disclosure">Recent operations</summary>
               {recent.length ? (
                 recent.map((op) => {
                   const phase = operationPhase(op);
@@ -491,7 +491,7 @@ export function MachineInspector({
               )}
             </details>
             <details className="machines-technical">
-              <summary>Technical details</summary>
+              <summary className="ns-disclosure">Technical details</summary>
               <dl className="info-list machines-details">
                 <dt>VM ID</dt>
                 <dd>

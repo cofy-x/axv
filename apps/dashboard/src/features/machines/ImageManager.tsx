@@ -277,7 +277,7 @@ export function ImageManager({
       ),
       buttons: [
         ...(administratorImages && canRemoveImage(image, !!imageMachines.length)
-          ? [{ label: 'Remove…', value: 'remove' }]
+          ? [{ label: 'Remove', value: 'remove' }]
           : []),
         { label: 'Close', value: 'close', default: true, cancel: true },
       ],

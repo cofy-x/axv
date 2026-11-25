@@ -546,6 +546,10 @@ test(
       manager.getByRole('button', { name: 'More image actions' }),
     ).toHaveCount(0);
     const images = page.getByRole('dialog', { name: 'Image Details' });
+    const removeImage = images.getByRole('button', {
+      name: 'Remove',
+      exact: true,
+    });
     await manager
       .getByRole('button', { name: 'Image details for Ubuntu LTS' })
       .click();
@@ -553,9 +557,7 @@ test(
     await expect(
       images.locator('.ns-dialog-main > .ns-pixel-icon'),
     ).toHaveCount(0);
-    await expect(images.getByRole('button', { name: 'Remove…' })).toHaveCount(
-      0,
-    );
+    await expect(removeImage).toHaveCount(0);
     await images.getByRole('button', { name: 'Close', exact: true }).click();
     const workshopImage = manager.getByRole('button', {
       name: 'Image details for Workshop Guest',
@@ -564,7 +566,7 @@ test(
     await expect(
       images.getByText('workshop-image-id', { exact: true }),
     ).toBeVisible();
-    await images.getByRole('button', { name: 'Remove…' }).click();
+    await removeImage.click();
     const removal = page.getByRole('dialog', { name: 'Remove image?' });
     await expect(removal).toContainText(
       'Remove “Workshop Guest” from the image catalog?',
@@ -618,7 +620,7 @@ test(
       page,
       manager,
       'Volume actions for Workshop storage',
-      'Delete…',
+      'Delete',
       hasTouch,
     );
     const deletion = page.getByRole('dialog', {
@@ -1007,6 +1009,16 @@ test(
       inspector.getByText('Configuration', { exact: true }),
     ).toHaveCount(1);
     await expect(inspector.getByText('Provider', { exact: true })).toBeHidden();
+    const technical = inspector.locator('summary').filter({
+      hasText: /^Technical details$/,
+    });
+    const vmID = inspector.getByText('VM ID', { exact: true });
+    await expect(technical).toHaveClass('ns-disclosure');
+    await expect(vmID).toBeHidden();
+    await technical.click();
+    await expect(vmID).toBeVisible();
+    await technical.press('Enter');
+    await expect(vmID).toBeHidden();
     await captureSizes(
       page,
       info,
@@ -1329,7 +1341,7 @@ test('volume deletion leaves a brief confirmation and an Activity record @vm-ui'
     page,
     manager,
     'Volume actions for Workshop storage',
-    'Delete…',
+    'Delete',
     hasTouch,
   );
   await page

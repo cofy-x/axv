@@ -471,7 +471,7 @@ export function VolumeManager({
     desktop.contextMenu(
       [
         {
-          label: 'Delete…',
+          label: 'Delete',
           action: () => {
             const latest = current.current;
             const target = latest.volumes.find((item) => item.id === volume.id);

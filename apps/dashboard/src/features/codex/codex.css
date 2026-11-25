@@ -1,4 +1,5 @@
 .codex-manager {
+  --codex-manager-inset: 12px;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -8,7 +9,26 @@
 .codex-manager-content {
   overflow: auto;
   flex: 1;
-  padding: 12px;
+  padding: var(--codex-manager-inset);
+}
+.codex-host-manager .codex-manager-content {
+  padding: 0;
+}
+.codex-host-manager .codex-manager-toolbar {
+  padding: 8px var(--codex-manager-inset);
+  border-bottom: 0;
+}
+.codex-host-manager .codex-manager-launch-context {
+  padding: 0 var(--codex-manager-inset) 6px;
+  background: #ddd;
+  border-bottom: 1px solid var(--ns-mid);
+}
+.codex-host-manager .codex-manager-launch-context > .app-error {
+  margin: 6px 0 2px;
+}
+.codex-host-manager .codex-sessions {
+  margin-top: 0;
+  padding: 10px var(--codex-manager-inset) var(--codex-manager-inset);
 }
 .codex-vm-project {
   line-height: 1.5;
@@ -22,26 +42,46 @@
   overflow-wrap: anywhere;
 }
 .codex-default-project {
-  margin: 0 0 8px;
-  line-height: 1.45;
-  font-size: var(--ns-font-size-secondary);
+  margin: 0;
 }
-.codex-default-project > summary {
-  cursor: pointer;
-  width: fit-content;
-  max-width: 100%;
-  min-height: var(--ns-control-height);
-  padding: 4px 0;
+.codex-default-project > .ns-disclosure {
+  min-height: max(30px, var(--ns-control-height));
+}
+.codex-default-project-name {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 8px;
+  min-width: 0;
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.codex-default-project-name > span {
+  color: #333;
+}
+.codex-folder-chevron {
+  display: inline-block;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border: solid currentColor;
+  border-width: 0 1.5px 1.5px 0;
+  transform: translateY(-2px) rotate(45deg);
+}
+.codex-manager-toolbar [aria-expanded='true'] .codex-folder-chevron {
+  transform: translateY(2px) rotate(225deg);
 }
 .codex-default-project code {
   display: block;
-  margin-top: 4px;
+  margin: 0 4px 6px;
+  color: #444;
   font: var(--ns-font-size-secondary) var(--ns-mono);
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
+  user-select: text;
 }
 .codex-default-project p {
-  margin: 4px 0;
+  margin: 4px;
 }
 .codex-manager-toolbar {
   flex-wrap: wrap;
@@ -112,9 +152,8 @@
   margin: 0 0 8px;
 }
 .codex-folder-picker {
-  padding: 10px;
-  border: 1px solid var(--ns-shadow);
-  background: var(--ns-light);
+  margin-top: 12px;
+  padding-bottom: 4px;
 }
 .codex-path-form {
   display: flex;
@@ -427,7 +466,7 @@
   text-align: right;
 }
 @media (max-width: 599px) {
-  .codex-manager-content {
-    padding: 10px;
+  .codex-manager {
+    --codex-manager-inset: 10px;
   }
 }

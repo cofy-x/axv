@@ -186,14 +186,34 @@ export function CreateMachine({ desktop, window, visible }: AppWindowProps) {
         }}
       >
         <div className="app-pad machines-form machines-scroll machines-create-body">
-          <Field
-            label="Name"
-            value={name}
-            required
-            maxLength={80}
-            disabled={locked}
-            onChange={(event) => setName(event.target.value)}
-          />
+          <div className="machines-create-identity">
+            <Field
+              label="Name"
+              value={name}
+              required
+              maxLength={80}
+              disabled={locked}
+              onChange={(event) => setName(event.target.value)}
+            />
+            <Select
+              label="VM type"
+              disabled={locked}
+              value={kind}
+              onChange={(event) => {
+                const next =
+                  event.target.value === 'task' ? 'task' : 'development';
+                setKind(next);
+                setRetain(
+                  next === 'development' ||
+                    !!data.info?.defaults?.taskRetainVolume,
+                );
+                setVolume('');
+              }}
+            >
+              <option value="development">Development</option>
+              <option value="task">Task</option>
+            </Select>
+          </div>
           {showImagePicker && (
             <Select
               label="Image"
@@ -253,136 +273,120 @@ export function CreateMachine({ desktop, window, visible }: AppWindowProps) {
               )}
             </dl>
           )}
-          <details className="machines-technical machines-create-advanced">
-            <summary>Advanced</summary>
-            <Select
-              label="VM type"
-              disabled={locked}
-              value={kind}
-              onChange={(event) => {
-                const next =
-                  event.target.value === 'task' ? 'task' : 'development';
-                setKind(next);
-                setRetain(
-                  next === 'development' ||
-                    !!data.info?.defaults?.taskRetainVolume,
-                );
-                setVolume('');
-              }}
-            >
-              <option value="development">Development</option>
-              <option value="task">Task</option>
-            </Select>
-            {kind === 'task' && (
-              <Field
-                label="Auto-delete after (minutes)"
-                type="number"
-                min={1}
-                max={43200}
-                disabled={locked}
-                required
-                value={ttl}
-                onChange={(event) => setTTL(event.target.value)}
-              />
-            )}
-            <fieldset disabled={locked}>
-              <legend>Resources</legend>
-              <div className="machines-resource-fields">
+          <details className="machines-create-advanced">
+            <summary className="ns-disclosure">Advanced</summary>
+            <div className="machines-create-settings">
+              {kind === 'task' && (
                 <Field
-                  label="CPUs"
+                  label="Auto-delete after (minutes)"
                   type="number"
                   min={1}
-                  max={capacity?.cpus}
-                  value={cpus}
+                  max={43200}
+                  disabled={locked}
                   required
-                  onChange={(event) => setCPUs(event.target.value)}
-                />
-                <Field
-                  label="Memory (MiB)"
-                  type="number"
-                  min={128}
-                  max={capacity?.memoryMiB}
-                  value={memoryMiB}
-                  required
-                  onChange={(event) => setMemory(event.target.value)}
-                />
-                <Field
-                  label="Root disk (GiB)"
-                  type="number"
-                  min={minimumRoot}
-                  max={capacity?.diskGiB}
-                  value={diskGiB}
-                  required
-                  onChange={(event) => setDisk(event.target.value)}
-                />
-              </div>
-            </fieldset>
-            <fieldset disabled={locked}>
-              <legend>Project storage</legend>
-              <Select
-                label="Project volume"
-                value={volumeId}
-                onChange={(event) => {
-                  setVolume(event.target.value);
-                  const next = data.volumes.find(
-                    (item) => item.id === event.target.value,
-                  );
-                  if (next) {
-                    setProject(String(next.sizeGiB));
-                    setRetain(next.retain);
-                  }
-                }}
-              >
-                <option value="">New project volume</option>
-                {volumeId && !selectedVolumeAvailable && (
-                  <option value={volumeId}>
-                    {volume?.name || volumeId} · unavailable
-                  </option>
-                )}
-                {!!availableVolumes.length && (
-                  <optgroup label="Existing volumes">
-                    {availableVolumes.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name || item.id} · {item.sizeGiB} GiB
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-              </Select>
-              <Field
-                label="Project disk (GiB)"
-                type="number"
-                min={1}
-                max={capacity?.diskGiB}
-                disabled={!!volumeId}
-                value={projectGiB}
-                required
-                onChange={(event) => setProject(event.target.value)}
-              />
-              {kind === 'task' && !volumeId && (
-                <Checkbox
-                  label="Keep project volume after VM deletion"
-                  checked={retainVolume}
-                  onChange={(event) => setRetain(event.target.checked)}
+                  value={ttl}
+                  onChange={(event) => setTTL(event.target.value)}
                 />
               )}
-              {selectedVolumeChanged && volume && (
-                <Button
-                  onClick={() => {
-                    setProject(String(volume.sizeGiB));
-                    setRetain(volume.retain);
+              <fieldset disabled={locked}>
+                <legend>Resources</legend>
+                <div className="machines-resource-fields">
+                  <Field
+                    label="CPUs"
+                    type="number"
+                    min={1}
+                    max={capacity?.cpus}
+                    value={cpus}
+                    required
+                    onChange={(event) => setCPUs(event.target.value)}
+                  />
+                  <Field
+                    label="Memory (MiB)"
+                    type="number"
+                    min={128}
+                    max={capacity?.memoryMiB}
+                    value={memoryMiB}
+                    required
+                    onChange={(event) => setMemory(event.target.value)}
+                  />
+                  <Field
+                    label="Root disk (GiB)"
+                    type="number"
+                    min={minimumRoot}
+                    max={capacity?.diskGiB}
+                    value={diskGiB}
+                    required
+                    onChange={(event) => setDisk(event.target.value)}
+                  />
+                </div>
+              </fieldset>
+              <fieldset disabled={locked}>
+                <legend>Project storage</legend>
+                <Select
+                  label="Project volume"
+                  value={volumeId}
+                  onChange={(event) => {
+                    setVolume(event.target.value);
+                    const next = data.volumes.find(
+                      (item) => item.id === event.target.value,
+                    );
+                    if (next) {
+                      setProject(String(next.sizeGiB));
+                      setRetain(next.retain);
+                    }
                   }}
                 >
-                  Use Current
-                </Button>
-              )}
-            </fieldset>
-            <IconButton
-              icon="refresh"
-              label="Check Host"
-              disabled={data.refreshing}
-              onClick={data.refresh}
-            />
+                  <option value="">New project volume</option>
+                  {volumeId && !selectedVolumeAvailable && (
+                    <option value={volumeId}>
+                      {volume?.name || volumeId} · unavailable
+                    </option>
+                  )}
+                  {!!availableVolumes.length && (
+                    <optgroup label="Existing volumes">
+                      {availableVolumes.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name || item.id} · {item.sizeGiB} GiB
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </Select>
+                <Field
+                  label="Project disk (GiB)"
+                  type="number"
+                  min={1}
+                  max={capacity?.diskGiB}
+                  disabled={!!volumeId}
+                  value={projectGiB}
+                  required
+                  onChange={(event) => setProject(event.target.value)}
+                />
+                {kind === 'task' && !volumeId && (
+                  <Checkbox
+                    label="Keep project volume after VM deletion"
+                    checked={retainVolume}
+                    onChange={(event) => setRetain(event.target.checked)}
+                  />
+                )}
+                {selectedVolumeChanged && volume && (
+                  <Button
+                    onClick={() => {
+                      setProject(String(volume.sizeGiB));
+                      setRetain(volume.retain);
+                    }}
+                  >
+                    Use Current
+                  </Button>
+                )}
+              </fieldset>
+              <IconButton
+                icon="refresh"
+                label="Check Host"
+                disabled={data.refreshing}
+                onClick={data.refresh}
+              />
+            </div>
           </details>
         </div>
         <div className="machines-create-footer">
