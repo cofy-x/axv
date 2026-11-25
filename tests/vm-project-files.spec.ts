@@ -2189,6 +2189,11 @@ test('native composition settles across a desktop menu and preserves newer input
     await page.keyboard.press('Escape');
     await expect(menuItem(page, 'Applications')).toHaveCount(0);
     await expect(text).toBeEditable();
+    const saveButton = browser(page).getByRole('button', {
+      name: 'Save',
+      exact: true,
+    });
+    await expect(saveButton).toBeEnabled();
     const save = state.delayWrite();
     await text.press('ControlOrMeta+s');
     await save.pending;
@@ -2202,9 +2207,7 @@ test('native composition settles across a desktop menu and preserves newer input
     await protocol.send('Input.insertText', { text: '续' });
     await expectEditorText(text, '续\n');
     save.release();
-    await expect(
-      browser(page).getByRole('button', { name: 'Save', exact: true }),
-    ).toBeEnabled();
+    await expect(saveButton).toBeEnabled();
     await expectEditorText(text, '续\n');
     await text.press('ControlOrMeta+s');
     await expect.poll(() => state.writes.length).toBe(2);
