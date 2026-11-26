@@ -1,139 +1,83 @@
 # Host Codex architecture
 
-This reference owns provider identity, runtime initialization, continuation and process ownership. See the [API](api/host-codex.md) for caller contracts and limits, [usage](usage.md#codex) for actions, and [startup](startup.md#agent-settings-and-background-lifecycle) for configuration. The overview compares [terminal lifetimes](architecture.md#codex-attachment-and-process-lifetime).
+This reference owns Codex provider integration, process/run ownership, VM work context, reconciliation, activity journals and terminal attachments. See [Host Codex API](api/host-codex.md) for routes/limits, [usage](usage.md#codex) for user actions, [startup](startup.md#host-agent-defaults) for proxy/tmux defaults, and [architecture](architecture.md#codex-attachment-and-process-lifetime) for surface lifetimes.
 
 ## Implementation map
 
 | Change | Start here |
 | --- | --- |
-| Windows and user actions | [`definition.ts`](../apps/dashboard/src/features/codex/definition.ts), [`CodexManager.tsx`](../apps/dashboard/src/features/codex/CodexManager.tsx), [`continuation.tsx`](../apps/dashboard/src/features/codex/continuation.tsx) |
-| HTTP and terminal transport | [`httpapi`](../apps/server/internal/codex/httpapi) owns routes, request decoding and WebSocket frames; frontend [`session.ts`](../apps/dashboard/src/features/codex/session.ts) owns the terminal controller |
-| Service queries, metadata and attachments | [`service.go`](../apps/server/internal/codex/service.go), [`attachment.go`](../apps/server/internal/codex/attachment.go) and [`input.go`](../apps/server/internal/codex/input.go) |
-| Reservation, launch and End | [`lifecycle.go`](../apps/server/internal/codex/lifecycle.go), [`launch.go`](../apps/server/internal/codex/launch.go), storage [`codex_runs.go`](../apps/server/internal/storage/codex_runs.go) |
-| VM work projects and bundled Skill | [`vm_project.go`](../apps/server/internal/codex/vm_project.go), shared [`vmwork`](../apps/server/internal/vmwork), runner [`vmwork.go`](../apps/server/internal/codex/runner/vmwork.go) and bound CLI [`vm_project_agent.go`](../apps/server/internal/cli/vm_project_agent.go) |
-| Reconciliation and history checks | [`runtime.go`](../apps/server/internal/codex/runtime.go), [`history.go`](../apps/server/internal/codex/history.go), [`coordination.go`](../apps/server/internal/codex/coordination.go) |
-| Provider bridge and child processes | [`codex/runner`](../apps/server/internal/codex/runner): `bridge.go`, `protocol.go` and `run_unix.go` |
-| tmux backend and PTY clients | [`internal/tmux`](../apps/server/internal/codex/internal/tmux) owns explicit runtime targets, launch setup, attachment processes, scrollback and size barriers |
-| Names, archives and recent projects | Service [`service.go`](../apps/server/internal/codex/service.go); storage [`codex_metadata.go`](../apps/server/internal/storage/codex_metadata.go) and [`codex_projects.go`](../apps/server/internal/storage/codex_projects.go) |
-| Host project directory selection | Shared [`hostdir`](../apps/server/internal/hostdir), registered by [`server`](../apps/server/internal/server/server.go) |
+| Dashboard manager, continuation & terminal | [`definition.ts`](../apps/dashboard/src/features/codex/definition.ts), [`CodexManager.tsx`](../apps/dashboard/src/features/codex/CodexManager.tsx), [`continuation.tsx`](../apps/dashboard/src/features/codex/continuation.tsx), [`session.ts`](../apps/dashboard/src/features/codex/session.ts) |
+| HTTP & WebSocket adapter | [`codex/httpapi`](../apps/server/internal/codex/httpapi) |
+| Service queries, lifecycle & attachments | [`service.go`](../apps/server/internal/codex/service.go), [`lifecycle.go`](../apps/server/internal/codex/lifecycle.go), [`launch.go`](../apps/server/internal/codex/launch.go), [`attachment.go`](../apps/server/internal/codex/attachment.go), [`input.go`](../apps/server/internal/codex/input.go) |
+| Reconciliation, history & coordination | [`runtime.go`](../apps/server/internal/codex/runtime.go), [`history.go`](../apps/server/internal/codex/history.go), [`coordination.go`](../apps/server/internal/codex/coordination.go) |
+| VM work projects & bundled Skill | [`vm_project.go`](../apps/server/internal/codex/vm_project.go), [`vmwork`](../apps/server/internal/vmwork), [`runner/vmwork.go`](../apps/server/internal/codex/runner/vmwork.go), [`cli/vm_project_agent.go`](../apps/server/internal/cli/vm_project_agent.go) |
+| Independent runner, bridge & activity | [`codex/runner`](../apps/server/internal/codex/runner): `bridge.go`, `protocol.go`, `run_unix.go`, `ownership_unix.go`, `activity.go`, `activity_events_unix.go` |
+| Notification source | [`notification_events.go`](../apps/server/internal/codex/notification_events.go) |
+| Private tmux backend | [`codex/internal/tmux`](../apps/server/internal/codex/internal/tmux) |
+| Persistence | [`codex_runs.go`](../apps/server/internal/storage/codex_runs.go), [`codex_metadata.go`](../apps/server/internal/storage/codex_metadata.go), [`codex_projects.go`](../apps/server/internal/storage/codex_projects.go) |
 
-Start regression work with [`codex_runs_test.go`](../apps/server/internal/storage/codex_runs_test.go), the runner's [`bridge_test.go`](../apps/server/internal/codex/runner/bridge_test.go), and service tests beside the affected module. [`codex-history.spec.ts`](../tests/codex-history.spec.ts) covers user-visible run isolation. [Development](development.md#verification) owns commands and isolated tmux/CLI test setup.
+Start regression work with [`codex_runs_test.go`](../apps/server/internal/storage/codex_runs_test.go), [`bridge_test.go`](../apps/server/internal/codex/runner/bridge_test.go), service tests beside the changed file, and [`codex-history.spec.ts`](../tests/codex-history.spec.ts).
 
 ## Ownership and identity
-
-The `codex` package owns ordinary Go operations for creating, continuing, querying and ending exact runs, updating metadata and leasing attachments. These operations expose contexts and feature values without HTTP or WebSocket parameters. Its [`httpapi`](../apps/server/internal/codex/httpapi) adapter owns access checks, strict JSON decoding, error-to-status mapping and the WebSocket protocol. Service errors describe invalid input, conflicts or unavailability independently of HTTP status codes.
-
-The private [`tmux`](../apps/server/internal/codex/internal/tmux) backend accepts explicit socket/session targets and launch inputs. It owns native commands, setup/environment isolation, PTY clients, scrolling and size barriers without importing storage, configuration or the service. The service maps recorded runs to these targets, persists the confirmed socket before setup continues, and retains lifecycle and input gates.
-
-The [`runner`](../apps/server/internal/codex/runner) subpackage owns the independent process and official provider protocol; it does not import the manager, desktop configuration or storage. The CLI invokes the runner directly, so this subpackage is available to server-internal consumers rather than hidden behind a second `internal` directory.
-
-The desktop composition root supplies resolved [`Options`](../apps/server/internal/codex/options.go) instead of passing the desktop configuration into the feature. Shared host directory validation and browsing belong to [`hostdir`](../apps/server/internal/hostdir), whose route is registered independently by the desktop server. Other host features can validate projects without depending on Codex or its lifecycle.
-
-Codex's provider UUID, history home, app-server bridge and readiness proof remain provider-specific. There is no shared agent protocol or provider registry. Storage records and capacity policy address host Codex, rather than defining contracts for another provider. The desktop storage owner retains the conversation/run transactions in the same database as its existing schema and identity.
 
 ```mermaid
 flowchart TB
     UI["features/codex"] <-->|HTTP / WebSocket| API["codex/httpapi"]
-    API <-->|Go operations / attachment lease| Service["internal/codex"]
-    Service <--> DB["internal/storage<br/>desktop.sqlite"]
-    Service -->|launch recorded target| Runner
+    API <-->|Go ops / lease| Service["internal/codex"]
+    Service <--> DB["internal/storage (desktop.sqlite)"]
+    Service -->|launch target| Runner
     Service --> Backend["codex/internal/tmux"]
-    Backend <-->|PTY / tmux attachment| TUI
+    Backend <-->|PTY / tmux attach| TUI
     Service -.->|read private state| Runner
     subgraph Run["Independent tmux run"]
         Runner["internal/codex/runner"] -.->|owns| TUI["Official TUI --remote"]
-        Runner -.->|hosts| Bridge["Private Unix WebSocket bridge"]
+        Runner -.->|hosts| Bridge["Private Unix WS bridge"]
         Runner -.->|owns| Provider["Official app-server"]
         TUI <--> Bridge
         Bridge <-->|stdio protocol| Provider
     end
 ```
 
-- **Conversation:** a stable AXV session binds one provider UUID and host working directory, optionally associated with one persistent VM work project. Workspaces and host paths have their own identities.
-- **Run:** each process attempt records its own ID, tmux target and socket. Attach, End, input, resize and scroll address that exact session/run pair; old windows never resolve commands to the latest run.
-- **Ownership:** the runner survives browsers and service cancellation. It reaps only its own children when its TUI or tmux runtime ends. Service shutdown closes attachment clients, leaving the runner alive.
+- **Package boundaries:** `internal/codex` owns transport-agnostic Go operations and receives resolved [`Options`](../apps/server/internal/codex/options.go) from composition. `codex/httpapi` owns access checks, strict JSON decoding and WS framing. `codex/internal/tmux` accepts explicit targets without importing storage/config. `codex/runner` owns the independent process and official provider protocol without importing manager/storage (invoked directly by the CLI). Shared host directory browsing stays in [`hostdir`](../apps/server/internal/hostdir).
+- **Separate identities:** A **Conversation** binds one provider UUID, host directory and optional persistent VM project; each **Run** records its own ID, tmux target and socket. Attach, End, input, resize and scroll address that exact `(sessionId, runId)` pair — old windows never retarget to newer runs.
+- **Process lifetime:** Runners survive browser disconnects and desktop shutdown and reap only their own children. There is no generic multi-provider abstraction; Codex identity and protocol stay provider-specific.
 
-## Desktop feature
+## VM project work context
 
-### VM project work context
+- Starting from VM Project Files captures the reviewed VM project binding, environment and verified compute socket/config fingerprint into the run reservation (verified through a gateway callback injected by composition). Host and VM conversations cannot convert into each other; empty VM control directories never enter recent host projects.
+- [`vmwork`](../apps/server/internal/vmwork) owns the immutable `vm-project.json` format and embedded [`axv-vm-project` Skill](../apps/server/internal/vmwork/skills/axv-vm-project/SKILL.md). Before forwarding each user `turn/start` or `turn/steer`, the runner verifies scope/content and appends routing metadata plus an official `skill` input item without altering provider auth/approvals or submitting turns itself. Missing/changed context or oversized turns fail closed before forwarding.
+- The bound CLI (`internal-vm-project`) pins the recorded AXV executable, project, environment, compute socket and config fingerprint — never reading a mutable profile, activating a host or refreshing stale bindings.
+- Explicit continuation reviews a binding for the same persistent `(host, project, volume, root)`, verifies AXV ownership of the control workspace and saved provider history, and records a fresh immutable run context without mutating prior runs. Browser unknown-request recovery binds to its original request, binding and `databaseId` namespace across reloads.
 
-Project Files can open a project-scoped Codex manager. Starting explicitly captures the reviewed VM project binding. The conversation keeps its stable host working directory and provider identity; each process run independently records the VM project metadata, complete environment binding and verified compute socket/configuration fingerprint. These values commit with the run reservation. The composition root injects verification through the compute gateway; Codex does not depend on its controller or provider implementations. Host and VM project conversations cannot be converted into each other, and the empty VM control directories do not populate recent host projects.
+## Runner, provider protocol, and activity
 
-The shared [`vmwork`](../apps/server/internal/vmwork) leaf depends only on compute contracts and shared primitives. It owns the immutable context format and embedded [`axv-vm-project` Skill](../apps/server/internal/vmwork/skills/axv-vm-project/SKILL.md). Launch publishes private `vm-project.json` and Skill files under that run, preserving an existing differing publication as an error. The runner verifies their scope and content; before forwarding each actual user `turn/start` or valid `turn/steer`, it appends the captured routing metadata and an explicit official `skill` input item. The bridge preserves original input and provider settings. Tool-output-only requests do not invoke the Skill. AXV neither submits a turn by itself nor changes provider-owned skills, configuration, authentication or approval settings. Missing or changed run context fails before forwarding the VM turn; an oversized turn cannot be forwarded without its required VM context.
+1. **Reserve before launch:** Service validates canonical project + `requestId`, commits conversation/starting run/capacity reservation, then launches the recorded tmux target (matching retries recover that reservation).
+2. **Bridge & readiness:** Runner starts official `app-server` and `TUI --remote` over a private Unix WebSocket bridge under `AXV_HOME/run/codex` (short path verified before launch, never relocated to `/tmp`). Starting runs accept attachments immediately for trust/sign-in.
+3. **Structured identity only:** Bridge captures provider UUID from `thread/start`, persists the empty thread via `thread/name/set`, and publishes private ready state. Reconciliation binds provider identity from durable proof only — never from terminal scraping or history scans. Managed TUI cannot create, fork or switch threads.
+4. **Private ownership lock & exit proof:** An AXV-owned conversation lock stays held until the runner stops/reaps TUI + `app-server`, cleans its socket and publishes private `exit.json`. End and explicit continuation wait for lock release before completing or reserving a new run.
 
-The bound CLI uses the recorded AXV executable, project, environment, compute socket and configuration fingerprint. It reuses existing project-file/task operations without resolving a mutable profile, activating a service or refreshing a binding. File reads/writes and task submissions retain the captured environment; history and receipts remain readable through the original host while a VM is gone. Cancellation addresses the recorded attempt. These tools guide host agents rather than sandboxing their native host tools or ordinary guest commands.
+### Provider activity
 
-Reattachment and desktop restart retain the original run. Explicit continuation reviews a binding for the same stable project/volume/root, verifies the original control directory's AXV ownership and saved provider history, and records a new immutable context. Missing or replaced ownership is rejected without recreating the directory. A changed VM does not rewrite old run files, pending request payloads or task attempts. Browser unknown-start/continuation recovery preserves its original request, binding and desktop database identity across reload instead of starting duplicate work. A replaced store cannot accept that old request; damage or store conflicts retain recovery data. Reloading with a different bootstrap database identity selects that store’s separate recovery namespace; it neither searches nor replays the previous store’s pending requests. Their saved recovery data stays associated with the original database. [Usage](usage.md#codex) owns the confirmation flow; the [API](api/host-codex.md#creation-and-explicit-continuation) owns retry and error contracts.
+- [`runner/activity.go`](../apps/server/internal/codex/runner/activity.go) observes official `app-server` events for the bound thread/turn (turn lifecycle, thread flags, pending approvals/input and MCP elicitations) without answering approvals or changing forwarding.
+- Runner atomically publishes content-free `activity.json` (no prompts, commands, approval bodies or transcripts) and appends to [`activity-events.json`](../apps/server/internal/codex/runner/activity_events_unix.go) (bounded to **512 events / 512 KiB per run**) so notifications survive desktop downtime. Publication failures write unavailable markers and expose explicit gaps rather than silently resetting journals.
+- [`notification_events.go`](../apps/server/internal/codex/notification_events.go) scans all recorded runs (including archived/superseded) with exact `(databaseId, sessionId, runId, threadId, turnId, eventId)` identities; nonterminal tails require live-run confirmation.
+- Failed/interrupted alert dismissals persist per `(runId, eventId)` in private `activity-review.json` under the run gate; normal completion requires no dismissal.
 
-### Windows and launchers
+## tmux routing, continuation, and concurrency
 
-The definition stays registered when dependencies fail; availability controls launcher visibility. A run window's identity requires both session and run IDs; otherwise the definition opens the manager. Layout excludes project paths, process state and transcripts. The singleton non-modal Environment panel shares the manager's availability provider; detailed presentation belongs to [design](design.md#application-design-boundaries).
+### tmux routing and environment
 
-## Runner and provider protocol
+- Uses the default tmux server unless `AXV_TMUX_SOCKET` selects another; session names combine database/data-dir identity with run ID, and recorded routing survives later config changes.
+- Only owned sessions/windows are modified: never touch global tmux options/env, unrelated sessions or `kill-server`. Runtime env arrives via stdin, never secret-bearing CLI arguments.
 
-New-conversation creation separates an attachable runtime from provider readiness:
+### Continuation, reconciliation, and concurrency
 
-1. The service validates the canonical project and request identity, then commits a conversation, starting run and capacity reservation before launching its recorded tmux target. Matching retries recover that reservation.
-2. The independent runner starts the official app-server and TUI, connected through a private Unix WebSocket bridge. A starting run already accepts terminal attachments for trust and sign-in interactions.
-3. The bridge captures the provider UUID from `thread/start` and uses `thread/name/set` to persist the empty thread before acknowledging initialization. No first model turn is required.
-4. The runner publishes private ready state. When reconciliation observes that durable proof, it binds the provider identity and records the confirmed start before inspecting tmux's current outcome. A failed runner record can preserve identity without confirming a start. Runtime readiness does not establish model connectivity.
-
-Identity comes only from structured responses. Resume uses the stored UUID; terminal output and history-file scans never select a conversation. After binding, the managed TUI cannot create, fork or switch conversations.
-
-The bridge forwards protocol content without storing transcripts. Private state holds run ID, provider ID, history home, and startup outcome. The manifests and state contain identifiers and status only. Codex owns authentication, approvals, sandbox and model configuration. Changes to this provider integration require checking current provider documentation as well as the local bridge tests.
-
-The desktop supplies its fixed executable for each AXV runner. Run manifests, state and a separate private `exit.json` live under the desktop data directory; the runner's private bridge socket lives in an owned short directory beneath `AXV_HOME/run/codex`. The runner publishes its exact run ID and wrapper exit code only after stopping and reaping its children, cleaning up its socket and releasing conversation ownership. This exit record preserves the independent readiness and provider-identity state. Socket paths are checked before launch and never silently moved to another profile or the system temporary directory. Ending a run removes only its own socket directory. Provider history and credentials remain in the official CLI's history home.
-
-A private AXV-owned conversation lock stays held until the runner has stopped and reaped its TUI and app-server. End waits for that ownership to be released before reporting completion, and explicit continuation waits before verifying history or reserving a new run. This prevents a disappearing tmux session from allowing another provider writer to overlap cleanup. An unconfirmed End remains stopping with a visible error; coordination never reads or changes provider-owned lock files. See [runner ownership](../apps/server/internal/codex/runner/ownership_unix.go) and [lifecycle](../apps/server/internal/codex/lifecycle.go).
-
-## Provider activity
-
-The runner's optional [activity observer](../apps/server/internal/codex/runner/activity.go) observes the official [app-server events](https://learn.chatgpt.com/docs/app-server): turn lifecycle, thread activity flags, pending approval/input requests and their resolution. It tracks only its verified provider thread and current turn, retaining overlapping requests until resolved. MCP elicitation requests retain their own lifetime even when correlated with a turn. Before readiness, a bounded queue retains only sanitized activity metadata and matched resolutions; publication starts after the provider identity is verified. A resumed active thread can seed its current in-progress turn from the official response, without treating historical outcomes as results for the new run. Missing current identity or observation overflow remains unknown until it can be established safely. Provider messages and TUI responses continue through the original bridge; activity observation neither submits messages nor answers approvals. Unrecognized or malformed optional activity events do not change protocol forwarding or conversation readiness.
-
-The independent runner atomically publishes a bounded private `activity.json` in its existing run directory. It contains only run/thread/turn identity, state, an opaque event ID, a monotonic sequence and a timestamp. No prompt, command, approval body or transcript is retained. It survives browser and desktop disconnection. Publication failures attempt to invalidate activity through a private unavailable marker or removal of the old observation, and record a safe diagnostic without changing the provider's outcome. If the filesystem refuses both actions, the last readable snapshot may remain; its timestamp records the last observed transition rather than a liveness heartbeat. Missing, unsafe or unverifiable activity remains unknown; it never resets established state or starts another run.
-
-The same observer separately appends each new activity event to private [`activity-events.json`](../apps/server/internal/codex/runner/activity_events_unix.go), including working, idle and request-resolution transitions that supersede older waits. This versioned journal retains at most **512 events and 512 KiB per run**, with exact run/thread identity and first/last sequences. It continues while the desktop is stopped. Retention and missing publication sequences produce explicit gaps relative to a consumer's durable checkpoint. A failed write preserves the existing journal and attempts a sticky unavailable marker; a successful retry removes that marker only after publishing the current event, leaving skipped sequences visible. A newer readable snapshot can also expose an unrecorded journal tail if marker publication failed. Unsafe or damaged established journals are unavailable and are never silently replaced.
-
-The service's [notification source](../apps/server/internal/codex/notification_events.go) discovers all recorded runs, including archived conversations and superseded attempts, independently of latest-run UI lists. It binds observations to the persistent desktop database and their original session/run/thread/turn/event identities. A nonterminal journal tail requires current evidence that its exact run remains live, even after the consumer has caught up; a stopped or unconfirmed run exposes an unavailable gap without inferring a turn outcome. A notification for a pending request is current only while that exact latest event still reports a wait in its verified live run; retained terminal events keep their own identities. An event removed by retention is unavailable rather than redirected to newer work. The source exposes content-free metadata to delivery consumers without changing provider forwarding, readiness, approvals or model behavior.
-
-The service combines the latest observation with the exact run's lifecycle and a separate private `activity-review.json` for dismissed failed/interrupted alerts. Dismissal serializes through the run's gate, validates the original event and atomically saves only its run/event pair. A concurrent new alert cannot be dismissed by an old request. Pending provider requests remain actionable until Codex resolves them. Successful completion remains an ordinary activity state without acknowledgment or dismissal-record reads. The latest completed/failed/interrupted turn stays available until another turn begins; an alert's dismissal survives desktop restart. This latest-activity surface remains separate from durable notification delivery. [The activity API](api/host-codex.md#activity-and-review) owns states, errors and merging rules; [usage](usage.md#codex) owns visible actions.
-
-## tmux routing and environment
-
-- New runs use the default server unless `AXV_TMUX_SOCKET` selects another. Names combine database/data-directory identity with run ID. Recorded routing survives configuration changes.
-- AXV changes only owned sessions/windows: no global options/environment, unrelated-session termination or application `kill-server`. Current environment arrives through tmux stdin, not secret-bearing arguments or stale server values.
-- [Startup](startup.md#host-agent-defaults) owns proxy/settings precedence; [development](development.md) owns isolated sockets, homes and cleanup.
-
-## Continuation and reconciliation
-
-- Only confirmed continuation verifies the original canonical project and exact provider thread through a read-only lookup in the stored history home, then reserves a new run for that UUID. Verification and launch explicitly use that stored home even if the service's current `CODEX_HOME` differs. Unavailable or unverifiable history, changed project identity or uncertain runtime blocks continuation without a replacement conversation.
-- Resume retains names/archive state and saved conversation context, not PTYs, scrollback or interrupted commands. `expectedRunId` must match the predecessor; unknown outcomes retain their request identity. Cancelling the confirmation creates nothing.
-- The browser's [`CodexResumeRequests`](../apps/dashboard/src/features/codex/continuation.tsx) owns per-session sending/uncertain entries, with absence representing idle. A sending entry registers its shared completion before transport and captures the reviewed predecessor/binding independently of caller edits. The latest recoverable receipt is separate from that in-flight attempt: another mounted view can advance recovery without retargeting the request, and its late success or refusal cannot clear the newer receipt. Browser receipt cleanup failures retain uncertainty for explicit recovery.
-- List/detail reads never launch a provider process; reload, reconnect and service restart never continue history. Open Running Session opens a separate view; the old window stays bound to its original run.
-- Reconciliation reads fresh durable state under the run gate. Startup grace protects reservations during bounded launch; inspection failure is availability uncertainty, not an ended/lost verdict. Final runs never resurrect; interrupted ending remains retryable.
-- A closed tmux pane can precede its published exit outcome. Reconciliation briefly retries the exact pane. If its exit status and signal remain entirely absent, a validated private exit record for that exact run can establish the outcome after conversation ownership is confirmed released. This also handles older tmux builds that lose the child-exit notification while updating utmp. An exit record never ends a live pane or overrides a malformed or contradictory tmux outcome. Without a verified outcome, or while runner cleanup remains pending, the run stays visible with availability uncertainty. Cleanup must remove the exact owned session before final status is persisted; failures remain retryable through End Session.
-
-## Storage and concurrency
-
-- **Reservation:** commit before process creation, enforcing one active run per conversation and service capacity, including archived/transitional runs. Matching request retries recover the reserved run before rechecking conditions that may have changed; original payload/dimensions stay bound.
-- **Relationships:** conversations and runs are separate records. Predecessors derive run mode; foreign keys protect predecessor/latest-run links. Initialized provider IDs are unique within their history home.
-- **Metadata:** titles, archives and revisions change independently of runtime, without tmux reconciliation. Mounted views merge revisions and refresh details without reconnecting. Recent projects update transactionally only on a run's first confirmed starting-to-running transition. Reads, attachments or retries can discover that transition; they do not reorder an already-confirmed run.
-- **Concurrency:** reconciliation/End share a per-run gate; input has a separate gate. Gates accept cancellation and disappear when unused. The manager mutex covers operation admission, attachment capacity and leases, not slow host commands. The HTTP adapter separately admits and drains requests, including incomplete bodies and hijacked terminal connections. Service cancellation stops ordinary operations and detaches leases; the server also closes the adapter to finish transport cleanup. Neither layer kills independent runs during shutdown.
+- **Continuation:** Only explicit user confirmation verifies original project + exact provider thread in the stored `historyHome` (ignoring a changed service `CODEX_HOME`) and reserves a new run with `expectedRunId`. Reads, reload, reconnect and restart never auto-continue. [`CodexResumeRequests`](../apps/dashboard/src/features/codex/continuation.tsx) isolates per-session in-flight requests from recoverable receipts.
+- **Reconciliation:** Reads fresh durable state under the per-run gate. Inspection failure reports uncertainty, never `ended`/`lost`. For closed panes lacking tmux exit status (e.g. older tmux utmp races), a validated `exit.json` after lock release establishes final status. Cleanup must remove the owned tmux session before persisting final status.
+- **Concurrency:** Per-run gate serializes reconciliation/End; input uses a separate gate. Manager mutex covers admission/leases only (never slow host commands). Metadata edits (`title`/`archived`) never probe tmux; recent host projects update transactionally only on a run's first confirmed `starting → running` transition.
 
 ## Terminal attachments
 
-The frontend owns xterm, bounded queues, sizing, scrolling and reconnect backoff. An explicit `attach_failed` control uses the same bounded backoff as a transient disconnect, revalidating the original session/run pair before each attachment. Persistent failures remain visible with an explicit Reconnect action; access rejection, a different run or a final run stops recovery. Closing the window, losing its connection or stopping the desktop service disposes attachment clients without ending the managed run. End Session terminates only the exact recorded run. Reconnect targets that original run and discards unsent input.
-
-`PrepareAttachment` validates the exact run and reserves capacity before transport upgrade. `Open` restores live input and starts the PTY client after upgrade. Parent cancellation and `Detach` interrupt native I/O; `Close` releases the reservation only after the transport drains its forwarding workers. Ordinary Go callers also close their leases explicitly. Attachment inspection reports runtime uncertainty directly, while list/detail views preserve known identities with a transient reason.
-
-Attachment startup waits for the spawned tmux client to register against the recorded session before announcing terminal readiness. This keeps the browser's initial resize behind client initialization; cancellation, early exit or an unconfirmed attachment closes only that client.
-
-The browser coalesces terminal size changes as the user resizes the window. It sends the latest size when resizing settles or before sending keyboard input or scroll controls.
-
-PTY startup failures retain the failing stage (start, descriptor duplication or nonblocking setup) and native cause in the private diagnostic logger, with the exact run ID and executable. Browser messages remain safe and do not include native diagnostics. Logs use the shared sanitizer and contain no terminal streams, provider configuration or environment snapshots; see [service diagnostics](startup.md#configuration-and-storage).
-
-`--no-alt-screen` retains tmux history; reattachment/fresh input leave copy mode. History scrolling sends scroll commands, never composer keystrokes. Hidden input, focus and owner-bound commands follow [desktop contracts](desktop.md).
-
-Clipboard actions follow the shared [clipboard input](desktop.md#clipboard-input) boundary. Reconnection invalidates pending clipboard reads and paste dialogs, even when attaching again to the same run.
-
-See the [attachment protocol](api/host-codex.md#attachment-protocol-and-ending) for transport details and the shared [Host directory API](api/host-directories.md) for local directory selection.
+- Frontend owns xterm, queues, coalesced resizing, scroll controls and bounded reconnect backoff (revalidating `(sessionId, runId)` on transient disconnects and `attach_failed`; stopping on final state or access denial).
+- `PrepareAttachment` validates and reserves capacity before upgrade; `Open` starts the PTY client after upgrade and waits for tmux client registration before sending `ready` (ordering initial resize behind client setup). `Close` releases capacity only after forwarding workers drain.
+- Uses `--no-alt-screen` for tmux history; fresh input/reattach exits copy mode; scrolling sends scroll commands rather than composer keys. Clipboard follows [shared clipboard input](desktop.md#clipboard-input). PTY startup failures log stage/cause to sanitized private diagnostics without exposing native errors to browsers.

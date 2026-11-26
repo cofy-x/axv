@@ -2,10 +2,10 @@ PNPM ?= npx --yes pnpm@12.11.2
 GO ?= go
 E2E_ARGS ?=
 
-.PHONY: help deps install dev build build-dashboard build-go test test-go typecheck format format-check lint lint-fix lint-fix-format test-e2e test-vm-ui smoke-production verify-codex-live security audit-js audit-go clean
+.PHONY: help deps install dev build build-dashboard build-go test test-go typecheck format format-check check-docs lint lint-fix lint-fix-format test-e2e test-vm-ui smoke-production verify-codex-live security audit-js audit-go clean
 
 help:
-	@echo "make deps | install | dev | build | test | typecheck | format | format-check | lint | lint-fix | lint-fix-format | test-e2e | test-vm-ui | smoke-production | verify-codex-live | security"
+	@echo "make deps | install | dev | build | test | typecheck | format | format-check | check-docs | lint | lint-fix | lint-fix-format | test-e2e | test-vm-ui | smoke-production | verify-codex-live | security"
 
 deps:
 	$(PNPM) install --frozen-lockfile
@@ -41,6 +41,9 @@ format:
 
 format-check:
 	$(PNPM) run format:check
+
+check-docs:
+	node scripts/check-docs.mjs
 
 lint:
 	$(PNPM) run lint

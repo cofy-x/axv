@@ -2,138 +2,68 @@
 
 [API index](README.md)
 
-Commands, detachable terminals and local SSH access run inside one selected VM, independently of host terminals.
-
-Command and terminal routes are nested under `/machines/:id/guest`: the browser base is `/api/compute/machines/:id/guest`, and the private host socket uses `/v1/machines/:id/guest`. They require a machine with running intent and observed running state, a compatible image contract and a matching runtime capability handshake. `exec`, `terminals`, `ssh` and `network` each require their corresponding declared and runtime-confirmed capability; missing capabilities return `unsupported` while basic VM management remains available. The [compute access boundary](README.md#access-and-identity-boundaries) applies. The host injects per-machine guest authentication; browser clients never receive that token. Guest protocol version is **3**, using vsock port **1024** for Firecracker and a private Unix socket for Lima. JSON bodies accept one object with no unknown fields, limited to **64 KiB** unless a route specifies otherwise. Older guest protocols are rejected; [guest access provisioning](../vm-platform.md#guest-ssh-and-network-access) describes provider upgrade requirements.
+Commands, detachable terminals, project files, persistent tasks, read-only GitHub inspection and local SSH inside a selected VM (protocol version **3**, Firecracker vsock port **1024** or Lima private Unix socket). Host routes sit under `/v1/machines/:id/guest` (browser gateway `/api/compute/machines/:id/guest`); SSH and network routes sit directly under `/v1/machines/:id/`. Per-machine guest tokens are host-injected and never exposed to browsers. Every feature requires the intersection of image-declared and runtime-confirmed capabilities ([VM architecture](../vm-platform.md#image-and-capability-contract)). JSON bodies require one object with no unknown fields (default **64 KiB** cap unless specified).
 
 ## Routes
 
-- `GET /health`
-  - Response: `{ version, machineId, bootId, instanceId, ready, capabilities, sshAvailable, reason? }`; `instanceId` changes for each guest-service incarnation.
-
-- `POST /exec`
-  - Request: `{ argv, directory?, timeoutSeconds? }`.
-  - Response: `{ exitCode, stdout, stderr, truncated }`.
-
-- `GET /terminals`
-  - Response: `{ terminals }` for this guest-service lifetime.
-
-- `POST /terminals`
-  - Request: `{ requestId, directory?, cols?, rows? }`.
-  - Response: `201 { id, bootId, status, sequence? }`, or `200` for an idempotent retry.
-
-- `GET /terminals/:id`
-  - Response: Existing terminal identity/status.
-
-- `DELETE /terminals/:id`
-  - Explicitly ends its process group and returns status.
-
-- `GET /terminals/:id/attach` (WebSocket upgrade)
-  - Attaches to the existing terminal; disconnect only detaches.
-
-The optional `sequence` numbers new terminals in creation order within a guest-service lifetime. It stays fixed across retries, detachments and session end. Requests and attachments use the terminal and boot identities.
-
-## Command execution
-
-`argv` contains **1–128 arguments** and runs directly without shell interpolation. `directory` defaults to the mounted project root; explicit directories must exist and resolve within it, including after symlink resolution. Processes remain ordinary guest processes and can access other permitted locations after startup.
-
-Timeout is **1–300 seconds**, with omitted/zero meaning **60 seconds**. At most **eight commands** run concurrently. Each stdout/stderr stream retains **64 KiB**; `truncated` reports discarded output. A command's nonzero exit still returns HTTP 200 with `exitCode`. Exec is not idempotent: a lost response does not prove the command did not run, so never automatically retry it.
-
-| Status | Code | Meaning |
+| Method | Route (under `/machines/:id/guest`) | Contract |
 | --- | --- | --- |
-| 400 | `invalid_request`, `invalid_directory` | Invalid command, timeout or starting directory |
-| 408 | `execution_timeout` | Execution deadline elapsed |
-| 502 | `execution_failed` | Process could not execute |
-| 503 | `execution_limit`, `guest_unavailable` | Command capacity full or guest transport unavailable |
+| GET | `/health` | `{ version, machineId, bootId, instanceId, ready, capabilities, sshAvailable, reason? }` |
+| POST | `/exec` | Synchronous `{ argv, directory?, timeoutSeconds? }` → `{ exitCode, stdout, stderr, truncated }` |
+| GET | `/terminals` | Active/ended terminal records for this guest-service lifetime |
+| POST | `/terminals` | Create login Bash shell `{ requestId, directory?, cols?, rows? }` (`201`, or `200` idempotent retry) |
+| GET | `/terminals/:id` | Single terminal status |
+| DELETE | `/terminals/:id` | Terminate terminal process group |
+| GET | `/terminals/:id/attach` | WebSocket upgrade (disconnect detaches; single active attachment per terminal) |
 
-## Terminals
+Implementation entry points: [`internal/guest`](../../apps/server/internal/guest), wire types in [`guest/protocol`](../../apps/server/internal/guest/protocol/protocol.go) and host transport in [`compute/guest_client.go`](../../apps/server/internal/compute/guest_client.go).
 
-Creation starts a login Bash shell and shares the command directory rules. Dimensions default to **80×24** when omitted/zero, with **2–500 columns** and **1–200 rows**. `requestId` must contain **8–128 bytes**. Reusing it with the same normalized request returns the original terminal; changed parameters return `409 idempotency_conflict`. This guarantee lasts only for the guest-service lifetime.
+## Command execution and terminals
 
-There can be **16 live sessions** and **1024 total records**, with `503 terminal_limit` at capacity. Status is `running` or `ended`. Only one attachment per terminal is allowed (`409 terminal_attached` when occupied).
-
-| Direction | Message | Payload |
-| --- | --- | --- |
-| Server → client | Text | `{ ready: true, bootId, replayTruncated }` before output |
-| Server → client | Binary | PTY output, beginning with up to the latest **1 MiB** retained output (**16 KiB** for an ended terminal) |
-| Server → client | Text | `{ ended: true, message }` after the terminal ends |
-| Client → server | Binary | Raw terminal input, at most **32 KiB** per message |
-| Client → server | Text | `{ resize: [cols, rows] }` using the creation size limits |
-
-Guest Terminal windows retain their original `hostId` along with machine, terminal and boot identity. Desktop requests send `X-AXV-Host-ID`; browser WebSocket connections include `hostId` in their query. A mismatched current host binding is rejected rather than redirecting an old terminal to a replacement service.
-
-Disconnect detaches; DELETE ends the process group. Output backlog can close an attachment with code **1013**; reconnect to the same terminal to replay the retained tail. Missing IDs return `404 terminal_lost`. `bootId` identifies the VM boot, not a guest-service incarnation: a service restart can lose all terminal records without changing it. Reconnect must look up the original terminal and never call creation to replace a missing one.
+- **Exec (`exec` capability):** 1–128 direct argv (no shell interpolation), timeout 1–300s (default 60s), max 8 concurrent, 64 KiB cap per stdout/stderr stream. Non-idempotent: never auto-retry a lost response. Starting directory resolves inside the mounted project root, but processes retain ordinary guest `axv` permissions.
+- **Terminals (`terminals` capability):** Dimensions 2–500 × 1–200 (default 80×24), max 16 live / 1024 total records per guest-service lifetime, `requestId` 8–128 bytes. Browser requests pin `X-AXV-Host-ID` (or `hostId` query on WS). Reconnect must look up the original terminal (replaying up to 1 MiB tail for running / 16 KiB for ended) and never silently create a replacement.
+- **WS frames:** Server sends `{ ready: true, bootId, replayTruncated }`, binary PTY output, and `{ ended: true, message }`; client sends binary input (max 32 KiB) and `{ resize: [cols, rows] }`. Backlog overflow closes with code `1013`.
 
 ## Project file protocol
 
-VM project files use separate private guest `POST /v1/project-files/{inspect,list,read,write,mkdir}` routes. They require the guest token, confirmed `project-files` capability and a writable mounted project volume. The browser/CLI calls [compute project routes](compute.md#vm-projects), never these guest routes directly. File access is additive to guest protocol **3** and does not enable itself on images that omit the capability.
+Private guest routes `POST /v1/project-files/{inspect,list,read,write,mkdir}` (capability `project-files`) and `POST /v1/project-files/restore-check` (capability `project-restore`), called only by the compute host ([Compute project API](compute.md#vm-projects)).
 
-Offline restoration uses private `POST /v1/project-files/restore-check`, gated by the independent `project-restore` capability. It requires the original root, root identity, boot and service instance and returns the same `{ root, rootIdentity }` shape as inspection after validating Git/worktree paths inside the copied volume. It uses bounded filesystem metadata reads without executing Git, hooks or configuration commands. Each linked worktree's common-directory pointer and private configuration are checked as well as its forward/back references; valid separate Git directories inside the copied volume are supported. Symlink metadata, external/missing worktree paths, configuration includes, changed root identity or stale boot/service identity fail explicitly. [Offline backup and restored binding](compute.md#vm-project-backups) owns the public workflow and limits. Use a rebuilt enhanced image declaring this capability; images are never upgraded during Start.
-
-Each request carries `{ root, rootIdentity?, bootId, instanceId }`: volume-relative root, registered filesystem identity, Linux boot and guest-service incarnation. `inspect` verifies an existing directory and returns `{ root, rootIdentity }`; only initial inspection can omit the root identity. Root identity hashes the opened directory's opaque [Linux filesystem file handle](https://man7.org/linux/man-pages/man2/open_by_handle_at.2.html) together with its filesystem type and persistent filesystem ID, preserving identity on the retained filesystem across VM replacement without accepting a deleted root's reused inode or an unrelated filesystem's matching handle. The mount/device ID is excluded because it changes across mounts; ext4 derives the filesystem ID from its volume UUID. This requires kernel `CONFIG_FHANDLE` and filesystem export-handle support (provided by the guest's ext4 project volumes); unsupported systems return `unsupported`, without falling back to an inode or timestamp. Other operations require the registered identity, revalidate the mounted volume/root and reject old boot/service/root identities. List/read/mkdir add `path`; list also accepts `cursor?`, `limit?`; write adds `content` and required `expectedSha256`. [Compute projects](compute.md#vm-projects) owns the shared path, text, pagination and response fields/limits.
-
-Private requests require `application/json`. JSON limits are **64 KiB**, with an **8 MiB** write envelope and separate **1 MiB** decoded text limit. Malformed UTF-8 and unpaired escaped Unicode surrogates are rejected before decoding so request paths and content cannot be silently rewritten. Write content must be present and non-null; an explicit empty string clears a reviewed file. Queries, unknown fields and trailing objects are rejected. The guest opens the volume/project through `os.Root`, verifies filesystem identities, rejects final symlinks and special files and confines ancestor resolution to the root. Writes and mkdir serialize within the guest service. A write stages content in the destination directory, fsyncs it, checks the original root/parent and expected file identity/hash again, then publishes atomically. Create-only publication cannot overwrite a racing new entry; replacement creates a new inode so other hard-link aliases are not modified. The parent is synced and the published digest is checked before acknowledgement. Unrelated guest tools do not share the service lock, so they can still race with replacement or change an acknowledged file later.
-
-An uncertain response must be inspected rather than retried automatically; failed acknowledgement can follow successful publication. Disk/quota exhaustion returns `507 disk_full`; conflict and unavailable state stay visible. This file API does not impose a sandbox on guest exec, SSH or other guest processes. [`project_files.go`](../../apps/server/internal/guest/project_files.go), its platform file-opening helpers and nearby tests own enforcement.
-
-Development previews use a separate capability-gated private HTTP/WebSocket route described in the [preview contract](project-previews.md#private-forwarding). They retain the original project root and runtime binding and do not expose arbitrary host destinations.
+- **Scope & root identity:** Every call carries `{ root, rootIdentity, bootId, instanceId }` (only initial `inspect` may omit `rootIdentity`). `rootIdentity` hashes the directory's Linux file handle (`open_by_handle_at`, requiring `CONFIG_FHANDLE` + ext4 export handles) with filesystem type and persistent FS ID — never falling back to inodes or timestamps.
+- **Confinement & atomic writes:** Opens project root via `os.Root`, rejects final symlinks/special files and invalid UTF-8/unpaired surrogates, allows 8 MiB write JSON envelope / 1 MiB UTF-8 text. Writes serialize inside the guest service, stage+fsync in the target directory, recheck root/parent/file identity and `expectedSha256` (empty = create-only), atomically rename without modifying hard-link aliases, fsync parent and verify published digest. Unrelated guest processes are not locked out; never auto-retry uncertain writes.
+- **Restore check:** Validates original root identity and Git/worktree metadata paths (without executing Git or hooks) before allowing [backup binding](compute.md#vm-project-backups).
 
 ## GitHub project reads
 
-Private `POST /v1/project-github/{git,review,snapshot}` reads require `project-github`, machine authentication and the same complete project-file scope. Bodies are bounded to **64 KiB**, reject unknown fields/queries/invalid Unicode, and accept only a repository slug for `review` or immutable repository/account IDs for `snapshot`. `git` accepts no provider selectors. No browser-supplied executable, configuration path, API endpoint, header or query document is accepted.
+Private `POST /v1/project-github/{git,review,snapshot}` (`project-github` capability):
 
-The metadata reader opens the registered repository/worktree root through the retained volume's `os.Root`. It reads bounded `.git`, HEAD, loose/packed refs, linked worktree pointers and direct remote configuration without executing Git, hooks, credential helpers or repository code. It rejects symlink/outside-volume metadata, malformed refs and unsupported formats such as reftable. Included configuration is not evaluated; incomplete remote suggestions remain flagged. A directory that is not itself a repository root is reported as such rather than searching another project. The guest compares metadata contents/identities and the original root/boot/service identity after provider I/O; an observed change fails rather than combining old/new checkouts. This detects changes during the read, not a guarantee against later external Git activity.
-
-Provider reads invoke only the guest-service user's `~/.local/bin/gh` from a neutral home directory. The dedicated `~/.config/axv/github` credential directory must be private `0700`, with a pinned regular `hosts.yml` mode `0600`, bounded to **64 KiB**. It must explicitly contain the active account's file-backed token; aliases, malformed configuration, keyring-only and missing credentials are rejected. The captured token is supplied only as the subprocess's `GH_TOKEN`, never argv or a response. All inherited token/host/repository/debug/pager overrides are removed. `gh` receives an empty, private per-call configuration directory under a guest-owned home without group/world write permissions; source-profile transport overrides cannot redirect it, and the temporary directory is removed after the call. Prompts/update notices are disabled. There is no default guest/host profile or OS-keyring fallback. All tasks in this guest still share the same account trust domain.
-
-One fixed GraphQL read document carries caller-derived identifiers as variables. `review` queries only the actual viewer and canonical repository identity; it does not require check/PR reads. `snapshot` additionally reads the local full commit, matching open-branch PR candidates, commit-associated PRs, head checks and `potentialMergeCommit` checks. Partial GraphQL errors reject the observation. Each PR connection is bounded to **10** entries, each check context connection to **50**, with explicit completeness. Check runs and legacy statuses retain their source and actual commit/repository. Synthetic merge checks never count as local-HEAD checks; a missing potential merge commit is unavailable, never implicitly passing. Only validated GitHub URLs for the actual repository are returned; external check/status target URLs are omitted. GitHub currently uses SHA-1 commit IDs; a SHA-256 Git repository can be inspected and its connection reviewed but cannot supply a GitHub commit query. Provider subprocesses are bounded by **20 seconds**, shared guest execution capacity, **2 MiB** stdout and **16 KiB** stderr. Raw stderr/provider bodies are never forwarded to browser diagnostics. No task/journal/receipt is allocated.
+- Reads `.git`/HEAD/refs/worktrees/remotes directly via `os.Root` without executing Git/hooks, rejecting symlink/outside-volume metadata and reftable, and reverifies root/boot/instance/Git metadata after provider I/O.
+- Invokes only `~/.local/bin/gh` using the pinned file-backed token from `~/.config/axv/github/hosts.yml` (`0700`/`0600`) passed via `GH_TOKEN` in an isolated temporary config dir (no keyring/default-profile fallback, 20s timeout, 2 MiB stdout / 16 KiB stderr).
+- Executes one fixed read-only GraphQL document (bounded to 10 PRs and 50 checks per connection with completeness flags); allocates no task receipt.
 
 ## Project task protocol
 
-Persistent project tasks use private guest `POST /v1/project-tasks/{submit,inspect,logs,cancel}` routes through the [compute task API](compute.md#vm-project-tasks). They require the guest token and an explicitly selected image declaring `project-tasks`. Runtime health advertises this capability only after validating durable state and exercising atomic placement into an actual delegated cgroup v2. Missing controllers, an unsupported kernel or unavailable task state remove the capability and provide a health diagnostic; they do not enable a weaker execution fallback.
+Private `POST /v1/project-tasks/{submit,inspect,logs,cancel}` (`project-tasks` capability; typed `spec.initialization` also requires `project-initialization`), called via [Compute tasks](compute.md#vm-project-tasks).
 
-`submit` carries the original project scope `{ root, rootIdentity, bootId, instanceId }`, host-minted `taskId`, immutable `attemptId` and `spec: { argv, directory, limits }`. IDs contain **8–128 ASCII letters, digits, underscores or hyphens**. The host supplies normalized explicit limits. The starting directory is relative to the registered root, resolved through `os.Root`, verified again before launch and held by an open directory descriptor. Argv runs directly without shell interpolation and accepts **1–128 arguments**, at most **32 KiB** in total, valid UTF-8 without NUL. Submit accepts a **256 KiB** JSON envelope for escaped arguments; remaining task requests use **64 KiB**. Unknown fields, trailing values, malformed Unicode and query parameters are rejected.
-
-The additional `project-initialization` capability enables host-admitted `spec.initialization: { directory, repository?, name? }` with empty `argv` and empty starting `directory`. The public ordinary task API cannot provide this intent. The guest creates one new child, captures and syncs its directory identity, and persists `createdRoot: { root, rootIdentity }` before starting a direct noninteractive Git clone. Raw Git diagnostics are withheld. Success requires the same directory identity to remain present; failure and restart preserve any captured receipt without rerunning the initializer. [Initialization finalization](compute.md#vm-project-initialization) registers only that original successful receipt.
-
-The guest durably accepts an attempt before creating its subprocess. Repeating the exact attempt and payload returns its original receipt, including after service restart; different inputs return `409 idempotency_conflict`. Public status is `accepted`, `running`, `succeeded`, `failed`, `cancelled` or `interrupted`, with timestamps, exit code when available, reason, retained log size and `logLimited`. A recorded launch intent is never interpreted as permission to launch again. Browser/request disconnect and desktop/controller restart do not stop the supervisor's accepted work. Guest executor shutdown kills only its owned task groups; startup reconciles unfinished records to `interrupted`, without resuming them. A crash around publication can leave an uncertain response, so callers query the original submission rather than inventing another attempt. Explicit retry creates a new attempt through the host.
-
-`inspect` and `cancel` take the original scope, task and attempt IDs; `logs` adds a nonnegative byte `offset` and optional **1–65536-byte** `limit` (default **65536**). Inspection and logs can retrieve recorded older boot/service identities from this machine's journal. Cancellation additionally requires the currently matching original boot and guest-service instance, and is never redirected to a replacement. Combined stdout/stderr is stored as exact bytes; log responses encode `data` as base64 and include `offset`, `nextOffset`, `logBytes` and `logLimited`. Offsets remain stable for binary output. Exceeding the log limit terminates the attempt and retains its exact prefix; output is not silently discarded while a task keeps running.
-
-Every attempt has its own cgroup under the guest service's delegated subtree. Linux `clone3` with `CLONE_INTO_CGROUP` places the initial process there atomically; cancellation uses `cgroup.kill`, including descendants that call `setsid`. Cleanup removes empty nested cgroups only within that attempt, bounded to **1024 descendants** and **64 levels**; failure to confirm termination or remove the owned tree interrupts the attempt and makes the executor unavailable. Supported explicit limits are **1–86400 seconds**, **1–128 CPUs**, **64–1048576 MiB memory**, **2–256 processes/threads**, and **1024–8388608 log bytes**. CPU quota, `memory.max`, `memory.oom.group` and `pids.max` are applied and read back. Timeout, log quota, memory OOM and process-limit events stop only the affected group and preserve a visible reason. Limits constrain use and do not reserve VM memory or free disk capacity; shared VM capacity still matters. They do not impose per-task disk, I/O or network quotas.
-
-State lives on the VM's root disk in private `/var/lib/axv/tasks`, separately from repository files and retained project-volume data. The root-owned image helper initializes its machine-owner marker and journal only on clean first use. Once initialized, missing/invalid ownership, journal or established logs fail visibly without reset. File and directory sync errors remain failures. The guest holds an exclusive state lock and admits at most **8 active attempts**, **256 retained receipts**, **8 MiB of journal metadata** (with final-result headroom) and **256 MiB of reserved retained logs**. Actual free space is checked for the state and project filesystems before acceptance. There is no implicit history/log eviction or task-state migration onto a replacement VM; the host's durable task history and cached results have their separate ownership.
-
-These controls serve trusted development commands running as the same guest `axv` account. That account can access other guest files and its delegated cgroup subtree: this is not an adversarial sandbox between commands, other projects or the supervisor. [Product constraints](../product.md#vm-project-workspace-constraints) retain the separate host-agent permission boundary. [`project_tasks.go`](../../apps/server/internal/guest/project_tasks.go), its Linux state/cgroup implementation and nearby fixture tests own the execution contract; actual kernel enforcement requires native acceptance.
+- **Durable acceptance & isolation:** Guest durably accepts `(taskId, attemptId, spec)` before spawning (matching retries return the original receipt; changed inputs return `409 idempotency_conflict`). State lives on the VM root disk in `/var/lib/axv/tasks` bound by root-owned `tasks.owner` (max 8 active, 256 receipts, 8 MiB metadata, 256 MiB logs; actual free space checked before admission; never silently reset).
+- **Cgroup v2 enforcement:** Runtime health advertises `project-tasks` only after verifying delegated `cpu`/`memory`/`pids` controllers, `cgroup.kill` and atomic `clone3` (`CLONE_INTO_CGROUP`) placement. Limits: 1–86,400s, 1–128 CPUs, 64–1,048,576 MiB, 2–256 processes, 1,024–8,388,608 log bytes. Exceeding log cap stops the attempt and keeps its exact prefix. Cancellation requires matching `(bootId, instanceId)` and kills the full attempt cgroup including daemonized descendants. Guest-service restart reconciles unfinished attempts to `interrupted` without relaunching.
+- **Trusted account boundary:** Commands run as the guest `axv` account (not an adversarial sandbox against other projects on the same VM).
 
 ## Boundaries
 
-Private guest `POST /v1/shutdown` is used only by the host lifecycle controller and is not exposed by the gateway. It requires guest authentication and returns `202 { accepted: true }` after the guest's supervisor command succeeds; command failure or its three-second deadline returns `503 shutdown_failed`. Acceptance does not confirm that the VM has exited: the host still observes provider shutdown. [VM ownership](../vm-platform.md#guest-execution) describes provider-specific shutdown. Project-file routes are separate from command and terminal lifetime/permission contracts.
-
-See [VM architecture](../vm-platform.md) for guest ownership and restart behavior. [Host Terminal](host-terminal.md) and [host Codex](host-codex.md) run on the host and use different process-lifetime contracts.
+Private `POST /v1/shutdown` is host-controller-only (never gateway-exposed), returns `202` on accepted guest reboot/poweroff (3s deadline) and leaves final exit observation to the host provider.
 
 ## SSH access
 
-These routes exist only on the private host socket, outside `/guest`. The desktop gateway rejects SSH routes; there is no browser or remote SSH listener. All three routes require `X-AXV-Host-ID` matching the original host, a machine belonging to that host, and running intent/observed state.
+Private-host-only routes (excluded from browser gateway and remote transports; require `X-AXV-Host-ID` and running VM):
 
-| Method | Private host route | Request and response |
+| Method | Private host route | Contract |
 | --- | --- | --- |
 | GET | `/v1/machines/:id/ssh` | `{ version, hostId, machineId, bootId, available, user, hostKey?, reason? }` |
-| POST | `/v1/machines/:id/ssh/clients` | `{ bootId, clientId, publicKey }` → the confirmed normalized registration |
-| GET | `/v1/machines/:id/ssh/attach?bootId=...` | HTTP upgrade to the framed SSH byte stream |
+| POST | `/v1/machines/:id/ssh/clients` | Register plain Ed25519 key `{ bootId, clientId, publicKey }` (max 128 clients / 64 KiB) |
+| GET | `/v1/machines/:id/ssh/attach?bootId=...` | HTTP `101` upgrade (`Upgrade: axv-ssh-v1`) to framed SSH byte stream |
 
-Metadata identifies user `axv` and a plain Ed25519 host key when available. Before registration or attachment, the host verifies the requested boot against guest health; the guest verifies it again. A host mismatch returns `409 binding_changed`, and a changed boot returns `409 boot_changed`. Missing boot identity or an invalid upgrade returns `400 invalid_request`. Metadata protocol or machine mismatches return `503 guest_identity_mismatch`; unavailable guest transport or a failed attachment health check returns `503 guest_unavailable`.
-
-Registration accepts one JSON object of at most **4 KiB**. `clientId` contains **8–128 ASCII letters, digits, underscores or hyphens**. `publicKey` is at most **2048 bytes** and must contain exactly one plain Ed25519 key, without authorized-key options or a certificate. The dedicated registry holds at most **128 clients** and **64 KiB**. Re-registering the same key is idempotent; replacing one client ID updates only that client's key. Unknown or malformed existing entries are preserved and produce `503 ssh_registration_failed`, not a rewritten registry.
-
-Attachment requires `Connection: Upgrade` and `Upgrade: axv-ssh-v1`, returning **101** on success. Each frame has a one-byte type and four-byte unsigned big-endian payload length: type **1** carries **1–32768 bytes**, while type **2** with zero length closes only that sending direction. Invalid frames or transport loss close the connection. This preserves SSH stdin EOF and final output across both providers. The standard SSH protocol runs inside these frames; AXV does not replace SSH authentication, channels or exit-status messages. The [sshstream implementation](../../apps/server/internal/sshstream/stream.go) owns framing and half-close behavior.
-
-There are at most **32 simultaneous SSH streams** per guest (`503 ssh_connection_limit`). Connection setup has bounded deadlines; established streams have no AXV duration limit. Guest-service shutdown closes its streams. SSH sessions are ordinary `axv` processes, with no detachable-terminal IDs or replay/recovery. SFTP and TCP forwarding use the dedicated SSH server; remote forwarding binds guest loopback. Agent forwarding, X11 and tunnels are disabled. Normal guest filesystem permissions apply; SSH is not confined to the project directory. The [CLI workflow](../startup.md#ssh-file-transfer-and-forwarding) owns local keys, host-key pinning and client commands.
+Frames use 1-byte type (`1` = 1–32,768 data bytes, `2` = half-close EOF) + 4-byte big-endian length ([`sshstream`](../../apps/server/internal/sshstream/stream.go)). Max 32 simultaneous streams per guest; host/boot mismatch returns `409`. Sessions are ordinary connection-bound `axv` SSH sessions (SFTP + local/loopback-remote forwarding; no agent forwarding, X11, root/password login or AXV replay).
 
 ## Network observation
 
-`GET /v1/machines/:id/network`, also forwarded as `/api/compute/machines/:id/network`, returns `{ version, hostId, machineId, bootId, observedAt, provider, addresses }`. It requires running intent/observed state and authenticates the current guest. It never starts a VM. A supplied `X-AXV-Host-ID` must match the host.
-
-Each address contains `{ interface, address, prefixLength, family, reachability }`, where family is `ipv4` or `ipv6`, and reachability contains `{ from, state, reason }`. The guest reports at most **256** current global-unicast addresses on active interfaces, including private addresses but excluding loopback and link-local addresses. `observedAt` and `bootId` bound the observation; addresses are not durable connection identities.
-
-Reachability is classified from the deployment host's perspective. Provider-known isolated guest addresses are `unreachable`; unverified addresses are `unknown` with reason `not_verified`. The result does not claim that an address is reachable from the browser, another device or the public internet. Use SSH's private transport for access instead of inferring connectivity from a reported address. Observation failures return `503 network_unavailable` or `guest_unavailable`.
+`GET /v1/machines/:id/network` (and `/api/compute/machines/:id/network`) reports up to 256 current global-unicast guest addresses scoped to `(bootId, observedAt)` with host-perspective reachability (`unreachable` for isolated Firecracker guests, `unknown` when unverified). Never starts a VM or implies browser/host connectivity.

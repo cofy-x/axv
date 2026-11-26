@@ -2,307 +2,126 @@
 
 [API index](README.md)
 
-Machine, storage and durable-operation APIs for the computer running AXV. The VM service and its virtual machines run on that computer, independently of the browser's platform.
+Machine, storage, durable-operation, VM project and persistent-task APIs for the local deployment machine (host protocol version **3**). Browser gateway uses `/api/compute`; private host Unix socket uses `/v1` (`/environment` and `/preparation/*` are desktop-only). Shared [access boundaries](README.md#access-and-identity-boundaries) apply. JSON bodies require one object with no unknown fields (default **64 KiB** cap unless specified).
 
-The browser gateway uses `/api/compute`. Host routes use `/v1` on the private host Unix socket; `/environment` and `/preparation/*` are desktop-only. The VM CLI uses the private socket directly. Host protocol version is **3**. The [shared access boundary](README.md#access-and-identity-boundaries) applies. JSON request bodies accept one object with no unknown fields, normally limited to **64 KiB**; project writes, project tasks and image uploads specify separate limits below.
+Implementation: [`compute/gateway`](../../apps/server/internal/compute/gateway), [`compute/httpapi`](../../apps/server/internal/compute/httpapi), [`compute/control`](../../apps/server/internal/compute/control), [`compute/prepare`](../../apps/server/internal/compute/prepare). Architecture belongs to [VM architecture](../vm-platform.md).
 
 ## Routes
 
 | Method | Route after prefix | Response |
 | --- | --- | --- |
-| GET | `/environment` | Desktop compute environment |
-| GET | `/preparation/check` | Preparation checks, defaults and recent tasks |
-| POST | `/preparation/plan` | Reviewed preparation plan |
-| POST | `/preparation/jobs` | 202 preparation task |
-| GET | `/preparation/jobs/:id` | Preparation task |
-| POST | `/preparation/jobs/:id/retry` | 202 preparation task |
-| POST | `/preparation/jobs/:id/cancel` | Preparation task |
-| GET | `/runtime` | Controller readiness and host identity |
-| GET | `/info` | Host information |
-| GET | `/machines` | `{ machines }` |
-| GET | `/machines/:id` | Machine |
-| GET | `/machines/:id/network` | Current guest address observation; see [Guest API](guest.md#network-observation) |
-| POST | `/machines` | 202 `{ machine, operation }` |
-| PATCH | `/machines/:id` | 202 `{ machine, operation }` |
-| POST | `/machines/:id/actions` | 202 `{ machine, operation }` |
-| GET | `/volumes` | `{ volumes }` |
-| POST | `/volumes` | 202 `{ volume, operation }` |
-| POST | `/volumes/:id/actions` | 202 `{ volume, operation }` |
-| POST | `/volumes/:id/delete` | 202 operation |
-| GET | `/projects` | `{ projects }` |
-| POST | `/projects` | 201 `{ project }` |
-| GET | `/projects/:id` | `{ project }` |
-| GET | `/projects/:id/binding` | `{ project, binding }` |
-| GET | `/project-backups` | `{ backups: [volume] }` |
-| POST | `/projects/:id/backups` | 202 `{ volume, operation }` |
-| POST | `/project-backups/:id/restore` | 202 `{ volume, operation }` |
-| POST | `/project-backups/:id/bind` | 201 `{ project }` with a separate restored identity |
-| POST | `/projects/:id/initialize` | 202 initialization `{ task, attempt, attempts }` |
-| POST | `/projects/:id/initializations/:requestId/finish` | `{ project }` from a successful original initialization attempt |
-| POST | `/projects/:id/files/list` | `{ project, binding, entries, nextCursor?, truncated }` |
-| POST | `/projects/:id/files/read` | `{ project, binding, path, content, sha256, size, modifiedAt }` |
-| POST | `/projects/:id/files/write` | Same file response after confirmed publication |
-| POST | `/projects/:id/files/mkdir` | `{ project, binding, name, path, kind, size, modifiedAt }` |
-| POST | `/projects/:id/tasks` | 202 `{ task, attempt, attempts }` |
-| GET | `/projects/:id/tasks` | `{ tasks: [{ task, attempt, attempts }] }` |
-| GET | `/projects/:id/tasks/:taskId` | `{ task, attempt, attempts }` |
-| GET | `/projects/:id/task-requests/:requestId` | Original submission/retry receipt as `{ task, attempt, attempts }` |
-| POST | `/projects/:id/tasks/:taskId/retry` | 202 `{ task, attempt, attempts }` |
-| POST | `/projects/:id/tasks/:taskId/attempts/:attemptId/cancel` | 202 `{ task, attempt, attempts }` |
-| GET | `/projects/:id/tasks/:taskId/attempts/:attemptId/logs?offset=&limit=` | Byte-offset log chunk |
-| GET | `/task-events?after=` | Sanitized durable task outcome event page |
-| GET | `/projects/:id/tasks/:taskId/attempts/:attemptId/status` | Sanitized exact-attempt notification resolution |
-| GET | `/images` | `{ images }` |
-| POST | `/images` | 202 `{ image, operation }` |
-| POST | `/images/import` | 202 `{ image, operation }` |
-| POST | `/images/:id/delete` | 202 operation |
-| GET | `/operations` | `{ operations }` |
-| GET | `/operations/:id` | One durable operation |
-| GET | `/operations/by-request/:requestId` | One durable operation for the exact original request ID |
+| GET | `/environment` | Desktop compute environment & coordinator snapshot (desktop-only) |
+| GET | `/preparation/check` | Cached checks, defaults, `instanceId`, `localService?` & recent tasks (desktop-only) |
+| POST | `/preparation/plan` | Reviewed frozen preparation plan (desktop-only) |
+| POST | `/preparation/jobs` | `202` preparation task (desktop-only) |
+| GET | `/preparation/jobs/:id` | Preparation task status/steps (desktop-only) |
+| POST | `/preparation/jobs/:id/retry` | `202` retry original preparation task (desktop-only) |
+| POST | `/preparation/jobs/:id/cancel` | Cancel preparation task before commit (desktop-only) |
+| GET | `/runtime` | Cheap controller readiness, `hostId` and `configFingerprint` (no provider probe) |
+| GET | `/info` | Host capacity, providers/capabilities, images and creation defaults |
+| GET | `/machines`, `/machines/:id` | Non-deleted machine list / single machine (includes tombstones) |
+| GET | `/machines/:id/network` | Guest network observation ([Guest API](guest.md#network-observation)) |
+| POST / PATCH | `/machines`, `/machines/:id` | `202 { machine, operation }` create / update spec |
+| POST | `/machines/:id/actions` | `202 { machine, operation }` (`start\|stop\|restart\|force-stop\|delete\|package-source`) |
+| GET / POST | `/volumes`, `/volumes/:id/actions`, `/volumes/:id/delete` | Volume list / `202` create, copy, action (`rename\|retain\|resize\|attach\|detach`) or delete |
+| GET / POST | `/projects`, `/projects/:id`, `/projects/:id/binding` | VM project list, `201` register, get or capture `{ project, binding }` |
+| GET / POST | `/projects/:id/github`, `/projects/:id/github/{git,review,associate,clear,refresh}` | Read-only VM project GitHub association and observations |
+| GET / POST | `/project-backups`, `/projects/:id/backups`, `/project-backups/:id/{restore,bind}` | Offline backups list, `202` copy/restore, `201` explicit restored-project bind |
+| POST | `/projects/:id/initialize`, `/projects/:id/initializations/:requestId/finish` | `202` directory/clone init task; explicit post-success project registration |
+| POST | `/projects/:id/files/{list,read,write,mkdir}` | Bound guest project-file operations |
+| POST / GET | `/projects/:id/tasks`, `/tasks/:taskId`, `/task-requests/:requestId` | `202` submit persistent task, list/inspect task, recover request receipt |
+| POST / GET | `/projects/:id/tasks/:taskId/retry`, `.../attempts/:attemptId/{cancel,logs,status}` | `202` new attempt, `202` exact-attempt cancel, byte-offset logs, exact status |
+| GET | `/task-events?after=` | Sanitized durable task outcome event feed |
+| GET / POST | `/images`, `/images/import`, `/images/:id/delete` | Image list, `202` HTTPS/multipart import (Lima, ≤ 8 GiB), `202` delete |
+| GET | `/operations`, `/operations/:id`, `/operations/by-request/:requestId` | Active + latest 200 completed operations / single / exact request lookup |
 
 ## Desktop environment
 
-`GET /api/compute/environment` returns the running desktop's configuration context even when the host is unconfigured or offline. It requires the same local access as other compute routes, sets `Cache-Control: no-store`, and rejects other methods with `405 method_not_allowed` and `Allow: GET`. There is no `/v1/environment` host route.
-
-| Field | Meaning |
-| --- | --- |
-| `platform` | Desktop operating system; independent of the browser platform |
-| `configured` | Compute settings exist; this does not imply service readiness |
-| `configPath`, `profileHome` | Current profile paths |
-| `executablePath` | Current executable path |
-| `logPath` | Optional absolute path of the initialized desktop log on the AXV host; present even while VM hosting is unconfigured or offline; host diagnostics use separate supervisor output |
-| `loggingError` | Optional current desktop-log write failure; events fall back to the desktop stderr until writing recovers |
-| `requiredLimaVersion`, `automaticSetupSupported` | Pinned Lima release and macOS automatic preparation support |
-| `configurationSource` | Profile settings or a read-only environment override |
-| `preparation` | The preparation checks, defaults and current/latest task snapshot. The check endpoint adds its transport `instanceId` and optional `localService` diagnostic. |
-| `availableActions` | Currently applicable `review`, `retry` and `cancel` actions; the task and plan endpoints still validate each action |
-| `runtime` | Coordinator snapshot: `state`, `mode`, `generation`, `readOnly`, optional `hostId`, `code`, `error` |
-
-Runtime state is `not_configured`, `starting`, `ready` or `failed`. This cheap snapshot does not launch a process or trigger an expensive provider probe. A configured host is activated in the background after the desktop listener starts. Readiness requires recovered host state, matching protocol/configuration/identity and an available provider. An external Firecracker service can connect with an empty catalog so the administrator can register the first image. Managed preparation and VM creation require a usable native image. Environment overrides are read-only in the wizard.
-
-A gateway binding captures one verified socket, host identity and configuration fingerprint. New socket connections verify that identity before forwarding the application request, including a WebSocket upgrade. An in-flight request retains its original binding; old connections are never redirected to a replacement service.
+`GET /api/compute/environment` (local-only, `no-store`) returns desktop platform, `configured`, paths, `logPath`/`loggingError`, `requiredLimaVersion`, `configurationSource`, `preparation` snapshot and coordinator `runtime` (`not_configured|starting|ready|failed`, `mode`, `generation`, `hostId?`). Cheap read — never launches processes or probes providers. Gateway bindings pin `(socket, hostId, configFingerprint)` per request/WS upgrade.
 
 ## Environment preparation
 
-These routes operate independently of the compute host and compute database. They use the local-access boundary and `Cache-Control: no-store`. Every mutation requires the exact same Origin and an `X-AXV-Instance-ID` header matching the desktop; stale instances return `409 instance_changed`. `GET /preparation/check` includes the current `instanceId` for this purpose. Preparation never accepts shell commands or arbitrary process arguments.
+Local-only, `no-store`. Mutations require exact Origin and `X-AXV-Instance-ID` (`409 instance_changed` on stale instance). Never accepts arbitrary shell commands.
 
-The check response includes `platform`, `arch`, `configured`, `configurationSource`, optional `lockedReason`, `automaticSetupSupported`, `cacheHome`, `officialImageAvailable`, `requiredLimaVersion`, `defaults`, `checks`, and optional `activeJob`/`latestJob`. Checks contain `id`, `label`, `status` (`ready`, `needed`, `blocked`) and `detail`. Background dependency diagnostics are cached; polling check does not install or download anything.
-
-On unlocked, unconfigured Linux without an active task, the check also reports `localService` with `socket`, `status` (`missing`, `permission_denied`, `unavailable`, `ready`) and `detail`. It checks the standard socket and may discover a different socket from the administrator's standard configuration file. This diagnostic is advisory. The connection plan checks the selected socket and binds its identity again before committing.
-
-When the standard socket is missing, a bounded, cached read of the default `axv-host.service` systemd unit can add `localService.systemdState` (`not_installed`, `inactive`, `failed`, `active`). A missing standard socket and an unreadable regular host configuration can occur together. In that case the response keeps `permission_denied` and the configuration error alongside a known unit state. A missing custom socket, denied socket access, or an inconclusive supervisor check omits `systemdState`.
-
-`POST /preparation/plan` accepts optional `storageRoot`, `limaHome`, `cpus`, `memoryMiB`, `diskGiB`, `machines`, `socket`, `hostConfig`, `imageSource` and `imageBundle`. Paths refer to the AXV deployment machine. Missing values use the returned defaults. `imageSource` is `ubuntu-base`, `bundle` (local manifest path) or `official` (enhanced AXV release); `imageBundle` alone explicitly selects the bundle source. [Setup policy](../startup.md#first-time-macos-setup) owns the default source and preparation choices. Unpublished official releases produce a `release_pending` plan blocker. The plan validates new storage ownership, path lengths, prerequisites and capacity values. Existing configuration retains its provider pins, storage and budgets; this API does not migrate existing storage or upgrade a provider. Linux accepts an existing administrator-managed local service configuration or Unix socket and does not install Firecracker or request elevated privileges.
-
-The response contains `id`, `createdAt`, `expiresAt`, `platform`, `arch`, `provider`, `cacheHome`, normalized `request`, `actions`, `downloads`, `checks`, `canStart`, `configPath`, `hostConfigPath` and `activation`. Downloads expose `id`, `name`, selected `url`, optional `originUrl`, pinned `sha256`, `bytes` (zero if unknown), `cached`, `cacheState` (`missing`, `partial`, `ready`, `in_use`) and `cachePath`. A cache hit means full content verification, not mere existence. `activation` is `ready` in the desktop or `configured` for the offline CLI. Reviewing creates a plan, not a running task; clients must display the concrete changes and obtain confirmation before starting.
-
-A blocked Linux socket probe includes an optional check `code` of `missing`, `permission_denied` or `unavailable`. Clients can use it to offer troubleshooting for the exact reviewed connection.
-
-`POST /preparation/jobs` accepts `{ requestId, planId, confirmed: true }`. A start request binds its ID to the exact reviewed plan. Expired, blocked or stale plans cannot start. A duplicate request with the same payload returns the existing task; reusing its ID with another payload returns `409 request_conflict`. Only one task may be active per profile.
-
-Tasks persist independently of the browser under `AXV_HOME/preparation/`. Their response contains `id`, `requestId`, `planId`, `revision`, `status`, `attempt`, `phase`, `steps`, `createdAt`, `updatedAt`, `committed`, `canCancel`, `canRetry`, the reviewed `plan`, and optional `result`, `binding` or `error`. Each step reports its label/status and optional detail/byte progress. Status is `queued`, `running`, `interrupted`, `failed`, `succeeded` or `cancelled`. Success reports `ready` only after service activation; offline CLI success reports `configured`.
-
-Retry and cancel accept `{ requestId, expectedRevision }`. Retry resumes the same task and original plan, increments its attempt, and preserves verified artifacts. It never silently replaces the task or its settings. Cancel is permitted only before configuration commit begins. Closing a page or detaching the live CLI does not cancel work. A desktop process interruption leaves an explicit retryable task; startup does not automatically repeat installation or downloads.
-
-Download records expose the selected `url` and optional `originUrl` when an artifact mirror is selected. The plan freezes both alongside `sha256`; mirror changes do not change cache identity. Selection is mirror-only with no automatic fallback. Source-bound partials cannot be resumed from another URL.
-
-After configuration commit, a service-start failure retains that configuration for retry. Unsupported preparation database formats and ownership conflicts preserve files and return `503 preparation_unavailable`, while the desktop remains accessible. [VM preparation](../vm-platform.md#environment-preparation) owns artifact publication and commit recovery.
+- `POST /preparation/plan` freezes `storageRoot`, `limaHome`, capacity budgets, `imageSource` (`ubuntu-base|bundle|official`; unpublished official reports `release_pending`), `socket`/`hostConfig`, pinned digests and mirror URLs (no auto-fallback). Reviewing never mutates state.
+- `POST /preparation/jobs` (`{ requestId, planId, confirmed: true }`) is idempotent per `requestId` (`409 request_conflict` on payload mismatch; max 1 active job per profile; persisted in `AXV_HOME/preparation/preparation.sqlite`).
+- `retry` and `cancel` take `{ requestId, expectedRevision }`. Cancel is valid only before config commit; retry resumes the exact original plan without deleting existing storage.
 
 ## Host information
 
-Provider capabilities expose `volumeCopy` independently of `volumes`: offline backup/restore copying can be supported even when general volume creation, resizing and attachment edits are unavailable. Clients require both provider availability and `volumeCopy` before offering a new backup or restore operation; existing operation receipts remain readable independently of current provider availability.
-
-`GET /api/compute/info` returns `{ configured: false, reason }` when no host is configured. Otherwise it reports `configured: true`, `hostId`, `protocolVersion`, `hostArch`, `capacity`, `providers`, `images`, `defaults`, `experimental` and `configFingerprint`. Provider capability flags determine available actions; images include only ready/configured catalog entries. `defaults` contains a creation `spec`, `start: true`, `taskTtlSeconds: 3600` and `taskRetainVolume: false`. The development spec defaults to name `my-vm`, 2 CPUs, 1024 MiB memory, an 8 GiB root disk, a 4 GiB retained project volume and the first compatible available provider/image. Clients raise the default root size to the selected image minimum and report capacity violations without silently reducing allocations.
-
-`GET /v1/runtime` (also forwarded as `/api/compute/runtime`) is a cheap controller-readiness and identity endpoint available after controller recovery; it avoids provider probes. The fingerprint identifies effective host configuration for managed-host reuse, not user authentication. This is separate from desktop/database [`/api/health`](desktop.md#runtime-health-and-bootstrap). Local CLI clients verify protocol, readiness, host ID and configuration fingerprint on each newly opened connection before sending its request on that same connection; replacing the socket cannot redirect an established binding.
+- `GET /v1/runtime` verifies controller readiness, `protocolVersion`, `hostId` and `configFingerprint` without probing providers; CLI clients verify this on every new connection.
+- `GET /api/compute/info` exposes capacity, provider capability flags (including independent `volumeCopy`), ready images and shared creation defaults (`my-vm`, 2 CPUs, 1024 MiB RAM, 8 GiB root, 4 GiB retained project volume, `start: true`, `taskTtlSeconds: 3600`, `taskRetainVolume: false`). Clients never silently shrink allocations to fit capacity.
 
 ## Machine creation and configuration
 
-Machine listings exclude deleted records; individual machine lookups include tombstones.
-
-Create accepts `{ requestId, start?, spec }`; omitted `start` means **true**, and explicit false creates a stopped VM. `spec` contains `name`, `provider`, `imageId`, `kind` (`development` or `task`), `resources` (`cpus`, `memoryMiB`, `diskGiB`), `projectGiB`, `retainVolume`, optional `volumeId` and `ttlSeconds`. The host config owns image paths/digests and capacity; request bodies never provide host paths or provider arguments.
-
-Machine names are trimmed with Go `strings.TrimSpace`, then must contain **1–80 UTF-8 bytes**, without NUL, CR or LF. Matching is case-sensitive with no Unicode normalization. The canonical machine-ID form `vm-` followed by 32 lowercase hexadecimal digits is reserved. Names are unique across nondeleted machines and pending configurations on this host. A failed pending rename keeps its name reservation until resolved; successful rename releases the old name, and completed deletion releases the name. Conflicts return `409 name_conflict`. Volume and image names retain their own rules.
-
-Resources must fit host capacity, with at least **1 CPU**, **128 MiB memory**, **2 GiB root disk** (also respecting the image's `minRootGiB`) and **1 GiB project storage**. The Firecracker adapter supports at most **32 vCPUs per machine**, independently of the host's total CPU capacity. Development requires retention and no TTL; task TTL is **60–2592000 seconds**. A reused volume must match provider, size and retention.
-
-Configuration accepts `{ requestId, revision, spec, renewLease? }` with the complete `spec`. CPU, memory and root-disk changes require a stopped VM; disks only grow. Provider, image, volume identity and project-storage size cannot change through this endpoint; use volume operations for project storage. `pendingSpec` preserves an unresolved configuration and blocks start. `renewLease: true` renews a task lease; changing its TTL or converting development to task also starts a new lease.
+- Create takes `{ requestId, start?, spec }` (omitted `start` = `true`); `PATCH` takes `{ requestId, revision, spec, renewLease? }` with the full `spec`.
+- **Names:** Trimmed 1–80 UTF-8 bytes, case-sensitive, unique host-wide across active machines and pending specs (`vm-<32-hex>` reserved; `409 name_conflict`).
+- **Limits:** ≥ 1 CPU (Firecracker max 32 vCPUs/VM), ≥ 128 MiB RAM, ≥ 2 GiB root (respecting image `minRootGiB`), ≥ 1 GiB project disk. `development` requires `retainVolume: true` and no TTL; `task` TTL is **60–2,592,000s**.
+- CPU, memory and root-disk edits require a stopped VM; disks only grow. `pendingSpec` blocks start until resolved.
 
 ## Actions and durable operations
 
-Machine actions are start, stop, restart, force-stop, delete and explicit package-source maintenance.
-
-An action accepts `{ requestId, revision, action }`. Volume and image deletion accept `{ requestId, revision }`. All compute `requestId` values contain **8–128 bytes** without NUL, CR or LF, are globally unique in this host database and bind to the original payload. Retry an uncertain request with the same key and payload to retrieve its operation; changed payloads return `409 idempotency_conflict`. Acceptance is not completion: poll the operation through `queued`/`running` to `succeeded` or `failed`. A failed operation may have partial side effects; inspect affected resources before issuing a new action with a new key.
-
-Operation listings include all active and the latest 200 completed records. Operation responses expose dependency `locks` and progress, with private payloads removed. `GET /operations/by-request/:requestId` resolves an exact request ID without submitting work; encode the complete ID as one URL path segment. It returns `404 not_found` when no record is visible. That response does not establish that an in-flight submission failed, and a changed host database cannot answer for the original host. Preserve host and request identity while recovering an uncertain response.
+All compute `requestId` values are **8–128 bytes**, globally unique in the host database and bound to the original payload (`409 idempotency_conflict` on mismatch). Acceptance (`202`) is **not** completion: poll operations through `queued|running` to `succeeded|failed`. On uncertain responses, query `GET /operations/by-request/:requestId` (a `404` does not prove submission failed) or replay the exact `(requestId, payload)` on the original host.
 
 ## Volumes
 
-Volume listings include detached retained storage. Creation can allocate a new volume or make an independent copy. Deleting an attached volume or one with an uncertain attachment is rejected.
-
-Volume creation accepts `{ requestId, name, provider, sizeGiB, retain, sourceVolumeId? }`. A copy locks the source and its attached VM; an attached source must be stopped. Copies are independent, cannot be smaller than the source, and may omit provider/size to use the source values.
-
-Volume actions accept `{ requestId, revision, action, name?, retain?, sizeGiB?, machineId?, machineRevision? }`, with actions `rename`, `retain`, `resize`, `attach` and `detach`. Attachment changes require the affected VM's revision and stopped state; growth of attached storage also requires stopped state. An uncertain attachment retains `pendingMachineId` and blocks deleting either resource until resolved. Failed actions retain `pendingAction`; a retry must match that action and attachment target, using a new request ID after inspecting the final failed operation.
+`POST /volumes` creates a new volume or copies `sourceVolumeId` (attached source must be stopped; copy cannot shrink). `POST /volumes/:id/actions` supports `rename`, `retain`, `resize`, `attach` and `detach` (attach/detach/resize of attached storage require a stopped VM and matching VM revision). Deleting an attached or uncertain-attachment volume is rejected.
 
 ## VM projects
 
-These routes are available through the desktop gateway and private host socket. Every request requires `X-AXV-Host-ID` matching the original host, including list/get/binding. Gateway mutations also require the shared local Origin check. POST bodies require `application/json`, one JSON object and no unknown fields; query parameters, invalid UTF-8 and unpaired Unicode surrogates are rejected without replacing submitted characters. The ordinary **64 KiB** body limit applies except writes, which allow an **8 MiB** JSON envelope for escaped text. These routes never access a host project directory or fall back to host execution.
+All project, GitHub, init, backup and task routes require `X-AXV-Host-ID` (even on reads), strict UTF-8/Unicode JSON (rejecting unpaired surrogates and queries unless documented) and exact Origin on gateway mutations. Never falls back to host directories.
 
-`POST /projects` accepts `{ requestId, volumeId, volumeRevision, machineId, root, name? }`. The volume must be retained, ready, currently attached to that exact running VM and free of conflicting operations. Its revision must match. The selected image and current guest must both offer `project-files`. `root` is an existing canonical path relative to the project volume; the empty string selects its root. It cannot be an absolute path, `.`/`..`, a symlink root or an AXV reserved internal path. Registration does not clone Git or create missing directories.
-
-The returned project contains `{ id, hostId, kind: "vm", name, volumeId, root, rootIdentity, revision, createdAt }`. It identifies volume data independently of the current VM. Registration receipts share the host request-ID namespace: replaying the same request returns the original project; a changed payload returns `409 idempotency_conflict`. A fresh registration of the same volume/root and unchanged filesystem identity returns the existing project without renaming it. An identity mismatch fails without adopting the replacement directory. Project-bound volumes cannot be deleted or have retention disabled; project deletion is unavailable. Restored storage uses the separate [explicit binding contract](#vm-project-backups).
-
-`GET /projects/:id/binding` verifies current attachment and guest/root identity and returns `{ project, binding }`. The binding contains `{ hostId, projectId, projectRevision, volumeId, volumeRevision, machineId, bootId, instanceId }`; `instanceId` identifies this guest-service incarnation, separately from the Linux boot. VM replacement on the same retained volume keeps the project ID but requires an explicit new binding. Host replacement, volume changes and guest restart invalidate old requests.
-
-Every file POST accepts `{ binding, path }` with the complete original binding. List additionally accepts `cursor?` and `limit?`; write requires `content` and explicit `expectedSha256`. The host rejects fields belonging to other actions. It holds an access lease against lifecycle/attachment changes during forwarding, rechecks the bound machine and guest, and sends the registered root identity to the guest. A stopped or missing VM, unavailable guest or stale binding fails; callers must not automatically substitute a new binding.
-
-Paths are canonical relative paths of at most **4096 UTF-8 bytes**, without traversal, backslashes, control characters or `.axv`/`.axv-*` components. The empty path lists the project root; other actions require a nonempty path. Listing defaults to **100** entries, accepts **1–200**, reports symlinks without opening them and caps scanning at **10,000** entries with `truncated`. `nextCursor` is valid only for the observed mutable directory; it is not a snapshot. Reads and writes accept regular UTF-8 text files up to **1 MiB** without binary control characters. Symlinks and special files cannot be opened; ancestor resolution remains confined to the project.
-
-For writes, `expectedSha256: ""` means create-only; a lowercase SHA-256 means replace exactly the reviewed version. Missing/null content or expectations are rejected; an explicit empty content string clears a reviewed file. Parents must already exist; `mkdir` creates one directory and rejects an existing name. Conflict returns an error without refreshing the expectation. Successful writes return the new `sha256`. The guest stages/syncs content, rechecks directory/file identities and hash before atomic publication and confirms the resulting bytes. AXV writers are serialized; ordinary guest processes can still race between the last check and rename. This is not an OS-level compare-and-swap against arbitrary guest tools. See [guest enforcement](guest.md#project-file-protocol).
-
-File writes and mkdir are synchronous and have no durable request receipt. A transport or post-publication error can mean the change succeeded; inspect the original binding/path before deciding how to retry. Never blindly repeat a write, refresh its hash or acquire another environment binding to make a failed request succeed. Registration recovery instead preserves its original request ID/payload and consults the project list. Project/file persistence survives desktop/controller restart; the current VM/guest must still be available for file access. [Project tasks](#vm-project-tasks) have a separate durable acceptance and cancellation contract.
-
-| Status | Project/file codes |
-| --- | --- |
-| 400 | `invalid_request`, `invalid_path`, `invalid_directory`, `invalid_cursor`, `not_file` |
-| 403 | `file_forbidden` |
-| 404 | `not_found` |
-| 409 | `binding_changed`, `boot_changed`, `instance_changed`, `project_changed`, `file_conflict`, `revision_conflict`, `operation_conflict`, `idempotency_conflict`, `volume_conflict`, `unavailable` |
-| 413 | `file_too_large` |
-| 415 | `not_text` |
-| 503 | `unsupported`, `host_unavailable`, `guest_unavailable`, `guest_identity_mismatch`, `project_unavailable`, `file_unavailable` |
-| 507 | `disk_full` |
-
-[VM architecture](../vm-platform.md#vm-projects) owns durable project and file-publication mechanisms; [VM project CLI](../startup.md#vm-project-files) provides the host-agent workflow. These IDs remain separate from [registered host projects](project-files.md) and task/run identities.
+- **Register (`POST /projects`):** `{ requestId, volumeId, volumeRevision, machineId, root, name? }` on a retained, attached volume of a running VM confirming `project-files`. Idempotent by `requestId` and unchanged `(volume, root, rootIdentity)`. Project-bound volumes cannot be deleted or made disposable; project deletion is unavailable.
+- **Binding (`GET /projects/:id/binding`):** Returns `{ project, binding }` where `binding = { hostId, projectId, projectRevision, volumeId, volumeRevision, machineId, bootId, instanceId }`. Every file POST sends the full original `binding`; VM replacement or guest restart invalidates old requests (callers never auto-rebind).
+- **File operations (`list|read|write|mkdir`):** Relative paths ≤ 4,096 UTF-8 bytes (no traversal, backslashes or `.axv`/`.axv-*`). List: default 100 / max 200 entries (10,000 scan cap). Read/write: regular UTF-8 text ≤ **1 MiB** (8 MiB write JSON envelope); symlinks/special files rejected. Write requires `expectedSha256` (`""` = create-only; lowercase SHA-256 = replace reviewed version). Synchronous with no durable receipt — inspect the path on uncertain responses instead of blindly retrying.
 
 ### GitHub project review
 
-`GET /projects/:id/github` returns `{ revision, association? }` without observing a VM or contacting GitHub. The optional association contains `{ repository: { id, nameWithOwner, url }, account: { id, login }, machineId, profile: "axv", updatedAt }`. Compute retains it in the project JSON as `github`, with an independent `githubRevision`; ordinary project/file revisions stay unchanged. No credentials or observed checks enter this store.
-
-`POST /projects/:id/github/{git,review,associate,clear,refresh}` requires the original complete `binding` and explicit association `revision`, with an **8 KiB** JSON envelope. All routes retain the shared host/Origin/query/Unicode checks. The selected image and verified current guest must declare `project-github` as well as `project-files`. Calls hold the same lifecycle leases as file reads and never create tasks, attempts or request receipts, including when task-history capacity is exhausted.
-
-| Action | Additional fields | Result |
-| --- | --- | --- |
-| `git` | None | `{ binding, revision, observation }` with local Git metadata only |
-| `review` | `repository`: GitHub `owner/name` | Same envelope with canonical repository and current dedicated guest-profile account |
-| `associate` | `repository`, reviewed `repositoryId`, reviewed `accountId` | `{ revision, association }` after independently rereading and checking those identities |
-| `clear` | None | `{ revision }` after clearing only this project's association |
-| `refresh` | None | Observation of the retained immutable repository/account identities through that association's exact VM/profile |
-
-Association mutations use compare-and-swap and always increment their own revision, including repeated same-value actions. They do not have durable request IDs: after a lost response, read current settings and explicitly review again rather than replaying a mutation. A renamed repository keeps its node identity; a replacement at the old slug does not. A replacement VM requires explicit review/reassociation, even if it mounts the original project. GitHub reads recheck guest/root/Git and association identities after the bounded provider call; they cannot refresh a stale project binding to make a request work.
-
-`observation` includes `git` (`repository`, `headSha?`, `branch?`, `detached`, `unborn`, clean remote candidates and their completeness), the actual account/repository, `observedAt`, optional `localChecks`, PR observations and `pullRequestsComplete`. PRs retain ID, number, base/head repositories, head branch/SHA, head checks and optional synthetic merge-test checks. Every check set records its actual repository, full SHA, provider state, completeness and individual check-run/commit-status results. These are separate identities, not a single PR readiness verdict. Missing/empty/denied/incomplete/unknown results cannot become a successful check of the local commit. The guest [read protocol](guest.md#github-project-reads) owns bounded query coverage and Git metadata limits.
-
-Failures are visible and sanitized: `github_association_changed`, `github_connection_changed`, `github_account_changed`, `github_repository_changed`, `github_setup_required`, Git changes/unsupported metadata and existing binding conflicts use **409**; missing authentication **401**, permission denial **403**, inaccessible/missing repository **404**, rate limits **429**, invalid/provider/network responses **502**, unavailable guest/CLI/profile/capacity **503**, and deadline expiry **504**. No automatic polling, retries, credential/profile switching or GitHub mutations occur. The browser retains a failed refresh's old observation as stale; a new page reads only saved association settings until the next explicit action.
+`GET /projects/:id/github` returns stored `{ revision, association? }`. `POST /projects/:id/github/{git,review,associate,clear,refresh}` (8 KiB envelope, requires `project-github` + `project-files`) holds normal project leases and allocates no task receipts. Association mutations use compare-and-swap on `githubRevision` without durable request IDs; VM replacement requires explicit re-review. Read-only observations keep local HEAD, PR heads and synthetic merge-test checks distinct.
 
 ## VM project initialization
 
-`POST /projects/:id/initialize` accepts `{ requestId, binding, directory, repository?, name? }` for an explicitly opened parent project. It creates one new child directory; `directory` must be a canonical single component of at most **255 UTF-8 bytes**, without a leading `-` or reserved AXV name. `name` follows project display-name rules; when omitted the directory name must itself be a valid display name. An empty or omitted `repository` creates an empty directory. A repository must use HTTPS or SSH, including `user@host:path` SSH syntax. Passwords, HTTPS user information, query parameters, fragments, local paths and other Git transports are rejected. Configure Git authentication and SSH host trust inside the guest; clone is noninteractive and requires existing SSH host trust. Raw Git output is withheld from task logs to avoid retaining remote credential-bearing diagnostics.
-
-Initialization admits a typed persistent project task with default task limits. The selected image and current guest must support `project-files`, `project-tasks` and `project-initialization`. Its immutable `spec.initialization` records `{ directory, repository?, name? }`; `argv` is empty and `directory` is empty. Ordinary task submission rejects this internal intent, and shell command text cannot impersonate it. The guest creates the child without overwriting an existing destination, captures its filesystem identity and persists `createdRoot: { root, rootIdentity }` in the attempt journal before launching Git directly. Failed clones preserve that directory and receipt for inspection. A repeat submission retains the same request ID, payload and binding and returns the original attempt. Use `GET /projects/:id/task-requests/:requestId`, task history, logs and exact cancellation to recover and inspect accepted work. Generic task Retry rejects initializations; a new initialization requires an explicit new request and destination review. A response loss, reconnect or desktop restart never automatically creates a replacement attempt.
-
-After the original attempt succeeds with a confirmed guest-final receipt, explicitly call `POST /projects/:id/initializations/:requestId/finish` with `{ binding }` containing that attempt's original complete binding. This registers only the captured `createdRoot` identity and returns `{ project }`. The service verifies the original parent, created directory and VM/boot/guest identities before first registration; a replaced directory or changed environment is rejected. Failed, active or uncertain attempts return `409 task_conflict`, and ordinary tasks cannot be finalized as initialization. Finalization has a durable registration receipt, so its exact replay returns the same project even if that VM later becomes unavailable. No automatic directory replacement, failed-clone cleanup, repository migration or Git worktree repair is performed.
-
-Repairing guest authentication does not rerun a recorded failed attempt. An explicit new initialization needs a new request ID and an unused destination; the original receipt and partial directory remain available. Authentication setup belongs to the guest user's persistent configuration, independently of the terminal's environment. The [private repository guide](../usage.md#private-repository-authentication) covers HTTPS helpers, SSH trust and credential lifetime. No AXV credential fields or separate repository-access-check endpoint are provided.
-
-The desktop exposes a volume-root parent as **Volume workspace**; it remains a normal visible project with its own files and initialization task history. [Initialization CLI](../startup.md#vm-project-initialization) documents explicit registration, capture and recovery commands.
+`POST /projects/:id/initialize` (`{ requestId, binding, directory, repository?, name? }`, requires `project-files` + `project-tasks` + `project-initialization`) admits a typed persistent task creating one new single-component child directory (≤ 255 bytes; empty dir or credential-free HTTPS/SSH Git clone; raw Git output withheld). Generic task Retry rejects initializations; failed clones preserve partial directories. After confirmed success, `POST /projects/:id/initializations/:requestId/finish` (`{ binding }`) verifies and idempotently registers the captured `createdRoot`.
 
 ## VM project backups
 
-These routes share the VM project host header, local access, Unicode, JSON and **64 KiB** request rules. Backups are offline whole-volume copies on providers implementing `VolumeCopier` (Lima and native Linux Firecracker); they are not live snapshots, remote exports or backups of the VM root disk, host task ledger or provider history.
+Offline whole-volume copies on `VolumeCopier` providers (Lima, Firecracker):
 
-`POST /projects/:id/backups` accepts `{ requestId, projectRevision, volumeRevision, machineId, machineRevision, name }`. The selected project's retained volume must be ready, attached to that exact VM, and have no pending storage/configuration work. Both VM status and desired state must be stopped. Every nonfinal task on the entire volume, including `unknown` work, blocks admission until reconciliation establishes its outcome. The host commits source volume/VM operation locks before copying; these prevent subsequent start, attachment changes and AXV file/task access. Providers independently confirm stopped state and verify owned storage while copying. Stop other externally administered writers before invoking this operation; AXV cannot fence arbitrary host administrator disk access.
-
-The accepted target is a new retained volume with immutable `backup` provenance: `{ hostId, sourceVolumeId, sourceVolumeRevision, sourceMachineId, sourceMachineRevision, projects, createdAt }`. `projects` contains the registered project identities and original roots on this volume. `GET /project-backups` lists these copies, including pending or failed ones. A backup cannot be attached, resized, renamed or have retention changed through ordinary volume operations. Explicit detached-volume deletion remains available. Failed/incomplete copies retain their allocation and cannot be restored. Acceptance is separate from completion; inspect the durable `copy-volume` operation and target volume until ready.
-
-Provider completion records bind the copy version, original source ID, target ID, reserved size and SHA-256. Recovery rehashes completed target storage; restoring an immutable backup first verifies that backup against its recorded digest. Same-size corruption and missing, legacy or malformed completion records fail visibly without replacing existing storage. A normal restored working volume can receive legitimate edits; backing it up captures its current bytes rather than comparing it to its old restore digest.
-
-If a previous Lima import survives controller loss, its inherited copy lock prevents staging cleanup or replacement while it still writes. The recovered copy keeps the same running operation, request receipt and capacity/source locks while waiting. A confirmed earlier writer exceeding a worker deadline publishes `phase: "waiting-for-provider"` and delays re-entry into that same idempotent copy; it does not create another operation or turn lock contention into a failed backup. Other failures keep their normal final outcome.
-
-`POST /project-backups/:id/restore` accepts `{ requestId, revision, name }` for a completed backup on the original host. It copies into another new retained volume, keeping the captured `backup` manifest and recording `restoredFrom` as the backup volume ID. Original volumes and project records are unchanged. Explicitly create a compatible VM selecting that new volume, start it and inspect the current volume revision before binding a project. The backup itself never becomes a writable project volume.
-
-`POST /project-backups/:id/bind` accepts `{ requestId, sourceProjectId, volumeId, volumeRevision, machineId, name? }`. The exact running VM must own that ready restored volume, whose `restoredFrom` must match the URL backup. Both the selected image and runtime guest must declare `project-files` and the independent `project-restore` capability; older project-file images do not implicitly support restore verification. The selected source project must appear in its captured manifest. The guest verifies the original project root and filesystem identity and checks Git/worktree metadata paths against the original locations inside the copied project volume, including each linked worktree's `commondir` and private configuration. Separate Git directories inside that volume are supported. Symlink metadata, missing/outside linked worktrees and Git configuration includes fail visibly; repair the recovered copy explicitly before retrying with reviewed identities. Validation supports at most **256** linked worktrees and **64 KiB** per metadata file. It does not execute Git, repository hooks, configuration commands or a checkout. Ordinary project registration cannot bypass validation on restored volumes.
-
-Binding publishes a new project ID on the restored volume, with its own explicit runtime binding. Its default display name preserves the source project's name; identity is carried by the new project ID and volume, independently of that name. An already registered unchanged root on that restored volume returns its existing restored project; original project IDs, Codex run contexts, tasks and file bindings keep their original targets and never follow the restored copy. The source project and backup may be inspected independently. Obtain the restored project's binding as a separate caller action before file/task access.
-
-Backup and restore share durable operation request IDs with other compute operations. Binding shares the project registration receipt namespace. Replay the original request ID, host and complete payload after uncertainty; changed payloads return `409 idempotency_conflict`. A committed binding receipt replays without requiring the original VM to remain live. Stale reviews return `revision_conflict`/`binding_changed`, active or unknown tasks return `task_conflict`, and invalid or incomplete storage returns `volume_conflict`. There is no automatic stop, retry against a newer volume, project replacement or old-run rebinding.
+- `POST /projects/:id/backups` requires a stopped VM with no desired restart, no pending operations and no nonfinal/unknown tasks on the volume; locks source resources and creates a detached immutable volume with `backup` provenance + SHA-256 completion marker. Lima lock contention after controller restart publishes `phase: "waiting-for-provider"` and retries the same operation.
+- `POST /project-backups/:id/restore` copies a verified backup into a new retained working volume (`restoredFrom`).
+- `POST /project-backups/:id/bind` requires a running VM with `project-restore` + `project-files`, validates original root identity and Git/worktree metadata (≤ 256 linked worktrees, ≤ 64 KiB/file, no Git execution), and creates a **separate** project ID (original projects and agent runs stay on the original volume).
 
 ## VM project tasks
 
-Project tasks run installation, builds and tests in a registered project's VM. A task identifies an immutable specification; an attempt identifies one execution in an exact project/volume/VM/boot/guest-service binding. These IDs are separate from VM lifecycle/preparation operations and from a VM's task-kind TTL. No endpoint selects a replacement environment or falls back to host execution.
+Runs direct `argv` (1–128 args, ≤ 32 KiB total, 256 KiB JSON envelope, no shell interpolation) inside a registered project's VM (`project-tasks` capability).
 
-All routes require the original `X-AXV-Host-ID`, including list, receipt, status, logs and outcome events. Mutations use the shared Origin/access policy and require `application/json`, a single object with no unknown fields and valid Unicode. Task mutation bodies allow **256 KiB** for escaped arguments. The logs route accepts its documented byte-range query, and the outcome feed accepts its documented cursor query; other task routes reject query parameters.
+| Limit            | Default   | Accepted range                      |
+| ---------------- | --------- | ----------------------------------- |
+| `timeoutSeconds` | 900       | 1–86,400                            |
+| `cpus`           | 1         | 1–128 (within VM allocation)        |
+| `memoryMiB`      | 512       | 64–1,048,576 (within VM allocation) |
+| `maxProcesses`   | 64        | 2–256                               |
+| `maxLogBytes`    | 1,048,576 | 1,024–8,388,608                     |
 
-`POST /projects/:id/tasks` accepts `{ requestId, binding, spec }`. `binding` is the complete explicitly captured project binding used by file access, with identity fields of at most 128 UTF-8 bytes; it must match both the URL project and transport host. `spec` contains `{ argv, directory, limits }`. `directory` defaults to the project root and follows its relative-path rules; this starting-directory check does not sandbox subsequent guest process filesystem access. `argv` contains **1–128** valid UTF-8 arguments, without NUL, totaling at most **32 KiB**; the first argument cannot be empty. Arguments are executed directly, without shell interpolation.
-
-`limits` contains `{ timeoutSeconds, cpus, memoryMiB, maxProcesses, maxLogBytes }`. Omitted/zero values receive these defaults before request fingerprints are computed:
-
-| Limit | Default | Accepted range |
-| --- | --- | --- |
-| `timeoutSeconds` | 900 | 1–86,400 seconds |
-| `cpus` | 1 | 1–128, within the selected VM's allocation |
-| `memoryMiB` | 512 | 64–1,048,576 MiB, within the selected VM's allocation |
-| `maxProcesses` | 64 | 2–256 |
-| `maxLogBytes` | 1,048,576 | 1,024–8,388,608 bytes |
-
-The selected image and runtime guest must offer `project-tasks`; unsupported enforcement fails explicitly. Limits apply independently to each attempt. Combined stdout/stderr is retained up to the log capacity; exceeding it stops that attempt with `log_limit` and `logLimited: true`. These controls do not establish per-task disk, I/O or network limits or a sandbox for the host agent.
-
-Submission records the task, its first attempt and a durable request receipt before guest dispatch, then returns **202**. A successful response means accepted, not completed. Replaying the original request returns its recorded attempt without dispatching another execution, including when its original VM is gone. Changed payloads or request-ID reuse by another operation return an idempotency conflict. Preserve the original request ID, payload and binding; a transport error does not prove that the submission failed.
-
-The host retains up to **256 tasks**, **1,024 attempts**, **256 MiB** of reserved log capacity and an **8 MiB** metadata reservation across its task history. Capacity remains reserved for recorded attempts rather than silently pruning history; admission failure is visible. Actual host/guest storage availability is checked separately from these logical limits. No task-history deletion or automatic store reset is exposed by this API.
-
-`GET /projects/:id/tasks/:taskId` returns `{ task, attempt, attempts }`. The task contains `{ id, hostId, projectId, requestId, spec, currentAttemptId, createdAt }`. `attempt` is the current attempt for ordinary inspection; `attempts` contains recorded history. Each attempt contains `{ id, taskId, number, binding, root, rootIdentity, requestId, status, reason?, syncError?, exitCode?, createdAt, startedAt?, finishedAt?, logBytes, cachedBytes, logLimited, guestFinal, cancelRequested }`. Status and cached logs remain available across desktop/controller restart and guest unavailability. `syncError` exposes a current guest/result/log synchronization failure without replacing a known final outcome; successful synchronization clears it. `guestFinal` records whether a verified guest terminal receipt has fixed the log's final byte count and limit flag. Later nonterminal receipts or changed final log bounds fail synchronization. A host-recorded interruption alone does not fix those bounds: an original guest receipt can still recover more output while preserving the host's recorded terminal outcome.
-
-Attempts pass through `accepted`, `dispatching`, `running` and `cancelling`, or `unknown` when execution cannot yet be confirmed. Final states are `succeeded`, `failed`, `cancelled` and `interrupted`. A guest or VM failure cannot silently launch a replacement. An `unknown` attempt remains unresolved; it cannot be retried until reconciliation establishes a final outcome. `exitCode` is present only when known; `reason` explains failure, interruption or uncertain state. Optional `syncError` reports result/log synchronization failures without changing a previously verified final outcome; persisted error text is limited to 4096 UTF-8 bytes without control characters.
-
-`GET /projects/:id/task-requests/:requestId` recovers the original submit/retry receipt. Its `attempt` is the attempt created by that request, even if `task.currentAttemptId` now identifies a later retry. An unknown request is not proof that the submission did not arrive; inspect/recover the original identity before deciding to resubmit.
-
-`POST /projects/:id/tasks/:taskId/retry` accepts `{ requestId, binding }`. It requires a final previous attempt and an explicitly chosen current project binding, then creates a new attempt of the original task specification. The task ID remains stable and previous attempt IDs, logs and bindings remain unchanged. Retry has its own durable receipt and never refreshes the supplied binding or changes argv/limits.
-
-`POST /projects/:id/tasks/:taskId/attempts/:attemptId/cancel` accepts `{ binding }` containing that exact attempt's original binding. The host validates the complete original target and records cancellation intent before contacting its guest. The route never addresses a later retry, another task or a replacement VM. Acknowledging intent does not confirm that processes have stopped; inspect the attempt until termination is confirmed. Repeated cancellation remains scoped to that same attempt.
-
-The logs route accepts only `offset` (nonnegative byte offset, default **0**) and `limit` (**1–65,536** bytes, default **65,536**). It returns `{ taskId, attemptId, status, offset, data, nextOffset, logBytes, logLimited }`, where `data` is base64-encoded bytes in JSON. `nextOffset` is the exclusive end of this returned chunk. Logs preserve arbitrary stdout/stderr bytes, including invalid UTF-8, across reconnects. Host-cached data remains readable while its guest is unavailable; `logBytes` reports the last known guest size and can exceed cached/returned bytes. Guest synchronization requires the complete requested prefix and append-only log bounds; a missing or inconsistent prefix remains visible as a synchronization failure without discarding a verified final result. Empty data alone is not proof that a task has finished or that all guest output was cached. Queries never acquire a new execution binding.
-
-Task endpoints retain the project binding/storage error mapping above. Invalid specifications or log ranges return `400 invalid_request`; mismatched execution bindings return `409 binding_changed`; retrying active or uncertain work returns `409 task_conflict`. Task/history capacity exhaustion returns `429 capacity_exceeded` or `task_limit`; unavailable durable guest state returns `503 task_state_unavailable`; unsupported resource enforcement returns `503 unsupported`. Disk exhaustion remains visible as `507 disk_full`.
-
-[VM project CLI](../startup.md#vm-project-tasks) owns command-line use. Guest execution supervision and controller reconciliation belong to [VM architecture](../vm-platform.md#persistent-project-tasks); [project-volume backup/restore](#vm-project-backups) has separate offline-copy and binding contracts.
+- **Durable acceptance & history caps:** Commits task, attempt and receipt before dispatch (`202`). Host retains up to **256 tasks**, **1,024 attempts**, **256 MiB** log capacity and **8 MiB** metadata without silent eviction (`429 capacity_exceeded` / `task_limit`).
+- **Attempt states & retries:** Nonfinal `accepted|dispatching|running|cancelling|unknown`; final `succeeded|failed|cancelled|interrupted`. Recover lost responses via `GET /projects/:id/task-requests/:requestId` (returns that request's exact attempt). `POST .../retry` requires a final prior attempt (never `unknown`) and a freshly reviewed binding. `POST .../cancel` addresses one exact attempt using its original binding.
+- **Logs:** `GET .../logs?offset=&limit=` (default/max **65,536** bytes) returns base64 chunk + `nextOffset`, `logBytes`, `logLimited`; host-cached logs stay readable while the VM is offline (`syncError` reports lag/gaps without erasing a verified final outcome).
 
 ### Task outcome events
 
-`GET /task-events?after=N` reads the compute owner's durable outcome journal without contacting a guest. `after` defaults to **0**, is an inclusive consumed sequence, and accepts one integer from **0** through **9,223,372,036,854,775,807**. Unknown or duplicate query parameters and invalid cursors return `400 invalid_request`. The host retains the newest **2,048** events and returns at most **256** events per page in increasing sequence order.
-
-The response is `{ sourceId, storeId, first, next, events, gap, unavailable }`. `sourceId` is `compute:<hostId>` and `storeId` is the persistent host ID. `first` is the oldest retained sequence, or **0** for an empty journal. `next` is the last returned sequence, or the latest retained sequence when no events are returned; it is an inclusive checkpoint rather than the following sequence. Continue from `after=next` after durably importing the returned page. `gap` is true when `after < first - 1`, indicating pruned history; it never establishes an outcome for missing work. `unavailable` is false for successful compute reads; owner or transport failures return an HTTP failure and consumers preserve their previous checkpoint. A changed store/source identity requires a separate cursor starting at **0**; a cursor from one host must not skip another host's events.
-
-Each event contains `{ id, sequence, observedAt, state, target }`. `id` is opaque, `sequence` increases within the store, and `observedAt` is the host's UTC observation time. `state` is `unknown`, `succeeded`, `failed`, `cancelled` or `interrupted`. `target` contains `{ kind: "task", storeId, hostId, projectId, taskId, attemptId, eventId }`; `eventId` matches the event's `id`. The host appends an event only when an attempt changes into one of these states, in the same transaction as that state change. An uncertain or unreconciled attempt cannot become a successful event without a verified task result. Commands, paths, task arguments, logs and diagnostic text are excluded.
-
-`GET /projects/:id/tasks/:taskId/attempts/:attemptId/status` returns `{ available, current, state, target }` for the exact recorded attempt. `available` is false when that original project/task/attempt combination is missing. For available attempts, `state` is the recorded attempt status, and `current` reports whether it remains the task's current attempt. An older attempt remains available with its own status after retry and has `current: false`; the route never substitutes the retry or acquires a guest binding. The returned target contains the exact route identities and store/host identity, without an originating `eventId`.
-
-Both reads require the original `X-AXV-Host-ID` before cursor parsing or record lookup, return `Cache-Control: no-store`, and use the compute gateway/private Unix socket access boundary. A mismatched host returns `409 binding_changed`. The desktop event consumer captures one verified host route for each request; a later gateway rebind cannot redirect an in-flight request or an exact-attempt lookup. Consumer configuration, delivery history and opaque return links belong to the [notification API](notifications.md).
+- `GET /task-events?after=N` (inclusive cursor, default 0; host retains newest **2,048** events, max **256**/page) returns `{ sourceId, storeId, first, next, events, gap, unavailable }` with sanitized `{ id, sequence, observedAt, state, target }` recorded atomically on transitions into `unknown` or final states.
+- `GET /projects/:id/tasks/:taskId/attempts/:attemptId/status` resolves one exact historical or current attempt (`{ available, current, state, target }`) without substituting a later retry or contacting the guest.
 
 ## Images
 
-Image listings expose public catalog metadata without host paths. `POST /images` imports through HTTPS; `POST /images/import` accepts a multipart file upload. Both return 202 `{ image, operation }`. Referenced images cannot be deleted.
-
-Image import accepts `{ requestId, name, arch, sha256, url?, guest? }`. `guest` optionally declares `{ imageVersion, protocolVersion, capabilities, binarySHA256? }`; omitted metadata gives basic VM management only and never inherits another image's guest contract. URL imports require an HTTPS URL without embedded credentials. Multipart import requires a JSON `metadata` part followed by exactly one `file` part and must omit `url`. Imports require Lima, the host's native architecture, a matching SHA-256. Files are limited to **8 GiB** and must be bootable raw or self-contained qcow2 cloud images without backing or external data files. Catalog metadata is immutable; register a new image to change it. Use provider capability fields for image, volume and resource-editing availability.
+`POST /images` (HTTPS URL, no credentials) and `POST /images/import` (multipart `metadata` + `file`) import immutable Lima native-arch raw/self-contained qcow2 cloud images (≤ **8 GiB**, SHA-256 verified) with optional `guest` capability contract. Referenced images cannot be deleted.
 
 ## State and failures
 
-Machine `desired` is running/stopped/deleted; observed `status` includes queued, provisioning, starting, stopping, deleting, running, stopped, unknown, lost, failed and deleted. `ready` describes the guest independently. `guestState` is `not-installed`, `incompatible`, `unavailable` or `ready` while running; `guestReason` supplies enhancement diagnostics. `guestCapabilities` contains only the intersection of the image declaration and a successful current protocol/identity handshake. Nonrunning machines expose no usable guest capabilities. Guest failures do not turn confirmed basic VM lifecycle operations into failures. Revisions protect intent changes; status refreshes do not increment them.
+Machine `desired` (`running|stopped|deleted`), observed `status` and `guestState` (`not-installed|incompatible|unavailable|ready`) are independent; guest failures never fail confirmed basic VM lifecycle ops.
 
-| Status | Codes |
-| --- | --- |
-| 400 | `invalid_request` |
-| 404 | `not_found` |
-| 409 | `revision_conflict`, `operation_conflict`, `idempotency_conflict`, `name_conflict`, `volume_conflict`, `image_conflict`, `configuration_conflict`, `unavailable` |
-| 429 | `capacity_exceeded` |
-| 503 | `unsupported`, `host_unavailable` |
-
-An `unavailable` resource conflict is distinct from an unreachable host. Refresh the affected resource before resolving a conflict; preserve request identity while an operation's outcome is uncertain.
-
-[Guest execution](guest.md) documents health, command, terminal, network and private SSH routes. [VM architecture](../vm-platform.md) owns provider, resource and operation implementation; [startup](../startup.md) owns host configuration and service commands.
+Common status codes: `400` (`invalid_request`, `invalid_path`, `invalid_directory`, `invalid_cursor`, `not_file`), `401/403` (GitHub auth/forbidden, `file_forbidden`), `404` (`not_found`), `409` (`binding_changed`, `boot_changed`, `instance_changed`, `project_changed`, `file_conflict`, `revision_conflict`, `operation_conflict`, `idempotency_conflict`, `name_conflict`, `volume_conflict`, `image_conflict`, `task_conflict`, `unavailable`, `github_*_changed`), `413` (`file_too_large`), `415` (`not_text`), `429` (`capacity_exceeded`, `task_limit`, `github_rate_limited`), `503` (`unsupported`, `host_unavailable`, `guest_unavailable`, `guest_identity_mismatch`, `task_state_unavailable`), `507` (`disk_full`). Exact mappings live in [`compute/httpapi/api.go`](../../apps/server/internal/compute/httpapi/api.go).
 
 ## Package source maintenance
 
-`POST /machines/:id/actions` additionally accepts `{ requestId, revision, action: "package-source", packageSource: "official" | "aliyun" }`. The optional `packageSource` field is rejected on all other actions. It returns the ordinary 202 machine/operation receipt, with `packageSource` persisted on the operation. The [durable-operation contract](#actions-and-durable-operations) applies. This is an explicit command; creation/Start do not select or change sources.
-
-The VM must be running with no pending configuration and use Lima; AXV guest software is not required. Unsupported providers return `unsupported`; stopped machines return `unavailable`. The operation requires preinstalled Python 3 and supports only Ubuntu 24.04 arm64/amd64. Unsupported OS, missing dependencies or keyring, unsafe file types and custom source layouts fail the operation; basic VM state remains independently observed. It performs no package refresh, installation or upgrade. [Startup](../startup.md#download-mirrors-and-guest-package-sources) owns source URLs, backups and recovery behavior.
+`POST /machines/:id/actions` accepts `{ requestId, revision, action: "package-source", packageSource: "official" | "aliyun" }` for running Lima Ubuntu 24.04 (arm64/amd64) VMs with Python 3 (no AXV guest required; no package refresh/upgrade performed). See [package sources](../startup.md#download-mirrors-and-guest-package-sources).
