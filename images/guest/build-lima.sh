@@ -29,15 +29,14 @@ mounted=false
 cleanup() {
   set +e
   if [[ $mounted == true ]]; then
-    for sub in dev/pts dev proc sys; do
-      mountpoint -q "$mnt/$sub" && umount "$mnt/$sub"
-    done
-    mountpoint -q "$mnt" && umount "$mnt"
+    umount --recursive "$mnt" || umount --recursive --lazy "$mnt"
   fi
   if [[ -n $loop_dev ]]; then
     losetup -d "$loop_dev"
   fi
-  rm -rf -- "$build_dir"
+  if ! mountpoint -q "$mnt"; then
+    rm -rf -- "$build_dir"
+  fi
 }
 trap cleanup EXIT
 export TMPDIR="$build_dir" GOTMPDIR="$build_dir"
@@ -148,7 +147,7 @@ if command -v fstrim >/dev/null 2>&1; then
   fstrim "$mnt" || true
 fi
 sync
-umount "$mnt/dev/pts" "$mnt/dev" "$mnt/proc" "$mnt/sys" "$mnt"
+umount --recursive "$mnt"
 mounted=false
 losetup -d "$loop_dev"
 loop_dev=''
