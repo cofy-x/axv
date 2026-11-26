@@ -135,7 +135,9 @@ jobs:
           node scripts/ci-ubuntu-mirrors.mjs /etc/apt/apt-mirrors.txt "$RUNNER_TEMP/axv-apt-mirrors.txt"
           sudo install -m 0644 "$RUNNER_TEMP/axv-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
           sudo apt-get update
-          sudo apt-get install --yes libguestfs-tools qemu-utils linux-image-generic
+          # Exclude passt so Ubuntu 24.04 libguestfs uses QEMU's built-in libslirp0
+          # instead of hitting Ubuntu's AppArmor passt socket restriction.
+          sudo apt-get install --yes libguestfs-tools qemu-utils linux-image-generic passt-
           sudo chmod 0644 /boot/vmlinuz-*
       - name: Download and build complete enhanced Lima arm64 bundle
         run: |
