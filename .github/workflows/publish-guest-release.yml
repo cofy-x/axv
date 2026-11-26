@@ -1,0 +1,122 @@
+name: Publish guest release
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful Guest image candidate workflow run ID on main
+        required: true
+        type: string
+      version:
+        description: Guest release version without leading v, for example 0.1.0-guest.3
+        required: true
+        type: string
+      provider:
+        description: Guest provider
+        required: true
+        default: lima
+        type: choice
+        options:
+          - lima
+          - firecracker
+      arch:
+        description: Guest architecture
+        required: true
+        default: arm64
+        type: choice
+        options:
+          - arm64
+          - amd64
+      notes:
+        description: Optional native acceptance summary appended to release notes
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Verify and publish Guest release
+    if: github.repository == 'cofy-x/axv' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    env:
+      RUN_ID: ${{ inputs.run_id }}
+      VERSION: ${{ inputs.version }}
+      PROVIDER: ${{ inputs.provider }}
+      ARCH: ${{ inputs.arch }}
+      EXTRA_NOTES: ${{ inputs.notes }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Validate inputs and download verified candidate artifact
+        run: |
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]]
+          node scripts/package-release.mjs --check-version
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID")"
+          conclusion="$(printf '%s' "$run_json" | node -e 'const r = JSON.parse(require("fs").readFileSync(0,"utf8")); console.log(r.conclusion || "");')"
+          branch="$(printf '%s' "$run_json" | node -e 'const r = JSON.parse(require("fs").readFileSync(0,"utf8")); console.log(r.head_branch || "");')"
+          head_sha="$(printf '%s' "$run_json" | node -e 'const r = JSON.parse(require("fs").readFileSync(0,"utf8")); console.log(r.head_sha || "");')"
+          test "$conclusion" = "success"
+          test "$branch" = "main"
+          [[ "$head_sha" =~ ^[a-f0-9]{40}$ ]]
+          echo "HEAD_SHA=$head_sha" >> "$GITHUB_ENV"
+          artifact="axv-guest-${VERSION}-${PROVIDER}-${ARCH}-candidate"
+          mkdir -p dist/publish
+          gh run download "$RUN_ID" -n "$artifact" -D dist/publish
+          ls -lh dist/publish
+      - name: Verify checksums and build provenance
+        run: |
+          (cd dist/publish && sha256sum --check --strict SHA256SUMS)
+          node scripts/verify-release-provenance.mjs \
+            --kind guest --provider "$PROVIDER" --arch "$ARCH" \
+            --version "$VERSION" --source "$HEAD_SHA" --directory dist/publish
+      - name: Publish GitHub Pre-release
+        run: |
+          if [ "$PROVIDER" = "lima" ]; then
+            ext="qcow2"
+            provider_label="Lima"
+          else
+            ext="ext4"
+            provider_label="Firecracker"
+          fi
+          archive="dist/publish/axv_guest_${VERSION}_${PROVIDER}_${ARCH}.tar.gz"
+          disk="dist/publish/axv_guest_${VERSION}_${PROVIDER}_${ARCH}.${ext}"
+          notes_file="$RUNNER_TEMP/release-notes.md"
+          cat > "$notes_file" <<EOF
+          ## AXV Guest ${VERSION} — ${provider_label} ${ARCH} (Pre-release)
+
+          Built from reviewed commit \`${HEAD_SHA}\` via workflow run [${RUN_ID}](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}).
+
+          ### Assets
+
+          - \`axv_guest_${VERSION}_${PROVIDER}_${ARCH}.${ext}\` — standalone Guest disk image
+          - \`axv_guest_${VERSION}_${PROVIDER}_${ARCH}.tar.gz\` — complete bundle archive (\`manifest.json\`, disk, \`distribution/axv-guest/\`, inner \`SHA256SUMS\`)
+          - \`candidate.json\` — immutable image contract and digest metadata
+          - \`SHA256SUMS\` — release checksum manifest
+          - \`provenance.json\` — GitHub Actions build provenance attestation
+          EOF
+          if [ -n "$EXTRA_NOTES" ]; then
+            printf '\n### Acceptance notes\n\n%s\n' "$EXTRA_NOTES" >> "$notes_file"
+          fi
+          gh release create "v${VERSION}" \
+            "$archive" \
+            "$disk" \
+            dist/publish/candidate.json \
+            dist/publish/SHA256SUMS \
+            dist/publish/provenance.json \
+            --target "$HEAD_SHA" \
+            --prerelease \
+            --title "AXV Guest ${VERSION} (${provider_label} ${ARCH})" \
+            --notes-file "$notes_file"
