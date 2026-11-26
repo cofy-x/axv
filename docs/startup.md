@@ -12,16 +12,24 @@ AXV runs as the operating-system user that launches it, including root, without 
 
 ### Install a release archive
 
-Choose a **Linux amd64 AXV application release** from [Releases](https://github.com/cofy-x/axv/releases). The catalog also contains independently versioned Guest images; select the application archive named `axv_<version>_linux_amd64.tar.gz`. Read the selected release's notes for its features, validation scope, prerequisites and data-compatibility limits.
+Choose an **AXV application release** for your platform (`linux_amd64`, `linux_arm64`, or `darwin_arm64`) from [Releases](https://github.com/cofy-x/axv/releases). The catalog also contains independently versioned Guest images; select the application archive named `axv_<version>_<os>_<arch>.tar.gz`. Read the selected release's notes for its features, validation scope, prerequisites and data-compatibility limits.
 
-Download that archive and `SHA256SUMS` from the same release into a new, empty installation directory. Releases covered by the [current build-provenance policy](releasing.md#verify-build-provenance) also require their original `provenance.json`; verify it against the release's reviewed source SHA before extracting or running the archive. A missing required bundle is a verification failure. That reference identifies historical releases issued without a bundle; follow their release notes for the applicable verification limits. Keep the original downloads and extracted directory; do not overwrite an earlier installation.
+Download your platform archive, `SHA256SUMS` and `provenance.json` from the same release into a new, empty installation directory. Releases covered by the [current build-provenance policy](releasing.md#verify-build-provenance) require verifying both `<archive>` and `SHA256SUMS` against `provenance.json` using the release's reviewed source SHA before extracting or running the archive. Keep the original downloads and extracted directory; do not overwrite an earlier installation.
 
-Replace `<version>` below with the selected application version, without the tag's leading `v`, and confirm that the resulting archive name matches the downloaded asset. Run these commands from the download directory; extraction and execution only proceed after checksum verification succeeds:
+Replace `<version>` below with the selected application version (without the tag's leading `v`) and `<os>_<arch>` with `linux_amd64`, `linux_arm64`, or `darwin_arm64`. Run these commands from the download directory; extraction and execution only proceed after checksum verification succeeds:
 
 ```bash
+# Linux (linux_amd64 or linux_arm64):
 axv_release_version='<version>'
 axv_release_bundle="axv_${axv_release_version}_linux_amd64"
-sha256sum --check --strict SHA256SUMS &&
+grep "  ${axv_release_bundle}.tar.gz\$" SHA256SUMS | sha256sum --check --strict - &&
+  tar -xzf "${axv_release_bundle}.tar.gz" &&
+  "./${axv_release_bundle}/axv" version
+
+# macOS (Apple Silicon darwin_arm64):
+axv_release_version='<version>'
+axv_release_bundle="axv_${axv_release_version}_darwin_arm64"
+grep "  ${axv_release_bundle}.tar.gz\$" SHA256SUMS | shasum -a 256 -c - &&
   tar -xzf "${axv_release_bundle}.tar.gz" &&
   "./${axv_release_bundle}/axv" version
 ```
@@ -133,7 +141,7 @@ axv vm start dev
 
 On macOS, the first VM command starts or reuses the configured managed host under native supervision, without opening a browser or creating the desktop database. Compute configuration is resolved independently of desktop address, workspace and agent proxy settings. An external Linux service must already be running under its administrator's supervisor. Service startup never starts an existing stopped VM.
 
-The host may be the profile's only managed job. `daemon status`, `logs` and `stop` work in that state. Running `axv` or `daemon start` adds a desktop while preserving the host; `daemon restart` requires an existing desktop and does not create one.
+The host may be the profile's only managed job. `daemon status`, `logs` and `stop` work in that state, and `axv host status|start|stop|restart|upgrade|uninstall` manages both the profile-scoped macOS Lima host and the administrator-managed Linux `axv-host.service`. Running `axv` or `daemon start` adds a desktop while preserving the host; `daemon restart` requires an existing desktop and does not create one.
 
 `vm create <name>` creates and starts a development VM by default. Use `--no-start` to create it stopped. Web and CLI share host-provided creation defaults: 2 CPUs, 1024 MiB memory, an 8 GiB root disk and a retained 4 GiB project volume. The selected image can require a larger root disk; capacity failures are reported without reducing the request. `--cpus`, `--memory`, `--disk` and `--project-disk` override those allocations. Select `--image <id>` when more than one compatible image is available. `--kind task --ttl 1h` creates a task VM with disposable project storage by default; add `--retain-volume` to retain its project volume after deletion or expiry. [Machine creation](api/compute.md#machine-creation-and-configuration) owns resource limits and the unique-name contract.
 

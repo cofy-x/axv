@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 
@@ -186,7 +187,7 @@ func newServe(version string) *cobra.Command {
 
 func newHost(version string) *cobra.Command {
 	var hostConfig string
-	host := &cobra.Command{Use: "host", Short: "Run or manage the Linux VM host service", Args: arguments(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error {
+	host := &cobra.Command{Use: "host", Short: "Run or manage the AXV VM host service", Args: arguments(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error {
 		if err := nonemptyFlags(cmd, "config"); err != nil {
 			return err
 		}
@@ -225,48 +226,69 @@ func newHost(version string) *cobra.Command {
 	var statusJSON bool
 	hostStatus := &cobra.Command{
 		Use:   "status",
-		Short: "Show the Linux axv-host.service status and binary version",
+		Short: "Show the AXV VM host service status",
 		Args:  arguments(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			st := hostinstall.Status(cmd.Context(), version)
-			if statusJSON {
-				return jsonResult(cmd.OutOrStdout(), st)
-			}
-			if !st.Supported {
-				fmt.Fprintln(cmd.OutOrStdout(), "Linux VM system service is only applicable on Linux.")
-				return nil
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Service: %s (%s, boot autostart: %t)\n", hostinstall.UnitName, st.State, st.Enabled)
-			fmt.Fprintf(cmd.OutOrStdout(), "Socket: %s (reachable: %t)\n", st.Socket, st.SocketReachable)
-			if st.InstalledVersion != "" {
-				fmt.Fprintf(cmd.OutOrStdout(), "Installed version: %s (current CLI: %s)\n", st.InstalledVersion, st.CurrentVersion)
-			}
-			if st.VersionDrift {
-				fmt.Fprintln(cmd.OutOrStdout(), "Version drift detected; run `sudo axv host upgrade` or `sudo axv daemon upgrade`.")
-			}
-			return nil
+			return runHostStatus(cmd.Context(), version, statusJSON, cmd.OutOrStdout())
 		},
 	}
 	hostStatus.Flags().BoolVar(&statusJSON, "json", false, "print machine-readable JSON status")
 
-	hostStart := &cobra.Command{Use: "start", Short: "Start the installed Linux axv-host.service", Args: arguments(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error {
-		return hostinstall.StartService(cmd.Context(), cmd.OutOrStdout())
+	vmHome := func() (string, error) {
+		if runtime.GOOS == "linux" {
+			return "", nil
+		}
+		return profile.Home()
+	}
+
+	hostStart := &cobra.Command{Use: "start", Short: "Start the AXV VM host service (Linux axv-host.service or macOS managed Lima)", Args: arguments(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error {
+		home, err := vmHome()
+		if err != nil {
+			return err
+		}
+		return daemon.StartVMHost(cmd.Context(), home, cmd.OutOrStdout())
 	}}
-	hostStop := &cobra.Command{Use: "stop", Short: "Stop axv-host.service while preserving running VMs", Args: arguments(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error {
-		return hostinstall.StopService(cmd.Context(), cmd.OutOrStdout())
+	hostStop := &cobra.Command{Use: "stop", Short: "Stop the AXV VM host service while preserving running VMs", Args: arguments(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error {
+		home, err := vmHome()
+		if err != nil {
+			return err
+		}
+		return daemon.StopVMHost(cmd.Context(), home, cmd.OutOrStdout())
 	}}
-	hostRestart := &cobra.Command{Use: "restart", Short: "Restart axv-host.service while preserving running VMs", Args: arguments(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error {
-		return hostinstall.RestartService(cmd.Context(), cmd.OutOrStdout())
+	hostRestart := &cobra.Command{Use: "restart", Short: "Restart the AXV VM host service while preserving running VMs", Args: arguments(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error {
+		home, err := vmHome()
+		if err != nil {
+			return err
+		}
+		return daemon.RestartVMHost(cmd.Context(), home, cmd.OutOrStdout())
 	}}
-	hostUpgrade := &cobra.Command{Use: "upgrade", Short: "Upgrade /opt/axv/bin/axv to this binary and restart axv-host.service", Args: arguments(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error {
-		return hostinstall.UpgradeService(cmd.Context(), cmd.OutOrStdout())
+	hostUpgrade := &cobra.Command{Use: "upgrade", Short: "Apply this AXV binary to the VM host service and restart without killing VMs", Args: arguments(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error {
+		if runtime.GOOS == "linux" {
+			return hostinstall.UpgradeService(cmd.Context(), cmd.OutOrStdout())
+		}
+		home, err := profile.Home()
+		if err != nil {
+			return err
+		}
+		if err := daemon.RestartVMHost(cmd.Context(), home, cmd.OutOrStdout()); err != nil {
+			return err
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Upgraded managed VM host to AXV %s.\n", version)
+		return nil
 	}}
 	var purgeConfig, purgeData bool
-	hostUninstall := &cobra.Command{Use: "uninstall", Short: "Stop, disable and remove axv-host.service and /opt/axv/bin", Args: arguments(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error {
-		return hostinstall.UninstallService(cmd.Context(), hostinstall.UninstallOptions{PurgeConfig: purgeConfig, PurgeData: purgeData}, cmd.OutOrStdout())
+	hostUninstall := &cobra.Command{Use: "uninstall", Short: "Stop and remove the AXV VM host service", Args: arguments(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error {
+		if runtime.GOOS == "linux" {
+			return hostinstall.UninstallService(cmd.Context(), hostinstall.UninstallOptions{PurgeConfig: purgeConfig, PurgeData: purgeData}, cmd.OutOrStdout())
+		}
+		home, err := profile.Home()
+		if err != nil {
+			return err
+		}
+		return daemon.StopVMHost(cmd.Context(), home, cmd.OutOrStdout())
 	}}
-	hostUninstall.Flags().BoolVar(&purgeConfig, "purge", false, "also remove /etc/axv/host.json, /opt/axv/images and sysctl drop-in")
-	hostUninstall.Flags().BoolVar(&purgeData, "purge-data", false, "also delete /var/lib/axv VM storage and volumes")
+	hostUninstall.Flags().BoolVar(&purgeConfig, "purge", false, "on Linux, also remove /etc/axv/host.json, /opt/axv/images and sysctl drop-in")
+	hostUninstall.Flags().BoolVar(&purgeData, "purge-data", false, "on Linux, also delete /var/lib/axv VM storage and volumes")
 
 	host.AddCommand(installHost, hostStatus, hostStart, hostStop, hostRestart, hostUpgrade, hostUninstall)
 	return host
