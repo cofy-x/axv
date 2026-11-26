@@ -213,7 +213,8 @@ describe('guest terminal availability', () => {
       guestCapabilities: ['exec', 'terminals'],
     };
     expect(machineGuestStatus(basicRunning)).toBe('Basic VM (no guest)');
-    expect(machineGuestStatus(guestReady)).toBe('Guest ready');
+    expect(machineGuestStatus(guestReady)).toBeUndefined();
+    expect(machineGuestStatus(running)).toBe('No browser terminal');
     expect(
       machineGuestStatus({
         ...guestReady,
