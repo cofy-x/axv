@@ -136,16 +136,15 @@ jobs:
           sudo install -m 0644 "$RUNNER_TEMP/axv-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
           sudo apt-get update
           sudo apt-get install --yes libguestfs-tools qemu-utils linux-image-generic
+          sudo chmod 0644 /boot/vmlinuz-*
       - name: Download and build complete enhanced Lima arm64 bundle
         run: |
           mkdir -p "$RUNNER_TEMP/cloud" dist
           curl --fail --location --proto '=https' --proto-redir '=https' \
             --output "$RUNNER_TEMP/cloud/base.img" "$CLOUD_IMAGE_URL"
-          sudo env "PATH=$PATH" "CLOUD_IMAGE_SHA256=$CLOUD_IMAGE_SHA256" GOTOOLCHAIN=local \
-            GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory "GIT_CONFIG_VALUE_0=$GITHUB_WORKSPACE" \
+          CLOUD_IMAGE_SHA256="$CLOUD_IMAGE_SHA256" GOTOOLCHAIN=local \
             bash images/guest/build-lima.sh "$RUNNER_TEMP/cloud/base.img" "$GITHUB_WORKSPACE/dist/lima-bundle"
-          sudo env "PATH=$PATH" "VERSION=$VERSION" GOTOOLCHAIN=local \
-            GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory "GIT_CONFIG_VALUE_0=$GITHUB_WORKSPACE" \
+          VERSION="$VERSION" GOTOOLCHAIN=local \
             node scripts/package-guest-release.mjs --bundle "$GITHUB_WORKSPACE/dist/lima-bundle"
       - name: Attest the final Lima Guest distribution files
         id: provenance

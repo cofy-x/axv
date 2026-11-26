@@ -29,7 +29,9 @@ node scripts/guest-release-notices.mjs --guest "$build_dir/axv-guest" --manifest
 qemu-img convert -O qcow2 "$base_image" "$build_dir/root.qcow2"
 cp "$image_dir/axv-guest-lima.service" "$build_dir/axv-guest.service"
 cp apps/server/internal/guest/internal/access/provision.sh "$build_dir/prepare-ssh"
-virt-customize -a "$build_dir/root.qcow2" \
+# Keep libguestfs/passt sockets in /tmp so Ubuntu 24.04's AppArmor passt profile
+# and privilege drop can reach them, while Go builds remain isolated in build_dir.
+TMPDIR=/tmp LIBGUESTFS_TMPDIR=/tmp virt-customize -a "$build_dir/root.qcow2" \
   --mkdir /usr/local/lib/axv \
   --upload "$repo_dir/apps/server/internal/compute/ubuntusources/configure.sh:/usr/local/lib/axv/configure-package-sources" \
   --upload "$image_dir/install-base.sh:/usr/local/lib/axv/install-base" \
@@ -47,7 +49,7 @@ virt-customize -a "$build_dir/root.qcow2" \
 mkdir -- "$2"
 cp --sparse=always "$build_dir/root.qcow2" "$2/root.qcow2"
 mkdir -- "$2/distribution"
-virt-copy-out -a "$build_dir/root.qcow2" /usr/share/doc/axv-guest "$2/distribution"
+TMPDIR=/tmp LIBGUESTFS_TMPDIR=/tmp virt-copy-out -a "$build_dir/root.qcow2" /usr/share/doc/axv-guest "$2/distribution"
 go run ./apps/server/cmd/image-manifest --provider lima --arch "$guest_arch" --guest "$build_dir/axv-guest" --rootfs "$2/root.qcow2" --name "AXV Lima $guest_arch" --output "$2/manifest.json"
 printf '%s\n' "$CLOUD_IMAGE_SHA256" > "$2/base-image.sha256"
 (cd -- "$2" && { sha256sum root.qcow2 manifest.json base-image.sha256; find distribution -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum; } > SHA256SUMS)
