@@ -137,6 +137,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "dist/release-bundle/$VERSION"
+          : > "dist/release-bundle/$VERSION/SHA256SUMS.raw"
           for target in linux/amd64 linux/arm64 darwin/arm64; do
             os="${target%/*}"
             arch="${target#*/}"
@@ -144,8 +145,10 @@ jobs:
             node scripts/verify-release-provenance.mjs --kind app --version "$VERSION" \
               --os "$os" --arch "$arch" --source "$GITHUB_SHA" --directory "$dir"
             cp -- "$dir/axv_${VERSION}_${os}_${arch}.tar.gz" "dist/release-bundle/$VERSION/"
-            cat "$dir/SHA256SUMS"
-          done | LC_ALL=C sort -k2,2 > "dist/release-bundle/$VERSION/SHA256SUMS"
+            cat "$dir/SHA256SUMS" >> "dist/release-bundle/$VERSION/SHA256SUMS.raw"
+          done
+          LC_ALL=C sort -k2,2 "dist/release-bundle/$VERSION/SHA256SUMS.raw" > "dist/release-bundle/$VERSION/SHA256SUMS"
+          rm -f "dist/release-bundle/$VERSION/SHA256SUMS.raw"
           (cd "dist/release-bundle/$VERSION" && sha256sum --check --strict SHA256SUMS)
       - name: Attest all release archives and combined checksum manifest
         id: provenance
