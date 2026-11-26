@@ -57,12 +57,16 @@ if command -v udevadm >/dev/null 2>&1; then
   udevadm settle || true
 fi
 root_part=''
+boot_part=''
+uefi_part=''
 for part in "${loop_dev}"p*; do
   [[ -b $part ]] || continue
-  if [[ $(blkid -s LABEL -o value "$part" 2>/dev/null || true) == "cloudimg-rootfs" ]]; then
-    root_part=$part
-    break
-  fi
+  label=$(blkid -s LABEL -o value "$part" 2>/dev/null || true)
+  case "$label" in
+    cloudimg-rootfs) root_part=$part ;;
+    BOOT) boot_part=$part ;;
+    UEFI) uefi_part=$part ;;
+  esac
 done
 if [[ -z $root_part ]]; then
   for part in "${loop_dev}"p*; do
@@ -85,6 +89,14 @@ resize2fs "$root_part"
 mkdir -- "$mnt"
 mount "$root_part" "$mnt"
 mounted=true
+if [[ -n $boot_part ]]; then
+  mkdir -p "$mnt/boot"
+  mount "$boot_part" "$mnt/boot"
+fi
+if [[ -n $uefi_part ]]; then
+  mkdir -p "$mnt/boot/efi"
+  mount "$uefi_part" "$mnt/boot/efi"
+fi
 mount --bind /dev "$mnt/dev"
 mount --bind /dev/pts "$mnt/dev/pts"
 mount -t proc proc "$mnt/proc"
@@ -137,7 +149,14 @@ install -m 0644 "$repo_dir/apps/server/internal/guest/internal/access/axv-ssh.se
 
 chroot "$mnt" /usr/bin/env -i \
   PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-  sh -eu -c 'apt-get clean; systemctl enable axv-guest.service axv-ssh.service; cloud-init clean --logs --machine-id'
+  sh -eu -c 'apt-get clean; systemctl enable axv-guest.service axv-ssh.service; cloud-init clean --logs'
+
+# systemd requires a pre-existing zero-byte /etc/machine-id during early read-only boot;
+# cloud-init clean --machine-id deletes it in offline chroots without /run/systemd/system.
+if [[ ! -f "$mnt/etc/machine-id" || -L "$mnt/etc/machine-id" || -s "$mnt/etc/machine-id" ]]; then
+  echo "Expected zero-byte regular /etc/machine-id in finalized guest image." >&2
+  exit 1
+fi
 
 mkdir -- "$2"
 mkdir -- "$2/distribution"
@@ -145,6 +164,9 @@ cp -a "$mnt/usr/share/doc/axv-guest" "$2/distribution/"
 
 if command -v fstrim >/dev/null 2>&1; then
   fstrim "$mnt" || true
+  if [[ -n $boot_part ]]; then
+    fstrim "$mnt/boot" || true
+  fi
 fi
 sync
 umount --recursive "$mnt"
