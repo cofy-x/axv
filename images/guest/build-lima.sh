@@ -149,7 +149,7 @@ install -m 0644 "$repo_dir/apps/server/internal/guest/internal/access/axv-ssh.se
 
 chroot "$mnt" /usr/bin/env -i \
   PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-  sh -eu -c 'apt-get clean; systemctl enable axv-guest.service axv-ssh.service; cloud-init clean --logs'
+  sh -eu -c 'apt-get clean; systemctl enable axv-guest.service axv-ssh.service; cloud-init clean --logs; rm -rf /var/log/journal/* /tmp/* /var/tmp/*'
 
 # systemd requires a pre-existing zero-byte /etc/machine-id during early read-only boot;
 # cloud-init clean --machine-id deletes it in offline chroots without /run/systemd/system.

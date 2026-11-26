@@ -45,6 +45,8 @@ apt-get upgrade -y --with-new-pkgs --no-install-recommends
 apt-get install -y --no-install-recommends \
   systemd systemd-sysv udev sudo bash ca-certificates iproute2 \
   util-linux e2fsprogs python3 python3-venv git curl openssh-server "$@"
+apt-get autoremove --purge -y
+apt-get clean
 if getent passwd 1000 >/dev/null && [ "$(getent passwd 1000 | cut -d: -f1)" != axv ]; then
   userdel "$(getent passwd 1000 | cut -d: -f1)"
 fi

@@ -17,6 +17,7 @@ const NON_RUNTIME_EXACT = new Set([
   '.github/pull_request_template.md',
   '.github/workflows/codeql.yml',
   '.github/workflows/guest-images.yml',
+  '.github/workflows/publish-guest-release.yml',
   '.github/workflows/release.yml',
 ]);
 

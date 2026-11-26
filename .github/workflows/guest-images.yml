@@ -20,7 +20,7 @@ on:
         required: false
         type: string
       cloud_image_url:
-        description: For lima-arm64, reviewed HTTPS URL of Ubuntu 24.04 arm64 server cloud image
+        description: For lima-arm64, reviewed HTTPS URL of Ubuntu 24.04 arm64 minimal/server cloud image
         required: false
         type: string
       cloud_image_sha256:
