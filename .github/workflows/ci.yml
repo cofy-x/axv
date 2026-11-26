@@ -78,8 +78,8 @@ jobs:
           cache: true
       - name: Install locked JavaScript dependencies
         run: pnpm install --frozen-lockfile
-      - name: Check formatting
-        run: make format-check PNPM=pnpm
+      - name: Check formatting and documentation links
+        run: make format-check check-docs PNPM=pnpm
       - name: Check guest shell scripts
         if: needs.changes.outputs.guest_scripts == 'true'
         run: |
@@ -138,8 +138,8 @@ jobs:
             printf '%s\n' "$dependency_status"
             exit 1
           fi
-      - name: Check formatting, unit tests, types, lint and production build
-        run: make format-check test typecheck lint build PNPM=pnpm
+      - name: Check formatting, docs, unit tests, types, lint and production build
+        run: make format-check check-docs test typecheck lint build PNPM=pnpm
       - name: Check production behavior
         run: make smoke-production PNPM=pnpm
       - name: Check production installation

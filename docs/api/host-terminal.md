@@ -32,4 +32,4 @@ Resize messages use the same dimension limits. The server sends ready after shel
 
 Send text input as UTF-8 bytes and decode output through a terminal emulator. A normal shell exit closes the connection with code `1000`. Closing the socket or stopping the server ends the shell and foreground job. Sessions are ephemeral: New Session and restored windows after a page reload start new shells; they never reattach to previous processes.
 
-The [Host directory API](host-directories.md) can supply a project selection. [Codex attachments](host-codex.md) and [guest terminals](guest.md#terminals) have separate identities and lifecycles.
+The [Host directory API](host-directories.md) can supply a project selection. [Codex attachments](host-codex.md) and [guest terminals](guest.md#command-execution-and-terminals) have separate identities and lifecycles.

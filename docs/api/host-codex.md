@@ -2,131 +2,59 @@
 
 [API index](README.md)
 
-Stable conversations and explicit process runs are independent of browser windows, desktop workspaces.
+Manages host Codex conversations, exact tmux-backed process runs, VM work contexts, provider activity and terminal attachments on macOS/Linux. Implementation lives in [`internal/codex`](../../apps/server/internal/codex) and [`codex/httpapi`](../../apps/server/internal/codex/httpapi); architecture belongs to [Host Codex](../codex.md).
 
-Codex runs the official CLI as the desktop service's host user. Its persistent PTY + tmux backend supports macOS and Linux; missing dependencies do not fall back to an ephemeral process.
-
-The [local access rules](README.md#access-and-identity-boundaries) apply before dependency probes, filesystem access or process creation. Responses use `Cache-Control: no-store`. JSON writes require `Content-Type: application/json`, one object with no unknown fields, and at most **16 KiB**.
-
-Every projects, sessions and run request requires the [captured desktop database identity](desktop.md#database-identity-and-local-recovery). `/info` remains an unbound capability probe. HTTP clients supply `X-AXV-Database-ID`; browser terminal WebSockets supply `databaseId` in the query instead. The guard runs after access checks and before replay lookup, environment verification, directory access, attachment or run reservation. The original pending request must be retained after a database mismatch: it may already have committed in the previous store. Changing a browser namespace does not authorize replay into another desktop database. Existing run and disconnect lifetimes are unchanged.
+All routes use the [shared access boundary](README.md#access-and-identity-boundaries) and `Cache-Control: no-store`. JSON writes require `application/json`, one object without unknown fields, max **16 KiB**. Every route except `/info` requires the [captured desktop database identity](desktop.md#database-identity-and-local-recovery) (`X-AXV-Database-ID` header, or `databaseId` query on WS) checked before replay lookup, filesystem access or process operations.
 
 ## Routes
 
-- `GET /api/host/codex/info`
-  - Response fields:
-
-    ```text
-    {
-      supported, installed, ready,
-      codexPath?, codexVersion?, tmuxPath?, tmuxVersion?,
-      reason?, guidance, defaultProjectPath, configPath, network
-    }
-    ```
-
-- `GET /api/host/codex/sessions`
-  - Response: `{ sessions }`.
-
-- `GET /api/host/codex/projects`
-  - Response: `{ projects: [{ path, lastUsedAt }] }`.
-
-- `POST /api/host/codex/sessions`
-  - Request: `{ requestId, projectPath?, vmProject?: { binding }, cols?, rows? }`.
-  - Response: `{ session }`.
-
-- `GET /api/host/codex/sessions/:id`
-  - Response: `{ session }`.
-
-- `PATCH /api/host/codex/sessions/:id`
-  - Request: `{ revision, title?, archived? }`.
-  - Response: `{ session }`.
-
-- `POST /api/host/codex/sessions/:id/resume`
-  - Request: `{ requestId, expectedRunId, vmProject?: { binding }, cols?, rows? }`.
-  - Response: `{ session }`.
-
-- `GET /api/host/codex/sessions/:id/runs/:runId`
-  - Response: `{ session }`.
-
-- `POST /api/host/codex/sessions/:id/runs/:runId/activity/review`
-  - Request: `{ eventId }` for one completed, failed or interrupted turn event.
-  - Response: `{ session }` for that exact run.
-
-- `POST /api/host/codex/sessions/:id/runs/:runId/end`
-  - Response: `{ session }`.
-
-- `GET /api/host/codex/sessions/:id/runs/:runId/terminal?cols=80&rows=24&databaseId=<captured-id>`
-  - Request: WebSocket upgrade.
-  - Response: Terminal byte and control frames.
+| Method | Route | Request / Response |
+| --- | --- | --- |
+| GET | `/api/host/codex/info` | Unbound capability probe (`supported`, `installed`, `ready`, CLI/tmux versions, `guidance`, `defaultProjectPath`, `network`) |
+| GET | `/api/host/codex/sessions` | `{ sessions }` (each conversation with its latest run) |
+| GET | `/api/host/codex/projects` | `{ projects: [{ path, lastUsedAt }] }` (up to 10 recent host dirs) |
+| POST | `/api/host/codex/sessions` | `{ requestId, projectPath?, vmProject?: { binding }, cols?, rows? }` → `{ session }` |
+| GET | `/api/host/codex/sessions/:id` | `{ session }` (latest run) |
+| PATCH | `/api/host/codex/sessions/:id` | `{ revision, title?, archived? }` → `{ session }` |
+| POST | `/api/host/codex/sessions/:id/resume` | `{ requestId, expectedRunId, vmProject?: { binding }, cols?, rows? }` → `{ session }` |
+| GET | `/api/host/codex/sessions/:id/runs/:runId` | `{ session }` for that exact historical or active run |
+| POST | `/api/host/codex/sessions/:id/runs/:runId/activity/review` | `{ eventId }` (dismiss failed/interrupted alert for that exact run/event) |
+| POST | `/api/host/codex/sessions/:id/runs/:runId/end` | Terminate exact run → `{ session }` |
+| GET | `/api/host/codex/sessions/:id/runs/:runId/terminal` | WS upgrade (`?cols=80&rows=24&databaseId=...`) |
 
 ## Availability and environment
 
-- `supported` reports platform support; `installed` reports a discovered Codex executable. `ready` additionally requires Codex **0.161.0+** with compatible remote/app-server/inline options and tmux **3.1+**. Prereleases of the minimum release do not satisfy the version floor.
-- `guidance` contains repair instructions; `reason` explains an unavailable state. Detection does not start a session, create its workspace or read credentials. Readiness does not verify authentication or model connectivity.
-- `defaultProjectPath` and `configPath` report resolved defaults. `network` contains `proxySource` (`environment`, `configuration`, `system`, or `direct`) and optional redacted `proxy`, without credentials or URL parameters. [Startup](../startup.md#host-agent-defaults) owns configuration, proxy precedence and the service-user environment.
+- `ready` requires Codex CLI **0.161.0+** (compatible remote/app-server/inline flags; prereleases of the floor excluded) and tmux **3.1+**. Detection never starts a session, creates workspaces or verifies model auth.
+- `network` reports redacted proxy source (`environment\|configuration\|system\|direct`) without credentials ([proxy precedence](../startup.md#host-agent-defaults)). Host directory browsing uses the shared [Host directory API](host-directories.md).
 
-## Host directories
+## Conversation, run, and activity contracts
 
-The shared [Host directory API](host-directories.md) owns directory browsing and validation. Choosing a directory does not start a conversation; [creation](#creation-and-explicit-continuation) validates the selected project separately.
+- **Separate identities:** Conversations hold `(id, projectPath, title, metadataRevision, archivedAt?, conversationId?, historyHome)`; runs hold `(runId, tmuxSession, tmuxSocket, attachCommand, status, vmProject?, connections)` where `status` is `starting|running|stopping|ended|lost|failed`. Session/run IDs are opaque; callers never construct tmux targets.
+- **Metadata & recent projects:** `PATCH` requires matching `metadataRevision` (`409 metadata_conflict` on stale edit; `title` max 120 Unicode chars; does not probe tmux). Recent projects (max 10) update transactionally only on a host run's first confirmed `starting → running` transition (VM control workspaces excluded).
 
-## Conversation and run records
+### Activity and review
 
-A session response combines stable conversation metadata with one exact process run. List and session-detail routes select the latest run; run detail selects the requested run.
-
-- **Conversation fields:** `id`, `target: "host"`, `projectPath`, `title`, `metadataRevision`, optional `archivedAt`, `conversationId` and `historyHome`. `conversationId` is the exact provider UUID and is absent until initialized. `historyHome` is the recorded provider state directory; its contents are not returned.
-- **Run fields:** `runId`, `tmuxSession`, `tmuxSocket`, `attachCommand`, `status`, `createdAt`, optional `endedAt`, `reason` and `vmProject`, and live `connections`. `vmProject` is `{ project, binding }`, using the [VM project contract](compute.md#vm-projects). Run detail returns that run's original project/environment context, even after continuation. Private compute socket paths and configuration fingerprints are never returned.
-- **Continuation:** `{ state: "available" | "active" | "unavailable", reason?, activeRunId? }`. An active run is identified by `activeRunId`. Available means identity is known and no run is active; the explicit continuation request still verifies history and dependencies.
-- **Activity:** `{ state, needsAttention, observation: { instanceId, revision }, eventId?, sequence?, turnId?, updatedAt?, reason? }` describes observed provider work separately from process status. States are `unknown`, `idle`, `working`, `waiting_approval`, `waiting_input`, `completed`, `failed` and `interrupted`. Verified snapshots have an opaque event ID, a per-run increasing sequence and an RFC3339 timestamp. Missing or unverifiable observations return `unknown` with a safe reason rather than inferring activity from a running process. Every service observation, including uncertainty, has an ordered revision within its service instance; the instance ID changes on service restart. These read stamps are not persisted provider events.
-
-`tmuxSession` is the actual target name; `tmuxSocket` records its socket path or explicitly configured socket name (empty before the default server confirms its path). `attachCommand` is shell-quoted for that exact target. Status is one of `starting`, `running`, `stopping`, `ended`, `lost`, or `failed`. A starting run accepts attachments while the official CLI handles project trust, sign-in and conversation initialization. Running confirms initialization and runtime liveness, not a successful model request. Connection state belongs to each attachment and is separate from process lifecycle. Session and run IDs are opaque; clients must not construct tmux targets.
-
-## Activity and review
-
-The independent runner observes structured turn events and approval/input requests for its bound provider thread. It continues recording while browser views are detached or the desktop service is stopped. The activity fields describe the latest observed turn. An idle notification does not erase a recorded turn result. A run that is no longer confirmed running cannot retain a working or pending-request claim; its completed turn result remains inspectable.
-
-Durable notification intake separately reads the runner's bounded metadata journal, including intervening working and request-resolution states. Each observation retains its exact desktop-store/session/run/thread/turn/event identity; its monotonic sequence supplies an inclusive consumer checkpoint. All recorded runs remain discoverable after continuation or archival. Retention and failed publications are exposed as gaps or unavailable sources, and missing historical events cannot resolve to a newer event. The [Codex architecture](../codex.md#provider-activity) owns private file limits, publication recovery and validation. This journal does not add transcript fields to session responses or change provider protocol forwarding.
-
-`needsAttention` is true for a pending approval/input request, or a failed or interrupted turn whose exact alert event has not been dismissed. Successful completion is an ordinary activity state: it never needs acknowledgment and does not read a dismissal record, even when a previous record is invalid. Existing records remain untouched. Opening a run does not implicitly dismiss an alert. Pending requests are answered only through the official Codex interface. Archiving does not resolve requests or dismiss alerts. List selects each conversation's latest run; detail and review retain their explicitly addressed run after continuation.
-
-The review endpoint dismisses failed/interrupted alerts and requires Origin and the shared strict JSON-write rules. `eventId` must be the exact 32-character lowercase hexadecimal identifier from the displayed activity. A changed event returns `409 activity_changed`; a pending request or other nonterminal event returns `409 activity_pending`. Successful completion returns `409 activity_not_actionable` without writing a record. Unknown activity returns `503 activity_unavailable`. A missing/malformed identifier returns `400 invalid_activity_event`. Dismissal saves only that run/event pair; a later alert remains actionable even if it arrives during the save. Repeating the same accepted dismissal is idempotent while that event is current. A newer run never becomes the target of an old dismissal.
-
-Dismissal records survive desktop restart. For failed/interrupted outcomes, an invalid existing record is retained, reported visibly and rejects replacement with `503 activity_review_unavailable`; failed writes also report that error. Clients should refresh after uncertainty. Merge observations by exact session/run, provider sequence and service observation revision. Compare read revisions only within the same service instance; a new instance resynchronizes from the service, and delayed responses from an already retired instance cannot restore old state for that run. Inspection and activity are observed under the exact run’s gate; descriptions outside inspection refresh the recorded lifecycle before stamping. This also orders dismissal changes, diagnostics and recovery when the provider event has not changed. Mounted views share the latest ordered observations across visibility changes; their cache is discarded when the last view unmounts. A late list result must not revive an already dismissed alert or copy a previous run's activity into its continuation. Unavailable observations and failed refreshes must remain visible rather than implying continued work. This interface does not send browser push notifications or approve provider requests.
-
-## Names, archives and recent projects
-
-Metadata PATCH requires a positive `revision` matching the session's `metadataRevision` and at least one supplied field. `title` must be a string; after trimming surrounding whitespace it may contain at most **120 Unicode characters**, with no control characters or invalid UTF-8. An empty title restores the project-name display. `archived` must be a boolean; true records `archivedAt`, false clears it. Nulls, wrong types and unknown fields are rejected. A stale revision returns `409` with code `metadata_conflict` and changes nothing. A real metadata change increments `metadataRevision`; an unchanged patch does not. Lifecycle changes do not advance that revision. Clients must preserve a rename draft and obtain an explicit retry after a conflict. PATCH does not probe, reconcile, detach or terminate tmux. Archived running sessions retain their connections and count toward the active-session limit. Listing returns both current and archived records.
-
-Recent projects are the **ten** canonical paths most recently confirmed to reach running state, sorted by `lastUsedAt` descending with path as a tie breaker. Recency updates only with a run's first confirmed starting-to-running transition. Session reads, attachments and idempotent retries can discover that transition, but do not reorder an already-confirmed run. Metadata edits and starts that never reach confirmed running state do not update recency. Selecting a recent project uses the normal create endpoint and revalidates the path; reading projects creates nothing.
+- `activity` (`{ state, needsAttention, observation: { instanceId, revision }, eventId?, sequence?, turnId?, updatedAt?, reason? }`) tracks `unknown|idle|working|waiting_approval|waiting_input|completed|failed|interrupted` separately from process state. Never infers activity from liveness or strips completed results on idle.
+- `needsAttention` is true only for pending approvals/input or undismissed `failed`/`interrupted` events. Normal `completed` turns never require acknowledgment (`409 activity_not_actionable` if reviewed).
+- `POST .../activity/review` requires the exact 32-hex `eventId` (`409 activity_changed` / `activity_pending`; `503 activity_unavailable` / `activity_review_unavailable`) and persists per `(runId, eventId)`. Merge client observations by exact `(sessionId, runId)`, provider `sequence` and `(instanceId, revision)` so late list responses never revive dismissed alerts or mix runs.
 
 ## Creation and explicit continuation
 
-For a host-project session, omitted or empty `projectPath` selects the configured default workspace and creates it if needed. Explicit paths must already exist. Creation revalidates directory access and resolves the canonical path.
-
-For a VM-project session, supply `vmProject: { binding }` with the complete environment explicitly reviewed through the [VM project API](compute.md#vm-projects); a nonempty `projectPath` cannot accompany it. Null, incomplete and unknown context fields are rejected. The server verifies the supplied binding and captures that compute connection before reserving a run. Codex still runs on the host, using a private AXV-owned control workspace rather than a host copy of the VM project. VM control workspaces never enter the recent host-project list.
-
-VM continuation requires another explicitly reviewed `vmProject.binding`, for the same persistent host/project/volume/root identity. It may select the current environment after VM replacement without changing any older run. Omitting it cannot convert a VM conversation into a host conversation; supplying it cannot convert a host conversation. A changed environment returns `409 vm_project_changed`; an unavailable verifier returns `503 vm_project_unavailable`; a different persistent project returns `409 project_changed`. None selects another target or creates replacement history. Matching create/resume retries recover the originally reserved run before live VM availability checks; their original binding is part of the request identity.
-
-Generate one `requestId` per explicit start or continuation and reuse it with the same action, project/predecessor and dimensions after an uncertain outcome. IDs are **1–128 UTF-8 bytes**, without surrounding whitespace, NUL, CR or LF, and unique across Codex starts in the desktop database. A matching retry returns the original run; a changed payload returns `409 request_conflict`. Retain the original request after transport failures, `server_stopping`, identity/reconciliation errors or unrecognized HTTP errors: an error status alone does not establish that no run was reserved. Only a refusal known to occur after replay lookup and before reservation permits a fresh explicit attempt. A continuation also supplies the exact predecessor `expectedRunId`. After matching retries are resolved, an active run returns `409 conversation_active`: open that run instead. If the latest run is final but differs from the predecessor, `409 run_changed` requires refreshing before continuation.
-
-Creation and continuation dimensions use the attachment limits below. The server allows one active run per conversation and **four active Codex runs** (`starting`, `running`, or `stopping`) across current and archived conversations, independently of ordinary Terminal's limit. Multiple explicit new starts in one project create independent conversations.
-
-Continuation requires explicit confirmation. It revalidates the original canonical project and verifies the exact official thread in the recorded `historyHome` before launching a new run with the same provider UUID. Changing the service's current `CODEX_HOME` does not redirect an existing conversation: verification and the resumed runner use its recorded home. Missing or unreadable history, unknown provider identity, uncertain previous runtime or unavailable dependencies return an error without a replacement conversation. Reads, page reload, reconnect and service restart never invoke continuation. Recovery needs Codex's original history and restores saved conversation context, not PTYs, scrollback or interrupted commands.
-
-When runtime inspection is temporarily unavailable, list and detail preserve known identities and statuses with an actionable `reason`; attachment reports the availability error. `session_exit_unconfirmed` means a closed pane's exit outcome is unconfirmed: retry inspection or explicitly End that run. Uncertainty is not an ended/lost verdict, and an interrupted end remains retryable. [Codex architecture](../codex.md) owns runner initialization, tmux routing and reconciliation.
+- **Host vs VM projects:** Host sessions accept `projectPath` (empty selects/creates default workspace). VM sessions accept `vmProject: { binding }` (mutually exclusive with `projectPath`), capture the verified compute socket/config fingerprint and use a private AXV control workspace. Host and VM conversations cannot convert into each other.
+- **Idempotency & capacity:** `requestId` (1–128 UTF-8 bytes, unique per desktop DB) binds to exact payload/binding/dimensions (`409 request_conflict` on mismatch). Retain the original `requestId` after transport or ambiguous errors — never assume no run was reserved. Limit: **1 active run per conversation**, **4 active runs per service** (including archived/transitional).
+- **Explicit continuation:** Requires `expectedRunId` (`409 conversation_active` / `run_changed`), revalidates project + exact provider UUID in the stored `historyHome` (never substituting a newer `CODEX_HOME`), and for VM sessions requires a freshly reviewed binding for the same persistent `(host, project, volume, root)` (`409 vm_project_changed` / `project_changed`). Reads, reload, reconnect and restart never auto-continue.
+- **Uncertainty:** Temporary tmux inspection failure preserves known state with `reason` on list/detail (`session_exit_unconfirmed` stays retryable via inspection or End — never treated as `ended`/`lost`).
 
 ## Attachment protocol and ending
 
-Attachment dimensions are **2–500 columns** and **1–200 rows**, defaulting to **80×24**. Unknown or repeated query parameters are rejected. At most **eight attachments** can be open per service. Multiple clients share input to the same run; sizing follows the most recently used client. Reattachment and keyboard input leave history copy mode before delivering fresh input.
+Dimensions: **2–500 cols × 1–200 rows** (default 80×24); max **8 open attachments per service**.
 
-| Direction | Message | Payload |
+| Direction | Frame | Payload |
 | --- | --- | --- |
-| Client → server | Binary | Raw terminal input, at most **32 KiB** per message |
+| Client → server | Binary | Raw terminal input (max **32 KiB**) |
 | Server → client | Binary | Raw terminal output |
-| Client → server | Text | `{ "resize": [cols, rows] }` |
-| Client → server | Text | `{ "scroll": lines }`; integer **−200–200**; positive earlier, negative later, zero exits copy mode |
-| Server → client | Text | `{ "ready": true }` after attachment startup |
-| Server → client | Text | `{ "error": "Readable message", "code": "stable_code" }` |
-| Server → client | Text | `{ "ended": true, "message": "Readable message" }` when the run is final |
+| Client → server | Text | `{ "resize": [cols, rows] }` or `{ "scroll": lines }` (`-200..200`, `0` exits copy mode) |
+| Server → client | Text | `{ "ready": true }`, `{ "error": "...", "code"?: "..." }`, or `{ "ended": true, "message": "..." }` |
 
-An error message may omit `code`. An explicit `attach_failed` control permits bounded attachment retries against the same session/run pair; other error controls remain visible without automatic retries. Closing the WebSocket or stopping AXV detaches clients. Reopening and transient reconnects use the same session/run pair. Clients discard unsent input on disconnect and stop automatic reconnection on final run states or access rejection. Creating, forking or switching conversations inside the managed TUI is rejected with guidance to use AXV's New Session.
-
-End is idempotent and terminates only the specified run. It waits for the runner's managed processes to finish cleanup before reporting ended. An older final run cannot affect a newer run of the same conversation. `409 run_starting` means runtime creation is still pending: retry End instead of assuming termination. `503 codex_cleanup_pending` means cleanup is still unconfirmed; an interrupted End stays stopping and can be retried. `503 codex_ownership_unavailable` reports invalid or inaccessible AXV ownership state. Continuation waits for the same cleanup boundary before verifying history or reserving its new run. The UI confirms ending separately from window closure and continuation. Session-only terminal/end routes are absent; input, resizing and scrolling also stay bound to the original run. Metadata responses contain no transcript, scrollback, or credentials.
+- Only `attach_failed` and transient disconnects permit bounded client reconnect to the exact `(sessionId, runId)`; stop on final state or access rejection and drop unsent input. Managed TUI rejects in-TUI thread create/fork/switch.
+- `POST .../end` is idempotent, addresses only `:runId`, and waits for runner cleanup lock release (`409 run_starting`, `503 codex_cleanup_pending` / `codex_ownership_unavailable` remain retryable). Closing WS or stopping AXV only detaches.

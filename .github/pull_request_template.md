@@ -6,8 +6,8 @@
 
 <!--
 Use docs/development.md#verification for the applicable category:
-- Documentation only: make format-check and documentation review.
-- Runtime, scripts or configuration: make format-check test typecheck lint build, then make smoke-production.
+- Documentation only: make format-check check-docs and documentation review.
+- Runtime, scripts or configuration: make format-check check-docs test typecheck lint build, then make smoke-production.
 - Desktop or cross-layer: runtime checks plus make test-e2e and the applicable visual/interaction acceptance.
 List exact commands and results. Identify failures, unavailable checks and manual/native acceptance explicitly.
 Add or update regression coverage where behavior needs it; a small reversible change does not require a new test solely to repeat its implementation.

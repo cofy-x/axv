@@ -88,7 +88,9 @@ Desktop readiness and launch identity are independent of mutable compute configu
 
 Desktop and managed VM host jobs have independent supervision. Foreground shutdown stops only the host child that invocation started; reused services retain their ownership. Controller downtime pauses queued work and task expiry. Withdrawing a remote listener closes only its clients, following the lifetime table above.
 
-[Startup](startup.md#agent-settings-and-background-lifecycle) owns launch snapshots, identity verification and immutable executable capture; [daily commands](startup.md#daily-commands) own reuse and service operation; [configuration](startup.md#configuration-and-storage) owns precedence and paths. [`webui`](../apps/server/internal/webui) embeds production browser assets, while guest services are built into VM images separately. [Development](development.md) owns builds and verification.
+[`app/launch`](../apps/server/internal/app/launch) owns captured desktop inputs, the persisted `Snapshot` contract, the scoped environment allowlist ([`environment.go`](../apps/server/internal/app/launch/environment.go)) and the `Inputs` fingerprint. Runtime [`app/settings.go`](../apps/server/internal/app/settings.go) adds live compute settings, logging and process dependencies without altering launch identity; mutable remote settings stay outside the launch snapshot. Native launch records carry a `launchId` distinct from process `instanceId`, and `AXV_HOME/bin` holds immutable executable copies pinned for host and Codex children.
+
+[Startup](startup.md#daily-commands) owns CLI commands, configuration precedence, paths and service supervision; [`webui`](../apps/server/internal/webui) embeds production browser assets, while guest services are built into VM images separately. [Development](development.md) owns builds and verification.
 
 ## Shared infrastructure
 

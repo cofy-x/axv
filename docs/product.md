@@ -1,6 +1,6 @@
 # AXV product direction
 
-This document owns identity, goals and product decisions. The [README](../README.md#project-status) owns availability; the [documentation map](README.md) routes implementation and usage questions. Goals below are not claims of implemented functionality.
+This document owns identity, established direction, enduring product boundaries and open decisions. [Project status](../README.md#project-status) owns current availability; the [documentation map](README.md) routes implementation, API and usage references. Goals and open decisions below are not claims of implemented functionality.
 
 ## Identity
 
@@ -15,110 +15,84 @@ This document owns identity, goals and product decisions. The [README](../README
 | Tagline | **Your personal cloud for VMs and coding agents.** |
 | Name interpretation | **Agents × Virtualization** |
 
-**A** represents agents, **V** represents virtualization, and **X** connects them, with exploration, connection and possibility as brand themes. This interpretation need not be expanded everywhere. Internal Nextstep names describe the desktop's design heritage and do not need a branding migration.
+**A** represents agents, **V** represents virtualization, and **X** connects them. Internal Nextstep names describe the desktop's design heritage and do not need a branding migration.
 
 ## Established direction
 
-- Build a self-contained personal cloud workstation deployed on a person's Mac or Linux machine. VM management and multiple host coding agents are core capabilities in the long-term direction; Codex is the current implementation focus, and Claude Code remains a core integration goal.
-- Preserve the NEXTSTEP / Window Maker desktop foundation while making content comfortable for reading and coding. [Design](design.md) owns the interaction and visual requirements.
-- Make a progressive web app (PWA) the primary client, with the deployment machine owning services, running work and storage. Returning from another device should recover access to that work. Installation is an online entry into the ordinary authenticated desktop, without offline writes or automatic page replacement. Optional Web Push registers a separate, narrowly scoped notification worker only after explicit subscription; installation alone creates no worker or subscription. Installation identity must remain independent of service launches, databases and execution targets; [project status](../README.md#project-status) owns platform acceptance.
-- Treat access from different devices and native VM hosting on different platforms as separate deliverables. Browser support does not imply hypervisor support.
-- Manage agents and VMs on the machine where AXV is deployed. Setup follows that machine's operating system; users select projects, sessions and VMs within this deployment. Host selection and scheduling across multiple machines are outside this direction.
-- Make the installed `axv` command the normal workstation entry, composing independent desktop and compute services under one profile. Startup and updates must preserve persistent work; development profiles remain separate from daily use. [Startup](startup.md) owns commands, configuration and service operation.
-- Support local VM workflows through both the desktop and `axv vm`, sharing host state and operation rules. Standard SSH, file transfer and forwarding remain local capabilities, independent of the remote desktop transport and agent-to-VM tools. [VM CLI workflows](startup.md#vm-command-line) own command behavior.
-- Make the desktop useful before VM preparation finishes. Preparation belongs inside Virtual Machines, requires review before installation or downloads, and makes a verified service available without restarting the interface. [Usage](usage.md#virtual-machines) owns the current workflow.
-- Serve one person's workstation, with local access first and an optional embedded Tailscale transport for private remote access. Enrollment binds the workstation owner; the remote listener authenticates every request and preserves feature authorization and execution identities. Optional Cloudflare desktop Access preserves explicit owner authorization; Tailscale remains the private default. Explicit project service publishing uses independently reserved browser cookie sites, reviewed owner/public visibility and durable resource ownership rather than granting project content desktop permissions. Host provisioning and remote configuration remain local operations. [Access boundaries](api/README.md#access-and-identity-boundaries) own the implemented contract.
+- **Single-machine personal cloud workstation:** Deployed on one person's Mac or Linux machine, combining VM management and host coding agents. Codex is the current implementation focus; Claude Code remains a core integration goal. Multi-host scheduling is outside scope.
+- **NEXTSTEP / Window Maker desktop:** Preserve square gray controls, crisp bevels and overlapping windows while prioritizing readability, Unicode, keyboard access and touch ([Design](design.md)).
+- **Online PWA client:** The deployment machine owns services, running work and storage. Browser installation provides an online standalone window without offline writes or automatic page replacement; optional Web Push registers a narrowly scoped notification worker only after explicit subscription. Browser support and native VM hypervisor support are independent deliverables.
+- **Unified `axv` entry:** The installed `axv` binary composes independent desktop and compute services under one profile (`~/.axv`), keeping development profiles separate and preserving persistent work across restarts and updates ([Startup](startup.md)).
+- **Local-first with optional private/tunnel remote access:** Local access is primary; embedded Tailscale is the private remote default, and optional Cloudflare Access supports browser access without a Tailscale client. Explicit project service publishing uses isolated browser cookie sites rather than granting project content desktop permissions ([Remote access](remote-access.md), [access boundaries](api/README.md#access-and-identity-boundaries)).
+- **Desktop useful before VM setup:** VM preparation runs inside Virtual Machines with explicit review before downloads or installation, activating the verified service without restarting the desktop. Both desktop and `axv vm` share the same local host state, while local SSH/transfer/forwarding remain separate from remote desktop transport and agent-to-VM tools.
 
 ## Cloudflare service isolation and authorization
 
-Cloudflare publications serve potentially untrusted VM application code. Each publication receives a server-generated hostname and permanently owns its browser cookie site, as determined by the Public Suffix List including PRIVATE rules. Its site must differ from the desktop and every other publication, including removed records. A normal registrable domain is therefore dedicated to one publication for its entire lifetime; multiple isolated publications under one allocation suffix require an existing browser-recognized public suffix. Applying for a new public suffix or acquiring additional domains is an operator prerequisite, not an automatic AXV setup action. Ordinary sibling subdomains are not a supported isolation topology.
+Cloudflare publications serve potentially untrusted VM application code and enforce four product invariants (exact enforcement, PSL/cookie proof and recovery live in [Cloudflare API](api/cloudflare.md)):
 
-The supported browser application model includes scripts, ordinary application cookies, origin storage, HTTP, SSE and WebSockets. Service workers and offline application execution are excluded. A fresh hostname checks the browser's cookie-suffix behavior before serving guest code. This check establishes browser compatibility, not identity; Access JWT verification remains independent. Removed sites and hostnames are never assigned to another target, and resetting an AXV profile does not erase clients' cookies, storage or domain ownership obligations.
-
-Owner access uses an explicitly accepted finite authorization lease: the signed JWT lifetime from `iat` to `exp` must be at most 15 minutes. HTTP, SSE and WebSocket connections end at that original expiry; reconnecting cannot renew the old token. This model does not promise continuous provider policy introspection or instantaneous provider-side logout/revocation. A control-plane outage cannot extend a signed lease. Public visibility is a separately reviewed service-publishing capability and carries no owner-authentication lease.
-
-Unpublish withdraws local access before cloud cleanup, including when recording the removal fails. Desktop restart leaves retained publications closed until the owner explicitly reviews and resumes their original target; failed or uncertain removal never silently becomes a newly open route. These are the narrower isolation and authorization decisions for [the Cloudflare feasibility work](https://github.com/cofy-x/axv/issues/47). The [API contract](api/cloudflare.md) owns enforcement, errors and recovery; [development](development.md) owns fixture and live acceptance requirements. Existing local previews retain their separate lifecycle.
+- **Dedicated cookie sites:** Every publication receives a server-generated hostname and permanently owns its browser cookie site (per PSL including PRIVATE rules), distinct from the desktop and every other publication including removed ones. Ordinary sibling subdomains are unsupported.
+- **Bounded browser model:** Supports scripts, ordinary cookies, origin storage, HTTP, SSE and WebSockets; excludes service workers and offline execution.
+- **Finite owner lease:** Owner access requires a signed Access JWT with `exp - iat` of at most 15 minutes; connections terminate at that original expiry without renewal on reconnect. Public visibility is separately reviewed and carries no owner lease.
+- **Fail-closed withdrawal and restart:** Unpublish withdraws local access before cloud cleanup; desktop restart leaves retained publications closed until explicitly reviewed and resumed against their original target.
 
 ## Agent and VM responsibilities
 
-Managed coding agents run on the AXV deployment machine as the long-term model. Prefer official provider tools and preserve their authentication, settings and session capabilities. For Codex, use the official CLI so users retain its project trust, approvals, sandbox and model settings. AXV supplies integration and session access; it does not replace the provider's agent loop or authentication interface. Installing and supervising coding agents inside VMs is outside the current plan.
-
-VMs provide the development environment for VM projects: project code, Git worktrees, dependencies, builds, tests and development services. The existing guest service remains the execution foundation; it is not a coding-agent runtime. [VM architecture](vm-platform.md#guest-execution) owns its implemented behavior.
-
-For a VM workflow, the authoritative project code and Git worktrees belong on its persistent project volume. The host agent operates on that copy through AXV tools. Existing host projects remain independent workflows; AXV does not automatically migrate, mount or synchronize them with VM projects.
-
-The agent-to-VM integration uses explicit AXV interfaces for project files, commands, task status and development services. The [VM project CLI](startup.md#vm-project-files) supplies file access, initialization and [persistent project tasks](startup.md#vm-project-tasks). Project-scoped Codex sessions use a bundled AXV Skill and immutable per-run tools. Explicit [development previews](api/project-previews.md) attach to already running services; automatic service discovery and supervision remain goals. A Skill does not redirect an agent's built-in host tools or change its permissions. [Guest API](api/guest.md) documents execution and its limits.
+- **Host-side official agents:** Managed coding agents run on the AXV deployment machine using official provider CLIs (retaining their own auth, approvals, sandbox and model settings). Running coding agents inside VMs is outside the current plan.
+- **VMs as development environments:** VMs host project code, Git worktrees, dependencies, builds, tests and development services via the guest service. Authoritative VM project code lives on retained project volumes; AXV does not silently migrate or sync host projects with VM projects.
+- **Explicit agent-to-VM boundary:** Host agents operate on VM projects through explicit AXV interfaces (`axv vm project` and the per-run bundled `axv-vm-project` Skill). A Skill guides the agent; it does not redirect built-in host tools or replace provider permissions.
+- **Conversation lifetime:** Conversations outlive views; closing a view, ending a run and continuing saved context are separate user choices ([Codex architecture](codex.md)).
 
 ### VM project workspace constraints
 
-VM project workspaces are the next development workflow. Build the persistent project and file-access boundary first, then persistent tasks and resource/recovery protection, before development-service preview. Keep these constraints throughout:
+Every VM project feature (files, initialization, persistent tasks, previews, backups and future providers such as QEMU/KVM) must preserve these invariants:
 
-1. **Project, environment and task identities are distinct.** A project identifies a retained volume and a root directory on that volume, independently of the current VM. Changing the VM, remounting a volume or explicitly restoring data invalidates old environment bindings. Git common metadata and worktrees stay on the volume; replacement must preserve valid worktree paths. Recovery into another volume requires an explicit new binding, never silent adoption.
-2. **Project tasks require durable acceptance.** Dependency installation, builds and tests need persistent request identity, task status, logs and execution supervision. An uncertain response is recovered by querying the original submission; repeated submission must not start duplicate work. The current synchronous guest exec interface is not that task system.
-3. **Recovery preserves execution attempts.** Browser/desktop disconnects should not stop accepted tasks. A lost guest executor or VM produces a visible interrupted/unknown outcome; an explicit retry creates another attempt. Cancellation targets the original VM, attempt and child processes and must not affect replacement or unrelated work.
-4. **File writes check the reviewed version inside the guest.** File access stays within the registered project and rejects stale environment/root identity, unsafe paths and conflicting changes. Conflicts and draft replacement require a caller choice. File API confinement does not sandbox arbitrary guest commands or isolate multiple projects sharing a VM.
-5. **Resource protection reports actual enforcement.** Show configured CPU, memory, disk, I/O and network limits separately from observed use and actual enforcement; expose unsupported capabilities. Task timeout, process count, log capacity and real disk availability need explicit protection alongside logical admission budgets.
-6. **Backup acceptance includes restoration.** Start with stopped writers/tasks and a verifiable project-volume copy. Restore into another volume, explicitly choose the resulting binding and verify files, uncommitted changes and Git state. A VM snapshot alone is not a complete project backup.
+1. **Distinct identities:** Project (retained volume + relative root), environment binding (VM/boot/guest instance) and task attempt identities remain separate. VM replacement, remount or restore invalidates old bindings; recovery into another volume requires an explicit new project binding.
+2. **Durable task acceptance:** Builds, installs and tests use persistent request IDs, task status, logs and supervision — separate from synchronous guest exec. Recover uncertain responses by querying the original receipt; retries never duplicate work.
+3. **Attempt-preserving recovery:** Disconnects do not stop accepted tasks. Lost executors/VMs produce visible interrupted/unknown states; explicit retry creates a new attempt; cancellation addresses only the original VM, attempt and child process group.
+4. **In-guest version-checked writes:** File access stays confined to the registered project root and rejects stale bindings, unsafe paths and hash conflicts. Draft replacement and conflict resolution require user choice. File confinement does not sandbox arbitrary guest commands.
+5. **Honest resource reporting:** Report configured limits separately from observed usage and actual enforcement; expose unsupported capabilities (such as per-task disk/I/O/network throttling).
+6. **Verified offline backups:** Backups copy stopped volumes with provenance; restoration creates a new volume and explicitly verifies root identity and Git/worktree metadata before binding a separate project ID. A VM snapshot alone is not a complete project backup.
 
-Project business interfaces must remain provider independent. QEMU/KVM can be introduced as a separate provider later; device, snapshot and hotplug differences belong in provider capability declarations, and clients offer only supported actions. Host-agent permissions remain an independent sandbox/authorization boundary even when AXV routes every requested project operation into a VM.
-
-The complete acceptance workflow creates a VM and retained volume containing a real Git repository, modifies files through AXV, installs dependencies, builds and tests, reconnects after browser/AXV restart to the original task results, cancels one exact task without affecting others, replaces the VM while preserving code/Git state, and exercises disk exhaustion, runaway tasks and executor failure with visible errors and successful recovery. It must also reject stale write/cancel bindings after replacement or restore and prove that duplicate submissions cannot duplicate tasks. [Development](development.md#vm-project-workspace-acceptance) owns how implemented portions are checked; this full workflow remains the completion target.
-
-Conversations outlive views. Closing a view, ending a process and continuing saved context are separate user choices. Failed recovery must be visible rather than silently starting unrelated work. Naming and archiving organize conversations without changing process lifetime. [Codex architecture](codex.md) owns run identity and recovery mechanisms; [usage](usage.md#codex) owns the corresponding actions.
+Provider differences belong in capability declarations so clients only offer supported actions. Native verification of these constraints lives in [VM project workspace acceptance](acceptance.md#vm-project-workspace-acceptance).
 
 ## Intended workflow
 
-The target workflow is:
-
 1. Choose a project and its location: an existing host directory or a VM's persistent project volume.
 2. Start or resume a host agent session with that project context explicit.
-3. For a VM project, use AXV tools to read and change its files, run commands and follow tasks inside the selected VM. Host projects continue to use their host context.
-4. Review code, test results and development services alongside the session and the corresponding terminal.
+3. For a VM project, use AXV tools to read/edit files, run persistent tasks and inspect previews inside the selected VM; host projects keep their host context.
+4. Review code, test results and services alongside the session and matching terminal.
 
-This complete workflow is a product goal; [project status](../README.md#project-status) records what is available. Every action should identify its project and execution location, independently of where the agent process runs.
+Desktop users arrange multiple windows; a dedicated narrow-screen phone workflow (prioritizing machine selection, entering a session, reading progress and answering approvals) remains a separate goal beyond responsive desktop fitting.
 
-Desktop users can arrange multiple windows. On phones, prioritize choosing a machine, entering a session, reading progress and responding to approvals. A dedicated narrow-screen workflow remains a goal; do not mistake responsive desktop fitting for that complete workflow.
-
-| Area | Intended responsibility |
+| Area | Responsibility |
 | --- | --- |
 | Virtual Machines | VM inventory, lifecycle, resources and connection state |
 | Agents | Host coding-agent sessions, progress, approvals and recovery |
-| Project files | The authoritative host or VM project copy, addressed by its location |
+| Project files | Authoritative host or VM project copy, addressed by location |
 | Terminal | Interactive access to an explicit host or VM project context |
 | Inspector | Context for the selected machine, project or session |
 
-Use **Virtual Machines** for the application/window title, **VMs** for compact labels and **New VM** for creation. Future application layouts can evolve; do not add nonfunctional launchers to represent the roadmap.
+Use **Virtual Machines** for the application/window title, **VMs** for compact labels and **New VM** for creation. Do not add nonfunctional launchers to represent roadmap items.
 
 ## Product boundaries
 
-- **Execution context is explicit.** Agent process location, project location and command execution location are distinct. An agent's host working directory does not select the VM or directory for a guest operation. Commands and file operations must address the intended project; a missing VM must not silently redirect work to the host.
-- **Organization is not execution.** Desktop workspaces arrange windows; they neither select VMs nor determine machine/session counts. Placing an agent window beside a VM does not move the agent into it.
-- **Project files retain their original location.** Project access addresses the chosen host directory or VM project volume, including when a host agent operates on a VM project.
-- **Persistence is a deliberate choice.** VMs, project volumes, agent conversations, process runs and windows retain separate lifetimes. Managed agent work can survive a detached view; ordinary host shells are ephemeral. New clients and integrations must preserve the existing [lifecycle contracts](architecture.md#codex-attachment-and-process-lifetime).
-- **Availability is evidence-based.** Implemented adapters, automated fixture coverage and native platform validation are different claims. Record current support in the README; keep validation commands in [development](development.md).
+- **Explicit execution context:** Agent process location, project location and command execution location are distinct. A missing VM never silently redirects work to the host.
+- **Organization is not execution:** Desktop workspaces arrange windows; they do not select VMs or move agents into VMs.
+- **Persistence is deliberate:** VMs, project volumes, agent conversations, process runs and windows keep separate [lifecycle contracts](architecture.md#codex-attachment-and-process-lifetime).
+- **Evidence-based availability:** Implemented adapters, automated fixtures and native platform validation are distinct claims ([project status](../README.md#project-status)).
+- **Default image policy:** Official versioned AXV enhanced images are the intended long-term default preparation source; advanced users may select custom images explicitly.
 
-Official versioned AXV enhanced images are the intended long-term default preparation source; changing the default requires an explicit product decision. Advanced users may explicitly choose custom images, with AXV guest software supplying optional enhanced features. [VM architecture](vm-platform.md#image-and-capability-contract) owns the image and capability contract, [startup](startup.md#first-time-macos-setup) owns preparation choices, and the [README](../README.md#project-status) owns publication and validation status.
+## Work notification and extension boundaries
 
-## Work notification boundaries
-
-Optional external work notifications report minimal observed status and link back to authenticated original work. Independent execution owners retain recoverable metadata; the desktop owns bounded intake checkpoints and dispatch while running. Gaps and uncertainty are visible, and provider acceptance is distinct from phone delivery. Notification observation and return links never answer approvals or operate on tasks. Successful turns and successful tasks remain separate opt-in choices. [Notifications](api/notifications.md) owns the implemented contract.
-
-Direct browser delivery and Pocket Alert are independent opt-in adapters over those same observations. Browser permission belongs to its browser/OS context; a server record or manifest identity cannot grant, transfer or revoke it. Web Push carries only encrypted minimal alert metadata, not an offline workstation or background execution channel. Receiving vendor push and reopening the private workstation have separate connectivity requirements.
-
-## Application extensibility
-
-AXV combines feature-owned built-in applications with explicitly installed, restricted extensions. Both use the existing desktop window and launcher system. Built-ins remain compiled React features; extensions use a versioned Web runtime. Source, runtime and granted capabilities are independent concerns. Application identity does not derive from a display title, and an extension cannot override a built-in application by reusing its ID.
-
-The initial extension boundary is private application data, with explicit saves, revision conflicts and browser recovery. This supplies a complete small-application workflow before adding execution or project access. Installation changes preserve user data and existing window references. A package update is separate from replacing a live view or migrating its business data. [Desktop architecture](desktop.md#installed-extensions) owns the implementation; [usage](usage.md#applications-and-extensions) owns available actions.
-
-Future resource capabilities must pass through their existing feature owners and retain exact document, project, VM and process-run identities. An extension's location on a desktop workspace never grants an execution target. Backend programs, network integrations, distribution catalogs and data migrations need their own scoped contracts before they can be added.
+- **Work notifications:** Optional Web Push and Pocket Alert adapters report minimal observed status and link back to authenticated original work. Observation never approves requests or controls execution; browser permission remains browser/OS-owned ([Notifications API](api/notifications.md)).
+- **Application extensibility:** Built-ins remain compiled React features; installed extensions run in an opaque sandboxed Web runtime with private application data only and cannot override built-in IDs. Future resource capabilities must pass through existing feature owners with exact identities ([Extensions API](api/extensions.md)).
 
 ## Decisions still open
 
-- Git/worktree management on the project volume and future provider-specific VM work-project integration.
-- Automatic session supervision after host boot, external project backup delivery and recovery policy after VM replacement. Offline local restoration creates an explicitly verified new project; persistent task attempts never automatically move between VMs.
+- Git/worktree management workflows on project volumes and additional VM providers (such as QEMU/KVM).
+- Automatic session supervision after host boot, external/off-host project backup delivery and recovery policy after VM replacement.
 - Development-service discovery and process supervision beyond explicitly registered previews.
-- Provider-specific session integration, including Claude Code and structured agent interfaces.
-- Broader installed-browser acceptance, cross-device recovery and remote reconnection experience beyond the initial online installation.
+- Additional coding-agent integrations, including Claude Code and structured agent interfaces.
+- Broader installed-browser acceptance, dedicated phone workflows and cross-device reconnection experience.
 
-Resolve these in focused implementation tasks. Record settled rationale here; change architecture and API references when the behavior exists. Keep task plans and review logs in task/PR history rather than adding a parallel roadmap or audit document.
+Resolve open items in focused implementation tasks; keep task plans and review logs in task/PR history rather than adding separate roadmap or audit files.
