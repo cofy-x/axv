@@ -194,7 +194,7 @@ func (e *Engine) Plan(ctx context.Context, request Request) (Plan, error) {
 					spec.ImageArtifact, spec.ImageShared = base, true
 					spec.ImageBundle = guestimage.Bundle{Version: guestimage.Version, ID: "ubuntu-base", Name: base.Name, Provider: "lima", Arch: e.arch, Rootfs: guestimage.Artifact{SHA256: base.SHA256}}
 					p.Downloads = append(p.Downloads, Download{ID: base.ID, Name: base.Name, URL: base.URL, SHA256: base.SHA256, Bytes: base.Bytes})
-					p.Checks = append(p.Checks, ready("base_image", "Ubuntu base (default transition)", "Pinned official Ubuntu base: create, start, stop, restart and delete are available. AXV guest enhancements are not installed; official AXV image publication is pending."))
+					p.Checks = append(p.Checks, ready("base_image", "Ubuntu base (basic VM)", "Pinned official Ubuntu base: create, start, stop, restart and delete are available without AXV guest enhancements or browser terminals."))
 				}
 			case "bundle":
 				bundle, bundleErr := guestimage.LoadBundle(ctx, p.Request.ImageBundle, "lima", e.arch)

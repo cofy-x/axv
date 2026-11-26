@@ -296,8 +296,20 @@ export interface ImageInfo {
   sha256?: string;
   sizeBytes?: number;
   minRootGiB?: number;
+  guest?: {
+    imageVersion?: number;
+    protocolVersion?: number;
+    capabilities?: string[];
+  };
   source?: string;
   reason?: string;
+}
+
+export interface LimaShellInfo {
+  binary: string;
+  limaHome: string;
+  instance: string;
+  command: string;
 }
 
 export interface ImageImport {
@@ -362,6 +374,11 @@ export const machinesApi = {
     request<PreparationJob>(
       `${base}/preparation/jobs/${encodeURIComponent(id)}`,
       { signal },
+    ),
+  limaShell: (machineId: string, signal?: AbortSignal) =>
+    request<LimaShellInfo>(
+      `${base}/preparation/lima-shell?machineId=${encodeURIComponent(machineId)}`,
+      { signal: signal ?? AbortSignal.timeout(15000) },
     ),
   preparationAction: (
     id: string,

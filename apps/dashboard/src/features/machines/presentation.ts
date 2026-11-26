@@ -1,4 +1,4 @@
-import type { Machine, Operation, Volume } from './api';
+import type { ImageInfo, Machine, Operation, Volume } from './api';
 import type { VMAction } from './lifecycle';
 import { isProjectBackup } from './volume-policy';
 
@@ -115,4 +115,45 @@ export function guestTerminalReason(machine?: Machine) {
   if (!machine.guestCapabilities?.includes('terminals'))
     return 'This image does not provide guest terminals.';
   return undefined;
+}
+
+export function imageTerminalSummary(image?: ImageInfo): string {
+  if (!image) return 'Select an image to review guest capabilities.';
+  const capabilities = image.guest?.capabilities ?? [];
+  if (capabilities.includes('terminals')) {
+    return 'Browser terminal included (AXV guest enhancements preinstalled).';
+  }
+  if (image.guest) {
+    return 'AXV guest installed without browser terminal support.';
+  }
+  return 'No browser terminal (basic VM lifecycle only; local Lima shell available on macOS).';
+}
+
+export function machineGuestStatus(machine: Machine): string | undefined {
+  if (machine.status !== 'running') return undefined;
+  if (machine.guestState === 'not-installed') return 'Basic VM (no guest)';
+  if (machine.guestState === 'incompatible') return 'Guest incompatible';
+  if (!machine.ready) return 'Guest starting…';
+  if (!machine.guestCapabilities?.includes('terminals'))
+    return 'Guest ready (no terminal)';
+  return 'Guest ready';
+}
+
+export function canCopyLocalLimaShell(
+  machine: Machine | undefined,
+  localOwner: boolean,
+): boolean {
+  if (
+    !localOwner ||
+    !machine ||
+    machine.spec.provider !== 'lima' ||
+    machine.status !== 'running' ||
+    machine.desired !== 'running'
+  ) {
+    return false;
+  }
+  return (
+    machine.guestState === 'not-installed' ||
+    (machine.ready && !machine.guestCapabilities?.includes('terminals'))
+  );
 }

@@ -34,8 +34,18 @@ func TestReviewedLimaArtifactsMatchHostSupport(t *testing.T) {
 
 func TestReviewedArtifactsSeparateArchitecturesAndPendingReleases(t *testing.T) {
 	c := Official()
-	if len(c.AXV) != 0 {
-		t.Fatal("update the publication assertion when an official release is actually published")
+	release, ok := c.AXV["lima/arm64"]
+	if !ok {
+		t.Fatal("published lima/arm64 official release missing from catalog")
+	}
+	if err := release.Validate("lima", "arm64"); err != nil {
+		t.Fatalf("published lima/arm64 official release invalid: %v", err)
+	}
+	if _, ok := c.AXV["lima/amd64"]; ok {
+		t.Fatal("unexpected unpublished lima/amd64 official release")
+	}
+	if got, ok := Lookup("axv-lima-arm64"); !ok || got != release.Artifact {
+		t.Fatalf("Lookup(axv-lima-arm64) = (%+v, %t), want published artifact", got, ok)
 	}
 	for _, set := range []map[string]artifactcache.Artifact{c.Lima, c.Ubuntu} {
 		if set["arm64"].SHA256 == set["amd64"].SHA256 {

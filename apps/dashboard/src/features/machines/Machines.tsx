@@ -42,10 +42,12 @@ import { ImageManager } from './ImageManager';
 import { MachineEnvironment } from './MachineEnvironment';
 import { preparationRunning } from './preparation-store';
 import {
+  canCopyLocalLimaShell,
   guestTerminalReason,
   humanize,
   latestVMFailure,
   linuxVMSetupGuide,
+  machineGuestStatus,
   machineGuidance,
   machineTransition,
   operationLabel,
@@ -70,6 +72,12 @@ export function Machines({
     desktop.updateWindowState(window.id, { vmTab: value });
   const [busy, setBusy] = useState(false);
   const [openingTerminal, setOpeningTerminal] = useState<string>();
+  const [copyingLimaShell, setCopyingLimaShell] = useState(false);
+  const [limaShellNotice, setLimaShellNotice] = useState<{
+    key: string;
+    copied: boolean;
+    command: string;
+  }>();
   const [lastAction, setLastAction] = useState<{
     hostId: string;
     id: string;
@@ -311,6 +319,34 @@ export function Machines({
       run,
     ],
   );
+
+  const selectedKey = selected ? `${selected.hostId}:${selected.id}` : '';
+  const localOwner = Boolean(data.preparation.check);
+  const canCopyLimaShell =
+    !transition && !data.error && canCopyLocalLimaShell(selected, localOwner);
+  const copyLimaShell = useCallback(async () => {
+    if (!selected || !canCopyLimaShell) return;
+    const key = `${selected.hostId}:${selected.id}`;
+    setCopyingLimaShell(true);
+    setError('');
+    try {
+      const info = await machinesApi.limaShell(selected.id);
+      let copied = false;
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(info.command);
+          copied = true;
+        }
+      } catch {
+        copied = false;
+      }
+      setLimaShellNotice({ key, copied, command: info.command });
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setCopyingLimaShell(false);
+    }
+  }, [selected, canCopyLimaShell]);
 
   const terminal = useCallback(async () => {
     const scope = terminalScope.current;
@@ -669,9 +705,23 @@ export function Machines({
                       }
                       onAction={(action) => void lifecycle(action)}
                       onTerminal={() => void terminal()}
+                      onCopyLimaShell={
+                        canCopyLimaShell
+                          ? () => void copyLimaShell()
+                          : undefined
+                      }
+                      limaShellPending={copyingLimaShell}
                       onInspect={inspect}
                     />
                   </div>
+                  {!transition &&
+                    selected.status === 'running' &&
+                    machineGuestStatus(selected) && (
+                      <p className="machines-form-help">
+                        {humanize(selected.status)} ·{' '}
+                        {machineGuestStatus(selected)}
+                      </p>
+                    )}
                   {transition && (
                     <p className="machines-vm-transition" role="status">
                       {transition}
@@ -688,6 +738,14 @@ export function Machines({
                     />
                   ) : null}
                   {guidance && <p className="machines-form-help">{guidance}</p>}
+                  {limaShellNotice?.key === selectedKey && (
+                    <p className="machines-form-help" role="status">
+                      {limaShellNotice.copied
+                        ? 'Copied local Lima shell command: '
+                        : 'Run on this Mac: '}
+                      <code>{limaShellNotice.command}</code>
+                    </p>
+                  )}
                 </div>
               )}
               {visible.length ? (
