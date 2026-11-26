@@ -183,21 +183,31 @@ func newVMProjectFile(action string) *cobra.Command {
 	var bindingFile, contentFile, expected, cursor string
 	var create, machineJSON bool
 	var limit int
-	cmd := &cobra.Command{Use: action + " <project-id> <path>", Short: map[string]string{"files": "List a VM project directory", "read": "Read a VM project UTF-8 file and its version", "write": "Write a VM project file with an explicit version check", "mkdir": "Create one VM project directory"}[action], Args: arguments(cobra.ExactArgs(2)), RunE: func(cmd *cobra.Command, args []string) error {
+	use := action + " <project-id> <path>"
+	argsCheck := cobra.ExactArgs(2)
+	if action == "files" {
+		use = "files <project-id> [path]"
+		argsCheck = cobra.RangeArgs(1, 2)
+	}
+	cmd := &cobra.Command{Use: use, Short: map[string]string{"files": "List a VM project directory", "read": "Read a VM project UTF-8 file and its version", "write": "Write a VM project file with an explicit version check", "mkdir": "Create one VM project directory"}[action], Args: arguments(argsCheck), RunE: func(cmd *cobra.Command, args []string) error {
+		targetPath := ""
+		if len(args) > 1 {
+			targetPath = args[1]
+		}
 		if !utf8.ValidString(args[0]) || !utf8.ValidString(cursor) {
 			return usageError(fmt.Errorf("VM project arguments must be valid UTF-8"))
 		}
-		if err := compute.ValidateProjectRoot(args[1]); err != nil {
+		if err := compute.ValidateProjectRoot(targetPath); err != nil {
 			return usageError(err)
 		}
-		if action != "files" && args[1] == "" {
+		if action != "files" && targetPath == "" {
 			return usageError(fmt.Errorf("a nonempty project-relative file path is required"))
 		}
-		binding, err := projectBindingForCommand(cmd, bindingFile, args[0])
+		binding, autoCaptured, err := projectBindingForCommandOrLive(cmd, bindingFile, args[0])
 		if err != nil {
 			return err
 		}
-		request := compute.ProjectFileRequest{Binding: binding, Path: args[1]}
+		request := compute.ProjectFileRequest{Binding: binding, Path: targetPath}
 		if action == "files" {
 			if limit < 0 || limit > 200 {
 				return usageError(fmt.Errorf("--limit must be 1–200, or zero for the service default"))
@@ -236,6 +246,9 @@ func newVMProjectFile(action string) *cobra.Command {
 			return err
 		}
 		defer c.Close()
+		if autoCaptured {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Host: %s  Project: %s  VM: %s  Boot: %s  Instance: %s\n", binding.HostID, args[0], binding.MachineID, binding.BootID, binding.InstanceID)
+		}
 		var result any
 		switch action {
 		case "files":
@@ -253,7 +266,7 @@ func newVMProjectFile(action string) *cobra.Command {
 		return jsonResult(cmd.OutOrStdout(), result)
 	}}
 	f := cmd.Flags()
-	f.StringVar(&bindingFile, "binding-file", "", "original JSON from axv vm project binding; never refreshed automatically")
+	f.StringVar(&bindingFile, "binding-file", "", "original JSON from axv vm project binding (optional for direct CLI use; never refreshed when supplied)")
 	f.BoolVar(&machineJSON, "json", false, "write machine-readable JSON (also the default)")
 	if action == "files" {
 		f.IntVar(&limit, "limit", 0, "directory page size (zero uses the service default)")
@@ -265,4 +278,21 @@ func newVMProjectFile(action string) *cobra.Command {
 		f.BoolVar(&create, "create", false, "create a new file only; fail if it already exists")
 	}
 	return cmd
+}
+
+func projectBindingForCommandOrLive(cmd *cobra.Command, filename, projectID string) (compute.ProjectBinding, bool, error) {
+	if _, ok := boundVMProject(cmd); ok || strings.TrimSpace(filename) != "" {
+		b, err := projectBindingForCommand(cmd, filename, projectID)
+		return b, false, err
+	}
+	c, err := commandClient(cmd)
+	if err != nil {
+		return compute.ProjectBinding{}, false, err
+	}
+	defer c.Close()
+	result, err := c.ProjectBinding(cmd.Context(), projectID)
+	if err != nil {
+		return compute.ProjectBinding{}, false, err
+	}
+	return result.Binding, true, nil
 }

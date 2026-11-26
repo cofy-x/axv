@@ -28,6 +28,7 @@ type GatewayOptions struct {
 	LogPath     string
 	ConfigPath  string
 	ProfileHome string
+	Version     string
 }
 
 type RuntimeStatus struct {
@@ -41,31 +42,36 @@ type RuntimeStatus struct {
 }
 
 type Environment struct {
-	LogPath                 string         `json:"logPath,omitempty"`
-	LoggingError            string         `json:"loggingError,omitempty"`
-	Preparation             *prepare.Check `json:"preparation,omitempty"`
-	ConfigurationSource     string         `json:"configurationSource,omitempty"`
-	AvailableActions        []string       `json:"availableActions,omitempty"`
-	Runtime                 *RuntimeStatus `json:"runtime,omitempty"`
-	Platform                string         `json:"platform"`
-	Configured              bool           `json:"configured"`
-	ConfigPath              string         `json:"configPath"`
-	ProfileHome             string         `json:"profileHome"`
-	ExecutablePath          string         `json:"executablePath"`
-	RequiredLimaVersion     string         `json:"requiredLimaVersion"`
-	AutomaticSetupSupported bool           `json:"automaticSetupSupported"`
+	LogPath                 string                     `json:"logPath,omitempty"`
+	LoggingError            string                     `json:"loggingError,omitempty"`
+	Preparation             *prepare.Check             `json:"preparation,omitempty"`
+	HostService             *hostinstall.ServiceStatus `json:"hostService,omitempty"`
+	ConfigurationSource     string                     `json:"configurationSource,omitempty"`
+	AvailableActions        []string                   `json:"availableActions,omitempty"`
+	Runtime                 *RuntimeStatus             `json:"runtime,omitempty"`
+	Platform                string                     `json:"platform"`
+	Configured              bool                       `json:"configured"`
+	ConfigPath              string                     `json:"configPath"`
+	ProfileHome             string                     `json:"profileHome"`
+	ExecutablePath          string                     `json:"executablePath"`
+	RequiredLimaVersion     string                     `json:"requiredLimaVersion"`
+	AutomaticSetupSupported bool                       `json:"automaticSetupSupported"`
 }
 
 type Gateway struct {
-	logger      *diagnostics.Logger
-	preparation func() prepare.Check
-	binding     *gatewayBinding
-	bindings    []*gatewayBinding
-	generation  uint64
-	environment Environment
-	mu          sync.Mutex
-	connections map[*trackedConn]bool
-	closed      bool
+	logger          *diagnostics.Logger
+	version         string
+	preparation     func() prepare.Check
+	binding         *gatewayBinding
+	bindings        []*gatewayBinding
+	generation      uint64
+	environment     Environment
+	mu              sync.Mutex
+	hostServiceMu   sync.Mutex
+	hostServiceAt   time.Time
+	hostServiceLast *hostinstall.ServiceStatus
+	connections     map[*trackedConn]bool
+	closed          bool
 }
 
 type gatewayBinding struct {
@@ -94,7 +100,8 @@ func (c *trackedConn) Close() error {
 func NewGateway(socket string, options GatewayOptions) *Gateway {
 	executablePath, _ := os.Executable()
 	g := &Gateway{
-		logger: options.Logger,
+		logger:  options.Logger,
+		version: options.Version,
 		environment: Environment{
 			Platform:                runtime.GOOS,
 			LogPath:                 options.LogPath,
@@ -170,12 +177,6 @@ func (g *Gateway) Bind(socket, hostID, fingerprint string) uint64 {
 		if changed || (r.Method != http.MethodGet && r.Method != http.MethodHead) {
 			g.logger.Error("compute.transport_failed", err, "hostId", hostID, "generation", b.generation, "method", r.Method)
 		}
-		if r.Method == http.MethodGet {
-			if change, ok := hostinstall.ReadImageReload(socket, hostID, fingerprint); ok && change.Pending(time.Now()) {
-				write(w, 503, map[string]string{"code": "image_reload", "error": "Reconnecting after the VM image installation."})
-				return
-			}
-		}
 		write(w, 503, map[string]string{"code": "host_unavailable", "error": "The local VM service is unavailable. Check its status on the computer running AXV; existing VMs have not been stopped."})
 	}}
 	previous := g.binding
@@ -241,6 +242,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+		environment.HostService = g.cachedHostServiceStatus(r.Context())
 		environment.LoggingError = g.logger.Status()
 		write(w, http.StatusOK, environment)
 		return
@@ -282,6 +284,38 @@ func privateGuestAccess(value string) bool {
 	}
 	parts := strings.Split(strings.TrimPrefix(path.Clean("/"+value), "/"), "/")
 	return len(parts) >= 3 && parts[0] == "machines" && parts[2] == "ssh"
+}
+
+func (g *Gateway) cachedHostServiceStatus(ctx context.Context) *hostinstall.ServiceStatus {
+	if runtime.GOOS != "linux" || g.version == "" {
+		return nil
+	}
+	const ttl = 15 * time.Second
+	g.hostServiceMu.Lock()
+	defer g.hostServiceMu.Unlock()
+	if !g.hostServiceAt.IsZero() && time.Since(g.hostServiceAt) < ttl {
+		if g.hostServiceLast == nil {
+			return nil
+		}
+		copied := *g.hostServiceLast
+		return &copied
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	st := hostinstall.Status(probeCtx, g.version)
+	cancel()
+	if ctx.Err() == nil {
+		g.hostServiceAt = time.Now()
+		if st.Installed {
+			copied := st
+			g.hostServiceLast = &copied
+		} else {
+			g.hostServiceLast = nil
+		}
+	}
+	if !st.Installed {
+		return nil
+	}
+	return &st
 }
 
 func (g *Gateway) Close() {

@@ -40,7 +40,6 @@ import { openMachineInspector } from './desktop-icons';
 import { VolumeManager } from './VolumeManager';
 import { ImageManager } from './ImageManager';
 import { MachineEnvironment } from './MachineEnvironment';
-import { hostInstallerCommand } from './HostServiceGuidance';
 import { preparationRunning } from './preparation-store';
 import {
   guestTerminalReason,
@@ -139,19 +138,6 @@ export function Machines({
   const canCreate = !!data.info?.configured && !data.error && !!hasReadyImage;
   const emptyInventory = canCreate && !data.loading && !data.machines.length;
   const canImportImages = availableProviders.some((item) => item.images);
-  const imageSetupCommand =
-    !hasReadyImage &&
-    !canImportImages &&
-    data.preparation.check?.defaultImageId &&
-    data.info?.configured &&
-    data.info.hostId &&
-    availableProviders.some((item) => item.provider === 'firecracker')
-      ? hostInstallerCommand(
-          data.environment?.executablePath,
-          'install-image',
-          data.info.hostId,
-        )
-      : undefined;
   const firecrackerImageRequired =
     !data.machines.length &&
     !data.loading &&
@@ -161,15 +147,8 @@ export function Machines({
     availableProviders.some((item) => item.provider === 'firecracker');
   const operation = data.operations.find((item) => item.id === operationId);
   const preparing = preparationRunning(data.preparation.job);
-  const inventoryError = !data.reloading && !preparing ? data.error : undefined;
-  const offlineActions = configured && !!inventoryError && !imageSetupCommand;
-  const showingImageSetup =
-    !!imageSetupCommand && !showHost && tab === 'images';
-  const reconnecting =
-    busy ||
-    preparing ||
-    !!data.preparation.pending ||
-    !!data.preparation.mutation;
+  const inventoryError = !preparing ? data.error : undefined;
+  const offlineActions = configured && !!inventoryError;
 
   useEffect(() => {
     if (preparing) setShowHost(true);
@@ -299,35 +278,9 @@ export function Machines({
     }
   }, []);
 
-  const showImageSetup = useCallback(() => {
-    updateWindowState(window.id, { vmEnvironment: false, vmTab: 'images' });
-    viewNav.current
-      ?.querySelector<HTMLButtonElement>('button[data-view="images"]')
-      ?.focus({ preventScroll: true });
-  }, [updateWindowState, window.id]);
-
   const newVM = useCallback(() => {
-    if (imageSetupCommand) showImageSetup();
-    else desktop.openApp('machine-create');
-  }, [desktop, imageSetupCommand, showImageSetup]);
-
-  function reconnectImageHost() {
-    const check = data.prepare.getSnapshot().check;
-    if (!check?.defaultImageId || check.lockedReason || reconnecting) return;
-    void run(async () => {
-      const plan = await data.prepare.review(check.defaults);
-      if (!plan.canStart)
-        throw new Error(
-          plan.checks
-            .filter((check) => check.status === 'blocked')
-            .map((check) => check.detail)
-            .join(' ') || 'The VM host could not be verified.',
-        );
-      setShowHost(true);
-      await data.prepare.start(plan);
-      refreshData();
-    });
-  }
+    desktop.openApp('machine-create');
+  }, [desktop]);
 
   const lifecycle = useCallback(
     async (action: VMAction, retry = false) => {
@@ -427,7 +380,7 @@ export function Machines({
           newVM();
           return true;
         },
-        (canCreate || (!!imageSetupCommand && !data.reloading)) && !busy,
+        canCreate && !busy,
       ),
       commands.register(window.id, 'machines:refresh', async () => {
         refreshData();
@@ -500,8 +453,6 @@ export function Machines({
     window.id,
     desktop,
     canCreate,
-    imageSetupCommand,
-    data.reloading,
     newVM,
     busy,
     refreshData,
@@ -556,37 +507,19 @@ export function Machines({
     <div className="machines-app">
       {configured && !offlineActions && (
         <div className="app-toolbar machines-toolbar">
-          {data.reloading ? (
-            <span className="machines-reload-status" role="status">
-              Reconnecting after the VM image installation…
-            </span>
-          ) : imageSetupCommand ? (
-            showingImageSetup ? (
-              data.error && (
-                <Button disabled={reconnecting} onClick={reconnectImageHost}>
-                  {reconnecting ? 'Reconnecting…' : 'Reconnect to VM Host'}
-                </Button>
-              )
-            ) : (
-              <Button primary disabled={busy} onClick={showImageSetup}>
-                Set Up VM Image
-              </Button>
-            )
-          ) : (
-            !data.error && (
-              <Button
-                primary={emptyInventory && tab === 'machines' && !showHost}
-                disabled={!canCreate || busy}
-                title={
-                  !canCreate
-                    ? 'An available provider and a ready image are required.'
-                    : undefined
-                }
-                onClick={newVM}
-              >
-                New VM
-              </Button>
-            )
+          {!data.error && (
+            <Button
+              primary={emptyInventory && tab === 'machines' && !showHost}
+              disabled={!canCreate || busy}
+              title={
+                !canCreate
+                  ? 'An available provider and a ready image are required.'
+                  : undefined
+              }
+              onClick={newVM}
+            >
+              New VM
+            </Button>
           )}
           <div className="machines-toolbar-actions">{hostButton}</div>
         </div>
@@ -603,7 +536,7 @@ export function Machines({
               </span>
             )}
           </div>
-          {configured && inventoryError && !showingImageSetup && (
+          {configured && inventoryError && (
             <div className="machines-form-actions">
               <Button primary disabled={data.refreshing} onClick={refreshData}>
                 Retry connection
@@ -810,7 +743,7 @@ export function Machines({
                               ? 'VM image required'
                               : 'No VMs yet'}
                   </h2>
-                  {firecrackerImageRequired && !imageSetupCommand && (
+                  {firecrackerImageRequired && (
                     <p>
                       Ask the deployment host administrator to register a
                       compatible Firecracker guest image. See the{' '}
@@ -835,7 +768,6 @@ export function Machines({
                     </Button>
                   ) : (
                     !canCreate &&
-                    !imageSetupCommand &&
                     !data.loading &&
                     (!data.error && canImportImages ? (
                       <Button onClick={() => setTab('images')}>
@@ -872,7 +804,6 @@ export function Machines({
                 data={data}
                 desktop={desktop}
                 onShowActivity={showActivity}
-                defaultSetupCommand={imageSetupCommand}
               />
             </div>
             <div

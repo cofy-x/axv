@@ -17,13 +17,17 @@ AXV brings coding-agent sessions, development VMs, project files and terminals t
 
 ## Install and use
 
-See [AXV4 recovery](docs/storage.md#recover-data-from-axv4-before-switching) before switching an older profile to AXV5.
+### Download a release binary (Linux & macOS)
 
-### Download for Linux amd64
+Run the self-verifying installer script (verifies SHA-256 checksums before installing):
 
-Choose a Linux amd64 application archive from [Releases](https://github.com/cofy-x/axv/releases), then follow [archive installation](docs/startup.md#install-a-release-archive) to verify and install it. Check [platform support](#project-status); the selected release's notes describe that archive's features, prerequisites and upgrade limits.
+```bash
+curl -fsSL https://raw.githubusercontent.com/cofy-x/axv/main/scripts/install.sh | sh
+```
 
-The executable includes the Web UI and needs neither Go nor Node at runtime. Codex, tmux and VM providers are separate prerequisites; see [startup requirements](docs/startup.md#daily-commands).
+Or choose an application archive (`axv_<version>_<os>_<arch>.tar.gz`) directly from [Releases](https://github.com/cofy-x/axv/releases) and follow [archive installation](docs/startup.md#install-a-release-archive). Check [platform support](#project-status); the selected release's notes describe that archive's features, prerequisites and upgrade limits.
+
+The executable includes the Web UI and needs neither Go nor Node at runtime. Codex, tmux and VM providers are separate prerequisites; run `axv doctor` to inspect your environment, or see [startup requirements](docs/startup.md#daily-commands).
 
 ### Build from source
 
@@ -38,7 +42,7 @@ axv
 
 `make install` builds and installs `axv` into Go's binary directory; follow its printed PATH guidance if needed. Run `axv` from any directory to start or reopen the workstation in your browser. Configuration and AXV-managed data default to `~/.axv`.
 
-Background mode requires a macOS GUI login or a Linux systemd user manager (254 or newer). Otherwise, run `axv serve` and open the printed address. See [Startup](docs/startup.md) for updates, uninstallation and VM preparation.
+Background mode uses macOS launchd or a Linux systemd user manager (persistent user units, compatible with systemd 240+). Use `axv daemon start --enable` (or `axv daemon enable`) for login/boot autostart, `axv doctor` to check prerequisites, and `axv remote enable` to configure Tailscale HTTPS directly from a terminal. Where native background supervision is unavailable, run `axv serve` and open the printed address. See [Startup](docs/startup.md) for updates, uninstallation and VM preparation.
 
 ## Project status
 

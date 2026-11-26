@@ -139,7 +139,7 @@ func pinHostExecutable(s app.Settings) (string, error) {
 }
 
 func hostJob(s app.Settings, binary string) (Job, error) {
-	if err := logs.PrepareLegacy(s.Home, "host"); err != nil {
+	if err := logs.PrepareRole(s.Home, "host"); err != nil {
 		return Job{}, err
 	}
 	marker := filepath.Join(s.RunDir(), compute.NewID("host")+".json")

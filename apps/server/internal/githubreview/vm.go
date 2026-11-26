@@ -3,8 +3,6 @@ package githubreview
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"net/http"
 	"slices"
@@ -127,11 +125,6 @@ func reviewTaskSpec(t Target, argv []string) compute.TaskSpec {
 	}
 }
 
-func reviewRequestID(key string) string {
-	digest := sha256.Sum256([]byte(key))
-	return "review-" + hex.EncodeToString(digest[:24])
-}
-
 func boundReviewRequestID(key string, binding compute.ProjectBinding) string {
 	return "review-" + reviewDigest("review-vm-request-v2", key, binding)[:48]
 }
@@ -183,29 +176,17 @@ func (v ComputeVMTests) Poll(ctx context.Context, t Target, argv []string, key s
 		return a, nil
 	}
 	requestID := a.RequestID
-	legacy := requestID == ""
-	if legacy {
-		requestID = reviewRequestID(key)
+	if requestID == "" {
+		return vmError(a, "The bound VM test attempt is missing its request identity.")
 	}
 	result, err := client.ProjectTaskByRequest(ctx, projectID, requestID)
-	// Compute accepts request IDs host-wide. For an old unversioned attempt,
-	// this GET compares only the project, so a conflict proves that the legacy
-	// ID cannot own a receipt in this project's scope.
-	foreignLegacyID := legacy && a.TaskID == "" && compute.ErrorCode(err) == "idempotency_conflict"
-	if missingReceipt(err) || foreignLegacyID {
+	if missingReceipt(err) {
 		if a.ObserveOnly && a.TaskID == "" {
 			a.Status, a.Error = "canceled", "The review changed before Compute accepted this test."
 			return a, nil
 		}
 		if a.TaskID != "" || hostID != v.HostID || projectID != v.ProjectID || a.Binding.MachineID != v.MachineID {
 			return vmError(a, "The original task receipt or its dedicated VM selection changed.")
-		}
-		if legacy {
-			// Preserve an accepted legacy receipt, but never submit under the
-			// old key. Persist the new identity before any write can be accepted.
-			a.RequestID = boundReviewRequestID(key, *a.Binding)
-			a.Status, a.Error = "running", ""
-			return a, nil
 		}
 		result, err = client.SubmitProjectTask(ctx, projectID, compute.SubmitProjectTaskRequest{
 			RequestID: requestID, Binding: *a.Binding, Spec: reviewTaskSpec(t, argv),

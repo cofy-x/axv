@@ -223,6 +223,55 @@ test('accepts a matching verified certificate among multiple verified attestatio
   expect(run).toHaveBeenCalledTimes(2);
 });
 
+test('supports multi-platform app and Lima guest targets', async () => {
+  const darwinPolicy = releaseProvenancePolicy({
+    kind: 'app',
+    version,
+    source,
+    directory: tmpdir(),
+    os: 'darwin',
+    arch: 'arm64',
+  });
+  expect(darwinPolicy.subjects).toEqual([
+    `axv_${version}_darwin_arm64.tar.gz`,
+    'SHA256SUMS',
+  ]);
+  const limaPolicy = releaseProvenancePolicy({
+    kind: 'guest',
+    version,
+    source,
+    directory: tmpdir(),
+    provider: 'lima',
+    arch: 'arm64',
+  });
+  expect(limaPolicy.subjects).toEqual([
+    `axv_guest_${version}_lima_arm64.tar.gz`,
+    `axv_guest_${version}_lima_arm64.qcow2`,
+    'candidate.json',
+    'SHA256SUMS',
+  ]);
+  expect(() =>
+    releaseProvenancePolicy({
+      kind: 'app',
+      version,
+      source,
+      directory: tmpdir(),
+      os: 'windows',
+      arch: 'amd64',
+    }),
+  ).toThrow(/Unsupported application target/);
+  expect(() =>
+    releaseProvenancePolicy({
+      kind: 'guest',
+      version,
+      source,
+      directory: tmpdir(),
+      provider: 'firecracker',
+      arch: 'arm64',
+    }),
+  ).toThrow(/Unsupported guest target/);
+});
+
 test('CLI rejects unknown policy options and malformed selectors', async () => {
   for (const args of [
     [],

@@ -230,19 +230,15 @@ func TestVMProjectTaskLogsAreByteExactAndKeepOffsets(t *testing.T) {
 func TestVMProjectTaskValidationPrecedesConnection(t *testing.T) {
 	file, _ := projectBindingFixture(t)
 	for _, args := range [][]string{
-		{"submit", "project-cli", "--", "true"},
+		{"submit", "project-cli", "--request-id", "replay-requires-binding", "--", "true"},
 		{"submit", "project-cli", "--binding-file", file, "true"},
 		{"submit", "project-cli", "--binding-file", file, "--timeout", "1ms", "--", "true"},
 		{"submit", "project-cli", "--binding-file", file, "--memory", "1", "--", "true"},
 		{"submit", "project-cli", "--binding-file", file, "--directory", "../host", "--", "true"},
 		{"submit", "project-cli", "--binding-file", file, "--", "invalid-\xff"},
 		{"submit", "project-cli", "--binding-file", file, "--request-id", "short", "--", "true"},
-		{"list", "project-cli"},
-		{"inspect", "project-cli", "task-original"},
-		{"receipt", "project-cli", "original-request"},
-		{"retry", "project-cli", "task-original", "--host-id", "host-cli"},
+		{"retry", "project-cli", "task-original", "--request-id", "replay-requires-binding", "--host-id", "host-cli"},
 		{"retry", "project-cli", "task-original", "--binding-file", file, "--host-id", "another-host"},
-		{"cancel", "project-cli", "task-original", "attempt-original"},
 		{"logs", "project-cli", "task-original", "attempt-original", "--host-id", "host-cli", "--offset", "-1"},
 		{"logs", "project-cli", "task-original", "attempt-original", "--host-id", "host-cli", "--limit", "65537"},
 		{"logs", "project-cli", "task-original", "attempt-original", "--host-id", "host-cli", "--raw", "--json"},

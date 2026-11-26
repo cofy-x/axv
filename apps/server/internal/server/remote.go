@@ -120,7 +120,7 @@ func remoteLocalOnlyRoute(r *http.Request) bool {
 	if pathWithin(r.URL.Path, "/api/cloudflare") {
 		return !cloudflareSafeRead(r)
 	}
-	return pathWithin(r.URL.Path, "/api/remote") || pathWithin(r.URL.Path, "/api/compute/preparation")
+	return pathWithin(r.URL.Path, "/api/remote") || pathWithin(r.URL.Path, "/api/compute/preparation") || pathWithin(r.URL.Path, "/api/doctor")
 }
 
 func cloudflareSafeRead(r *http.Request) bool {

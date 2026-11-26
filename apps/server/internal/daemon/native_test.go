@@ -71,16 +71,17 @@ func TestMissingServiceAndSupervisorFailureDiffer(t *testing.T) {
 	}
 }
 
-func TestSystemdUsesIndependentTransientService(t *testing.T) {
-	var args []string
-	n := &native{platform: "linux", run: func(_ context.Context, name string, a ...string) (string, error) {
-		if name == "systemctl" {
+func TestSystemdUsesEscapedUserUnitFile(t *testing.T) {
+	unitDir := t.TempDir()
+	var calls [][]string
+	n := &native{platform: "linux", userUnitDir: unitDir, run: func(_ context.Context, name string, a ...string) (string, error) {
+		if name != "systemctl" {
+			t.Fatalf("unexpected command %q %v", name, a)
+		}
+		calls = append(calls, append([]string{name}, a...))
+		if len(a) >= 2 && a[1] == "show" {
 			return "LoadState=not-found", nil
 		}
-		if name != "systemd-run" {
-			t.Fatal(name)
-		}
-		args = a
 		return "", nil
 	}}
 	j := testJob()
@@ -88,12 +89,20 @@ func TestSystemdUsesIndependentTransientService(t *testing.T) {
 	if err := n.Start(context.Background(), j); err != nil {
 		t.Fatal(err)
 	}
-	all := strings.Join(args, "\n")
-	if !strings.Contains(all, "--property=KillMode=process") || !strings.Contains(all, "--user") || strings.Contains(all, "enable") {
-		t.Fatal(all)
+	unitPath := filepath.Join(unitDir, j.Label+".service")
+	raw, err := os.ReadFile(unitPath)
+	if err != nil {
+		t.Fatalf("read unit file: %v", err)
 	}
-	if args[len(args)-1] != j.Marker || args[len(args)-4] != j.Args[0] {
-		t.Fatal("lost argument boundaries")
+	content := string(raw)
+	if !strings.Contains(content, "KillMode=process") || strings.Contains(content, "[Install]") {
+		t.Fatalf("unexpected unit content:\n%s", content)
+	}
+	if !strings.Contains(content, `ExecStart="/tmp/AXV & spaces/axv" "host" "--config" "/tmp/owned-unique.json"`) {
+		t.Fatalf("lost argument escaping:\n%s", content)
+	}
+	if len(calls) != 3 || strings.Join(calls[1], " ") != "systemctl --user daemon-reload" || strings.Join(calls[2], " ") != "systemctl --user start "+j.Label+".service" {
+		t.Fatalf("unexpected systemctl sequence: %v", calls)
 	}
 }
 

@@ -217,54 +217,6 @@ func TestWorkerDefersOneUnavailableTargetWithoutBlockingOthers(t *testing.T) {
 	}
 }
 
-func TestReleaseKeepsLegacyPublicationLocal(t *testing.T) {
-	ctx := t.Context()
-	filename := filepath.Join(t.TempDir(), "jobs.sqlite")
-	ledger := testReviewStore(t, filename, true)
-	pending := workerTestTarget("owner/alpha", 4, sourceRepository)
-	published := workerTestTarget("owner/alpha", 5, sourceRepository)
-	reviewer := &countedReviewer{}
-	service := newService(ctx, func() {}, ledger, &workerGitHub{targets: []Target{pending, published}}, connectedCLI{}, reviewer)
-	saved := workerSettings(t, ledger)
-	now := time.Now()
-	service.scan(ctx, saved, now)
-	for range 2 {
-		if err := service.processNext(ctx, saved, now); err != nil {
-			t.Fatal(err)
-		}
-	}
-	const link = "https://github.com/owner/alpha/pull/5#issuecomment-42"
-	_, err := ledger.db.ExecContext(ctx, `
-		UPDATE review_settings SET publish_repositories='["owner/alpha"]';
-		UPDATE review_jobs SET status='publishing', error='Pending previous publication.' WHERE number=4;
-		UPDATE review_jobs SET status='published', comment_url=? WHERE number=5;
-		PRAGMA user_version=6;
-	`, link)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := ledger.db.Close(); err != nil {
-		t.Fatal(err)
-	}
-	ledger = testReviewStore(t, filename, false)
-	if saved := workerSettings(t, ledger); len(saved.PublishRepositories) != 0 {
-		t.Fatalf("publication carried into release settings: %v", saved.PublishRepositories)
-	}
-	if job := workerJob(t, ledger, pending, "analyzed"); len(job.Findings) != 1 || job.CommentURL != "" || job.Error != "" {
-		t.Fatalf("pending publication did not become a local finding: %+v", job)
-	}
-	if job := workerJob(t, ledger, published, "published"); job.CommentURL != link {
-		t.Fatalf("historical link was lost: %+v", job)
-	}
-	service = newService(ctx, func() {}, ledger, &workerGitHub{}, connectedCLI{}, reviewer)
-	if err := service.processNext(ctx, workerSettings(t, ledger), now.Add(time.Minute)); !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("new release revived old work: %v", err)
-	}
-	if len(reviewer.numbers) != 2 {
-		t.Fatalf("legacy results spent additional reviews: %v", reviewer.numbers)
-	}
-}
-
 func TestWorkerHonorsDailyCapForWatchedAndRequestedPullRequests(t *testing.T) {
 	ctx := t.Context()
 	ledger := testReviewStore(t, filepath.Join(t.TempDir(), "jobs.sqlite"), true)

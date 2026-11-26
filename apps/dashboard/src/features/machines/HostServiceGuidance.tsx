@@ -11,7 +11,7 @@ const setupGuide = (
     Linux VM setup guide
   </a>
 );
-const startCommand = 'sudo systemctl start axv-host.service';
+const startCommand = 'sudo axv daemon start --only vm';
 const statusCommand = 'systemctl status axv-host.service --no-pager';
 const guidance = {
   inactive: {
@@ -44,19 +44,22 @@ function quoteShellArgument(value: string) {
   return "'" + value.replace(/['\\!]/g, "'\\$&'") + "'";
 }
 
-export function hostInstallerCommand(
-  executablePath: string | undefined,
-  command: 'install-service' | 'install-image',
-  hostId?: string,
-) {
+export function hostUpgradeCommand(executablePath: string | undefined) {
+  if (
+    executablePath?.startsWith('/') &&
+    !/[\p{Cc}\p{Cf}\u2028\u2029]/u.test(executablePath)
+  )
+    return `sudo ${quoteShellArgument(executablePath)} daemon upgrade`;
+  return 'sudo axv daemon upgrade';
+}
+
+export function hostInstallerCommand(executablePath: string | undefined) {
   if (
     !executablePath?.startsWith('/') ||
-    /[\p{Cc}\p{Cf}\u2028\u2029]/u.test(executablePath) ||
-    (hostId !== undefined && !/^host-[0-9a-f]{32}$/.test(hostId))
+    /[\p{Cc}\p{Cf}\u2028\u2029]/u.test(executablePath)
   )
     return;
-  const target = hostId ? ` --host-id ${hostId}` : '';
-  return `sudo ${quoteShellArgument(executablePath)} host ${command}${target}`;
+  return `sudo ${quoteShellArgument(executablePath)} host install-service --apply-sysctl`;
 }
 
 function installationStep(arch: string, executablePath?: string) {
@@ -67,7 +70,7 @@ function installationStep(arch: string, executablePath?: string) {
       instruction:
         'The built-in installer supports Linux amd64. Ask your host administrator to configure a compatible Firecracker service for this host.',
     };
-  const command = hostInstallerCommand(executablePath, 'install-service');
+  const command = hostInstallerCommand(executablePath);
   if (!command)
     return {
       title,

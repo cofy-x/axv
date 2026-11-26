@@ -18,7 +18,6 @@ import (
 	"github.com/cofy-x/axv/apps/server/internal/app/launch"
 	"github.com/cofy-x/axv/apps/server/internal/compute"
 	computegateway "github.com/cofy-x/axv/apps/server/internal/compute/gateway"
-	"github.com/cofy-x/axv/apps/server/internal/compute/hostinstall"
 	"github.com/cofy-x/axv/apps/server/internal/compute/prepare"
 	"github.com/cofy-x/axv/apps/server/internal/config"
 	"github.com/cofy-x/axv/apps/server/internal/jsonfile"
@@ -104,52 +103,6 @@ func TestConnectFreshFirecrackerServiceBeforeAddingImages(t *testing.T) {
 	binding, err := coordinator.activatePrepared(t.Context(), prepare.Activation{Compute: connection, ExpectedHostID: identity.HostID})
 	if err != nil || binding.HostID != identity.HostID || coordinator.runtimeStatus().State != "ready" {
 		t.Fatalf("fresh host activation: %+v, %+v, %v", binding, coordinator.runtimeStatus(), err)
-	}
-}
-
-func TestDefaultImageReloadAdvancesOnlyTheVerifiedHostBinding(t *testing.T) {
-	s, cfg := runtimeFixture(t)
-	original := compute.Runtime{Ready: true, HostID: "original", ProtocolVersion: compute.ProtocolVersion, ConfigFingerprint: cfg.Fingerprint()}
-	host := fakeHost(t, cfg.Socket, original)
-	host.firecracker.Store(true)
-	host.images.Store(false)
-	connection := profile.Compute{Mode: "external", Socket: cfg.Socket}
-	if err := profile.SaveCompute(s.Home, connection); err != nil {
-		t.Fatal(err)
-	}
-	gateway := computegateway.NewGateway("", computegateway.GatewayOptions{})
-	defer gateway.Close()
-	c := newComputeCoordinator(t.Context(), s, io.Discard, gateway, nil)
-	defer c.close()
-	if _, err := c.activatePrepared(t.Context(), prepare.Activation{Compute: connection, ExpectedHostID: original.HostID}); err != nil {
-		t.Fatal(err)
-	}
-	generation := c.runtimeStatus().Generation
-	next := original
-	next.ConfigFingerprint = "approved-image-config"
-	reload := hostinstall.ImageReload{HostID: original.HostID, Previous: original.ConfigFingerprint, Fingerprint: next.ConfigFingerprint, ImageID: "native"}
-	otherHost := next
-	otherHost.HostID = "replacement"
-	unrelated := next
-	unrelated.ConfigFingerprint = "unrelated-config"
-	c.activation.Lock()
-	defer c.activation.Unlock()
-	for _, candidate := range []compute.Runtime{otherHost, unrelated} {
-		if c.followImageReload(*c.bound, candidate, reload) {
-			t.Fatal("followed an unauthorized host or configuration")
-		}
-	}
-	host.identity.Store(&next)
-	if !c.followImageReload(*c.bound, next, reload) || c.runtimeStatus().State != "failed" || c.runtimeStatus().Generation != generation {
-		t.Fatal("advanced before the approved image was available")
-	}
-	host.images.Store(true)
-	if !c.followImageReload(*c.bound, next, reload) || c.runtimeStatus().State != "ready" || c.runtimeStatus().Generation != generation+1 {
-		t.Fatalf("authorized reload did not bind automatically: %+v", c.runtimeStatus())
-	}
-	var saved bindingRecord
-	if err := jsonfile.Read(filepath.Join(s.RunDir(), "compute-binding.json"), &saved); err != nil || saved.HostID != original.HostID || saved.Fingerprint != next.ConfigFingerprint {
-		t.Fatalf("updated binding not saved: %+v %v", saved, err)
 	}
 }
 

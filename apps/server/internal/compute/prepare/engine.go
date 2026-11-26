@@ -17,7 +17,6 @@ import (
 	"github.com/cofy-x/axv/apps/server/internal/artifactcache"
 	"github.com/cofy-x/axv/apps/server/internal/compute"
 	"github.com/cofy-x/axv/apps/server/internal/compute/artifacts"
-	"github.com/cofy-x/axv/apps/server/internal/compute/hostinstall"
 	"github.com/cofy-x/axv/apps/server/internal/diagnostics"
 	"github.com/cofy-x/axv/apps/server/internal/filelock"
 	"github.com/cofy-x/axv/apps/server/internal/owneddir"
@@ -157,8 +156,6 @@ func (e *Engine) CheckWithLocalService(ctx context.Context) (Check, error) {
 	if !c.Configured {
 		result := e.localService.check(ctx, defaultFirecrackerSocket, defaultFirecrackerConfig)
 		c.LocalService = &result
-	} else if c.Defaults.Socket == defaultFirecrackerSocket && hostinstall.DefaultImageInstallAvailable() {
-		c.DefaultImageID = artifacts.DefaultFirecrackerGuest().Bundle.ID
 	}
 	return c, err
 }

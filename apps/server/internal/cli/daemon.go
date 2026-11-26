@@ -40,7 +40,7 @@ func resolveProfileSettings(options serveOptions, p profile.Profile) (app.Settin
 	return app.Resolve(p, desktop)
 }
 
-func runDesktopSnapshot(ctx context.Context, path string, output io.Writer) error {
+func runDesktopSnapshot(ctx context.Context, path, version string, output io.Writer) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -52,6 +52,7 @@ func runDesktopSnapshot(ctx context.Context, path string, output io.Writer) erro
 		return err
 	}
 	settings := app.SettingsFromSnapshot(snapshot)
+	settings.Version = version
 	if !filepath.IsAbs(settings.Home) || !filepath.IsAbs(settings.Desktop.DataDir) || settings.Desktop.Addr == "" || settings.LaunchID == "" {
 		return fmt.Errorf("invalid desktop service snapshot")
 	}

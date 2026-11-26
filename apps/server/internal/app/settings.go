@@ -17,6 +17,7 @@ type ComputeSettings struct {
 
 // ProcessState contains dependencies owned by this desktop process only.
 type ProcessState struct {
+	Version          string              `json:"-"`
 	RunnerExecutable string              `json:"-"`
 	Logger           *diagnostics.Logger `json:"-"`
 }
