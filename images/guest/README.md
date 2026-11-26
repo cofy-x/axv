@@ -10,15 +10,15 @@ Persistent project tasks similarly require an explicit rebuilt/imported image de
 
 ## Lima cloud disk
 
-Use a dedicated native Linux builder with the pinned Go and Node.js toolchains, the libguestfs tools `virt-customize` and `virt-copy-out`, `qemu-img` and Ubuntu cloud-image support. The builder reports a missing tool before changing the image. Frontend dependencies are not required. Select a reviewed native Ubuntu base with the shared CLI cache, then build a separate disk:
+Use a dedicated native Linux builder as **root** with the pinned Go and Node.js toolchains, `qemu-img`, and standard Linux loop-mount/chroot utilities (`losetup`, `blkid`, `mount`, `chroot`). The builder reports a missing tool before changing the image. Frontend dependencies are not required. Select a reviewed native Ubuntu base with the shared CLI cache, then build a separate disk:
 
 ```sh
 axv cache fetch ubuntu-arm64 --output /absolute/build-input/base.img
-CLOUD_IMAGE_SHA256=<reviewed-base-sha256> bash images/guest/build-lima.sh \
+sudo env "PATH=$PATH" CLOUD_IMAGE_SHA256=<reviewed-base-sha256> bash images/guest/build-lima.sh \
   /absolute/build-input/base.img /absolute/new-lima-bundle
 ```
 
-Use `ubuntu-amd64` on an amd64 builder. The recipe verifies the supplied base digest, converts a private copy to qcow2, installs the common dependencies and AXV services offline, cleans cloud-init identity and emits `root.qcow2` plus `manifest.json`. It never changes the input base. `virt-customize` package installation uses the builder's network; this is an explicit build action, not VM Start.
+Use `ubuntu-amd64` on an amd64 builder. The recipe verifies the supplied base digest, converts a private copy to raw, loop-mounts its root filesystem to install the common dependencies and AXV services in a native chroot, cleans cloud-init identity, restores `/etc/resolv.conf`, and emits a compressed `root.qcow2` plus `manifest.json`. It never changes the input base. Package installation uses the builder's network; this is an explicit build action, not VM Start.
 
 Select the finished bundle explicitly with `axv setup --image-source bundle --image-bundle /absolute/new-lima-bundle/manifest.json`.
 
