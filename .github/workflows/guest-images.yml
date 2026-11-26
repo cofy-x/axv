@@ -135,7 +135,7 @@ jobs:
           node scripts/ci-ubuntu-mirrors.mjs /etc/apt/apt-mirrors.txt "$RUNNER_TEMP/axv-apt-mirrors.txt"
           sudo install -m 0644 "$RUNNER_TEMP/axv-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
           sudo apt-get update
-          sudo apt-get install --yes qemu-utils
+          sudo apt-get install --yes qemu-utils cloud-guest-utils
       - name: Download and build complete enhanced Lima arm64 bundle
         run: |
           mkdir -p "$RUNNER_TEMP/cloud" dist

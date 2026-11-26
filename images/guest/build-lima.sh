@@ -12,7 +12,7 @@ if [[ $# != 2 || $1 != /* || $2 != /* || -e $2 || ! ${CLOUD_IMAGE_SHA256:-} =~ ^
   echo 'Usage: CLOUD_IMAGE_SHA256=<reviewed digest> bash images/guest/build-lima.sh /absolute/base-cloud.img /absolute/new-bundle' >&2
   exit 1
 fi
-for tool in qemu-img losetup blkid mount umount chroot go node sha256sum; do
+for tool in qemu-img losetup blkid growpart e2fsck resize2fs mount umount chroot go node sha256sum; do
   if ! command -v "$tool" >/dev/null; then echo "Missing required image-build tool: $tool" >&2; exit 1; fi
 done
 base_image=$1
@@ -47,6 +47,9 @@ go run ./apps/server/cmd/image-manifest --provider lima --arch "$guest_arch" --g
 mkdir -- "$build_dir/distribution"
 node scripts/guest-release-notices.mjs --guest "$build_dir/axv-guest" --manifest "$build_dir/image.json" --output "$build_dir/distribution/axv-guest"
 qemu-img convert -O raw "$base_image" "$build_dir/root.raw"
+# Expand the temporary raw disk by 2 GiB so offline security upgrades fit cleanly;
+# unused blocks are trimmed before converting to compressed qcow2.
+qemu-img resize -f raw "$build_dir/root.raw" +2G
 cp "$image_dir/axv-guest-lima.service" "$build_dir/axv-guest.service"
 cp apps/server/internal/guest/internal/access/provision.sh "$build_dir/prepare-ssh"
 
@@ -75,6 +78,10 @@ if [[ -z $root_part ]]; then
   echo "Could not locate ext4 root partition in $base_image ($loop_dev)." >&2
   exit 1
 fi
+part_num=${root_part#"${loop_dev}"p}
+growpart "$loop_dev" "$part_num"
+e2fsck -f -p "$root_part" || [[ $? -eq 1 ]]
+resize2fs "$root_part"
 
 mkdir -- "$mnt"
 mount "$root_part" "$mnt"
@@ -131,12 +138,15 @@ install -m 0644 "$repo_dir/apps/server/internal/guest/internal/access/axv-ssh.se
 
 chroot "$mnt" /usr/bin/env -i \
   PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-  sh -eu -c 'systemctl enable axv-guest.service axv-ssh.service; cloud-init clean --logs --machine-id'
+  sh -eu -c 'apt-get clean; systemctl enable axv-guest.service axv-ssh.service; cloud-init clean --logs --machine-id'
 
 mkdir -- "$2"
 mkdir -- "$2/distribution"
 cp -a "$mnt/usr/share/doc/axv-guest" "$2/distribution/"
 
+if command -v fstrim >/dev/null 2>&1; then
+  fstrim "$mnt" || true
+fi
 sync
 umount "$mnt/dev/pts" "$mnt/dev" "$mnt/proc" "$mnt/sys" "$mnt"
 mounted=false
