@@ -4,7 +4,15 @@ on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    - cron: '17 3 * * *'
   workflow_dispatch:
+    inputs:
+      full_browser_matrix:
+        description: Run the full 6-project browser matrix (false runs Chromium only)
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -18,8 +26,74 @@ env:
   GOTOOLCHAIN: local
 
 jobs:
+  changes:
+    name: Detect affected checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      runtime: ${{ steps.classify.outputs.runtime }}
+      macos_native: ${{ steps.classify.outputs.macos_native }}
+      security: ${{ steps.classify.outputs.security }}
+      e2e: ${{ steps.classify.outputs.e2e }}
+      full_e2e: ${{ steps.classify.outputs.full_e2e }}
+      guest_scripts: ${{ steps.classify.outputs.guest_scripts }}
+      browser_matrix: ${{ steps.classify.outputs.browser_matrix }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Classify changed paths
+        id: classify
+        env:
+          FULL_BROWSER_MATRIX: ${{ inputs.full_browser_matrix != false }}
+        run: node scripts/ci-changes.mjs
+
+  format:
+    name: Format and script syntax
+    needs: changes
+    if: needs.changes.outputs.runtime != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Set up pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          run_install: false
+          cache: true
+      - name: Install locked JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Check formatting
+        run: make format-check PNPM=pnpm
+      - name: Check guest shell scripts
+        if: needs.changes.outputs.guest_scripts == 'true'
+        run: |
+          for script in images/guest/build-lima.sh images/guest/build-rootfs.sh; do
+            bash -n "$script"
+          done
+          for script in images/guest/install-base.sh images/guest/package-inventory.sh images/guest/prepare-guest.sh; do
+            sh -n "$script"
+          done
+
   verification:
     name: Linux verification
+    needs: changes
+    if: needs.changes.outputs.runtime == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -73,6 +147,8 @@ jobs:
 
   native:
     name: macOS native
+    needs: changes
+    if: needs.changes.outputs.macos_native == 'true'
     runs-on: macos-15
     timeout-minutes: 25
     steps:
@@ -124,53 +200,55 @@ jobs:
 
   security:
     name: Security
+    needs: changes
+    if: needs.changes.outputs.security == 'true'
     uses: ./.github/workflows/security.yml
 
   checks:
     name: checks
-    needs: [verification, native, security]
+    needs: [changes, format, verification, native, security]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 1
     steps:
-      - name: Require Linux, macOS and security checks to pass
+      - name: Require all applicable checks to pass
         env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          NEED_RUNTIME: ${{ needs.changes.outputs.runtime }}
+          NEED_MACOS: ${{ needs.changes.outputs.macos_native }}
+          NEED_SECURITY: ${{ needs.changes.outputs.security }}
+          FORMAT_RESULT: ${{ needs.format.result }}
           VERIFICATION_RESULT: ${{ needs.verification.result }}
           NATIVE_RESULT: ${{ needs.native.result }}
           SECURITY_RESULT: ${{ needs.security.result }}
         run: |
-          test "$VERIFICATION_RESULT" = success
-          test "$NATIVE_RESULT" = success
-          test "$SECURITY_RESULT" = success
+          test "$CHANGES_RESULT" = success
+          if [ "$NEED_RUNTIME" = "true" ]; then
+            test "$VERIFICATION_RESULT" = success
+          else
+            test "$FORMAT_RESULT" = success
+            test "$VERIFICATION_RESULT" = skipped
+          fi
+          if [ "$NEED_MACOS" = "true" ]; then
+            test "$NATIVE_RESULT" = success
+          else
+            test "$NATIVE_RESULT" = skipped
+          fi
+          if [ "$NEED_SECURITY" = "true" ]; then
+            test "$SECURITY_RESULT" = success
+          else
+            test "$SECURITY_RESULT" = skipped
+          fi
 
   browsers:
     name: browser (${{ matrix.project }}, shard ${{ matrix.shard }}/3)
+    needs: changes
+    if: needs.changes.outputs.e2e == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      matrix:
-        project:
-          - chromium
-          - firefox
-          - webkit
-          - chromium-dpr2
-          - chromium-touch
-          - webkit-touch
-        shard: [1, 2, 3]
-        include:
-          - project: chromium
-            browser: chromium
-          - project: firefox
-            browser: firefox
-          - project: webkit
-            browser: webkit
-          - project: chromium-dpr2
-            browser: chromium
-          - project: chromium-touch
-            browser: chromium
-          - project: webkit-touch
-            browser: webkit
+      matrix: ${{ fromJSON(needs.changes.outputs.browser_matrix) }}
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -225,12 +303,20 @@ jobs:
 
   e2e:
     name: e2e
-    needs: browsers
+    needs: [changes, browsers]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 1
     steps:
-      - name: Require every browser project to pass
+      - name: Require applicable browser checks to pass
         env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          NEED_E2E: ${{ needs.changes.outputs.e2e }}
           BROWSER_RESULT: ${{ needs.browsers.result }}
-        run: test "$BROWSER_RESULT" = success
+        run: |
+          test "$CHANGES_RESULT" = success
+          if [ "$NEED_E2E" = "true" ]; then
+            test "$BROWSER_RESULT" = success
+          else
+            test "$BROWSER_RESULT" = skipped
+          fi
