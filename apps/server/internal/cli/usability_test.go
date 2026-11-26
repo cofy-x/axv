@@ -14,6 +14,7 @@ import (
 
 	"github.com/cofy-x/axv/apps/server/internal/app/launch"
 	"github.com/cofy-x/axv/apps/server/internal/compute"
+	"github.com/cofy-x/axv/apps/server/internal/daemon"
 	"github.com/cofy-x/axv/apps/server/internal/jsonfile"
 	"github.com/cofy-x/axv/apps/server/internal/profile"
 )
@@ -183,5 +184,43 @@ func TestVMProjectFilesAutoCapturesLiveBindingAndOptionalRootPath(t *testing.T) 
 	out, receipt, err := cliInvoke("vm", "project", "files", "project-cli")
 	if err != nil || !capturedBinding || !listedRoot || !strings.Contains(receipt, "Host: host-cli") || !strings.Contains(out, `"entries"`) {
 		t.Fatalf("auto-binding files failed: out=%q receipt=%q err=%v", out, receipt, err)
+	}
+}
+
+func TestHostStatusReportsDarwinManagedVMHost(t *testing.T) {
+	registered := true
+	active := hostStatusFromDaemon("darwin", "0.1.0-rc.8", daemon.StatusReport{
+		VMHost: daemon.HostStatusSummary{
+			Mode:       "managed",
+			Ready:      true,
+			HostID:     "host-darwin-1",
+			Socket:     "/tmp/axv-host.sock",
+			Registered: &registered,
+			Providers:  []compute.Capability{{Provider: "lima", Available: true}},
+		},
+	})
+	if !active.Supported || !active.Installed || !active.Active || !active.SocketReachable || active.State != "active" || active.HostID != "host-darwin-1" {
+		t.Fatalf("unexpected active darwin host status: %+v", active)
+	}
+	var out bytes.Buffer
+	if err := writeDarwinHostStatus(&out, active); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "VM host: active (mode: managed)") || !strings.Contains(out.String(), "lima: available") {
+		t.Fatalf("unexpected active darwin status output:\n%s", out.String())
+	}
+
+	unconfigured := hostStatusFromDaemon("darwin", "0.1.0-rc.8", daemon.StatusReport{
+		VMHost: daemon.HostStatusSummary{Mode: "disabled"},
+	})
+	if !unconfigured.Supported || unconfigured.Installed || unconfigured.Active || unconfigured.State != "not_configured" {
+		t.Fatalf("unexpected unconfigured darwin host status: %+v", unconfigured)
+	}
+
+	inactive := hostStatusFromDaemon("darwin", "0.1.0-rc.8", daemon.StatusReport{
+		VMHost: daemon.HostStatusSummary{Mode: "managed", Ready: false, Socket: "/tmp/axv-host.sock", Error: "stopped"},
+	})
+	if !inactive.Supported || !inactive.Installed || inactive.Active || inactive.State != "inactive" {
+		t.Fatalf("unexpected inactive darwin host status: %+v", inactive)
 	}
 }

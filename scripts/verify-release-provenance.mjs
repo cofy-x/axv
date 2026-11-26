@@ -8,7 +8,7 @@ const repository = 'cofy-x/axv';
 // Keep the immutable repository identity as well as its human-readable name.
 const repositoryID = '1424477361';
 const usage =
-  'Usage: node scripts/verify-release-provenance.mjs --kind app|guest --version <version> --source <full-commit-sha> --directory <download-directory> [--os linux|darwin] [--provider firecracker|lima] [--arch amd64|arm64]';
+  'Usage: node scripts/verify-release-provenance.mjs --kind app|guest --version <version> --source <full-commit-sha> --directory <download-directory> [--os linux|darwin] [--provider firecracker|lima] [--arch amd64|arm64] [--all-targets]';
 
 const appTargets = new Set([
   'linux/amd64',
@@ -16,6 +16,12 @@ const appTargets = new Set([
   'darwin/amd64',
   'darwin/arm64',
 ]);
+
+const publishedAppTargets = [
+  ['linux', 'amd64'],
+  ['linux', 'arm64'],
+  ['darwin', 'arm64'],
+];
 
 const guestTargets = new Map([
   ['firecracker/amd64', 'ext4'],
@@ -31,6 +37,7 @@ export function releaseProvenancePolicy({
   os = 'linux',
   provider = 'firecracker',
   arch = 'amd64',
+  allTargets = false,
 }) {
   if (!['app', 'guest'].includes(kind)) throw new Error(usage);
   if (
@@ -59,12 +66,24 @@ export function releaseProvenancePolicy({
   let name;
   let subjects;
   if (kind === 'app') {
-    const key = `${os}/${arch}`;
-    if (!appTargets.has(key))
-      throw new Error(`Unsupported application target: ${key}`);
-    name = `axv_${version}_${os}_${arch}`;
-    subjects = [`${name}.tar.gz`, 'SHA256SUMS'];
+    if (allTargets) {
+      subjects = [
+        ...publishedAppTargets.map(
+          ([targetOS, targetArch]) =>
+            `axv_${version}_${targetOS}_${targetArch}.tar.gz`,
+        ),
+        'SHA256SUMS',
+      ];
+    } else {
+      const key = `${os}/${arch}`;
+      if (!appTargets.has(key))
+        throw new Error(`Unsupported application target: ${key}`);
+      name = `axv_${version}_${os}_${arch}`;
+      subjects = [`${name}.tar.gz`, 'SHA256SUMS'];
+    }
   } else {
+    if (allTargets)
+      throw new Error('--all-targets is only supported for --kind app');
     const key = `${provider}/${arch}`;
     const ext = guestTargets.get(key);
     if (!ext) throw new Error(`Unsupported guest target: ${key}`);
@@ -174,9 +193,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         os: { type: 'string' },
         provider: { type: 'string' },
         arch: { type: 'string' },
+        'all-targets': { type: 'boolean' },
       },
     });
-    await verifyReleaseProvenance(values);
+    await verifyReleaseProvenance({
+      ...values,
+      allTargets: values['all-targets'],
+    });
     console.log('Verified provenance for every release subject.');
     await exitAfterCleanup(0);
   } catch (error) {

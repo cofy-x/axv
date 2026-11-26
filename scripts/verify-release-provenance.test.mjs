@@ -250,6 +250,28 @@ test('supports multi-platform app and Lima guest targets', async () => {
     'candidate.json',
     'SHA256SUMS',
   ]);
+  const allTargetsPolicy = releaseProvenancePolicy({
+    kind: 'app',
+    version,
+    source,
+    directory: tmpdir(),
+    allTargets: true,
+  });
+  expect(allTargetsPolicy.subjects).toEqual([
+    `axv_${version}_linux_amd64.tar.gz`,
+    `axv_${version}_linux_arm64.tar.gz`,
+    `axv_${version}_darwin_arm64.tar.gz`,
+    'SHA256SUMS',
+  ]);
+  expect(() =>
+    releaseProvenancePolicy({
+      kind: 'guest',
+      version,
+      source,
+      directory: tmpdir(),
+      allTargets: true,
+    }),
+  ).toThrow(/only supported for --kind app/);
   expect(() =>
     releaseProvenancePolicy({
       kind: 'app',

@@ -107,3 +107,67 @@ jobs:
           path: dist/release/${{ inputs.version }}/
           if-no-files-found: error
           retention-days: 14
+
+  bundle:
+    name: Combined multi-platform release bundle
+    needs: package
+    if: github.repository == 'cofy-x/axv' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: axv-${{ inputs.version }}-*-candidate
+          path: dist/candidates
+      - name: Verify per-platform candidates and assemble combined manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "dist/release-bundle/$VERSION"
+          for target in linux/amd64 linux/arm64 darwin/arm64; do
+            os="${target%/*}"
+            arch="${target#*/}"
+            dir="dist/candidates/axv-${VERSION}-${os}-${arch}-candidate"
+            node scripts/verify-release-provenance.mjs --kind app --version "$VERSION" \
+              --os "$os" --arch "$arch" --source "$GITHUB_SHA" --directory "$dir"
+            cp -- "$dir/axv_${VERSION}_${os}_${arch}.tar.gz" "dist/release-bundle/$VERSION/"
+            cat "$dir/SHA256SUMS"
+          done | LC_ALL=C sort -k2,2 > "dist/release-bundle/$VERSION/SHA256SUMS"
+          (cd "dist/release-bundle/$VERSION" && sha256sum --check --strict SHA256SUMS)
+      - name: Attest all release archives and combined checksum manifest
+        id: provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/release-bundle/${{ inputs.version }}/axv_${{ inputs.version }}_linux_amd64.tar.gz
+            dist/release-bundle/${{ inputs.version }}/axv_${{ inputs.version }}_linux_arm64.tar.gz
+            dist/release-bundle/${{ inputs.version }}/axv_${{ inputs.version }}_darwin_arm64.tar.gz
+            dist/release-bundle/${{ inputs.version }}/SHA256SUMS
+          create-storage-record: false
+      - name: Retain and verify unified build provenance
+        env:
+          ATTESTATION_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp -- "$ATTESTATION_BUNDLE" "dist/release-bundle/$VERSION/provenance.json"
+          node scripts/verify-release-provenance.mjs --kind app --version "$VERSION" \
+            --all-targets --source "$GITHUB_SHA" --directory "dist/release-bundle/$VERSION"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: axv-${{ inputs.version }}-release-bundle
+          path: dist/release-bundle/${{ inputs.version }}/
+          if-no-files-found: error
+          retention-days: 14
