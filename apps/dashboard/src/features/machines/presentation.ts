@@ -135,8 +135,8 @@ export function machineGuestStatus(machine: Machine): string | undefined {
   if (machine.guestState === 'incompatible') return 'Guest incompatible';
   if (!machine.ready) return 'Guest starting…';
   if (!machine.guestCapabilities?.includes('terminals'))
-    return 'Guest ready (no terminal)';
-  return 'Guest ready';
+    return 'No browser terminal';
+  return undefined;
 }
 
 export function canCopyLocalLimaShell(
