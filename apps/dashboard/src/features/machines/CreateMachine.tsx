@@ -21,6 +21,7 @@ import { useCompute } from './useCompute';
 import { computeStore } from './compute-store';
 import { RequestDetails } from './OperationFeedback';
 import { openMachineInspector } from './desktop-icons';
+import { imageTerminalSummary } from './presentation';
 import { volumeAvailableForMachine } from './volume-policy';
 
 export function CreateMachine({ desktop, window, visible }: AppWindowProps) {
@@ -253,6 +254,12 @@ export function CreateMachine({ desktop, window, visible }: AppWindowProps) {
                 <>
                   <dt>Image</dt>
                   <dd>{image.name || image.id}</dd>
+                </>
+              )}
+              {image && (
+                <>
+                  <dt>Terminal</dt>
+                  <dd>{imageTerminalSummary(image)}</dd>
                 </>
               )}
               <dt>Resources</dt>

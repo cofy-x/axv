@@ -23,9 +23,11 @@ import {
 } from './lifecycle';
 import type { VMAction } from './lifecycle';
 import {
+  canCopyLocalLimaShell,
   guestTerminalReason,
   humanize,
   latestVMFailure,
+  machineGuestStatus,
   machineGuidance,
   machineTransition,
   operationPhase,
@@ -79,6 +81,11 @@ export function MachineInspector({
   const [error, setError] = useState('');
   const [terminalRefresh, setTerminalRefresh] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [copyingLimaShell, setCopyingLimaShell] = useState(false);
+  const [limaShellNotice, setLimaShellNotice] = useState<{
+    copied: boolean;
+    command: string;
+  }>();
   const pending = useSyncExternalStore(machineActionRequests.subscribe, () =>
     machineActionRequests.getPending(hostId, id),
   );
@@ -148,6 +155,35 @@ export function MachineInspector({
       ? (machine.status === 'stopped' ? reason('start') : undefined) ||
         machineGuidance(machine)
       : undefined;
+
+  const showCopyLimaShell =
+    connected &&
+    !transition &&
+    canCopyLocalLimaShell(machine, Boolean(data.preparation.check));
+  const guestStatus = machine ? machineGuestStatus(machine) : undefined;
+
+  async function copyLimaShell() {
+    if (!machine || !showCopyLimaShell) return;
+    setCopyingLimaShell(true);
+    setError('');
+    try {
+      const info = await machinesApi.limaShell(machine.id);
+      let copied = false;
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(info.command);
+          copied = true;
+        }
+      } catch {
+        copied = false;
+      }
+      setLimaShellNotice({ copied, command: info.command });
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setCopyingLimaShell(false);
+    }
+  }
 
   async function lifecycle(action: VMAction, retry = false) {
     const target = retry ? pending?.machine : machine;
@@ -339,6 +375,9 @@ export function MachineInspector({
                   <h2 aria-live="polite">
                     {transition || humanize(machine.status)}
                   </h2>
+                  {!transition && guestStatus && (
+                    <p className="machines-form-help">{guestStatus}</p>
+                  )}
                   <MachineExpiry expiresAt={machine.expiresAt} />
                 </div>
               </div>
@@ -359,6 +398,10 @@ export function MachineInspector({
                 onAction={(action) => void lifecycle(action)}
                 onTerminal={() => void newTerminal()}
                 onResume={liveTerminals.length ? resumeTerminal : undefined}
+                onCopyLimaShell={
+                  showCopyLimaShell ? () => void copyLimaShell() : undefined
+                }
+                limaShellPending={copyingLimaShell}
                 onProjectFiles={
                   connected &&
                   !transition &&
@@ -385,6 +428,14 @@ export function MachineInspector({
                 <p className="machines-error">{machine.reason}</p>
               )}
             {guidance && <p className="machines-form-help">{guidance}</p>}
+            {limaShellNotice && (
+              <p className="machines-form-help" role="status">
+                {limaShellNotice.copied
+                  ? 'Copied local Lima shell command: '
+                  : 'Run on this Mac: '}
+                <code>{limaShellNotice.command}</code>
+              </p>
+            )}
             {error && (
               <p className="machines-error" role="alert">
                 {error}

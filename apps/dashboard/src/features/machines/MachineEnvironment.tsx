@@ -1004,12 +1004,18 @@ export function MachineEnvironment({
                           )
                         }
                       >
-                        <option value="official">Official AXV image</option>
+                        <option value="official">
+                          {check.officialImageAvailable
+                            ? 'Official AXV image (recommended; browser terminal)'
+                            : 'Official AXV image'}
+                        </option>
                         <option value="bundle">
                           Advanced: local custom bundle
                         </option>
                         <option value="ubuntu-base">
-                          Ubuntu base (default; basic VM)
+                          {check.officialImageAvailable
+                            ? 'Ubuntu base (basic VM; no browser terminal)'
+                            : 'Ubuntu base (default; basic VM)'}
                         </option>
                       </Select>
                       {draft.imageSource === 'bundle' && (
@@ -1024,10 +1030,9 @@ export function MachineEnvironment({
                         />
                       )}
                       <p className="machines-form-help">
-                        {!check.officialImageAvailable &&
-                          'Official AXV image publication is pending. '}
-                        The default Ubuntu base provides basic VM management
-                        without guest enhancements.
+                        {check.officialImageAvailable
+                          ? 'The recommended official AXV image includes the preinstalled Guest service for browser terminals, SSH, and project tools. Ubuntu base provides basic VM lifecycle only.'
+                          : 'Official AXV image publication is pending for this architecture. The default Ubuntu base provides basic VM management without guest enhancements.'}
                       </p>
                       <Field
                         label="VM storage directory"

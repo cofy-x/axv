@@ -64,6 +64,13 @@ type LocalServiceCheck struct {
 	SystemdState string `json:"systemdState,omitempty"` // not_installed, inactive, failed, active
 }
 
+type LimaShellInfo struct {
+	Binary   string `json:"binary"`
+	LimaHome string `json:"limaHome"`
+	Instance string `json:"instance"`
+	Command  string `json:"command"`
+}
+
 type Check struct {
 	OfficialImageAvailable  bool               `json:"officialImageAvailable"`
 	Platform                string             `json:"platform"`

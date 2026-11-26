@@ -199,6 +199,8 @@ func (e *Engine) defaults() Request {
 	imageSource := "ubuntu-base"
 	if e.options.ImageBundle != "" {
 		imageSource = "bundle"
+	} else if release, ok := e.catalog.AXV["lima/"+e.arch]; ok && release.Validate("lima", e.arch) == nil {
+		imageSource = "official"
 	}
 	return Request{ImageSource: imageSource, ImageBundle: e.options.ImageBundle, StorageRoot: e.options.Home, LimaHome: limaHome, CPUs: max(2, runtime.NumCPU()/2), MemoryMiB: 4096, DiskGiB: 128, Machines: 4}
 }

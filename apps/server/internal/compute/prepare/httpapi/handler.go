@@ -25,6 +25,7 @@ type preparation interface {
 	Job(context.Context, string) (prepare.Job, error)
 	Retry(context.Context, string, prepare.ActionRequest) (prepare.Job, error)
 	Cancel(context.Context, string, prepare.ActionRequest) (prepare.Job, error)
+	LimaShell(context.Context, string) (prepare.LimaShellInfo, error)
 }
 
 func New(service preparation, instanceID string) http.Handler {
@@ -45,6 +46,8 @@ func New(service preparation, instanceID string) http.Handler {
 				prepare.Check
 				InstanceID string `json:"instanceId"`
 			}{check, instanceID}
+		case path == "lima-shell" && r.Method == http.MethodGet:
+			value, err = service.LimaShell(r.Context(), r.URL.Query().Get("machineId"))
 		case path == "plan" && r.Method == http.MethodPost:
 			var request prepare.Request
 			if err = decode(r, &request); err == nil {

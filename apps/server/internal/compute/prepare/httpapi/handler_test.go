@@ -21,14 +21,15 @@ func testHandler(t *testing.T) http.Handler {
 }
 
 type fakePreparation struct {
-	check  prepare.Check
-	plan   prepare.Plan
-	job    prepare.Job
-	err    error
-	called string
-	id     string
-	input  any
-	ctx    context.Context
+	check     prepare.Check
+	plan      prepare.Plan
+	job       prepare.Job
+	limaShell prepare.LimaShellInfo
+	err       error
+	called    string
+	id        string
+	input     any
+	ctx       context.Context
 }
 
 func (f *fakePreparation) record(ctx context.Context, method, id string, input any) {
@@ -63,6 +64,11 @@ func (f *fakePreparation) Retry(ctx context.Context, id string, request prepare.
 func (f *fakePreparation) Cancel(ctx context.Context, id string, request prepare.ActionRequest) (prepare.Job, error) {
 	f.record(ctx, "cancel", id, request)
 	return f.job, f.err
+}
+
+func (f *fakePreparation) LimaShell(ctx context.Context, machineID string) (prepare.LimaShellInfo, error) {
+	f.record(ctx, "lima-shell", machineID, nil)
+	return f.limaShell, f.err
 }
 
 func TestEngineValidationRetainsHTTPContract(t *testing.T) {
@@ -293,5 +299,37 @@ func TestUnavailableRetainsOriginGuardAndPreservationError(t *testing.T) {
 	handler.ServeHTTP(response, r)
 	if response.Code != 403 {
 		t.Fatal(response.Code)
+	}
+}
+
+func TestLimaShellEndpointStaysLocalOnly(t *testing.T) {
+	want := prepare.LimaShellInfo{
+		Binary:   "/Users/owner/.axv/tools/lima/bin/limactl",
+		LimaHome: "/Users/owner/.axv/lima",
+		Instance: "vm-0123",
+		Command:  "LIMA_HOME=/Users/owner/.axv/lima /Users/owner/.axv/tools/lima/bin/limactl shell vm-0123",
+	}
+	service := &fakePreparation{limaShell: want}
+	handler := New(service, "test-instance")
+
+	remote := request(http.MethodGet, "lima-shell?machineId=vm-0123", "")
+	remote.RemoteAddr = "192.0.2.9:4000"
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, remote)
+	if resp.Code != http.StatusForbidden || service.called != "" {
+		t.Fatalf("remote lima-shell reached service: %d %s", resp.Code, service.called)
+	}
+
+	resp = httptest.NewRecorder()
+	handler.ServeHTTP(resp, request(http.MethodGet, "lima-shell?machineId=vm-0123", ""))
+	if resp.Code != http.StatusOK || service.called != "lima-shell" || service.id != "vm-0123" {
+		t.Fatalf("local lima-shell failed: %d %+v %s", resp.Code, service, resp.Body.String())
+	}
+	var got prepare.LimaShellInfo
+	if err := json.Unmarshal(resp.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }

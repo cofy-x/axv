@@ -32,6 +32,8 @@ interface MachineActionsProps {
   onAction: (action: VMAction) => void;
   onTerminal: () => void;
   onResume?: () => void;
+  onCopyLimaShell?: () => void;
+  limaShellPending?: boolean;
   onInspect?: () => void;
   onProjectFiles?: () => void;
 }
@@ -49,6 +51,8 @@ export function MachineActions(props: MachineActionsProps) {
     onAction,
     onTerminal,
     onResume,
+    onCopyLimaShell,
+    limaShellPending,
     onInspect,
     onProjectFiles,
   } = props;
@@ -81,6 +85,11 @@ export function MachineActions(props: MachineActionsProps) {
             : onResume
               ? 'New Terminal'
               : terminalLabel}
+        </Button>
+      )}
+      {!terminalAvailable && !transition && onCopyLimaShell && (
+        <Button disabled={limaShellPending} onClick={onCopyLimaShell}>
+          {limaShellPending ? 'Copying…' : 'Copy Lima Shell'}
         </Button>
       )}
       {!transition && (

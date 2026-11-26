@@ -22,6 +22,8 @@ import (
 func TestUbuntuTransitionDefaultAndExplicitOfficialPublicationBlocker(t *testing.T) {
 	e, _ := testEngine(t, nil)
 	e.platform = "darwin"
+	e.arch = "amd64"
+	delete(e.catalog.AXV, "lima/amd64")
 	plan, err := e.Plan(context.Background(), Request{ImageSource: "official"})
 	if err != nil {
 		t.Fatal(err)
@@ -116,6 +118,33 @@ func TestPublishedCatalogUsesTheSameFrozenBundleContract(t *testing.T) {
 	}
 }
 
+func TestAppleSiliconDefaultsToPublishedOfficialLimaImage(t *testing.T) {
+	e, _ := testEngine(t, nil)
+	e.platform = "darwin"
+	e.arch = "arm64"
+	check, err := e.Check(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !check.OfficialImageAvailable || check.Defaults.ImageSource != "official" {
+		t.Fatalf("darwin/arm64 defaults = %+v (officialAvailable=%t)", check.Defaults, check.OfficialImageAvailable)
+	}
+	plan, err := e.Plan(context.Background(), Request{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Request.ImageSource != "official" {
+		t.Fatalf("default plan image source = %q, want official", plan.Request.ImageSource)
+	}
+	saved, err := e.store.plan(context.Background(), plan.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.ImageBundle.Guest == nil || saved.ImageArtifact.ID != "axv-lima-arm64" {
+		t.Fatalf("default arm64 plan missing official guest bundle: %+v", saved)
+	}
+}
+
 func TestPreparationNeverWritesProfileRuntimeInsideCache(t *testing.T) {
 	cacheHome := filepath.Join(t.TempDir(), "shared-cache")
 	profileHome := filepath.Join(cacheHome, "profile")
@@ -170,7 +199,7 @@ func TestPlanFreezesMirrorSourceWithoutChangingArtifactIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan, err := e.Plan(context.Background(), Request{})
+	plan, err := e.Plan(context.Background(), Request{ImageSource: "ubuntu-base"})
 	if err != nil {
 		t.Fatal(err)
 	}

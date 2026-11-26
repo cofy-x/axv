@@ -43,7 +43,8 @@ Implementation: [`compute/gateway`](../../apps/server/internal/compute/gateway),
 
 Local-only, `no-store`. Mutations require exact Origin and `X-AXV-Instance-ID` (`409 instance_changed` on stale instance). Never accepts arbitrary shell commands.
 
-- `POST /preparation/plan` freezes `storageRoot`, `limaHome`, capacity budgets, `imageSource` (`ubuntu-base|bundle|official`; unpublished official reports `release_pending`), `socket`/`hostConfig`, pinned digests and mirror URLs (no auto-fallback). Reviewing never mutates state.
+- `POST /preparation/plan` freezes `storageRoot`, `limaHome`, capacity budgets, `imageSource` (`official|ubuntu-base|bundle`; defaults to `official` where a reviewed official AXV Lima image is published such as Apple Silicon `darwin/arm64`, otherwise `ubuntu-base`, and unpublished official targets report `release_pending`), `socket`/`hostConfig`, pinned digests and mirror URLs (no auto-fallback). Reviewing never mutates state.
+- `GET /preparation/lima-shell?machineId=<id>` (local-only, `no-store`) resolves the exact profile-managed `limactl` executable, `LIMA_HOME`, and instance identifier for a running local Lima VM without exposing host paths to remote transports.
 - `POST /preparation/jobs` (`{ requestId, planId, confirmed: true }`) is idempotent per `requestId` (`409 request_conflict` on payload mismatch; max 1 active job per profile; persisted in `AXV_HOME/preparation/preparation.sqlite`).
 - `retry` and `cancel` take `{ requestId, expectedRevision }`. Cancel is valid only before config commit; retry resumes the exact original plan without deleting existing storage.
 

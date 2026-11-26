@@ -64,7 +64,7 @@ func newSetup() *cobra.Command {
 	f := cmd.Flags()
 	f.StringVar(&o.Request.Socket, "socket", "", "local Unix socket for an independently managed VM service")
 	f.StringVar(&o.Request.HostConfig, "host-config", "", "existing host configuration on this computer")
-	f.StringVar(&o.Request.ImageSource, "image-source", "", "ubuntu-base (default; basic VM), official (publication pending), or bundle")
+	f.StringVar(&o.Request.ImageSource, "image-source", "", "official (recommended when available), ubuntu-base (basic VM), or bundle")
 	f.StringVar(&o.Request.ImageBundle, "image-bundle", "", "local AXV image bundle manifest with verified immutable rootfs")
 	f.StringVar(&o.Request.StorageRoot, "storage-root", "", "dedicated directory for new VM storage and images")
 	f.StringVar(&o.Request.LimaHome, "lima-home", "", "short dedicated Lima state directory")

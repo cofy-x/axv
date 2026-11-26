@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import type { Machine, Operation } from './api';
 import { activeVMOperation } from './lifecycle';
 import {
+  canCopyLocalLimaShell,
   guestTerminalReason,
+  imageTerminalSummary,
   latestVMFailure,
+  machineGuestStatus,
   machineGuidance,
   machineTransition,
 } from './presentation';
@@ -170,5 +173,65 @@ describe('guest terminal availability', () => {
         guestState: 'unavailable',
       }),
     ).toContain('not ready');
+  });
+
+  it('summarizes image terminal capabilities before creation', () => {
+    expect(
+      imageTerminalSummary({
+        id: 'axv-lima-arm64',
+        name: 'AXV Lima arm64',
+        provider: 'lima',
+        arch: 'arm64',
+        guest: {
+          imageVersion: 1,
+          protocolVersion: 3,
+          capabilities: ['exec', 'terminals'],
+        },
+      }),
+    ).toContain('Browser terminal included');
+    expect(
+      imageTerminalSummary({
+        id: 'ubuntu-base',
+        name: 'Ubuntu 24.04 base',
+        provider: 'lima',
+        arch: 'arm64',
+      }),
+    ).toContain('No browser terminal');
+  });
+
+  it('reports independent guest readiness and restricts local Lima shell fallback', () => {
+    const basicRunning: Machine = {
+      ...running,
+      ready: false,
+      guestState: 'not-installed',
+      guestCapabilities: undefined,
+    };
+    const guestReady: Machine = {
+      ...running,
+      ready: true,
+      guestState: 'ready',
+      guestCapabilities: ['exec', 'terminals'],
+    };
+    expect(machineGuestStatus(basicRunning)).toBe('Basic VM (no guest)');
+    expect(machineGuestStatus(guestReady)).toBe('Guest ready');
+    expect(
+      machineGuestStatus({
+        ...guestReady,
+        ready: false,
+        guestState: 'starting',
+      }),
+    ).toBe('Guest starting…');
+    expect(canCopyLocalLimaShell(basicRunning, true)).toBe(true);
+    expect(canCopyLocalLimaShell(basicRunning, false)).toBe(false);
+    expect(canCopyLocalLimaShell(guestReady, true)).toBe(false);
+    expect(
+      canCopyLocalLimaShell(
+        {
+          ...basicRunning,
+          spec: { ...basicRunning.spec, provider: 'firecracker' },
+        },
+        true,
+      ),
+    ).toBe(false);
   });
 });
