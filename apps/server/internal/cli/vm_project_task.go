@@ -48,10 +48,33 @@ func (o projectTaskHost) binding(cmd *cobra.Command, projectID string, required 
 		return binding, nil
 	}
 	if required {
-		return compute.ProjectBinding{}, usageError(fmt.Errorf("--binding-file is required; capture the intended environment explicitly with axv vm project binding %s", projectID))
+		// Explicit --request-id implies a caller-controlled recovery replay:
+		// never silently capture a replacement environment for an existing request ID.
+		if cmd.Flags().Changed("request-id") {
+			return compute.ProjectBinding{}, usageError(fmt.Errorf("--binding-file is required with --request-id; capture the intended environment explicitly with axv vm project binding %s", projectID))
+		}
+		c, err := commandClient(cmd)
+		if err != nil {
+			return compute.ProjectBinding{}, err
+		}
+		defer c.Close()
+		result, err := c.ProjectBinding(cmd.Context(), projectID)
+		if err != nil {
+			return compute.ProjectBinding{}, err
+		}
+		if o.hostID != "" && o.hostID != result.Binding.HostID {
+			return compute.ProjectBinding{}, usageError(fmt.Errorf("--host-id does not match the active VM host"))
+		}
+		return result.Binding, nil
 	}
 	if strings.TrimSpace(o.hostID) == "" {
-		return compute.ProjectBinding{}, usageError(fmt.Errorf("--host-id or --binding-file is required to select the original host"))
+		c, err := commandClient(cmd)
+		if err != nil {
+			return compute.ProjectBinding{}, err
+		}
+		hostID := c.Binding.HostID
+		c.Close()
+		return compute.ProjectBinding{HostID: hostID}, nil
 	}
 	return compute.ProjectBinding{HostID: o.hostID}, nil
 }

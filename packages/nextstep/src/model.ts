@@ -543,19 +543,16 @@ function bounds(value: unknown): Bounds | undefined {
 
 export function unsupportedLayout(value: unknown): boolean {
   const layout = record(value);
-  return (
-    layout.version !== undefined && layout.version !== 1 && layout.version !== 2
-  );
+  return layout.version !== undefined && layout.version !== 2;
 }
 
-/** Unknown versions stay read-only at the controller boundary. Version 1 is migrated. */
+/** Unknown versions stay read-only at the controller boundary. */
 export function sanitizeLayout(
   value: unknown,
   apps: AppDefinition[],
 ): DesktopLayout {
   const raw = record(value);
-  const valid =
-    (raw.version === 1 || raw.version === 2) && Array.isArray(raw.windows);
+  const valid = raw.version === 2 && Array.isArray(raw.windows);
   const rawWorkspaces =
     raw.version === 2 && Array.isArray(raw.workspaces) ? raw.workspaces : [];
   const workspaces: Workspace[] = [];

@@ -91,10 +91,59 @@ export function validateReleaseSource(buildInfo, source) {
     );
 }
 
-export function validateReleaseBuildInfo(buildInfo, expectedGo) {
+export const SUPPORTED_RELEASE_TARGETS = [
+  {
+    platform: 'linux',
+    arch: 'x64',
+    goos: 'linux',
+    goarch: 'amd64',
+    label: 'Linux amd64',
+  },
+  {
+    platform: 'linux',
+    arch: 'arm64',
+    goos: 'linux',
+    goarch: 'arm64',
+    label: 'Linux arm64',
+  },
+  {
+    platform: 'darwin',
+    arch: 'arm64',
+    goos: 'darwin',
+    goarch: 'arm64',
+    label: 'macOS arm64',
+  },
+  {
+    platform: 'darwin',
+    arch: 'x64',
+    goos: 'darwin',
+    goarch: 'amd64',
+    label: 'macOS amd64',
+  },
+];
+
+export function resolveNativeTarget(
+  platform = process.platform,
+  arch = process.arch,
+) {
+  const target = SUPPORTED_RELEASE_TARGETS.find(
+    (entry) => entry.platform === platform && entry.arch === arch,
+  );
+  if (!target)
+    throw new Error(
+      `Release packaging requires a supported native host (linux/darwin on amd64/arm64); got ${platform}/${arch}.`,
+    );
+  return target;
+}
+
+export function validateReleaseBuildInfo(
+  buildInfo,
+  expectedGo,
+  target = { goos: 'linux', goarch: 'amd64', label: 'Linux amd64' },
+) {
   const required = new Map([
-    ['GOOS', 'linux'],
-    ['GOARCH', 'amd64'],
+    ['GOOS', target.goos],
+    ['GOARCH', target.goarch],
     ['-tags', productionTags],
     ['CGO_ENABLED', '0'],
   ]);
@@ -106,22 +155,19 @@ export function validateReleaseBuildInfo(buildInfo, expectedGo) {
     })
   )
     throw new Error(
-      `Build with the pinned Go toolchain and VERSION=<version> make build on native Linux amd64 (required tags: ${productionTags}).`,
+      `Build with the pinned Go toolchain and VERSION=<version> make build on native ${target.label || `${target.goos} ${target.goarch}`} (required tags: ${productionTags}).`,
     );
 }
 
 async function packageRelease(version) {
-  if (process.platform !== 'linux' || process.arch !== 'x64')
-    throw new Error(
-      'Release packaging currently requires a native Linux amd64 host.',
-    );
+  const target = resolveNativeTarget();
   const temporary = initializeTestTemp();
   const buildInfo = JSON.parse(
     (await captureCommand(go, ['version', '-m', '-json', binary])).stdout,
   );
   validateReleaseSource(buildInfo, await readReleaseSource());
   const expectedGo = `go${(await readFile(join(root, '.go-version'), 'utf8')).trim()}`;
-  validateReleaseBuildInfo(buildInfo, expectedGo);
+  validateReleaseBuildInfo(buildInfo, expectedGo, target);
   const reported = (
     await captureCommand(binary, ['version'], { cwd: temporary.directory })
   ).stdout;
@@ -130,7 +176,7 @@ async function packageRelease(version) {
       'The binary version does not match VERSION. Rebuild and smoke-test this version.',
     );
 
-  const name = `axv_${version}_linux_amd64`;
+  const name = `axv_${version}_${target.goos}_${target.goarch}`;
   const directory = join(temporary.directory, name);
   await mkdir(directory);
   await copyFile(binary, join(directory, 'axv'));
@@ -145,6 +191,7 @@ async function packageRelease(version) {
     `${JSON.stringify(
       {
         version,
+        target: `${target.goos}/${target.goarch}`,
         repository: 'https://github.com/cofy-x/axv',
         build: buildInfo,
       },
@@ -155,9 +202,10 @@ async function packageRelease(version) {
   await writeFile(
     join(directory, 'README.txt'),
     [
-      `AXV ${version} — Linux amd64 release candidate`,
+      `AXV ${version} — ${target.label} release candidate`,
       '',
-      'Run ./axv version, then ./axv serve for a foreground workstation.',
+      'Run ./axv version, then ./axv (or ./axv daemon start) to launch your workstation.',
+      'Run ./axv doctor to check prerequisites and ./axv setup to configure VM hosting.',
       'Node.js is not required at runtime. Host Codex requires your own tmux and Codex CLI.',
       'VM images, kernels, VM providers and coding-agent clients are installed separately.',
       'Startup and prerequisites: https://github.com/cofy-x/axv/blob/main/docs/startup.md',

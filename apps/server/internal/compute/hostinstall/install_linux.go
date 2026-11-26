@@ -41,26 +41,42 @@ var unit []byte
 
 type installation struct {
 	installFS
-	config     func(context.Context, int) (compute.Config, error)
-	stage      func(context.Context, string) error
-	stageGuest func(context.Context, io.Writer) error
-	systemctl  func(context.Context, ...string) ([]byte, error)
-	ready      func(context.Context, compute.Config) error
-	readHost   func(context.Context, string, client.Binding) (compute.Info, error)
-	waitHost   func(context.Context, compute.Config, string) (compute.Info, error)
-	source     string
-	image      compute.Image
+	config       func(context.Context, int) (compute.Config, error)
+	stage        func(context.Context, string) error
+	stageGuest   func(context.Context, io.Writer) error
+	systemctl    func(context.Context, ...string) ([]byte, error)
+	ready        func(context.Context, compute.Config) error
+	source       string
+	image        compute.Image
+	enableOnBoot bool
 }
 
-func Run(ctx context.Context, check bool, groupName string, out io.Writer) error {
-	if !check && os.Geteuid() != 0 {
+func Install(ctx context.Context, opts InstallOptions, out io.Writer) error {
+	if !opts.Check && os.Geteuid() != 0 {
 		return fmt.Errorf("run host install-service with sudo on the AXV host")
 	}
-	group, err := socketGroup(ctx, groupName, os.Getuid(), os.Getenv("SUDO_UID"), inspectSystem)
+	group, err := socketGroup(ctx, opts.SocketGroup, os.Getuid(), os.Getenv("SUDO_UID"), inspectSystem)
 	if err != nil {
 		return err
 	}
-	return systemInstallation().run(ctx, group, check, out)
+	if !opts.Check && opts.ApplySysctl {
+		if err := defaultLifecycleEnv().applyIPv4Forwarding(ctx, out); err != nil {
+			return err
+		}
+	}
+	inst := systemInstallation()
+	inst.enableOnBoot = opts.Enable
+	if err := inst.run(ctx, group, opts.Check, out); err != nil {
+		return err
+	}
+	if !opts.Check && opts.ConnectProfile {
+		if home, changed, connectErr := connectInvokingProfile(StandardSocket, opts.ProfileHome); connectErr != nil {
+			fmt.Fprintf(out, "Note: could not auto-connect profile (%v); run `axv setup --socket %s` as your desktop user.\n", connectErr, StandardSocket)
+		} else if changed {
+			fmt.Fprintf(out, "Connected AXV profile %s to %s.\n", home, StandardSocket)
+		}
+	}
+	return nil
 }
 
 func systemInstallation() installation {
@@ -69,7 +85,6 @@ func systemInstallation() installation {
 	return installation{
 		installFS: fs, config: initialConfig, stage: stageRuntime,
 		source: "/proc/self/exe", ready: waitReady, image: defaultGuestImage(release),
-		readHost: readHost, waitHost: waitForHost,
 		stageGuest: func(ctx context.Context, out io.Writer) error {
 			return fs.prepareGuest(ctx, release, out)
 		},
@@ -198,6 +213,11 @@ func (i installation) run(ctx context.Context, group int, check bool, out io.Wri
 		}
 		if err := i.publish(intent, []byte(unitName+"\n"), 0600); err != nil {
 			return err
+		}
+		if i.enableOnBoot {
+			if _, err := i.systemctl(ctx, "--system", "enable", unitName); err != nil {
+				return fmt.Errorf("enable %s: %w; inspect systemctl status %s --no-pager", unitName, err, unitName)
+			}
 		}
 		if _, err := i.systemctl(ctx, "--system", "start", unitName); err != nil {
 			return fmt.Errorf("start %s: %w; inspect systemctl status %s --no-pager", unitName, err, unitName)
@@ -437,6 +457,15 @@ func (i installation) stageFiles(ctx context.Context, cfg []byte) error {
 		return err
 	}
 	return syncDirectory(i.path(parent))
+}
+
+func hasImage(info compute.Info, image compute.Image) bool {
+	for _, entry := range info.Images {
+		if entry.ID == image.ID && entry.SHA256 == image.RootfsSHA256 && (entry.Status == "configured" || entry.Status == "ready") {
+			return true
+		}
+	}
+	return false
 }
 
 func waitReady(ctx context.Context, config compute.Config) error {

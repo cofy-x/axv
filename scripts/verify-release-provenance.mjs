@@ -8,9 +8,30 @@ const repository = 'cofy-x/axv';
 // Keep the immutable repository identity as well as its human-readable name.
 const repositoryID = '1424477361';
 const usage =
-  'Usage: node scripts/verify-release-provenance.mjs --kind app|guest --version <version> --source <full-commit-sha> --directory <download-directory>';
+  'Usage: node scripts/verify-release-provenance.mjs --kind app|guest --version <version> --source <full-commit-sha> --directory <download-directory> [--os linux|darwin] [--provider firecracker|lima] [--arch amd64|arm64]';
 
-export function releaseProvenancePolicy({ kind, version, source, directory }) {
+const appTargets = new Set([
+  'linux/amd64',
+  'linux/arm64',
+  'darwin/amd64',
+  'darwin/arm64',
+]);
+
+const guestTargets = new Map([
+  ['firecracker/amd64', 'ext4'],
+  ['lima/arm64', 'qcow2'],
+  ['lima/amd64', 'qcow2'],
+]);
+
+export function releaseProvenancePolicy({
+  kind,
+  version,
+  source,
+  directory,
+  os = 'linux',
+  provider = 'firecracker',
+  arch = 'amd64',
+}) {
   if (!['app', 'guest'].includes(kind)) throw new Error(usage);
   if (
     typeof version !== 'string' ||
@@ -35,15 +56,27 @@ export function releaseProvenancePolicy({ kind, version, source, directory }) {
   if (typeof directory !== 'string' || !directory.trim())
     throw new Error(usage);
 
+  let name;
+  let subjects;
+  if (kind === 'app') {
+    const key = `${os}/${arch}`;
+    if (!appTargets.has(key))
+      throw new Error(`Unsupported application target: ${key}`);
+    name = `axv_${version}_${os}_${arch}`;
+    subjects = [`${name}.tar.gz`, 'SHA256SUMS'];
+  } else {
+    const key = `${provider}/${arch}`;
+    const ext = guestTargets.get(key);
+    if (!ext) throw new Error(`Unsupported guest target: ${key}`);
+    name = `axv_guest_${version}_${provider}_${arch}`;
+    subjects = [
+      `${name}.tar.gz`,
+      `${name}.${ext}`,
+      'candidate.json',
+      'SHA256SUMS',
+    ];
+  }
   const download = resolve(directory);
-  const name =
-    kind === 'app'
-      ? `axv_${version}_linux_amd64`
-      : `axv_guest_${version}_firecracker_amd64`;
-  const subjects =
-    kind === 'app'
-      ? [`${name}.tar.gz`, 'SHA256SUMS']
-      : [`${name}.tar.gz`, `${name}.ext4`, 'candidate.json', 'SHA256SUMS'];
   const workflow = kind === 'app' ? 'release.yml' : 'guest-images.yml';
   return {
     directory: download,
@@ -138,6 +171,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         version: { type: 'string' },
         source: { type: 'string' },
         directory: { type: 'string' },
+        os: { type: 'string' },
+        provider: { type: 'string' },
+        arch: { type: 'string' },
       },
     });
     await verifyReleaseProvenance(values);

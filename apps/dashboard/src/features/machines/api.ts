@@ -82,8 +82,46 @@ export interface Operation {
   createdAt: string;
 }
 
+export interface HostServiceStatus {
+  supported: boolean;
+  installed: boolean;
+  enabled: boolean;
+  active: boolean;
+  state: string;
+  socket?: string;
+  socketReachable: boolean;
+  installedBinary?: string;
+  installedVersion?: string;
+  currentVersion?: string;
+  versionDrift?: boolean;
+}
+
+export interface DoctorCheck {
+  id: string;
+  category: string;
+  label: string;
+  status: 'ok' | 'info' | 'warn' | 'fail';
+  detail: string;
+  fix?: string;
+}
+
+export interface DoctorReport {
+  instanceId?: string;
+  platform: string;
+  arch: string;
+  version: string;
+  executable?: string;
+  profileHome: string;
+  checks: DoctorCheck[];
+  ok: number;
+  info: number;
+  warn: number;
+  fail: number;
+}
+
 export interface ComputeEnvironment {
   preparation?: Omit<PreparationCheck, 'instanceId'>;
+  hostService?: HostServiceStatus;
   configurationSource?: string;
   availableActions?: ('review' | 'retry' | 'cancel')[];
   platform: string;
@@ -194,7 +232,6 @@ export type HostUnitState = 'not_installed' | 'inactive' | 'failed' | 'active';
 
 export interface PreparationCheck {
   officialImageAvailable: boolean;
-  defaultImageId?: string;
   cacheHome: string;
   instanceId: string;
   platform: string;
@@ -296,6 +333,8 @@ function bindingHeaders(binding?: ComputeBinding): Record<string, string> {
 export const machinesApi = {
   environment: (signal?: AbortSignal) =>
     request<ComputeEnvironment>(`${base}/environment`, { signal }),
+  doctor: (signal?: AbortSignal) =>
+    request<DoctorReport>('/doctor', { signal }),
   preparationCheck: (signal?: AbortSignal) =>
     request<PreparationCheck>(`${base}/preparation/check`, { signal }),
   preparationPlan: (

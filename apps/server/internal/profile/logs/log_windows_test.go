@@ -21,7 +21,7 @@ func TestWindowsUsesStructuredStderrWithoutClaimingPrivateFiles(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(home, "logs")); !os.IsNotExist(err) {
 		t.Fatalf("Windows fallback created files: %v", err)
 	}
-	if err := PrepareLegacy(home, "desktop"); err == nil {
+	if err := PrepareRole(home, "desktop"); err == nil {
 		t.Fatal("Windows accepted private supervisor-file logging")
 	}
 }

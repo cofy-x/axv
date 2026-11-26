@@ -18,10 +18,6 @@
   gap: 7px;
   margin-inline-start: auto;
 }
-.machines-reload-status {
-  align-self: center;
-  font-size: 12px;
-}
 .machines-filter {
   display: flex;
   flex-wrap: wrap;

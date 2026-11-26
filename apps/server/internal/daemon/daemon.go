@@ -16,7 +16,6 @@ import (
 	"github.com/cofy-x/axv/apps/server/internal/app"
 	desktoplaunch "github.com/cofy-x/axv/apps/server/internal/app/launch"
 	"github.com/cofy-x/axv/apps/server/internal/compute"
-	computeclient "github.com/cofy-x/axv/apps/server/internal/compute/client"
 	"github.com/cofy-x/axv/apps/server/internal/jsonfile"
 	"github.com/cofy-x/axv/apps/server/internal/profile"
 	"github.com/cofy-x/axv/apps/server/internal/profile/logs"
@@ -214,7 +213,7 @@ func newManifest(s app.Settings) (manifest, error) {
 		return m, err
 	}
 	label := jobLabel(s.Home, role, marker)
-	if err = logs.PrepareLegacy(s.Home, role); err != nil {
+	if err = logs.PrepareRole(s.Home, role); err != nil {
 		return m, err
 	}
 	m.Jobs = []Job{{
@@ -377,123 +376,11 @@ func restart(ctx context.Context, s app.Settings, output io.Writer, open bool, s
 }
 
 func Status(ctx context.Context, home string, output io.Writer) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	return status(ctx, home, output, nativeSupervisor)
-}
-
-func status(ctx context.Context, home string, output io.Writer, supervisorFor func() (supervisor, error)) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	state, err := desktoplaunch.ReadState(home)
-	if err == nil && desktoplaunch.Verify(ctx, state) == nil {
-		fmt.Fprintf(output, "Desktop: ready at %s (PID %d)\n", state.URL, state.PID)
-	} else {
-		fmt.Fprintln(output, "Desktop: stopped or unavailable")
-	}
-	m, err := readManifest(home)
-	if os.IsNotExist(err) {
-		s, readErr := app.ResolveCompute(home)
-		if readErr != nil {
-			return readErr
-		}
-		return printHost(ctx, s, output)
-	}
-	if err != nil {
-		return err
-	}
-	supervisor, err := supervisorFor()
-	if err != nil {
-		return err
-	}
-	for _, j := range m.Jobs {
-		active, err := supervisor.Loaded(ctx, j)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintf(output, "%s service registered: %t\n", j.Role, active)
-	}
-	live, liveErr := app.ResolveCompute(home)
-	if m.OwnedHost != nil {
-		// Status follows recorded ownership even if configuration was edited.
-		live, liveErr = app.Settings{Inputs: desktoplaunch.Inputs{Home: home}, ComputeSettings: app.ComputeSettings{Host: m.OwnedHost, Compute: profile.Compute{Mode: "managed", Socket: m.OwnedHost.Socket}}}, nil
-	}
-	if liveErr != nil {
-		fmt.Fprintf(output, "VM backend: unavailable (%v)\n", liveErr)
-	} else {
-		return printHost(ctx, live, output)
-	}
-	return nil
-}
-
-func printHost(ctx context.Context, s app.Settings, output io.Writer) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if s.Compute.Mode == "disabled" {
-		fmt.Fprintln(output, "VM backend: not configured (open Virtual Machines to prepare)")
-		return ctx.Err()
-	}
-	info, err := app.HostStatus(ctx, s)
-	if err != nil {
-		fmt.Fprintf(output, "VM backend: unavailable (%v)\n", err)
-		return ctx.Err()
-	}
-	fmt.Fprintf(output, "VM controller: ready (%s)\n", info.HostID)
-	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	client, err := computeclient.Connect(probeCtx, s.Compute.Socket, computeclient.Binding{HostID: info.HostID, ConfigFingerprint: info.ConfigFingerprint})
-	if err != nil {
-		fmt.Fprintf(output, "VM provider status: unavailable (%v)\n", err)
-		return ctx.Err()
-	}
-	defer client.Close()
-	inventory, err := client.Info(probeCtx)
-	if err != nil {
-		fmt.Fprintf(output, "VM provider status: unavailable (%v)\n", err)
-		return ctx.Err()
-	}
-	for _, p := range inventory.Providers {
-		if p.Available {
-			fmt.Fprintf(output, "  %s: available\n", p.Provider)
-		} else {
-			fmt.Fprintf(output, "  %s: unavailable (%s)\n", p.Provider, p.Reason)
-		}
-	}
-	return ctx.Err()
+	return StatusWithOptions(ctx, home, StatusOptions{}, output)
 }
 
 func Logs(ctx context.Context, home string, output io.Writer) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	b, err := logs.Tail(home, 64<<10)
-	if err == nil {
-		fmt.Fprintf(output, "--- %s ---\n", filepath.Join(home, "logs", "daemon.log"))
-		if _, err = output.Write(b); err != nil {
-			return err
-		}
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-	// Keep bounded role output available for already-running older hosts and native startup failures.
-	for _, role := range []string{"desktop", "host"} {
-		data, readErr := logs.TailLegacy(home, role, 64<<10)
-		if os.IsNotExist(readErr) {
-			continue
-		}
-		if readErr != nil {
-			return readErr
-		}
-		fmt.Fprintf(output, "--- %s ---\n", filepath.Join(home, "logs", role+".log"))
-		if _, err := output.Write(data); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return LogsWithOptions(ctx, home, LogsOptions{}, output)
 }
 
 func OpenBrowser(ctx context.Context, url string) error {

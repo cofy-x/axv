@@ -12,7 +12,7 @@ Prepare releases from a reviewed commit on `main`, with passing required CI chec
 
 ## Build a candidate
 
-The manual [Release candidate workflow](../.github/workflows/release.yml) builds and smoke-tests a native **Linux amd64** executable on Ubuntu, then attests and uploads the final archive and checksum manifest with their original provenance bundle. It does not create tags, GitHub Releases or VM images. Select **Actions → Release candidate → Run workflow**, choose `main` and supply the [selected application version](#version-and-source). The version input is passed through the environment rather than interpolated into shell code.
+The manual [Release candidate workflow](../.github/workflows/release.yml) builds and smoke-tests native **Linux amd64**, **Linux arm64** and **macOS arm64** executables on GitHub runners, then attests and uploads each platform archive and checksum manifest with its original provenance bundle. `scripts/package-release.mjs` also supports local native packaging on macOS amd64, and `scripts/render-homebrew-formula.mjs` renders a multi-platform Homebrew Formula from published checksums. It does not create tags, GitHub Releases or VM images. Select **Actions → Release candidate → Run workflow**, choose `main` and supply the [selected application version](#version-and-source). The version input is passed through the environment rather than interpolated into shell code.
 
 For local preparation on native Linux amd64 with the [pinned toolchain](../README.md#install-and-use), replace `<unused-application-version>` with that selected version:
 
@@ -51,8 +51,8 @@ The subjects are the final distributable files themselves, independent of the Ac
 
 | Producing workflow | Attested subjects |
 | --- | --- |
-| `.github/workflows/release.yml` | `axv_<version>_linux_amd64.tar.gz`, `SHA256SUMS` |
-| `.github/workflows/guest-images.yml` | `axv_guest_<version>_firecracker_amd64.tar.gz`, `axv_guest_<version>_firecracker_amd64.ext4`, `candidate.json`, `SHA256SUMS` |
+| `.github/workflows/release.yml` | `axv_<version>_<os>_<arch>.tar.gz`, `SHA256SUMS` (`linux/amd64`, `linux/arm64`, `darwin/arm64`) |
+| `.github/workflows/guest-images.yml` | `axv_guest_<version>_firecracker_amd64.tar.gz` / `.ext4` or `axv_guest_<version>_lima_arm64.tar.gz` / `.qcow2`, `candidate.json`, `SHA256SUMS` |
 
 Additional source companions and their checksum files are outside these subjects; review their licensing and integrity separately rather than claiming this bundle attests them.
 
@@ -80,10 +80,10 @@ For complete candidate review and promotion, the [verification helper](../script
 
 ```sh
 node scripts/verify-release-provenance.mjs --kind app --version "$VERSION" \
-  --source "$SOURCE_SHA" --directory "$DOWNLOAD_DIRECTORY"
+  --os linux --arch amd64 --source "$SOURCE_SHA" --directory "$DOWNLOAD_DIRECTORY"
 ```
 
-Use `--kind guest` for the complete Firecracker candidate. Missing, empty or nonregular files and failed verification stop the check. Modified bytes, an unexpected repository or workflow, a different source commit/ref, a different signer revision, missing provenance or a different predicate must fail this policy. A valid attestation from another workflow in `cofy-x/axv` does not establish an official candidate. Verification uses the retained bundle rather than requiring an unexpired Actions artifact or an attestation API lookup; trust-root retrieval may still use the network. Offline verification is not a validated AXV workflow.
+Use `--os darwin --arch arm64` or `--os linux --arch arm64` for other application targets, `--kind guest` for the Firecracker amd64 candidate, and `--kind guest --provider lima --arch arm64` for the Lima arm64 candidate. Missing, empty or nonregular files and failed verification stop the check. Modified bytes, an unexpected repository or workflow, a different source commit/ref, a different signer revision, missing provenance or a different predicate must fail this policy. A valid attestation from another workflow in `cofy-x/axv` does not establish an official candidate. Verification uses the retained bundle rather than requiring an unexpired Actions artifact or an attestation API lookup; trust-root retrieval may still use the network. Offline verification is not a validated AXV workflow.
 
 Build provenance authenticates build origin and integrity. It does not replace source review, license review, malware analysis, native acceptance, or platform code signing/notarization. GitHub's immutable-release attestation separately binds the published tag, commit and asset inventory. Promotion retains the original build bundle and bytes; downloading and republishing them does not make the promotion operation their builder, and must not generate a replacement builder claim.
 

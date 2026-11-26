@@ -1,5 +1,4 @@
 import { machinesApi } from './api';
-import { APIError } from '../../shared/api/http';
 import { SerialPoller } from '../../shared/api/serial-poller';
 import type { PollContext } from '../../shared/api/serial-poller';
 import type {
@@ -20,7 +19,6 @@ export interface ComputeSnapshot {
   images: ImageInfo[];
   loading: boolean;
   refreshing: boolean;
-  reloading?: boolean;
   error?: string;
   lastUpdated?: number;
 }
@@ -93,10 +91,6 @@ export class ComputeStore {
       onError: (error) =>
         this.publish({
           error: error instanceof Error ? error.message : String(error),
-          reloading:
-            error instanceof APIError &&
-            (error.code === 'image_reload' ||
-              (error.code === 'binding_changed' && !!this.snapshot.reloading)),
         }),
       onSettled: () => this.publish({ loading: false, refreshing: false }),
     });
@@ -133,7 +127,7 @@ export class ComputeStore {
 
   private pollInterval() {
     if (!this.listeners.size) return 30_000;
-    const { error, reloading, machines, operations } = this.snapshot;
+    const { error, machines, operations } = this.snapshot;
     const transitioning =
       !error &&
       (operations.some(
@@ -146,7 +140,7 @@ export class ComputeStore {
             vm.guestState === 'unavailable' &&
             Date.now() - Date.parse(vm.updatedAt) < 30_000,
         ));
-    return reloading || transitioning ? 1000 : 5000;
+    return transitioning ? 1000 : 5000;
   }
 
   refresh = () => {
@@ -269,7 +263,6 @@ export class ComputeStore {
         info,
         ...inventory,
         error: undefined,
-        reloading: false,
         lastUpdated: Date.now(),
       });
     }

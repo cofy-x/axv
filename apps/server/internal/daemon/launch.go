@@ -2,12 +2,16 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/cofy-x/axv/apps/server/internal/app"
@@ -16,12 +20,88 @@ import (
 	"github.com/cofy-x/axv/apps/server/internal/jsonfile"
 )
 
+// IsHeadless reports whether this invocation is running in a remote SSH or
+// non-graphical session where launching a local browser is not appropriate.
+func IsHeadless() bool {
+	if os.Getenv("SSH_CONNECTION") != "" || os.Getenv("SSH_TTY") != "" {
+		return true
+	}
+	if runtime.GOOS == "linux" && os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
+		return true
+	}
+	return false
+}
+
 // Launch is the daily entry point. A verified running desktop keeps its startup
 // settings and executable until the user explicitly restarts it.
 func Launch(ctx context.Context, home string, output io.Writer, resolve func() (app.Settings, error)) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	return launch(ctx, home, output, resolve, nativeSupervisor, func(url string) error { return OpenBrowser(ctx, url) })
+	open := func(url string) error {
+		if IsHeadless() {
+			printHeadlessGuidance(ctx, home, url, output)
+			return nil
+		}
+		return OpenBrowser(ctx, url)
+	}
+	return launch(ctx, home, output, resolve, nativeSupervisor, open)
+}
+
+func printHeadlessGuidance(ctx context.Context, home, rawURL string, output io.Writer) {
+	if remoteURL := readyRemoteURL(ctx, home); remoteURL != "" {
+		fmt.Fprintf(output, "Remote HTTPS: %s\n", remoteURL)
+		return
+	}
+	port := "3001"
+	if parsed, err := url.Parse(rawURL); err == nil && parsed.Port() != "" {
+		port = parsed.Port()
+	}
+	fmt.Fprintf(output, "Headless session detected; skipping local browser launch.\n")
+	fmt.Fprintf(output, "  SSH tunnel: ssh -L %s:127.0.0.1:%s <user>@<host>\n", port, port)
+	fmt.Fprintf(output, "  Tailscale:  axv remote enable\n")
+}
+
+func readyRemoteURL(ctx context.Context, home string) string {
+	state, err := desktoplaunch.ReadState(home)
+	if err != nil {
+		return ""
+	}
+	base, err := desktoplaunch.LocalDesktopURL(state.URL)
+	if err != nil {
+		return ""
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+	defer cancel()
+	client := &http.Client{
+		Timeout:       1500 * time.Millisecond,
+		Transport:     &http.Transport{Proxy: nil},
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	defer client.CloseIdleConnections()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, base+"/api/remote/status", nil)
+	if err != nil {
+		return ""
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	var payload struct {
+		InstanceID string `json:"instanceId"`
+		State      string `json:"state"`
+		URL        string `json:"url"`
+	}
+	if json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&payload) != nil {
+		return ""
+	}
+	if payload.InstanceID == state.InstanceID && payload.State == "ready" && payload.URL != "" {
+		return payload.URL
+	}
+	return ""
 }
 
 func launch(ctx context.Context, home string, output io.Writer, resolve func() (app.Settings, error), supervisorFor func() (supervisor, error), open func(string) error) error {

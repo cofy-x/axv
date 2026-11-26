@@ -66,7 +66,13 @@ func TestSetupTerminalApprovalAndCancellationPreserveCallerInput(t *testing.T) {
 	if err := confirm(ctx); err != nil {
 		t.Fatalf("cancelled reader consumed later terminal input: %v", err)
 	}
-	if !bytes.Contains(output.Bytes(), []byte("Type yes:")) {
+	if !bytes.Contains(output.Bytes(), []byte("[y/N]:")) {
 		t.Fatal("confirmation prompt did not use the supplied output")
+	}
+	if _, err := master.WriteString("y\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := confirm(ctx); err != nil {
+		t.Fatalf("short y approval failed: %v", err)
 	}
 }

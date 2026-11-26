@@ -20,7 +20,6 @@ import (
 
 	"github.com/cofy-x/axv/apps/server/internal/compute"
 	"github.com/cofy-x/axv/apps/server/internal/compute/artifacts"
-	"github.com/cofy-x/axv/apps/server/internal/compute/client"
 	"github.com/cofy-x/axv/apps/server/internal/compute/internal/hostconn"
 )
 
@@ -138,96 +137,6 @@ func TestInstallServiceStagesAndVerifiesBeforeReportingReady(t *testing.T) {
 	}
 	if err = i.run(t.Context(), 1002, false, io.Discard); err == nil {
 		t.Fatal("adopted another account's transaction")
-	}
-}
-
-func TestInstallImageResumesOnOriginalServiceAndPreservesConfig(t *testing.T) {
-	i, f := newInstallation(t)
-	cfg, err := i.config(t.Context(), 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := json.Marshal(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for path, data := range map[string][]byte{
-		receipt: raw, configFile: raw, intent: []byte(unitName + "\n"), completed: []byte(unitName + "\n"),
-	} {
-		if err := i.publish(path, data, 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := i.publish(unitFile, unit, 0644); err != nil {
-		t.Fatal(err)
-	}
-	f.loaded, f.active = true, true
-	running := cfg
-	const hostID = "original-host"
-	withImage := func(c compute.Config) compute.Info {
-		info := compute.Info{HostID: hostID, ConfigFingerprint: c.Fingerprint(), Providers: []compute.Capability{{Provider: "firecracker", Available: true}}}
-		for _, image := range c.Images {
-			info.Images = append(info.Images, compute.ImageInfo{ID: image.ID, SHA256: image.RootfsSHA256, Status: "configured"})
-		}
-		return info
-	}
-	i.readHost = func(_ context.Context, socket string, expected client.Binding) (compute.Info, error) {
-		if socket != cfg.Socket || expected.HostID != hostID || (expected.ConfigFingerprint != "" && expected.ConfigFingerprint != running.Fingerprint()) {
-			return compute.Info{}, hostconn.ErrChanged
-		}
-		return withImage(running), nil
-	}
-	i.waitHost = func(_ context.Context, expected compute.Config, boundHost string) (compute.Info, error) {
-		current, raw, loadErr := i.installedConfig(t.Context())
-		if loadErr != nil || boundHost != hostID || current.Fingerprint() != expected.Fingerprint() {
-			t.Fatalf("incorrect service after restart: %s %s %v", boundHost, raw, loadErr)
-		}
-		running = current
-		return withImage(current), nil
-	}
-	if err := i.installImage(t.Context(), "different-host", io.Discard); !errors.Is(err, hostconn.ErrChanged) {
-		t.Fatalf("expected the wrong host to be rejected, got %v", err)
-	}
-	i.stageGuest = func(context.Context, io.Writer) error {
-		return os.WriteFile(i.path(configFile), append(bytes.Clone(raw), '\n'), 0600)
-	}
-	if err := i.installImage(t.Context(), hostID, io.Discard); err == nil || f.starts != 0 {
-		t.Fatalf("expected the concurrent edit to be preserved before restart (%d restarts): %v", f.starts, err)
-	}
-	i.stageGuest = func(context.Context, io.Writer) error { return nil }
-	f.rejectStart = true
-	if err := i.installImage(t.Context(), hostID, io.Discard); err == nil {
-		t.Fatal("expected restart failure")
-	}
-	f.rejectStart = false
-	for range 2 {
-		if err := i.installImage(t.Context(), hostID, io.Discard); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if f.starts != 2 || len(running.Images) != 1 || running.Images[0].ID != i.image.ID {
-		t.Fatalf("expected one successful registration and no additional restart: %+v, %v", f, running.Images)
-	}
-	change, ok := i.readImageReload(hostID, cfg.Fingerprint())
-	if !ok || change.Fingerprint != running.Fingerprint() || change.ImageID != i.image.ID || !change.Pending(time.Now()) {
-		t.Fatalf("installer did not authorize the exact image reload: %+v", change)
-	}
-	if _, ok := i.readImageReload("replacement", cfg.Fingerprint()); ok {
-		t.Fatal("another host could reuse the reload")
-	}
-	if _, ok := i.readImageReload(hostID, running.Fingerprint()); ok {
-		t.Fatal("the updated configuration was accepted as the previous configuration")
-	}
-	if err := os.Chmod(i.path(imageReloadFile), 0664); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := i.readImageReload(hostID, cfg.Fingerprint()); ok {
-		t.Fatal("a writable reload record was accepted")
-	}
-	running.Images = nil
-	cfg.Images = nil
-	if running.Fingerprint() != cfg.Fingerprint() {
-		t.Fatalf("install-image changed non-image settings: %+v", running)
 	}
 }
 

@@ -20,7 +20,7 @@ interface PreparationFixture {
   runtimeError?: string;
   unavailableProviders?: HostInfo['providers'];
   hostInfo?: Partial<HostInfo>;
-  hostError?: 'image_reload' | 'host_unavailable';
+  hostError?: 'host_unavailable';
   generation?: number;
   ready: boolean;
   blocked: boolean;
@@ -894,8 +894,8 @@ test(
       name: 'Copy command',
       exact: true,
     });
-    const startCommand = 'sudo systemctl start axv-host.service';
-    const installCommand = String.raw`sudo '/test/AXV'\''s build'\!'/one'\\'two/axv' host install-service`;
+    const startCommand = 'sudo axv daemon start --only vm';
+    const installCommand = String.raw`sudo '/test/AXV'\''s build'\!'/one'\\'two/axv' host install-service --apply-sysctl`;
     const statusCommand = 'systemctl status axv-host.service --no-pager';
     const start = manager.getByText(startCommand, { exact: true });
     const status = manager.getByText(statusCommand, { exact: true });
@@ -1112,157 +1112,6 @@ test(
     ]);
   },
 );
-
-for (const automatic of [true, false]) {
-  test(`default Firecracker image setup ${automatic ? 'recovers automatically after a planned restart' : 'offers explicit reconnection for an unconfirmed outage'}`, async ({
-    page,
-    hasTouch,
-  }, info) => {
-    const state = fixture('linux');
-    state.ready = true;
-    const hostId = 'host-' + 'a'.repeat(32);
-    const imageId = 'default-firecracker-amd64';
-    const socket = '/run/axv-host/control.sock';
-    Object.assign(state.check, {
-      configured: true,
-      arch: 'amd64',
-      defaultImageId: imageId,
-      defaults: { socket },
-    });
-    state.hostInfo = {
-      hostId,
-      hostArch: 'amd64',
-      defaults: creationDefaultsFixture('', 'firecracker'),
-      images: [],
-      providers: [
-        {
-          provider: 'firecracker',
-          available: true,
-          persistentVolumes: true,
-          snapshots: false,
-          guestExecution: true,
-          images: false,
-          volumes: false,
-        },
-      ],
-    };
-    const clipboard = await recordCopiedText(page);
-    const manager = await host(page, state);
-    const choose = (control: Locator) =>
-      hasTouch ? control.tap() : control.click();
-    await choose(manager.getByRole('button', { name: 'Volumes', exact: true }));
-    await expect(
-      manager.getByRole('heading', { name: 'No project volumes yet' }),
-    ).toBeVisible();
-    const volumeHint = manager.getByText(
-      'Create a VM to add a project volume.',
-      { exact: true },
-    );
-    await expect(volumeHint).toBeVisible();
-    await expect(manager.getByRole('table')).toHaveCount(0);
-    await expect(
-      manager.getByRole('button', { name: 'New Volume', exact: true }),
-    ).toHaveCount(0);
-    await choose(
-      manager.getByRole('button', { name: 'Set Up VM Image', exact: true }),
-    );
-    await expect(
-      manager.getByRole('heading', { name: 'Install the default VM image' }),
-    ).toBeVisible();
-    const command = `sudo '/test/bin/axv' host install-image --host-id ${hostId}`;
-    await expect(manager.getByText(command, { exact: true })).toBeVisible();
-    await capture(page, info, 'vm-default-image-install');
-    await choose(
-      manager.getByRole('button', { name: 'Copy command', exact: true }),
-    );
-    await expect(clipboard).toHaveAttribute('data-vm-clipboard', command);
-    expect(state.writes).toHaveLength(0);
-
-    const reconnect = manager.getByRole('button', {
-      name: 'Reconnect to VM Host',
-      exact: true,
-    });
-    await expect(reconnect).toHaveCount(0);
-    state.hostError = automatic ? 'image_reload' : 'host_unavailable';
-    if (automatic) {
-      await expect(
-        manager.getByText('Reconnecting after the VM image installation…'),
-      ).toBeVisible();
-      await expect(manager.getByRole('alert')).toHaveCount(0);
-      await expect(reconnect).toHaveCount(0);
-      await expect(
-        manager.getByRole('button', { name: 'Copy command' }),
-      ).toHaveCount(0);
-    } else {
-      await expect(manager.getByRole('alert')).toContainText(
-        'The VM service temporarily stopped serving inventory.',
-      );
-      await choose(reconnect);
-      await expect.poll(() => state.job?.status).toBe('running');
-    }
-
-    const digest = 'a'.repeat(64);
-    state.hostInfo.defaults = creationDefaultsFixture(imageId, 'firecracker');
-    state.hostInfo.images = [
-      {
-        id: imageId,
-        name: 'Default AXV Guest',
-        arch: 'amd64',
-        provider: 'firecracker',
-        status: 'configured',
-        sha256: digest,
-      },
-    ];
-    state.hostError = undefined;
-    state.generation = 2;
-    if (state.job)
-      state.job = {
-        ...state.job,
-        status: 'succeeded',
-        revision: 3,
-        phase: 'ready',
-      };
-    const newVM = manager.getByRole('button', { name: 'New VM', exact: true });
-    await expect(newVM).toBeEnabled();
-    await expect(manager.getByRole('alert')).toHaveCount(0);
-    await choose(manager.getByRole('button', { name: 'Volumes', exact: true }));
-    await expect(volumeHint).toBeVisible();
-    if (automatic) await capture(page, info, 'vm-firecracker-volumes-empty');
-    await choose(manager.getByRole('button', { name: 'Images', exact: true }));
-    await expect(
-      manager.getByRole('button', { name: 'More image actions' }),
-    ).toHaveCount(0);
-    await expect(manager.getByText(digest, { exact: true })).toHaveCount(0);
-    await choose(
-      manager.getByRole('button', {
-        name: 'Image details for Default AXV Guest',
-      }),
-    );
-    const details = page.getByRole('dialog', { name: 'Image Details' });
-    await expect(details.getByText(digest, { exact: true })).toBeVisible();
-    await choose(details.getByRole('button', { name: 'Close', exact: true }));
-    await choose(newVM);
-    const create = page.locator('[data-window-id="machine-create:main"]');
-    await expect(
-      create.getByText('Default AXV Guest', { exact: true }),
-    ).toBeVisible();
-    await create.getByText('Advanced', { exact: true }).click();
-    await expect(
-      create.getByRole('combobox', { name: 'Project volume', exact: true }),
-    ).toHaveValue('');
-    await expect(
-      create.getByRole('button', { name: 'Create & Start', exact: true }),
-    ).toBeEnabled();
-    if (automatic) expect(state.writes).toEqual([]);
-    else {
-      expect(state.writes.map(({ path }) => path)).toEqual([
-        '/preparation/plan',
-        '/preparation/jobs',
-      ]);
-      expect(state.writes[0]?.body).toEqual({ socket });
-    }
-  });
-}
 
 test('configured service review preserves existing locations and budgets', async ({
   page,

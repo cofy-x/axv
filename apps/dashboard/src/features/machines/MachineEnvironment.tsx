@@ -18,6 +18,7 @@ import { openMachineDiagnostics } from './MachineDiagnostics';
 import {
   getHostServiceGuidance,
   HostServiceGuidance,
+  hostUpgradeCommand,
 } from './HostServiceGuidance';
 
 const serviceStatusLabel = {
@@ -448,6 +449,13 @@ export function MachineEnvironment({
           {environment.logPath && <code>{environment.logPath}</code>} Check the
           profile’s disk space and permissions.
         </p>
+      )}
+      {environment?.hostService?.versionDrift && (
+        <HostServiceGuidance
+          instruction={`The installed Linux VM service runs AXV ${environment.hostService.installedVersion || 'an older build'} while this desktop runs ${environment.hostService.currentVersion || 'a newer build'}. Upgrade the service to stay in sync (running VMs are preserved).`}
+          command={hostUpgradeCommand(environment.executablePath)}
+          desktop={desktop}
+        />
       )}
       {launcherConnection ? (
         <>

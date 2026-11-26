@@ -16,6 +16,43 @@
   margin-block-start: 8px;
 }
 
+.machine-diagnostics-doctor {
+  margin-block-start: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.machine-diagnostics-checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.machine-diagnostics-checks li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.machine-diagnostics-checks p {
+  margin: 2px 0 0;
+}
+
+.machine-diagnostics-badge {
+  font-family: var(--ns-font-mono);
+  font-size: 10px;
+  padding: 1px 4px;
+  border: 1px solid var(--ns-border);
+  background: var(--ns-surface-recessed);
+}
+
+.machine-diagnostics-fix {
+  font-size: 11px;
+}
+
 @media (max-width: 420px) {
   .ns-dialog-main:has(.machine-diagnostics) {
     padding: 12px 14px 4px;

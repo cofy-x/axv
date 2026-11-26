@@ -56,15 +56,42 @@ func SaveCompute(home string, c Compute) error {
 	return jsonfile.Write(path, values, 0600)
 }
 
+// RemotePatch describes an atomic update to mutable remote access fields.
+// Nil pointers preserve the existing configured value.
+type RemotePatch struct {
+	Enabled     *bool
+	Hostname    *string
+	OwnerUserID *string
+}
+
 // SaveRemoteEnabled changes only the durable remote switch. The caller holds
 // Lock, shared with compute preparation and CLI profile writers. Unknown fields
 // and the existing enrollment identity settings retain their ownership.
 func SaveRemoteEnabled(home string, enabled bool) (Remote, error) {
+	return SaveRemote(home, RemotePatch{Enabled: &enabled})
+}
+
+// SaveRemote updates selected remote fields atomically while preserving unknown
+// profile and remote keys. The caller holds Lock.
+func SaveRemote(home string, patch RemotePatch) (Remote, error) {
 	remote, err := ReadRemote(home)
 	if err != nil {
 		return Remote{}, err
 	}
-	if remote.Enabled == enabled {
+	next := remote
+	if patch.Enabled != nil {
+		next.Enabled = *patch.Enabled
+	}
+	if patch.Hostname != nil {
+		next.Hostname = *patch.Hostname
+	}
+	if patch.OwnerUserID != nil {
+		next.OwnerUserID = *patch.OwnerUserID
+	}
+	if err := ValidateRemote(next); err != nil {
+		return Remote{}, err
+	}
+	if next == remote {
 		return remote, nil
 	}
 	path := filepath.Join(home, "config.json")
@@ -100,12 +127,36 @@ func SaveRemoteEnabled(home string, enabled bool) (Remote, error) {
 			return Remote{}, err
 		}
 	}
-	fields["enabled"], _ = json.Marshal(enabled)
+	if patch.Enabled != nil {
+		fields["enabled"], _ = json.Marshal(*patch.Enabled)
+		remote.Enabled = *patch.Enabled
+	}
+	if patch.Hostname != nil {
+		if *patch.Hostname == "" {
+			delete(fields, "hostname")
+		} else {
+			fields["hostname"], _ = json.Marshal(*patch.Hostname)
+		}
+		remote.Hostname = *patch.Hostname
+	}
+	if patch.OwnerUserID != nil {
+		if *patch.OwnerUserID == "" {
+			delete(fields, "owner_user_id")
+		} else {
+			fields["owner_user_id"], _ = json.Marshal(*patch.OwnerUserID)
+		}
+		remote.OwnerUserID = *patch.OwnerUserID
+	}
+	if err := ValidateRemote(remote); err != nil {
+		return Remote{}, err
+	}
+	if _, hasVersion := values["runtime_version"]; !hasVersion {
+		values["runtime_version"] = json.RawMessage("1")
+	}
 	values["remote"], _ = json.Marshal(fields)
 	if err := jsonfile.Write(path, values, 0600); err != nil {
 		return Remote{}, err
 	}
-	remote.Enabled = enabled
 	if remote.Hostname == "" {
 		remote.Hostname = "axv"
 	}

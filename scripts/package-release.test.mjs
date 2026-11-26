@@ -5,6 +5,7 @@ import { expect, test } from 'vitest';
 import { captureCommand } from './lib.mjs';
 import {
   readReleaseSource,
+  resolveNativeTarget,
   validateReleaseBuildInfo,
   validateReleaseSource,
   validateReleaseVersion,
@@ -49,6 +50,36 @@ const releaseBuildInfo = {
     { Key: 'CGO_ENABLED', Value: '0' },
   ],
 };
+
+test('release builds support native Linux and macOS targets on amd64 and arm64', () => {
+  expect(resolveNativeTarget('darwin', 'arm64')).toMatchObject({
+    goos: 'darwin',
+    goarch: 'arm64',
+  });
+  expect(resolveNativeTarget('linux', 'arm64')).toMatchObject({
+    goos: 'linux',
+    goarch: 'arm64',
+  });
+  expect(() => resolveNativeTarget('win32', 'x64')).toThrow(
+    /supported native host/,
+  );
+  const darwinTarget = resolveNativeTarget('darwin', 'arm64');
+  expect(() =>
+    validateReleaseBuildInfo(
+      {
+        GoVersion: pinnedGo,
+        Settings: [
+          { Key: 'GOOS', Value: 'darwin' },
+          { Key: 'GOARCH', Value: 'arm64' },
+          { Key: '-tags', Value: 'production,ts_omit_webclient' },
+          { Key: 'CGO_ENABLED', Value: '0' },
+        ],
+      },
+      pinnedGo,
+      darwinTarget,
+    ),
+  ).not.toThrow();
+});
 
 test('release builds require the pinned native target and complete production tags', () => {
   expect(() =>

@@ -14,8 +14,8 @@ func Tail(home string, limit int64) ([]byte, error) {
 	return tail(home, "daemon.log", limit)
 }
 
-// TailLegacy retains native-supervisor diagnostics from existing host jobs.
-func TailLegacy(home, role string, limit int64) ([]byte, error) {
+// TailRole reads bounded native-supervisor stdout/stderr output for a service role.
+func TailRole(home, role string, limit int64) ([]byte, error) {
 	if role != "desktop" && role != "host" {
 		return nil, fmt.Errorf("unknown service log role")
 	}
@@ -81,9 +81,9 @@ func tail(home, name string, limit int64) ([]byte, error) {
 	return b, err
 }
 
-// PrepareLegacy validates the private destination before a native supervisor
-// receives its existing role-log path. It does not alter the manifest contract.
-func PrepareLegacy(home, role string) error {
+// PrepareRole validates the private log destination before a native supervisor
+// receives its role-log path.
+func PrepareRole(home, role string) error {
 	if role != "desktop" && role != "host" {
 		return fmt.Errorf("unknown service log role")
 	}

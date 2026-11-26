@@ -100,7 +100,7 @@ func TestAuthenticatedRemoteDesktopSharesFeatureHandlers(t *testing.T) {
 			t.Fatalf("%s: HTTP %d: %s", tc.path, w.Code, w.Body.String())
 		}
 	}
-	for _, path := range []string{"/api/remote/status", "/api/compute/preparation/check"} {
+	for _, path := range []string{"/api/remote/status", "/api/compute/preparation/check", "/api/doctor"} {
 		w := request("GET", path, "", "")
 		if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "remote_local_only") {
 			t.Fatalf("local operation %s: HTTP %d: %s", path, w.Code, w.Body.String())

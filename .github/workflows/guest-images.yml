@@ -3,13 +3,29 @@ name: Guest image candidate
 on:
   workflow_dispatch:
     inputs:
+      target:
+        description: Guest target to build
+        required: true
+        default: firecracker-amd64
+        type: choice
+        options:
+          - firecracker-amd64
+          - lima-arm64
       version:
-        description: Candidate version matching package.json, for example 0.1.0-rc.1
+        description: Candidate version matching package.json, for example 0.1.0-guest.3
         required: true
         type: string
       base_image:
-        description: Reviewed native ubuntu:24.04@sha256 digest
-        required: true
+        description: For firecracker-amd64, reviewed native ubuntu:24.04@sha256 digest
+        required: false
+        type: string
+      cloud_image_url:
+        description: For lima-arm64, reviewed HTTPS URL of Ubuntu 24.04 arm64 server cloud image
+        required: false
+        type: string
+      cloud_image_sha256:
+        description: For lima-arm64, reviewed 64-char SHA-256 of the cloud image
+        required: false
         type: string
 
 permissions:
@@ -22,7 +38,7 @@ concurrency:
 jobs:
   firecracker:
     name: Firecracker amd64 candidate
-    if: github.repository == 'cofy-x/axv' && github.ref == 'refs/heads/main'
+    if: github.repository == 'cofy-x/axv' && github.ref == 'refs/heads/main' && inputs.target == 'firecracker-amd64'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -80,5 +96,78 @@ jobs:
         with:
           name: axv-guest-${{ inputs.version }}-firecracker-amd64-candidate
           path: dist/guest-release/${{ inputs.version }}/firecracker_amd64/
+          if-no-files-found: error
+          retention-days: 14
+
+  lima:
+    name: Lima arm64 candidate
+    if: github.repository == 'cofy-x/axv' && github.ref == 'refs/heads/main' && inputs.target == 'lima-arm64'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ inputs.version }}
+      CLOUD_IMAGE_URL: ${{ inputs.cloud_image_url }}
+      CLOUD_IMAGE_SHA256: ${{ inputs.cloud_image_sha256 }}
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: .go-version
+          cache-dependency-path: apps/server/go.sum
+      - name: Validate version and reviewed cloud image inputs
+        run: |
+          node scripts/package-release.mjs --check-version
+          [[ "$CLOUD_IMAGE_URL" =~ ^https://[^[:space:]]+$ ]]
+          [[ "$CLOUD_IMAGE_SHA256" =~ ^[a-f0-9]{64}$ ]]
+      - name: Install Lima image builder prerequisites
+        run: |
+          node scripts/ci-ubuntu-mirrors.mjs /etc/apt/apt-mirrors.txt "$RUNNER_TEMP/axv-apt-mirrors.txt"
+          sudo install -m 0644 "$RUNNER_TEMP/axv-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          sudo apt-get update
+          sudo apt-get install --yes libguestfs-tools qemu-utils linux-image-generic
+      - name: Download and build complete enhanced Lima arm64 bundle
+        run: |
+          mkdir -p "$RUNNER_TEMP/cloud" dist
+          curl --fail --location --proto '=https' --proto-redir '=https' \
+            --output "$RUNNER_TEMP/cloud/base.img" "$CLOUD_IMAGE_URL"
+          sudo env "PATH=$PATH" "CLOUD_IMAGE_SHA256=$CLOUD_IMAGE_SHA256" GOTOOLCHAIN=local \
+            GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory "GIT_CONFIG_VALUE_0=$GITHUB_WORKSPACE" \
+            bash images/guest/build-lima.sh "$RUNNER_TEMP/cloud/base.img" "$GITHUB_WORKSPACE/dist/lima-bundle"
+          sudo env "PATH=$PATH" "VERSION=$VERSION" GOTOOLCHAIN=local \
+            GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory "GIT_CONFIG_VALUE_0=$GITHUB_WORKSPACE" \
+            node scripts/package-guest-release.mjs --bundle "$GITHUB_WORKSPACE/dist/lima-bundle"
+      - name: Attest the final Lima Guest distribution files
+        id: provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/guest-release/${{ inputs.version }}/lima_arm64/axv_guest_${{ inputs.version }}_lima_arm64.tar.gz
+            dist/guest-release/${{ inputs.version }}/lima_arm64/axv_guest_${{ inputs.version }}_lima_arm64.qcow2
+            dist/guest-release/${{ inputs.version }}/lima_arm64/candidate.json
+            dist/guest-release/${{ inputs.version }}/lima_arm64/SHA256SUMS
+          create-storage-record: false
+      - name: Retain and verify the original build provenance
+        env:
+          ATTESTATION_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sudo install -m 0644 -- "$ATTESTATION_BUNDLE" "dist/guest-release/$VERSION/lima_arm64/provenance.json"
+          node scripts/verify-release-provenance.mjs --kind guest --provider lima --arch arm64 \
+            --version "$VERSION" --source "$GITHUB_SHA" --directory "dist/guest-release/$VERSION/lima_arm64"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: axv-guest-${{ inputs.version }}-lima-arm64-candidate
+          path: dist/guest-release/${{ inputs.version }}/lima_arm64/
           if-no-files-found: error
           retention-days: 14

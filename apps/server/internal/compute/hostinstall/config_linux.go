@@ -83,7 +83,7 @@ func initialConfig(ctx context.Context, socketGID int) (compute.Config, error) {
 		return config, fmt.Errorf("the host needs at least 512 MiB of memory and 6 GiB free on /var/lib for the initial VM capacity")
 	}
 	return compute.Config{
-		DataDir: "/var/lib/axv", Socket: standardSocket, SocketGroup: &socketGID,
+		DataDir: "/var/lib/axv", Socket: StandardSocket, SocketGroup: &socketGID,
 		Capacity: compute.Capacity{
 			Resources: compute.Resources{CPUs: min(32, max(1, runtime.NumCPU()/2)), MemoryMiB: min(16384, ramMiB/2), DiskGiB: min(128, freeGiB/2)},
 			Machines:  4, Workers: 1,

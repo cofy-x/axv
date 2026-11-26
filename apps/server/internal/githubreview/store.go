@@ -18,7 +18,7 @@ import (
 //go:embed migrations/*.sql
 var migrations embed.FS
 
-const reviewDatabaseFormat = 0x41585232 // AXR2
+const reviewDatabaseFormat = 0x41585233 // AXR3
 
 const jobFields = "account, repository, number, title, base_sha, head_sha, source, status, findings, comment_url, error, attempts, updated_at, policy, checks, tests, COALESCE(evidence_key, ''), review_stage, merge_base_sha, observed_base_sha, equivalent_base_sha, manual_review"
 
@@ -121,7 +121,7 @@ func (s *store) configure(ctx context.Context, c Config) error {
 		return err
 	}
 	result, err := s.db.ExecContext(ctx, `
-		UPDATE review_settings SET repositories=?, publish_repositories='[]', interval_minutes=?, daily_limit=?,
+		UPDATE review_settings SET repositories=?, interval_minutes=?, daily_limit=?,
 			enabled=?, repository_policies=?, watch_only=?, revision=revision+1
 		WHERE singleton=1 AND revision=?`, string(repositories), c.IntervalMinutes,
 		c.DailyLimit, c.Enabled, string(policies), c.WatchOnly, c.Revision)

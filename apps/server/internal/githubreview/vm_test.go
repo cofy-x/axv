@@ -117,7 +117,7 @@ func TestVMTestRecoversReceiptAndUsesOriginalAttemptLog(t *testing.T) {
 	}
 }
 
-func TestLegacyVMTestRequestCollisionUsesDurableScopedIdentity(t *testing.T) {
+func TestVMTestRequestUsesDurableScopedIdentity(t *testing.T) {
 	dir, err := os.MkdirTemp("", "rv-")
 	if err != nil {
 		t.Fatal(err)
@@ -134,11 +134,10 @@ func TestLegacyVMTestRequestCollisionUsesDurableScopedIdentity(t *testing.T) {
 	original := workerBinding()
 	pin := original
 	pin.ProjectID = "other-review-project"
-	legacy := reviewRequestID(key)
 	scoped := boundReviewRequestID(key, pin)
 	reboot := pin
 	reboot.BootID = "another-boot"
-	if scoped == legacy || scoped == boundReviewRequestID(key, original) || scoped == boundReviewRequestID(key, reboot) {
+	if scoped == boundReviewRequestID(key, original) || scoped == boundReviewRequestID(key, reboot) {
 		t.Fatal("request identity must include the selected project and boot")
 	}
 	var submissions atomic.Int32
@@ -147,9 +146,6 @@ func TestLegacyVMTestRequestCollisionUsesDurableScopedIdentity(t *testing.T) {
 		switch r.URL.Path {
 		case "/v1/runtime":
 			json.NewEncoder(w).Encode(compute.Runtime{HostID: pin.HostID, ConfigFingerprint: "config", Ready: true, ProtocolVersion: compute.ProtocolVersion})
-		case "/v1/projects/" + pin.ProjectID + "/task-requests/" + legacy:
-			w.WriteHeader(http.StatusConflict)
-			json.NewEncoder(w).Encode(compute.Problem("idempotency_conflict", "This task request ID belongs to a different project or payload."))
 		case "/v1/projects/" + pin.ProjectID + "/task-requests/" + scoped:
 			if conflictScoped.Load() {
 				w.WriteHeader(http.StatusConflict)
@@ -193,21 +189,12 @@ func TestLegacyVMTestRequestCollisionUsesDurableScopedIdentity(t *testing.T) {
 		}
 		return next
 	}
-	initial := VMTestAttempt{Binding: &pin, Status: "running"}
-	observe := initial
-	observe.ObserveOnly = true
-	if a := poll(observe); a.Status != "canceled" || a.RequestID != "" || submissions.Load() != 0 {
-		t.Fatalf("observe-only lookup changed old identity: %+v", a)
+	if a := poll(VMTestAttempt{Binding: &pin, Status: "running"}); a.Status != "error" || submissions.Load() != 0 {
+		t.Fatalf("bound attempt without request identity should fail: %+v", a)
 	}
-	known := initial
-	known.TaskID = "original-must-not-change"
-	if a := poll(known); a.Status != "error" || a.RequestID != "" || a.TaskID != known.TaskID || submissions.Load() != 0 {
-		t.Fatalf("existing task was redirected: %+v", a)
-	}
-	a := poll(initial)
-	if a.Status != "running" || a.RequestID != scoped || a.TaskID != "" || submissions.Load() != 0 {
-		t.Fatalf("scoped identity was not prepared before submit: %+v", a)
-	}
+	var a VMTestAttempt
+	bindVMTestAttempt(&a, pin, key)
+	a.Status = "running"
 	wire, err := json.Marshal(a)
 	if err != nil {
 		t.Fatal(err)
@@ -260,7 +247,7 @@ func TestVMTestCheckoutUsesOriginalLogPrefixAndPreservesUnknownAssertionExit(t *
 				t.Fatal(err)
 			}
 			cmd := []string{"python3", "-c", "import sys\nsys.exit(17)"}
-			key := reviewRequestID("comparison")
+			key := boundReviewRequestID("comparison", pin)
 			count := int64(len(tc.output))
 			code := 10
 			api := http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -298,7 +285,7 @@ func TestVMTestCheckoutUsesOriginalLogPrefixAndPreservesUnknownAssertionExit(t *
 			defer g.Close()
 			g.Bind(sock, pin.HostID, "config")
 			vm := ComputeVMTests{Gateway: g, HostID: pin.HostID, ProjectID: pin.ProjectID, MachineID: pin.MachineID}
-			a, err := vm.Poll(t.Context(), target, cmd, "comparison", VMTestAttempt{Binding: &pin, VMID: pin.MachineID, ProjectID: pin.ProjectID})
+			a, err := vm.Poll(t.Context(), target, cmd, "comparison", VMTestAttempt{Binding: &pin, VMID: pin.MachineID, ProjectID: pin.ProjectID, RequestID: key})
 			if err != nil || a.Status != "failed" || a.RequestID != key || (a.CheckoutSHA == target.HeadSHA) != tc.verified || (a.AssertionExitCode != nil) != tc.exitKnown || (a.AssertionExitCode != nil && *a.AssertionExitCode != 17) || len(a.Log) > reviewLogLimit {
 				t.Fatalf("wrong VM evidence: status=%s, checkout=%s, assertion exit=%v, err=%v", a.Status, a.CheckoutSHA, a.AssertionExitCode, err)
 			}

@@ -132,7 +132,6 @@ func TestVMProjectFileCommandsRequireExplicitCompleteBindingBeforeConnection(t *
 	file, _ := projectBindingFixture(t)
 	t.Setenv("AXV_HOME", filepath.Join(t.TempDir(), "absent-profile"))
 	for _, args := range [][]string{
-		{"vm", "project", "read", "project-cli", "file.txt"},
 		{"vm", "project", "read", "other-project", "file.txt", "--binding-file", file},
 		{"vm", "project", "write", "project-cli", "file.txt", "--binding-file", file},
 		{"vm", "project", "write", "project-cli", "file.txt", "--binding-file", file, "--create", "--expected-sha256", strings.Repeat("a", 64)},

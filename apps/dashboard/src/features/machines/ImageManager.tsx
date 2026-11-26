@@ -9,7 +9,6 @@ import { computeStore } from './compute-store';
 import { OperationRequest, operationError } from './operation-requests';
 import { humanize, linuxVMSetupGuide } from './presentation';
 import type { useCompute } from './useCompute';
-import { HostCommand } from './HostServiceGuidance';
 
 type ImageInput = { binding: ComputeBinding } & (
   | { kind: 'import'; spec: ImageImport; file?: File }
@@ -29,12 +28,10 @@ export function ImageManager({
   data,
   desktop,
   onShowActivity,
-  defaultSetupCommand,
 }: {
   data: ReturnType<typeof useCompute>;
   desktop: DesktopAPI;
   onShowActivity?: (id: string) => void;
-  defaultSetupCommand?: string;
 }) {
   const [selectedId, setSelected] = useState('');
   const [selectedHost, setSelectedHost] = useState('');
@@ -96,8 +93,7 @@ export function ImageManager({
   const administratorImages =
     providers.some((provider) => provider.provider === 'firecracker') &&
     !providers.some((provider) => provider.images);
-  const defaultImageId = data.preparation.check?.defaultImageId;
-  const showImageMenu = !!selected && selected.id !== defaultImageId;
+  const showImageMenu = !!selected;
   const imageUsers = (image: ImageInfo) =>
     data.machines.filter(
       (machine) =>
@@ -112,7 +108,6 @@ export function ImageManager({
     !editing &&
     !data.error &&
     !resourceBusy(data.operations, image.id) &&
-    image.id !== defaultImageId &&
     !hasUsers;
   const canRemove = !!selected && canRemoveImage(selected, !!usedBy.length);
   const validation =
@@ -214,14 +209,6 @@ export function ImageManager({
       ],
     });
     if (answer?.button !== 'remove') return;
-    const latest = computeStore.getSnapshot();
-    if (
-      latest.info?.hostId === hostId &&
-      data.prepare.getSnapshot().check?.defaultImageId === image.id
-    ) {
-      setError('The default AXV Guest image is managed by the VM host.');
-      return;
-    }
     await run(
       { kind: 'delete', image, binding: { hostId } },
       `Remove “${image.name}”`,
@@ -294,33 +281,6 @@ export function ImageManager({
     remove,
   });
   current.current = { hostId, selected, canVersion, canRemove, begin, remove };
-
-  if (
-    defaultSetupCommand &&
-    !editing &&
-    !requests.pending &&
-    !data.images.length
-  ) {
-    if (data.reloading) return null;
-    return (
-      <section className="machines-environment">
-        <header className="machines-section-heading">
-          <h2>Install the default VM image</h2>
-        </header>
-        <div className="machines-host-guidance">
-          <p>
-            Install the AXV Guest and kernel (about 135 MiB). The catalog
-            refreshes after the service restarts.
-          </p>
-          <HostCommand
-            key={defaultSetupCommand}
-            command={defaultSetupCommand}
-            desktop={desktop}
-          />
-        </div>
-      </section>
-    );
-  }
 
   return (
     <div>
@@ -549,7 +509,7 @@ export function ImageManager({
           {data.images.map((image) => (
             <tr key={image.id} data-selected={selected?.id === image.id}>
               <td>
-                {administratorImages || image.id === defaultImageId ? (
+                {administratorImages ? (
                   <strong>{image.name}</strong>
                 ) : (
                   <button

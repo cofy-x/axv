@@ -81,14 +81,19 @@ The [shared download cache](#shared-download-cache) is independent of a profile.
 Use the installed command from any directory:
 
 ```bash
-axv                      # start or reopen the background workstation in a browser
-axv init                 # create a starter config without starting services
-axv serve                # run the desktop in the foreground
-axv daemon start         # explicit background start without opening a browser
-axv daemon status        # desktop identity and VM controller readiness
-axv daemon logs          # print recent service logs
-axv daemon restart       # reload desktop settings, preserving the VM host
-axv daemon stop          # stop this profile's managed services
+axv                              # start or reopen the workstation (prints URL/hints in SSH/headless sessions)
+axv doctor [--json]              # inspect services, virtualization prerequisites, tools and stale artifacts
+axv init                         # create a starter config without starting services
+axv serve                        # run the desktop in the foreground
+axv daemon start [--enable] [--with-vm] [--only desktop|vm]
+axv daemon status [--json]       # unified desktop, autostart, remote and VM host readiness
+axv daemon logs [-f] [--desktop|--vm] [-n 100]
+axv daemon restart [--all] [--only desktop|vm]
+axv daemon stop [--all] [--only desktop|vm]
+axv daemon enable | disable      # manage persistent boot/login desktop autostart
+axv daemon upgrade               # sync this AXV binary to installed services (Linux VM host and/or desktop)
+axv daemon uninstall [--all|--vm]
+axv gc [--dry-run] [--json]      # clean up unreferenced pinned executables and stale launch records
 ```
 
 Running `axv` without arguments first verifies the profile's existing desktop and opens its address, including when that desktop was started with `serve`. Reuse does not apply edited configuration or a different shell environment. With no healthy instance, it starts managed background services. Concurrent launches wait for the same owned startup; an unresponsive instance reports diagnostics instead of being automatically replaced. A browser-opening failure prints the usable URL and leaves the service running.
@@ -99,7 +104,7 @@ The default URL is `http://127.0.0.1:3001`. The ordinary desktop listener requir
 
 The desktop becomes available before VM environment checks finish. Missing VM dependencies, invalid compute settings and an unavailable VM service are reported in **Virtual Machines** without preventing host project and session use. Desktop configuration, database and listener errors still fail startup. Already configured managed services are started or verified for reuse in the background; this does not start stopped VMs.
 
-macOS uses launchd in the current GUI login session. Linux uses a systemd user manager with `systemd-run` (systemd 254 or newer). Starting a daemon does not enable login/boot startup or alter lingering. Where native background supervision is unavailable, including Windows, use foreground `axv serve`; AXV does not silently switch supervision methods.
+macOS uses launchd (`~/Library/LaunchAgents/` for persistent autostart). Linux uses systemd user unit files (compatible with systemd 240+); `axv daemon enable` or `axv daemon start --enable` enables boot/login autostart and checks `loginctl` lingering so headless servers keep running across SSH logouts. In SSH or non-graphical sessions, `axv` skips local browser launch and prints the local URL, ready remote HTTPS URL, SSH tunnel command and `axv remote enable` guidance. Where native background supervision is unavailable, including Windows, use foreground `axv serve`; AXV does not silently switch supervision methods.
 
 | Operation | Lifetime effect |
 | --- | --- |
@@ -331,12 +336,15 @@ Advanced configuration can include the following `remote` section in the existin
 
 `hostname` is a lowercase DNS label of 1–63 characters (letters, digits and internal hyphens); the default is `axv`. Each profile owns a separate node, so choose a distinct name for separate workstations. An optional `remote.owner_user_id` can require a known positive numeric Tailscale user ID before first enrollment. These settings are read from the current profile on AXV service startup and on explicit enable/retry. Editing the file does not change a running node; use the panel to apply its enabled setting. After changing hostname or owner requirements, explicitly disable and enable, preserving the existing owner binding; a conflicting identity requires maintenance, not automatic reenrollment.
 
-For local inspection without enabling networking:
+For local inspection or headless CLI setup:
 
 ```bash
-axv remote status
-axv remote status --json
+axv remote status [--json]
+axv remote enable [--hostname axv-workstation] [--owner-user-id 12345]
+axv remote disable
 ```
+
+When the desktop is running, `axv remote enable` activates the embedded Tailscale node immediately and prints the authorization URL (`Authorize: ...`) or ready HTTPS URL. When the desktop is stopped, it saves the setting to `config.json` for the next launch.
 
 Enable MagicDNS and HTTPS certificates in the tailnet's [DNS settings](https://login.tailscale.com/admin/dns), and permit your devices to reach this node on TCP 443 in tailnet policy. [Tailscale HTTPS setup](https://tailscale.com/docs/how-to/set-up-https-certificates) explains that certificate issuance publishes the node's `.ts.net` name in certificate transparency logs. This does not make the service public. Missing settings produce `needs-https`; status `error` includes a diagnostic. Recheck status after enrollment/settings changes. In `ready`, open the reported HTTPS URL from another device connected to Tailscale as the bound owner. There is no HTTP fallback or public Funnel.
 
@@ -468,22 +476,27 @@ On Linux, the desktop connects to a separate VM service on the same computer. Th
 On a fresh Linux amd64 host, **Virtual Machines** shows an installation command using the absolute path to the running AXV executable. Follow the [desktop setup steps](usage.md#virtual-machines) to run it in Host Terminal. In another shell on the host, if `command -v axv` resolves to the same executable, use the following command.
 
 ```sh
-sudo "$(command -v axv)" host install-service
+sudo "$(command -v axv)" host install-service --apply-sysctl
+```
+
+By default, `install-service` enables `axv-host.service` for boot autostart (`--no-enable` disables that) and automatically connects the invoking desktop user's AXV profile to `/run/axv-host/control.sock` when compute is currently disabled (`--no-connect` disables that). `--apply-sysctl` enables and persists `net.ipv4.ip_forward=1` in `/etc/sysctl.d/99-axv.conf`.
+
+After installation, manage the Linux VM service directly through `axv daemon` or `axv host`:
+
+```sh
+axv daemon status                         # shows both desktop and axv-host.service (warns on version drift)
+axv daemon logs --vm -f                   # follow axv-host.service journald logs
+sudo axv daemon start --only vm           # or: sudo axv host start
+sudo axv daemon stop --only vm            # or: sudo axv host stop (preserves running VMs)
+sudo axv daemon upgrade                   # update /opt/axv/bin/axv and restart without killing VMs
+sudo axv daemon uninstall --vm            # stop, disable and remove axv-host.service
 ```
 
 The [installer](../apps/server/internal/compute/hostinstall) checks systemd 254 or newer, KVM, TUN, cgroup v2, IPv4 forwarding and the required host tools. It downloads and verifies the pinned Firecracker and jailer executables, [published AXV Guest and matching kernel](../apps/server/internal/compute/artifacts/firecracker.go). It installs AXV and the runtime under `/opt/axv/bin`, keeps the verified Guest archive and extracted disk in a versioned directory under `/opt/axv/images`, and registers the image in `/etc/axv/host.json` before starting `axv-host.service`. Leave room for the roughly 2 GiB image and the separate storage allocations of the VMs you create. The installer selects a private guest subnet clear of current routes, available jail identities and initial capacity limits. The default socket grants access to the invoking desktop account through its private primary group, or to root for a root desktop. If a shared group should control this VM host, an administrator can select it explicitly with `--socket-group NAME`. All members gain VM control.
 
 To check this host first, append `--check` to the displayed command. This checks prerequisites and existing paths without downloading, installing or starting anything. The installer preserves existing manual installations. After an interrupted first installation, run the same command again to continue from its recorded files.
 
-When the installer reports the service is ready, return to **Virtual Machines** and choose **Connect** when AXV detects the service. Then choose **New VM** to use the installed image. Follow the [VM workflow](usage.md#virtual-machines) for custom paths and recovering the connection. For an installed but stopped service, the panel offers `sudo systemctl start axv-host.service`. Inspect failures with `systemctl status axv-host.service --no-pager`.
-
-If an earlier invocation of the installer created a running service with an empty catalog, use the command in **Virtual Machines → Set Up VM Image** or run the following with the current AXV executable on the host.
-
-```sh
-sudo "$(command -v axv)" host install-image
-```
-
-The command verifies the installed service, appends the default image registration while preserving other settings and reloads the service with the new catalog. The command copied by the desktop also requires the connected host ID. Virtual Machines rechecks the authorized update and refreshes its catalog as described in [VM usage](usage.md#virtual-machines). For additional or custom images, follow [Linux Guest bundle installation](#linux-guest-bundle-installation).
+When the installer reports the service is ready, return to **Virtual Machines** and choose **Connect** when AXV detects the service. Then choose **New VM** to use the installed image. Follow the [VM workflow](usage.md#virtual-machines) for custom paths and recovering the connection. For an installed but stopped service, the panel offers `sudo axv daemon start --only vm`. Inspect failures with `systemctl status axv-host.service --no-pager`. For additional or custom images, follow [Linux Guest bundle installation](#linux-guest-bundle-installation).
 
 To connect the current AXV profile from a shell, run:
 

@@ -1,6 +1,9 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { Button, TextArea } from '@cofy-x/axv-nextstep';
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
+import { APIError } from '../../shared/api/http';
+import { machinesApi } from './api';
+import type { DoctorReport } from './api';
 import { humanize } from './presentation';
 import type { useCompute } from './useCompute';
 import './machine-diagnostics.css';
@@ -38,8 +41,13 @@ function diagnosticRows(
   const connectionRow: DiagnosticRow = connection
     ? [connection.label, connection.value, true]
     : ['Socket', socket, true];
+  const hostService = environment?.hostService;
+  const versionDriftDetail = hostService?.versionDrift
+    ? `Linux VM service runs ${hostService.installedVersion || 'an older build'} while desktop runs ${hostService.currentVersion || 'current'}. Run sudo axv daemon upgrade.`
+    : undefined;
   const issues: DiagnosticRow[] = [
     ['Details', detail],
+    ['Version drift', versionDriftDetail],
     ['Service error', runtime?.error],
     ['Inventory error', error],
     ['Preparation error', preparation.connectionError || preparation.error],
@@ -135,9 +143,52 @@ function MachineDiagnostics({
   sections: ReturnType<typeof diagnosticRows>;
 }) {
   const [copyState, setCopyState] = useState<CopyState>('idle');
-  const text = [...sections.summary, ...sections.context]
-    .map(([label, value]) => `${label}: ${value}`)
-    .join('\n');
+  const [doctorOpen, setDoctorOpen] = useState(false);
+  const [doctorLoading, setDoctorLoading] = useState(false);
+  const [doctorReport, setDoctorReport] = useState<DoctorReport>();
+  const [doctorError, setDoctorError] = useState('');
+  const doctorRequest = useRef<AbortController | null>(null);
+
+  useEffect(() => () => doctorRequest.current?.abort(), []);
+
+  async function loadDoctor() {
+    doctorRequest.current?.abort();
+    const controller = new AbortController();
+    doctorRequest.current = controller;
+    setDoctorLoading(true);
+    setDoctorError('');
+    try {
+      const report = await machinesApi.doctor(controller.signal);
+      if (controller.signal.aborted) return;
+      setDoctorReport(report);
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      if (err instanceof APIError && err.status === 403)
+        setDoctorError(
+          'System health checks are available only when connected locally on the machine running AXV.',
+        );
+      else
+        setDoctorError(
+          err instanceof Error
+            ? err.message
+            : 'Could not load system health checks.',
+        );
+    } finally {
+      if (!controller.signal.aborted) setDoctorLoading(false);
+    }
+  }
+
+  const doctorLines =
+    doctorReport?.checks.map(
+      (item) =>
+        `[${item.status.toUpperCase()}] ${item.label}: ${item.detail}${item.fix ? ` (Fix: ${item.fix})` : ''}`,
+    ) ?? [];
+  const text = [
+    ...[...sections.summary, ...sections.context].map(
+      ([label, value]) => `${label}: ${value}`,
+    ),
+    ...(doctorLines.length ? ['', 'System health:', ...doctorLines] : []),
+  ].join('\n');
 
   async function copy() {
     if (copyState === 'copying') return;
@@ -166,6 +217,56 @@ function MachineDiagnostics({
           <DiagnosticList rows={sections.context} />
         </details>
       )}
+      <details
+        open={doctorOpen}
+        onToggle={(event) => {
+          const open = event.currentTarget.open;
+          setDoctorOpen(open);
+          if (open && !doctorReport && !doctorLoading) void loadDoctor();
+        }}
+      >
+        <summary
+          tabIndex={0}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') event.stopPropagation();
+          }}
+        >
+          System health (axv doctor)
+        </summary>
+        <div className="machine-diagnostics-doctor">
+          {doctorLoading && <p role="status">Running host checks…</p>}
+          {doctorError && <p role="alert">{doctorError}</p>}
+          {doctorReport && (
+            <>
+              <p className="fine-print">
+                {doctorReport.ok} ok · {doctorReport.info} info ·{' '}
+                {doctorReport.warn} warn · {doctorReport.fail} fail
+              </p>
+              <ul className="machine-diagnostics-checks">
+                {doctorReport.checks.map((item) => (
+                  <li key={item.id} data-status={item.status}>
+                    <span className="machine-diagnostics-badge">
+                      {item.status.toUpperCase()}
+                    </span>
+                    <div>
+                      <strong>{item.label}</strong>
+                      <p>{item.detail}</p>
+                      {item.fix && (
+                        <p className="machine-diagnostics-fix">
+                          Fix: <code>{item.fix}</code>
+                        </p>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {!doctorLoading && (
+            <Button onClick={() => void loadDoctor()}>Refresh checks</Button>
+          )}
+        </div>
+      </details>
       <div className="app-actions">
         <Button
           aria-disabled={copyState === 'copying'}

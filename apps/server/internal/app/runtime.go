@@ -113,7 +113,7 @@ func serveContext(ctx context.Context, s Settings, output io.Writer, runner Host
 			_ = os.Remove(s.StatePath())
 		}
 	}()
-	gateway := computegateway.NewGateway("", computegateway.GatewayOptions{ConfigPath: s.Desktop.ConfigPath, ProfileHome: s.Home, Logger: logger, LogPath: profileLog.Path()})
+	gateway := computegateway.NewGateway("", computegateway.GatewayOptions{ConfigPath: s.Desktop.ConfigPath, ProfileHome: s.Home, Version: s.Version, Logger: logger, LogPath: profileLog.Path()})
 	defer gateway.Close()
 	coordinator := newComputeCoordinator(ctx, s, output, gateway, runner)
 	defer coordinator.close()
@@ -140,7 +140,7 @@ func serveContext(ctx context.Context, s Settings, output io.Writer, runner Host
 		gateway.SetPreparationSnapshot(preparation.Snapshot)
 		defer func() { coordinator.close(); preparation.Close() }()
 	}
-	return server.RunContext(ctx, s.Desktop, gateway, server.Options{LaunchID: s.LaunchID, RunnerExecutable: s.RunnerExecutable, PreparationHandler: preparationHandler, InstanceID: state.InstanceID, Ready: func(url string) error {
+	return server.RunContext(ctx, s.Desktop, gateway, server.Options{LaunchID: s.LaunchID, RunnerExecutable: s.RunnerExecutable, PreparationHandler: preparationHandler, InstanceID: state.InstanceID, Version: s.Version, Ready: func(url string) error {
 		logger.Info("service.ready", "instanceId", state.InstanceID)
 		state.URL = url
 		if err := jsonfile.Write(s.StatePath(), state, 0600); err != nil {

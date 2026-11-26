@@ -39,6 +39,7 @@ type Options struct {
 	RunnerExecutable   string
 	PreparationHandler http.Handler
 	InstanceID         string
+	Version            string
 	Ready              func(string) error
 }
 
@@ -155,6 +156,7 @@ func RunContext(ctx context.Context, settings config.Config, computeGateway *com
 	}()
 	application.Handle("GET /api/remote/status", remoteStatusHandler(options.InstanceID, remote.Status))
 	application.Handle("PUT /api/remote", remoteSettingsHandler(remote))
+	application.Handle("GET /api/doctor", doctorHandler(options.InstanceID, settings.Home, options.Version))
 	var cloudflareTransport atomic.Pointer[cloudflareController]
 	publications, publishErr := publish.New(ctx, publish.Options{Home: settings.Home, Gateway: computeGateway, Settings: func() (publish.Settings, error) {
 		return cloudflarePublicationSettings(settings.Home, cloudflareTransport.Load())

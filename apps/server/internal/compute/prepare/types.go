@@ -66,7 +66,6 @@ type LocalServiceCheck struct {
 
 type Check struct {
 	OfficialImageAvailable  bool               `json:"officialImageAvailable"`
-	DefaultImageID          string             `json:"defaultImageId,omitempty"`
 	Platform                string             `json:"platform"`
 	Arch                    string             `json:"arch"`
 	Configured              bool               `json:"configured"`

@@ -17,9 +17,25 @@ concurrency:
 
 jobs:
   package:
-    name: Linux amd64 candidate
+    name: ${{ matrix.label }} candidate
     if: github.repository == 'cofy-x/axv' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Linux amd64
+            runner: ubuntu-24.04
+            goos: linux
+            goarch: amd64
+          - label: Linux arm64
+            runner: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+          - label: macOS arm64
+            runner: macos-15
+            goos: darwin
+            goarch: arm64
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -43,12 +59,16 @@ jobs:
         with:
           go-version-file: .go-version
           cache-dependency-path: apps/server/go.sum
-      - name: Install host test prerequisite
+      - name: Install host test prerequisite (Linux)
+        if: matrix.goos == 'linux'
         run: |
           node scripts/ci-ubuntu-mirrors.mjs /etc/apt/apt-mirrors.txt "$RUNNER_TEMP/axv-apt-mirrors.txt"
           sudo install -m 0644 "$RUNNER_TEMP/axv-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
           sudo apt-get update
           sudo apt-get install --yes tmux
+      - name: Install host test prerequisite (macOS)
+        if: matrix.goos == 'darwin'
+        run: brew install tmux
       - name: Install locked dependencies
         run: make deps PNPM=pnpm
       - name: Check source after dependency installation
@@ -69,7 +89,7 @@ jobs:
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
-            dist/release/${{ inputs.version }}/axv_${{ inputs.version }}_linux_amd64.tar.gz
+            dist/release/${{ inputs.version }}/axv_${{ inputs.version }}_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz
             dist/release/${{ inputs.version }}/SHA256SUMS
           create-storage-record: false
       - name: Retain and verify the original build provenance
@@ -79,10 +99,11 @@ jobs:
         run: |
           cp -- "$ATTESTATION_BUNDLE" "dist/release/$VERSION/provenance.json"
           node scripts/verify-release-provenance.mjs --kind app --version "$VERSION" \
+            --os "${{ matrix.goos }}" --arch "${{ matrix.goarch }}" \
             --source "$GITHUB_SHA" --directory "dist/release/$VERSION"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: axv-${{ inputs.version }}-linux-amd64-candidate
+          name: axv-${{ inputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}-candidate
           path: dist/release/${{ inputs.version }}/
           if-no-files-found: error
           retention-days: 14

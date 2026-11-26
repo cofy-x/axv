@@ -164,7 +164,7 @@ describe('window geometry and restoration', () => {
   });
   it('preserves unavailable applications while filtering malformed geometry from stored layouts', () => {
     const layout = {
-      version: 1,
+      version: 2,
       activeWindowId: 'missing',
       icons: { good: { x: 20, y: 40 }, bad: { x: NaN, y: 20 } },
       windows: [
@@ -741,20 +741,19 @@ describe('versioned workspace persistence', () => {
     expect(result.currentWorkspaceId).toBe('workspace-1');
     expect(result.dock).toEqual([{ appId: 'files', pinned: true }]);
   });
-  it('recognizes future versions so the controller can suppress persistence until reset', () => {
+  it('recognizes unsupported versions so the controller can suppress persistence until reset', () => {
     expect(unsupportedLayout({ version: 99 })).toBe(true);
-    expect(unsupportedLayout({ version: 1 })).toBe(false);
+    expect(unsupportedLayout({ version: 1 })).toBe(true);
     expect(unsupportedLayout({ version: 2 })).toBe(false);
     expect(unsupportedLayout(null)).toBe(false);
   });
-  it('migrates legacy windows and rejects malformed nested settings without throwing', () => {
-    const result = sanitizeLayout(
+  it('rejects unsupported layout versions and malformed nested settings without throwing', () => {
+    const unsupported = sanitizeLayout(
       { version: 1, windows: [testWindow('a')], icons: null, workspaces: 42 },
       [app],
     );
-    expect(result.windows[0].id).toBe('files:a');
-    expect(result.windows[0].viewState).toEqual({ draft: 'unsaved' });
-    expect(result.workspaces).toHaveLength(4);
+    expect(unsupported.windows).toEqual([]);
+    expect(unsupported.workspaces).toHaveLength(4);
     const broken = sanitizeLayout(
       {
         version: 2,
