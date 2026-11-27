@@ -92,7 +92,7 @@ func Open(ctx context.Context, options Options) (*Manager, error) {
 		if !os.IsNotExist(lockErr) {
 			return nil, ErrStore
 		}
-		m.state = diskState{Version: 1, StoreID: nonce(), Revision: 1, Checkpoints: map[string]checkpoint{}, Events: []Notification{}, Config: Config{EventTypes: []string{"agent_waiting_approval", "agent_waiting_input", "agent_failed", "agent_interrupted", "task_failed", "task_interrupted", "task_unknown"}}}
+		m.state = diskState{Version: 1, StoreID: nonce(), Revision: 1, Checkpoints: map[string]checkpoint{}, Events: []Notification{}, Config: Config{EventTypes: []string{"agent_waiting_approval", "agent_waiting_input", "agent_failed", "agent_interrupted", "task_failed", "task_interrupted", "task_unknown", "github_review_findings"}}}
 		if m.state.StoreID == "" || m.save(m.state) != nil {
 			return nil, ErrStore
 		}
@@ -163,7 +163,7 @@ func validText(s string, max int) bool {
 }
 
 func validConfig(c Config) bool {
-	if !validText(c.ApplicationID, 128) || !validText(c.DeviceID, 128) || len(c.EventTypes) > 10 {
+	if !validText(c.ApplicationID, 128) || !validText(c.DeviceID, 128) || len(c.EventTypes) > maxEventTypes {
 		return false
 	}
 	seen := map[string]bool{}

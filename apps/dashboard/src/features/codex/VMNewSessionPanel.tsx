@@ -14,6 +14,7 @@ interface VMNewSessionPanelProps {
   desktop: DesktopAPI;
   machines: Machine[];
   initialMachineId?: string;
+  initialProjectId?: string;
   initialProjectPath?: string;
   onClose: () => void;
   onStarted: (session: CodexSessionRecord) => void;
@@ -31,6 +32,7 @@ export function VMNewSessionPanel({
   desktop,
   machines,
   initialMachineId,
+  initialProjectId,
   initialProjectPath,
   onClose,
   onStarted,
@@ -72,6 +74,12 @@ export function VMNewSessionPanel({
   useEffect(() => {
     if (initialProjectPath !== undefined) setProjectPath(initialProjectPath);
   }, [initialProjectPath]);
+
+  useEffect(() => {
+    if (!initialProjectId || initialProjectPath) return;
+    const matched = projects.find((project) => project.id === initialProjectId);
+    if (matched) setProjectPath(matched.root);
+  }, [initialProjectId, initialProjectPath, projects]);
 
   const loadVMDetails = useCallback(
     async (machine: Machine, signal?: AbortSignal) => {

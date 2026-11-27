@@ -107,7 +107,7 @@ func RunContext(ctx context.Context, settings config.Config, computeGateway *com
 			}
 		}()
 	}
-	workNotifications, notificationErr := workstationNotifications(ctx, settings.Home, codexSessions, computeGateway)
+	workNotifications, notificationErr := workstationNotifications(ctx, settings.Home, codexSessions, computeGateway, reviews)
 	if notificationErr != nil {
 		application.HandleFunc("/api/notifications", notificationsUnavailable)
 		application.HandleFunc("/api/notifications/", notificationsUnavailable)

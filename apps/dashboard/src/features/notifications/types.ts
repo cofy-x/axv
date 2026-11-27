@@ -9,10 +9,11 @@ export const notificationKinds = [
   ['task_cancelled', 'Task cancelled'],
   ['task_interrupted', 'Task interrupted'],
   ['task_unknown', 'Task outcome unknown'],
+  ['github_review_findings', 'GitHub Review found issues'],
 ] as const;
 
 export interface NotificationTarget {
-  kind: 'codex' | 'task';
+  kind: 'codex' | 'task' | 'github_review';
   storeId: string;
   sessionId?: string;
   runId?: string;
@@ -25,6 +26,8 @@ export interface NotificationTarget {
   projectId?: string;
   taskId?: string;
   attemptId?: string;
+  repository?: string;
+  pullRequest?: number;
 }
 
 export interface PushDelivery {

@@ -38,6 +38,21 @@ func TestValidTargetAcceptsHostAndVMCodexTargets(t *testing.T) {
 	if validTarget(missingHost) {
 		t.Fatal("expected VM codex target without HostID to be rejected")
 	}
+	review := notificationevent.Target{
+		Kind:        "github_review",
+		StoreID:     "review-store-1",
+		EventID:     "evt-review-1",
+		Repository:  "owner/repo",
+		PullRequest: 42,
+	}
+	if !validTarget(review) {
+		t.Fatal("expected valid github_review target")
+	}
+	invalidReview := review
+	invalidReview.Repository = "owner/.."
+	if validTarget(invalidReview) {
+		t.Fatal("expected invalid github_review repository to be rejected")
+	}
 }
 
 func TestSchemaKeysCannotAliasThroughUnicodeCaseFolding(t *testing.T) {

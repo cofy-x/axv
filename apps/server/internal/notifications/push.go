@@ -121,7 +121,7 @@ func validPushState(p *pushDiskState) bool {
 		if s.Fingerprint != "" {
 			return false
 		}
-		if !pushID(s.ID) || !pushID(s.InstallationID) || !validPushOrigin(s.Origin) || !validText(s.Label, 80) || len(s.EventTypes) > 10 || s.CreatedAt.IsZero() || s.EnabledAt.IsZero() || !validPushTypes(s.EventTypes) || ids[s.ID] || installations[s.Origin+":"+s.InstallationID] {
+		if !pushID(s.ID) || !pushID(s.InstallationID) || !validPushOrigin(s.Origin) || !validText(s.Label, 80) || len(s.EventTypes) > maxEventTypes || s.CreatedAt.IsZero() || s.EnabledAt.IsZero() || !validPushTypes(s.EventTypes) || ids[s.ID] || installations[s.Origin+":"+s.InstallationID] {
 			return false
 		}
 		if s.Status != "active" && s.Status != "disabled" && s.Status != "expired" {
@@ -170,7 +170,7 @@ func validPushTypes(types []string) bool {
 		}
 		seen[kind] = true
 	}
-	return len(types) > 0 && len(types) <= 10
+	return len(types) > 0 && len(types) <= maxEventTypes
 }
 func validPushOrigin(origin string) bool {
 	u, e := url.Parse(origin)

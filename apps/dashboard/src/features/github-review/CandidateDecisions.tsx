@@ -75,6 +75,7 @@ export interface AssessmentControls {
     onOpened: (candidateId: string) => void,
   ) => void;
   onSave: (job: ReviewJob, id: string, draft: DecisionDraft) => void;
+  onOpenInCodex?: (job: ReviewJob, finding: Finding) => void;
 }
 
 export type CandidateFocus =
@@ -637,7 +638,7 @@ function SelectedCandidate({
               draft={draft}
             />
           ) : !stale && !hasSuggestion ? (
-            <div ref={assessmentTrigger}>
+            <div ref={assessmentTrigger} className="app-actions">
               <Button
                 disabled={controls.disabled || !complete}
                 onClick={() =>
@@ -649,6 +650,17 @@ function SelectedCandidate({
                 candidate.evidence?.length
                   ? 'Edit assessment'
                   : 'Assess candidate'}
+              </Button>
+              {controls.onOpenInCodex && (
+                <Button onClick={() => controls.onOpenInCodex?.(job, finding)}>
+                  Open in Codex
+                </Button>
+              )}
+            </div>
+          ) : !stale && controls.onOpenInCodex ? (
+            <div className="app-actions">
+              <Button onClick={() => controls.onOpenInCodex?.(job, finding)}>
+                Open in Codex
               </Button>
             </div>
           ) : null}

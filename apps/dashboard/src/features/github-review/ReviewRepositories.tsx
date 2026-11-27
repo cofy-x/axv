@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Button, Checkbox, Field, TextArea } from '@cofy-x/axv-nextstep';
 import { ComparisonRuntimes } from './ComparisonRuntimes';
 import { QuickTestProfiles } from './QuickTestProfiles';
+import { ReviewVMTargetSelector } from './ReviewVMTargetSelector';
 import {
   emptyPolicyDraft,
   isWatchedRepositoryName,
@@ -9,7 +10,11 @@ import {
 } from './review-settings';
 import type { PolicyDraft, RepositorySettingsIssue } from './review-settings';
 import { githubReviewAPI, reviewError } from './api';
-import type { RepositoryReviewEnvironment, ReviewVMReadiness } from './api';
+import type {
+  RepositoryReviewEnvironment,
+  ReviewVMReadiness,
+  ReviewVMTarget,
+} from './api';
 import './review-repositories.css';
 
 type AddMode = 'single' | 'batch';
@@ -275,20 +280,24 @@ export function ReviewRepositoryList({
 export function ReviewRepositoryEditor({
   repository,
   policy,
+  vmTarget,
   disabled,
   environment,
   issue,
   onBack,
   onChange,
+  onChangeVMTarget,
   onStopWatching,
 }: {
   repository: string;
   policy: PolicyDraft;
+  vmTarget?: ReviewVMTarget;
   disabled: boolean;
   environment: RepositoryReviewEnvironment;
   issue?: RepositorySettingsIssue;
   onBack: () => void;
   onChange: (patch: Partial<PolicyDraft>) => void;
+  onChangeVMTarget: (target?: ReviewVMTarget) => void;
   onStopWatching: () => void;
 }) {
   const titleId = useId();
@@ -300,6 +309,7 @@ export function ReviewRepositoryEditor({
   const readinessRequest = useRef<AbortController>(null);
   const [readiness, setReadiness] = useState<ReviewVMReadiness>();
   const [checkingVM, setCheckingVM] = useState(false);
+  const [vmSectionOpen, setVmSectionOpen] = useState(false);
 
   useEffect(() => {
     title.current?.focus();
@@ -400,6 +410,7 @@ export function ReviewRepositoryEditor({
           ref={vmTests}
           className="github-review-repository-group"
           onToggle={(event) => {
+            setVmSectionOpen(event.currentTarget.open);
             if (
               event.currentTarget.open &&
               environment.configured &&
@@ -411,9 +422,11 @@ export function ReviewRepositoryEditor({
           <summary>
             VM tests{' '}
             <span>
-              {environment.configured
-                ? environment.name
-                : 'Review VM needs setup'}
+              {vmTarget
+                ? vmTarget.name
+                : environment.configured
+                  ? environment.name
+                  : 'Review VM needs setup'}
             </span>
           </summary>
           <div className="github-review-repository-fields">
@@ -422,6 +435,13 @@ export function ReviewRepositoryEditor({
                 {issue.message}
               </p>
             )}
+            <ReviewVMTargetSelector
+              active={vmSectionOpen}
+              disabled={disabled}
+              environment={environment}
+              target={vmTarget}
+              onChange={onChangeVMTarget}
+            />
             {environment.configured ? (
               <div>
                 {(checkingVM || readiness) && (

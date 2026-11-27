@@ -35,6 +35,7 @@ type RepositoryPolicy struct {
 
 type Config struct {
 	RepositoryPolicies  map[string]RepositoryPolicy `json:"repositoryPolicies"`
+	RepositoryVMTargets map[string]ReviewVMTarget   `json:"repositoryVmTargets,omitempty"`
 	Repositories        []string                    `json:"repositories"`
 	PublishRepositories []string                    `json:"publishRepositories"`
 	IntervalMinutes     int                         `json:"intervalMinutes"`
@@ -190,6 +191,7 @@ type DiscoveryStatus struct {
 }
 
 type Snapshot struct {
+	CanConfigure           bool                           `json:"canConfigure"`
 	ReviewAccount          string                         `json:"reviewAccount"`
 	ComparisonReady        bool                           `json:"comparisonReady"`
 	RepositoryEnvironments map[string]ReviewVMEnvironment `json:"repositoryEnvironments,omitempty"`
@@ -255,7 +257,23 @@ func (c Config) normalized() (Config, error) {
 		}
 		policies[name] = policy
 	}
+	vmTargets := make(map[string]ReviewVMTarget, len(c.RepositoryVMTargets))
+	for key, target := range c.RepositoryVMTargets {
+		name, ok := watched[strings.ToLower(key)]
+		if !ok || !target.valid() {
+			return Config{}, ErrInvalid
+		}
+		if _, duplicate := vmTargets[name]; duplicate {
+			return Config{}, ErrInvalid
+		}
+		vmTargets[name] = target
+	}
 	c.RepositoryPolicies = policies
+	if len(vmTargets) > 0 {
+		c.RepositoryVMTargets = vmTargets
+	} else {
+		c.RepositoryVMTargets = nil
+	}
 	c.Repositories = repositories
 	return c, nil
 }

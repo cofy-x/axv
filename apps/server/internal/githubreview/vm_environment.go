@@ -40,6 +40,10 @@ type ReviewVMTarget struct {
 type ReviewVMEnvironment struct {
 	Name       string `json:"name"`
 	Configured bool   `json:"configured"`
+	Source     string `json:"source,omitempty"`
+	HostID     string `json:"hostId,omitempty"`
+	MachineID  string `json:"machineId,omitempty"`
+	ProjectID  string `json:"projectId,omitempty"`
 }
 
 type ReviewVMReadiness struct {
@@ -175,19 +179,44 @@ func (target ReviewVMTarget) valid() bool {
 		reviewVMHostID.MatchString(target.HostID) && compute.IsMachineID(target.MachineID) && reviewVMProjectID.MatchString(target.ProjectID)
 }
 
-func (v ComputeVMTests) forRepository(repository string) (ComputeVMTests, string) {
-	target, exists := v.RepositoryTargets[strings.ToLower(repository)]
-	v.RepositoryTargets = nil
-	if exists {
+func (v ComputeVMTests) forRepositoryWithSettings(repository string, saved map[string]ReviewVMTarget) (ComputeVMTests, ReviewVMEnvironment) {
+	key := strings.ToLower(repository)
+	if target, exists := v.RepositoryTargets[key]; exists {
+		v.RepositoryTargets = nil
 		v.HostID, v.MachineID, v.ProjectID = target.HostID, target.MachineID, target.ProjectID
-		return v, target.Name
+		return v, ReviewVMEnvironment{
+			Name:       target.Name,
+			Configured: v.comparisonReady(),
+			Source:     "env",
+			HostID:     target.HostID,
+			MachineID:  target.MachineID,
+			ProjectID:  target.ProjectID,
+		}
 	}
-	return v, defaultReviewVMName
+	if target, exists := saved[key]; exists {
+		v.RepositoryTargets = nil
+		v.HostID, v.MachineID, v.ProjectID = target.HostID, target.MachineID, target.ProjectID
+		return v, ReviewVMEnvironment{
+			Name:       target.Name,
+			Configured: v.comparisonReady(),
+			Source:     "settings",
+			HostID:     target.HostID,
+			MachineID:  target.MachineID,
+			ProjectID:  target.ProjectID,
+		}
+	}
+	v.RepositoryTargets = nil
+	configured := v.comparisonReady()
+	env := ReviewVMEnvironment{Name: defaultReviewVMName, Configured: configured, Source: "default"}
+	if configured {
+		env.HostID, env.MachineID, env.ProjectID = v.HostID, v.MachineID, v.ProjectID
+	}
+	return v, env
 }
 
 func (s *Service) vmForRepository(repository string) VMTestRunner {
 	if v, ok := s.vm.(ComputeVMTests); ok {
-		scoped, _ := v.forRepository(repository)
+		scoped, _ := v.forRepositoryWithSettings(repository, s.savedVMTargets())
 		return scoped
 	}
 	return s.vm
@@ -208,20 +237,28 @@ func (s *Service) scenarioVMReady(repository string) bool {
 
 func (s *Service) repositoryEnvironments(repositories []string) map[string]ReviewVMEnvironment {
 	vm, ok := s.vm.(ComputeVMTests)
-	if !ok || (len(repositories) == 0 && len(vm.RepositoryTargets) == 0) {
+	saved := s.savedVMTargets()
+	if !ok || (len(repositories) == 0 && len(vm.RepositoryTargets) == 0 && len(saved) == 0) {
 		return nil
 	}
-	result := make(map[string]ReviewVMEnvironment, len(repositories)+len(vm.RepositoryTargets))
+	result := make(map[string]ReviewVMEnvironment, len(repositories)+len(vm.RepositoryTargets)+len(saved))
 	watched := make(map[string]bool, len(repositories))
 	for _, repository := range repositories {
-		scoped, name := vm.forRepository(repository)
-		result[repository] = ReviewVMEnvironment{Name: name, Configured: scoped.comparisonReady()}
+		_, env := vm.forRepositoryWithSettings(repository, saved)
+		result[repository] = env
 		watched[strings.ToLower(repository)] = true
 	}
 	for repository := range vm.RepositoryTargets {
 		if !watched[repository] {
-			scoped, name := vm.forRepository(repository)
-			result[repository] = ReviewVMEnvironment{Name: name, Configured: scoped.comparisonReady()}
+			_, env := vm.forRepositoryWithSettings(repository, saved)
+			result[repository] = env
+			watched[repository] = true
+		}
+	}
+	for repository := range saved {
+		if !watched[repository] {
+			_, env := vm.forRepositoryWithSettings(repository, saved)
+			result[repository] = env
 		}
 	}
 	return result

@@ -123,5 +123,8 @@ var eventTitles = map[string]string{
 	"task_cancelled":         "Project task cancelled",
 	"task_interrupted":       "Project task interrupted",
 	"task_unknown":           "Project task outcome uncertain",
+	"github_review_findings": "GitHub Review found issues",
 	"test":                   "AXV notification test",
 }
+
+const maxEventTypes = 16

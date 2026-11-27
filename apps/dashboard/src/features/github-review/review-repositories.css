@@ -124,3 +124,9 @@
 .github-review-repository-stop {
   margin-top: 10px;
 }
+
+.github-review-vm-binding {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 8px;
+}

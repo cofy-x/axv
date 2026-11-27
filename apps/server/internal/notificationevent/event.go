@@ -18,6 +18,8 @@ type Target struct {
 	ProjectID   string `json:"projectId,omitempty"`
 	TaskID      string `json:"taskId,omitempty"`
 	AttemptID   string `json:"attemptId,omitempty"`
+	Repository  string `json:"repository,omitempty"`
+	PullRequest int    `json:"pullRequest,omitempty"`
 }
 
 type Event struct {

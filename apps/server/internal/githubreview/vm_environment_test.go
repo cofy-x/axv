@@ -158,9 +158,10 @@ func TestReviewVMSelectionKeepsOverrideAndDefaultReadinessSeparate(t *testing.T)
 	}
 	service := Service{vm: vm}
 	envs := service.repositoryEnvironments([]string{"Owner/Python", "owner/pure-go"})
-	if len(envs) != 3 || envs["Owner/Python"] != (ReviewVMEnvironment{primary.Name, true}) ||
-		envs["owner/javascript"] != (ReviewVMEnvironment{secondary.Name, true}) ||
-		envs["owner/pure-go"] != (ReviewVMEnvironment{defaultReviewVMName, true}) {
+	wantPython := ReviewVMEnvironment{Name: primary.Name, Configured: true, Source: "env", HostID: primary.HostID, MachineID: primary.MachineID, ProjectID: primary.ProjectID}
+	wantJS := ReviewVMEnvironment{Name: secondary.Name, Configured: true, Source: "env", HostID: secondary.HostID, MachineID: secondary.MachineID, ProjectID: secondary.ProjectID}
+	wantGo := ReviewVMEnvironment{Name: defaultReviewVMName, Configured: true, Source: "default", HostID: vm.HostID, MachineID: vm.MachineID, ProjectID: vm.ProjectID}
+	if len(envs) != 3 || envs["Owner/Python"] != wantPython || envs["owner/javascript"] != wantJS || envs["owner/pure-go"] != wantGo {
 		t.Fatalf("repository readiness statuses: %+v", envs)
 	}
 	selected := service.vmForRepository("OWNER/PYTHON").(ComputeVMTests)

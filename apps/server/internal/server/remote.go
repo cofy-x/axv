@@ -107,7 +107,7 @@ func remoteWriteError(w http.ResponseWriter, status int, code, message string) {
 
 func remoteLocalOnlyRoute(r *http.Request) bool {
 	if pathWithin(r.URL.Path, "/api/github-review") {
-		return true
+		return githubReviewLocalOnlyRoute(r)
 	}
 	if pathWithin(r.URL.Path, "/api/notifications") {
 		return r.Method == http.MethodPost && (r.URL.Path == "/api/notifications/config" ||
@@ -179,6 +179,9 @@ func remoteRoute(r *http.Request) bool {
 		if pathWithin(r.URL.Path, "/api/extensions") {
 			return remoteExtensionRoute(r)
 		}
+		if pathWithin(r.URL.Path, "/api/github-review") {
+			return remoteGitHubReviewRoute(r)
+		}
 		for _, prefix := range []string{
 			"/api/health", "/api/bootstrap", "/api/connection",
 			"/api/preferences", "/api/layout", "/api/terminal",
@@ -217,6 +220,45 @@ func remoteNotificationRoute(r *http.Request) bool {
 	if r.Method == http.MethodPost {
 		switch path {
 		case "/push/prepare", "/push/subscribe", "/push/test", "/push/disable", "/push/unsubscribe":
+			return true
+		}
+	}
+	return false
+}
+
+func githubReviewLocalOnlyRoute(r *http.Request) bool {
+	path := strings.TrimPrefix(r.URL.Path, "/api/github-review")
+	switch {
+	case r.Method == http.MethodPut && path == "/config":
+		return true
+	case r.Method == http.MethodPost && (strings.HasPrefix(path, "/connect/") || strings.HasPrefix(path, "/disconnect/") || path == "/approve-comparison-scenario"):
+		return true
+	default:
+		return false
+	}
+}
+
+func remoteGitHubReviewRoute(r *http.Request) bool {
+	if githubReviewLocalOnlyRoute(r) {
+		return false
+	}
+	path := strings.TrimPrefix(r.URL.Path, "/api/github-review")
+	if r.Method == http.MethodGet {
+		switch {
+		case path == "", path == "/inbox", path == "/job", path == "/vm-readiness":
+			return true
+		case strings.HasPrefix(path, "/candidate-comparison/") && len(path) > len("/candidate-comparison/"):
+			return !strings.Contains(strings.TrimPrefix(path, "/candidate-comparison/"), "/")
+		default:
+			return false
+		}
+	}
+	if r.Method == http.MethodPost {
+		switch path {
+		case "/run", "/review-pr", "/review-latest", "/retry", "/refresh-checks",
+			"/retry-test", "/confirm-test-recommendation",
+			"/candidate", "/candidate-followup", "/candidate-draft", "/candidate-draft-reviewed",
+			"/candidate-comparison":
 			return true
 		}
 	}

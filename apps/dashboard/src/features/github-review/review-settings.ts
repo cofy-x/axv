@@ -2,6 +2,7 @@ import type {
   ComparisonRuntime,
   ComparisonScenario,
   ReviewConfig,
+  ReviewVMTarget,
   TestProfile,
 } from './api';
 
@@ -48,6 +49,7 @@ export interface SettingsDraft {
   watchOnly: boolean;
   repositories: string[];
   policies: Record<string, PolicyDraft>;
+  vmTargets: Record<string, ReviewVMTarget>;
   intervalMinutes: string;
   dailyLimit: string;
   enabled: boolean;
@@ -105,6 +107,12 @@ export function configDraft(config: ReviewConfig): SettingsDraft {
         },
       ]),
     ),
+    vmTargets: Object.fromEntries(
+      Object.entries(config.repositoryVmTargets ?? {}).map(([repo, target]) => [
+        repo.toLowerCase(),
+        target,
+      ]),
+    ),
     intervalMinutes: String(config.intervalMinutes),
     dailyLimit: String(config.dailyLimit),
     enabled: config.enabled,
@@ -159,11 +167,18 @@ export function configFromDraft(draft: SettingsDraft): ReviewConfig {
       ];
     }),
   );
+  const repositoryVmTargets = Object.fromEntries(
+    draft.repositories.flatMap((repo) => {
+      const target = draft.vmTargets[repo.toLowerCase()];
+      return target ? [[repo, target]] : [];
+    }),
+  );
   return {
     enabled: draft.enabled,
     ...(draft.watchOnly ? { watchOnly: true } : {}),
     revision: draft.revision,
     repositoryPolicies,
+    ...(Object.keys(repositoryVmTargets).length ? { repositoryVmTargets } : {}),
     repositories: draft.repositories,
     publishRepositories: [],
     intervalMinutes: Number(draft.intervalMinutes),

@@ -31,6 +31,8 @@ export function TargetIdentity({ target }: { target: NotificationTarget }) {
                   projectId: 'Project',
                   taskId: 'Task',
                   attemptId: 'Attempt',
+                  repository: 'Repository',
+                  pullRequest: 'Pull request',
                 } as Record<string, string>
               )[key] || key}
             </dt>
@@ -134,8 +136,22 @@ export function NotificationDetails({
                     : 'Open Codex session'}
                 </Button>
               )}
+            {detail.event.target.kind === 'github_review' && (
+              <Button
+                primary
+                disabled={
+                  !active || !!resource.error || !detail.resolution.available
+                }
+                onClick={() => desktop.openApp('github-review')}
+              >
+                Open GitHub Review
+              </Button>
+            )}
             <Button
-              primary={detail.event.target.kind !== 'codex'}
+              primary={
+                detail.event.target.kind !== 'codex' &&
+                detail.event.target.kind !== 'github_review'
+              }
               disabled={
                 !active || !!resource.error || !detail.resolution.available
               }

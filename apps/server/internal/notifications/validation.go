@@ -30,6 +30,17 @@ func opaqueID(value string) bool {
 	return len(value) == 32 && err == nil
 }
 
+func validRepositoryTarget(value string) bool {
+	if value == "" || len(value) > 140 {
+		return false
+	}
+	owner, name, ok := strings.Cut(value, "/")
+	if !ok || owner == "" || name == "" || strings.Contains(name, "/") || name == "." || name == ".." {
+		return false
+	}
+	return identifier(owner, true, 39) && identifier(name, true, 100)
+}
+
 func validTarget(t notificationevent.Target) bool {
 	if !identifier(t.StoreID, true, 128) {
 		return false
@@ -44,12 +55,22 @@ func validTarget(t notificationevent.Target) bool {
 	}
 	switch t.Kind {
 	case "codex":
+		if t.Repository != "" || t.PullRequest != 0 {
+			return false
+		}
 		if t.MachineID != "" {
 			return t.SessionID != "" && t.RunID != "" && t.ThreadID != "" && t.EventID != "" && t.HostID != "" && t.ProjectID == "" && t.TaskID == "" && t.AttemptID == ""
 		}
 		return t.SessionID != "" && t.RunID != "" && t.ThreadID != "" && t.EventID != "" && t.MachineName == "" && t.TaskID == "" && t.AttemptID == "" && (t.HostID == "") == (t.ProjectID == "")
 	case "task":
+		if t.Repository != "" || t.PullRequest != 0 {
+			return false
+		}
 		return t.HostID != "" && t.StoreID == t.HostID && t.MachineID == "" && t.MachineName == "" && t.ProjectID != "" && t.TaskID != "" && t.AttemptID != "" && t.EventID != "" && t.SessionID == "" && t.RunID == "" && t.ThreadID == "" && t.TurnID == ""
+	case "github_review":
+		return t.EventID != "" && validRepositoryTarget(t.Repository) && t.PullRequest > 0 &&
+			t.SessionID == "" && t.RunID == "" && t.ThreadID == "" && t.TurnID == "" &&
+			t.HostID == "" && t.MachineID == "" && t.MachineName == "" && t.ProjectID == "" && t.TaskID == "" && t.AttemptID == ""
 	}
 	return false
 }

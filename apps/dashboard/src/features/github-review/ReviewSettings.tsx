@@ -73,7 +73,9 @@ export function ReviewSettings({
   const repository = values.repositories.find((item) => item === selected);
   const repoKey = repository?.toLowerCase() ?? '';
   const policy = values.policies[repoKey] ?? emptyPolicyDraft;
-  const editingDisabled = disabled || stale;
+  const vmTarget = values.vmTargets[repoKey];
+  const canConfigure = snapshot.canConfigure !== false;
+  const editingDisabled = disabled || stale || !canConfigure;
 
   useEffect(() => {
     if (
@@ -103,6 +105,13 @@ export function ReviewSettings({
     if (hasPolicy(next)) policies[repoKey] = next;
     else delete policies[repoKey];
     edit({ policies });
+  }
+
+  function editVMTarget(next?: SettingsDraft['vmTargets'][string]) {
+    const vmTargets = { ...values.vmTargets };
+    if (next) vmTargets[repoKey] = next;
+    else delete vmTargets[repoKey];
+    edit({ vmTargets });
   }
 
   function openRepository(name: string) {
@@ -163,15 +172,23 @@ export function ReviewSettings({
           prepareSave();
         }}
       >
+        {!canConfigure && (
+          <p className="github-review-detail" role="status">
+            Change GitHub Review settings and CLI connections on the computer
+            running AXV.
+          </p>
+        )}
         {repository ? (
           <ReviewRepositoryEditor
             key={repository}
             repository={repository}
             policy={policy}
+            vmTarget={vmTarget}
             environment={reviewEnvironment(snapshot, repository)}
             disabled={editingDisabled}
             onBack={backToRepositories}
             onChange={editPolicy}
+            onChangeVMTarget={editVMTarget}
             onStopWatching={() => void stopWatching()}
             issue={
               issue?.kind === 'repository' && repository === issue.repository
