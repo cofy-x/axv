@@ -282,6 +282,7 @@ export function Desktop(props: DesktopProps) {
           >
             <WindowControlIcon icon="overview" />
           </button>
+          {props.headerActions}
           <span
             className={`ns-connection ${props.connectionStatus ?? 'connected'}`}
             role="status"

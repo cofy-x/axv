@@ -70,6 +70,10 @@ Host Terminal, Guest Terminal and Codex share [`use-terminal-paste.tsx`](../apps
 
 On narrow viewports (`< 600 px`), [`WelcomeWorkspace.tsx`](../apps/dashboard/src/features/welcome/WelcomeWorkspace.tsx) exposes a mobile focus bar (`All`, `Alerts`, `Codex`, `VMs`, `Projects`, `Inbox`) over live Host/VM Codex sessions, VMs and projects while keeping `packages/nextstep` strictly generic.
 
+### Quick Switcher
+
+[`QuickSwitcher.tsx`](../apps/dashboard/src/features/quick-switcher/QuickSwitcher.tsx) is lazy-loaded via `DesktopProps.headerActions` and global shortcuts (`Cmd/Ctrl+K` outside terminals; `Cmd+K` or `Ctrl+Shift+K` inside terminals so `Ctrl+K` stays available to shells). It searches active Host/VM Codex sessions, VMs, Host/VM projects, applications and common creation actions without eager startup fetches.
+
 ### Project terminals
 
 `openTerminalWindow(desktop, projectPath?)` passes an optional host directory. The server resolves symlinks, validates directory access and sets the process working directory via OS APIs (never constructing a shell `cd` or falling back to home on failure).
