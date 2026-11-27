@@ -26,7 +26,6 @@ import type { Project } from '../project-files/api';
 import { projectLabel } from '../project-files/presentation';
 import { vmProjectsAPI } from '../project-files/vm-api';
 import type { VMProject } from '../project-files/vm-api';
-import { canOpenVMProjectVolume } from '../project-files/vm-project-volume';
 
 export function WelcomeWorkspace({
   desktop,
@@ -38,8 +37,8 @@ export function WelcomeWorkspace({
   visible?: boolean;
 }) {
   const compute = useSyncExternalStore(
-    computeStore.subscribe,
-    computeStore.getSnapshot,
+    computeStore.subscribeDesktop,
+    computeStore.getDesktopSnapshot,
   );
   const { info: codexInfo } = useCodexAvailability();
   const codexReady = codexInfo?.ready === true;
@@ -251,11 +250,14 @@ export function WelcomeWorkspace({
           </div>
           <ul className="welcome-list">
             {visibleMachines.map((machine) => {
-              const volume = compute.volumes.find(
-                (item) => item.id === machine.spec.volumeId,
-              );
+              const volumeId = machine.spec.volumeId;
               const canOpenFiles =
-                !!volume && canOpenVMProjectVolume(machine, volume);
+                !!volumeId &&
+                machine.spec.retainVolume &&
+                machine.status === 'running' &&
+                machine.desired === 'running' &&
+                machine.ready &&
+                !!machine.guestCapabilities?.includes('project-files');
               const canTerminal = !guestTerminalReason(machine);
               return (
                 <li
@@ -287,7 +289,7 @@ export function WelcomeWorkspace({
                           : 'Terminal'}
                       </Button>
                     )}
-                    {canOpenFiles && volume && (
+                    {canOpenFiles && volumeId && (
                       <Button
                         onClick={() =>
                           desktop.openApp(
@@ -295,7 +297,7 @@ export function WelcomeWorkspace({
                             {
                               hostId: machine.hostId,
                               machineId: machine.id,
-                              vmProjectVolumeId: volume.id,
+                              vmProjectVolumeId: volumeId,
                             },
                             { title: `${machine.spec.name} — Project Files` },
                           )
