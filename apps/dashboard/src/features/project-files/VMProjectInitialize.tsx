@@ -23,12 +23,32 @@ import './project-initialize.css';
 const describe = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 
+function suggestedDirectoryFromURL(url: string): string {
+  const trimmed = url.trim().replace(/\/+$/, '');
+  if (!trimmed) return '';
+  const withoutGit = trimmed.replace(/\.git$/i, '');
+  const lastSegment = withoutGit.split(/[/:]/).pop() || '';
+  if (
+    !lastSegment ||
+    lastSegment === '.' ||
+    lastSegment === '..' ||
+    lastSegment.startsWith('-') ||
+    lastSegment === '.axv' ||
+    lastSegment.startsWith('.axv-') ||
+    /[\s\\]/.test(lastSegment)
+  ) {
+    return '';
+  }
+  return lastSegment.slice(0, 255);
+}
+
 export function VMProjectInitialize({
   desktop,
   interactive,
   inventoryAvailable,
   target,
   mode,
+  scoped = false,
   onCreated,
 }: {
   desktop: DesktopAPI;
@@ -43,6 +63,7 @@ export function VMProjectInitialize({
     label: string;
   } | null;
   mode: 'open' | 'create' | 'clone';
+  scoped?: boolean;
   onCreated: () => void;
 }) {
   const namespace = useDraftNamespace();
@@ -70,6 +91,7 @@ export function VMProjectInitialize({
   const busyRef = useRef(false);
   const [recoveryError, setRecoveryError] = useState(recovery.error);
   const [directory, setDirectory] = useState(recovery.value?.directory || '');
+  const lastAutoDirectory = useRef('');
   const [repository, setRepository] = useState(
     recovery.value?.repository || '',
   );
@@ -363,7 +385,7 @@ export function VMProjectInitialize({
       hidden={!showForm && !pending && !recoveryError && !error}
       inert={!interactive}
     >
-      {(showForm || pending) && (
+      {(pending || (showForm && (!scoped || !target))) && (
         <p className="vm-project-initialize-target">
           {pending
             ? `Original VM: ${pending.machineId} · Volume: ${pending.volumeId} · Directory: ${pending.directory}`
@@ -387,7 +409,18 @@ export function VMProjectInitialize({
                 value={repository}
                 placeholder="https://github.com/owner/repository.git"
                 disabled={locked}
-                onChange={(event) => setRepository(event.target.value)}
+                onChange={(event) => {
+                  const nextURL = event.target.value;
+                  setRepository(nextURL);
+                  const suggested = suggestedDirectoryFromURL(nextURL);
+                  if (
+                    suggested &&
+                    (!directory || directory === lastAutoDirectory.current)
+                  ) {
+                    setDirectory(suggested);
+                    lastAutoDirectory.current = suggested;
+                  }
+                }}
               />
               <p className="vm-project-initialize-guidance">
                 HTTPS or SSH, without inline credentials. Configure Git
@@ -401,7 +434,10 @@ export function VMProjectInitialize({
               value={directory}
               placeholder="my-project"
               disabled={locked}
-              onChange={(event) => setDirectory(event.target.value)}
+              onChange={(event) => {
+                lastAutoDirectory.current = '';
+                setDirectory(event.target.value);
+              }}
             />
             <Field
               label="New name"
@@ -412,13 +448,13 @@ export function VMProjectInitialize({
             />
           </div>
           <div className="vm-project-initialize-submit">
-            <Button type="submit" primary disabled={locked || !target}>
-              {busy ? 'Submitting…' : mode === 'clone' ? 'Clone' : 'Create'}
-            </Button>
             <p className="vm-project-initialize-guidance">
               Existing directories are never overwritten. Accepted setup
               continues after you close this window.
             </p>
+            <Button type="submit" primary disabled={locked || !target}>
+              {busy ? 'Submitting…' : mode === 'clone' ? 'Clone' : 'Create'}
+            </Button>
           </div>
         </form>
       )}

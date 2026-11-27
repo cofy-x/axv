@@ -444,6 +444,7 @@ export function VMProjectLauncher({
           interactive={active && canInteract}
           inventoryAvailable={!!data}
           mode={mode}
+          scoped={!!scope}
           target={
             selected && verified
               ? {
@@ -452,7 +453,10 @@ export function VMProjectLauncher({
                   volumeRevision: selected.volume.revision,
                   machineId: selected.machine.id,
                   machineName: selected.machine.spec.name,
-                  label: `${selected.volume.name} · ${selected.machine.spec.name}`,
+                  label:
+                    selected.volume.name === selected.machine.spec.name
+                      ? `VM: ${selected.machine.spec.name}`
+                      : `${selected.volume.name} · ${selected.machine.spec.name}`,
                 }
               : null
           }
