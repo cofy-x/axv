@@ -66,12 +66,6 @@ func commandClient(cmd *cobra.Command) (*computeclient.Client, error) {
 }
 
 func commandClientFor(cmd *cobra.Command, binding computeclient.Binding) (*computeclient.Client, error) {
-	if bound, ok := boundVMProject(cmd); ok {
-		if binding.HostID != bound.Project.Binding.HostID || (binding.ConfigFingerprint != "" && binding.ConfigFingerprint != bound.ConfigFingerprint) {
-			return nil, fmt.Errorf("the bound VM project client cannot select another host or configuration")
-		}
-		return computeclient.Connect(cmd.Context(), bound.Socket, computeclient.Binding{HostID: bound.Project.Binding.HostID, ConfigFingerprint: bound.ConfigFingerprint})
-	}
 	home, err := profile.Home()
 	if err != nil {
 		return nil, err
@@ -124,55 +118,197 @@ func newVM() *cobra.Command {
 		return jsonResult(cmd.OutOrStdout(), m)
 	}}
 	inspect.Flags().BoolVar(&inspectJSON, "json", false, "write machine-readable JSON (also the default for inspect)")
-	cmd.AddCommand(inspect, newCreate(), newIP(), newSSH(false), newSSH(true), newOperations(), newPackageSource(), newVMProject())
+	cmd.AddCommand(inspect, newCreate(), newExec(), newIP(), newSSH(false), newSSH(true), newOperations(), newPackageSource(), newVMProject(), newVMVolumes())
 	for _, action := range []string{"start", "stop", "restart", "rm"} {
 		cmd.AddCommand(newAction(action))
 	}
-	for _, resource := range []string{"images", "volumes"} {
-		var machineJSON bool
-		child := &cobra.Command{Use: resource, Short: "List " + resource, Args: arguments(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error {
+	var imagesJSON bool
+	images := &cobra.Command{Use: "images", Short: "List images", Args: arguments(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error {
+		c, err := commandClient(cmd)
+		if err != nil {
+			return err
+		}
+		defer c.Close()
+		var result struct {
+			Images []compute.ImageInfo `json:"images"`
+		}
+		if err = c.DoJSON(cmd.Context(), "GET", "images", nil, &result); err != nil {
+			return err
+		}
+		if imagesJSON {
+			return jsonResult(cmd.OutOrStdout(), result)
+		}
+		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
+		fmt.Fprintln(w, "ID\tNAME\tPROVIDER\tARCH\tSTATE")
+		for _, i := range result.Images {
+			fmt.Fprintf(w, "%s\t%q\t%s\t%s\t%s\n", i.ID, i.Name, i.Provider, i.Arch, i.Status)
+		}
+		return w.Flush()
+	}}
+	images.Flags().BoolVar(&imagesJSON, "json", false, "write machine-readable JSON")
+	cmd.AddCommand(images)
+	return cmd
+}
+
+func newExec() *cobra.Command {
+	var directory string
+	var timeoutSeconds int
+	var machineJSON bool
+	cmd := &cobra.Command{
+		Use:   "exec <name|id> -- <command> [args...]",
+		Short: "Run a command directly inside a running VM",
+		Args:  arguments(cobra.MinimumNArgs(2)),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if timeoutSeconds < 0 || timeoutSeconds > 300 {
+				return usageError(fmt.Errorf("--timeout must be between 0 and 300 seconds"))
+			}
 			c, err := commandClient(cmd)
 			if err != nil {
 				return err
 			}
 			defer c.Close()
-			if resource == "images" {
-				var result struct {
-					Images []compute.ImageInfo `json:"images"`
-				}
-				if err = c.DoJSON(cmd.Context(), "GET", "images", nil, &result); err != nil {
-					return err
-				}
-				if machineJSON {
-					return jsonResult(cmd.OutOrStdout(), result)
-				}
-				w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-				fmt.Fprintln(w, "ID\tNAME\tPROVIDER\tARCH\tSTATE")
-				for _, i := range result.Images {
-					fmt.Fprintf(w, "%s\t%q\t%s\t%s\t%s\n", i.ID, i.Name, i.Provider, i.Arch, i.Status)
-				}
-				return w.Flush()
+			m, err := c.Resolve(cmd.Context(), strings.TrimSpace(args[0]))
+			if err != nil {
+				return err
 			}
-			var result struct {
-				Volumes []compute.Volume `json:"volumes"`
-			}
-			if err = c.DoJSON(cmd.Context(), "GET", "volumes", nil, &result); err != nil {
+			result, err := c.Exec(cmd.Context(), m.ID, guestproto.ExecRequest{
+				Argv:           args[1:],
+				Directory:      directory,
+				TimeoutSeconds: timeoutSeconds,
+			})
+			if err != nil {
 				return err
 			}
 			if machineJSON {
-				return jsonResult(cmd.OutOrStdout(), result)
+				if err := jsonResult(cmd.OutOrStdout(), result); err != nil {
+					return err
+				}
+			} else {
+				if result.Stdout != "" {
+					fmt.Fprint(cmd.OutOrStdout(), result.Stdout)
+				}
+				if result.Stderr != "" {
+					fmt.Fprint(cmd.ErrOrStderr(), result.Stderr)
+				}
 			}
-			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-			fmt.Fprintln(w, "ID\tNAME\tGiB\tRETAIN\tMACHINE\tSTATE")
-			for _, v := range result.Volumes {
-				fmt.Fprintf(w, "%s\t%q\t%d\t%t\t%s\t%s\n", v.ID, v.Name, v.SizeGiB, v.Retain, v.MachineID, v.Status)
+			if result.ExitCode != 0 {
+				return &exitError{code: result.ExitCode}
 			}
-			return w.Flush()
-		}}
-		child.Flags().BoolVar(&machineJSON, "json", false, "write machine-readable JSON")
-		cmd.AddCommand(child)
+			return nil
+		},
 	}
+	cmd.Flags().StringVar(&directory, "directory", "", "working directory inside the guest (default: guest home)")
+	cmd.Flags().IntVar(&timeoutSeconds, "timeout", 60, "command timeout in seconds (1–300)")
+	cmd.Flags().BoolVar(&machineJSON, "json", false, "write machine-readable JSON")
 	return cmd
+}
+
+func newVMVolumes() *cobra.Command {
+	var listJSON bool
+	listVolumes := func(cmd *cobra.Command) error {
+		c, err := commandClient(cmd)
+		if err != nil {
+			return err
+		}
+		defer c.Close()
+		volumes, err := c.Volumes(cmd.Context())
+		if err != nil {
+			return err
+		}
+		if listJSON {
+			return jsonResult(cmd.OutOrStdout(), map[string]any{"volumes": volumes})
+		}
+		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
+		fmt.Fprintln(w, "ID\tNAME\tGiB\tRETAIN\tMACHINE\tSTATE")
+		for _, v := range volumes {
+			fmt.Fprintf(w, "%s\t%q\t%d\t%t\t%s\t%s\n", v.ID, v.Name, v.SizeGiB, v.Retain, v.MachineID, v.Status)
+		}
+		return w.Flush()
+	}
+	parent := &cobra.Command{
+		Use:     "volumes",
+		Aliases: []string{"volume"},
+		Short:   "List or delete project volumes",
+		Args:    arguments(cobra.NoArgs),
+		RunE:    func(cmd *cobra.Command, _ []string) error { return listVolumes(cmd) },
+	}
+	parent.Flags().BoolVar(&listJSON, "json", false, "write machine-readable JSON")
+
+	var o mutationOptions
+	var yes bool
+	rm := &cobra.Command{
+		Use:   "rm <name|id>",
+		Short: "Delete a detached project volume permanently",
+		Args:  arguments(cobra.ExactArgs(1)),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if o.timeout <= 0 {
+				return usageError(fmt.Errorf("--timeout must be positive"))
+			}
+			ctx, cancel := context.WithTimeout(cmd.Context(), o.timeout)
+			defer cancel()
+			cmd.SetContext(ctx)
+			c, err := commandClient(cmd)
+			if err != nil {
+				return err
+			}
+			defer c.Close()
+			volumes, err := c.Volumes(ctx)
+			if err != nil {
+				return err
+			}
+			ref := strings.TrimSpace(args[0])
+			var target *compute.Volume
+			for _, candidate := range volumes {
+				if candidate.ID == ref {
+					copy := candidate
+					target = &copy
+					break
+				}
+			}
+			if target == nil {
+				for _, candidate := range volumes {
+					if candidate.Name == ref {
+						if target != nil {
+							return fmt.Errorf("ambiguous volume name %q; use a full volume ID", ref)
+						}
+						copy := candidate
+						target = &copy
+					}
+				}
+			}
+			if target == nil {
+				return compute.Problem("not_found", "volume %q was not found", ref)
+			}
+			fmt.Fprintf(cmd.ErrOrStderr(), "Permanently delete detached project volume %q (%s, %d GiB).\n", target.Name, target.ID, target.SizeGiB)
+			if err = confirmDelete(cmd, yes); err != nil {
+				return err
+			}
+			requestID := compute.NewID("cli")
+			mutationReceipt(cmd, c, requestID, target.ID)
+			op, err := c.DeleteVolume(ctx, target.ID, requestID, target.Revision)
+			if err != nil {
+				return submissionFailure(c, requestID, err)
+			}
+			if !o.noWait {
+				op, err = waitOperation(ctx, c, op.ID, false, cmd.ErrOrStderr())
+			}
+			if o.json {
+				if outErr := jsonResult(cmd.OutOrStdout(), op); outErr != nil {
+					return outErr
+				}
+				return err
+			}
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\n", target.ID, op.ID, op.Status)
+			return nil
+		},
+	}
+	mutationFlags(rm, &o)
+	rm.Flags().BoolVarP(&yes, "yes", "y", false, "confirm deletion without a prompt")
+	parent.AddCommand(rm)
+	return parent
 }
 
 func newCreate() *cobra.Command {

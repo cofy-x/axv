@@ -196,7 +196,7 @@ func TestInitialSchemaContainsOnlyCurrentDesktopModel(t *testing.T) {
 		"layouts":        {"client_id", "value"},
 		"projects":       {"id", "kind", "name", "root_path", "root_identity", "created_at"},
 		"codex_sessions": {"id", "project_path", "title", "archived_at", "metadata_revision", "created_at", "conversation_id", "history_home", "latest_run_id"},
-		"codex_runs":     {"id", "session_id", "request_id", "previous_run_id", "request_cols", "request_rows", "status", "created_at", "ended_at", "reason", "tmux_session", "tmux_socket", "vm_project", "vm_socket", "vm_config_fingerprint"},
+		"codex_runs":     {"id", "session_id", "request_id", "previous_run_id", "request_cols", "request_rows", "status", "created_at", "ended_at", "reason", "tmux_session", "tmux_socket"},
 		"codex_projects": {"path", "last_used_at"},
 	}
 	var count int

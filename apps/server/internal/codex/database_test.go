@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cofy-x/axv/apps/server/internal/compute"
 	"github.com/cofy-x/axv/apps/server/internal/storage"
 )
 
@@ -27,10 +26,6 @@ func TestLaunchDatabaseFencePrecedesReplayValidationAndReservation(t *testing.T)
 	original := testManager(t)
 	replacement := testManager(t)
 	rejectServiceHostWork(t, replacement)
-	replacement.settings.ResolveVMProject = func(context.Context, compute.ProjectBinding) (VMProjectResolution, error) {
-		t.Fatal("stale database request inspected a live VM environment")
-		return VMProjectResolution{}, nil
-	}
 	if original.databaseID == "" || replacement.databaseID == "" || original.databaseID == replacement.databaseID {
 		t.Fatal("independent fixtures share a database identity")
 	}
@@ -38,7 +33,6 @@ func TestLaunchDatabaseFencePrecedesReplayValidationAndReservation(t *testing.T)
 	ctx := context.Background()
 	for _, request := range []StartInput{
 		{RequestID: "unknown-create-request", ExpectedDatabaseID: original.databaseID},
-		{RequestID: "unknown-vm-create-request", ExpectedDatabaseID: original.databaseID, VMProject: &VMProjectInput{}},
 		{RequestID: known.RequestID, ExpectedDatabaseID: original.databaseID, ProjectPath: known.ProjectPath},
 		{ExpectedDatabaseID: original.databaseID},
 	} {
@@ -47,14 +41,13 @@ func TestLaunchDatabaseFencePrecedesReplayValidationAndReservation(t *testing.T)
 	}
 	for _, request := range []ResumeInput{
 		{RequestID: "unknown-resume-request", ExpectedDatabaseID: original.databaseID, ExpectedRunID: known.RunID},
-		{RequestID: "unknown-vm-resume-request", ExpectedDatabaseID: original.databaseID, ExpectedRunID: known.RunID, VMProject: &VMProjectInput{}},
 		{RequestID: known.RequestID, ExpectedDatabaseID: original.databaseID, ExpectedRunID: known.RunID},
 		{ExpectedDatabaseID: original.databaseID},
 	} {
 		_, err := replacement.Resume(ctx, known.ID, request)
 		requireServiceError(t, err, Conflict, "database_changed")
 	}
-	for _, requestID := range []string{"unknown-create-request", "unknown-vm-create-request", "unknown-resume-request", "unknown-vm-resume-request"} {
+	for _, requestID := range []string{"unknown-create-request", "unknown-resume-request"} {
 		requireUnreservedRequest(t, replacement, requestID)
 	}
 	sessions, err := replacement.store.CodexSessions(ctx)
@@ -72,10 +65,6 @@ func TestLaunchDatabaseFencePrecedesReplayValidationAndReservation(t *testing.T)
 func TestLaunchHTTPDatabaseFenceIsRequiredAndPreservesRejectedRequests(t *testing.T) {
 	manager := testManager(t)
 	rejectServiceHostWork(t, manager)
-	manager.settings.ResolveVMProject = func(context.Context, compute.ProjectBinding) (VMProjectResolution, error) {
-		t.Fatal("stale HTTP request inspected a VM environment")
-		return VMProjectResolution{}, nil
-	}
 	mux := http.NewServeMux()
 	manager.Register(mux)
 	for _, endpoint := range []string{"create", "resume"} {
@@ -86,9 +75,9 @@ func TestLaunchHTTPDatabaseFenceIsRequiredAndPreservesRejectedRequests(t *testin
 		for _, databaseID := range []string{"", manager.databaseID, "previous-desktop-database"} {
 			body := `{"requestId":""}`
 			if databaseID == "previous-desktop-database" {
-				body = `{"requestId":"http-` + endpoint + `-stale","vmProject":{"binding":{}}}`
+				body = `{"requestId":"http-` + endpoint + `-stale"}`
 				if endpoint == "resume" {
-					body = `{"requestId":"http-resume-stale","expectedRunId":"original-run","vmProject":{"binding":{}}}`
+					body = `{"requestId":"http-resume-stale","expectedRunId":"original-run"}`
 				}
 			}
 			request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))

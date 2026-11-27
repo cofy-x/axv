@@ -219,6 +219,26 @@
 .project-list > li + li {
   border-block-start: 1px solid var(--ns-mid);
 }
+.project-list > li.project-list-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.project-list > li.project-list-row > .ns-button:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.project-list > li.project-list-row > .ns-button:last-child {
+  flex: 0 0 auto;
+  width: auto;
+  flex-direction: row;
+  align-items: center;
+  margin-inline-end: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--ns-dark);
+  background: var(--ns-face);
+  box-shadow: var(--ns-bevel);
+}
 .project-list .ns-button,
 .project-list .ns-button:active:not(:disabled) {
   display: flex;

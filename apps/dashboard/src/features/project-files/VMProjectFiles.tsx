@@ -17,7 +17,10 @@ import { vmProjectsAPI } from './vm-api';
 import type { VMProjectBinding } from './vm-api';
 import type { VMProjectFileProps } from './VMProjectWindows';
 import { sameVMProjectVolume, vmProjectVolumeScope } from './vm-project-volume';
-import { openVMProjectCodex } from '../codex/definition';
+import {
+  guestTerminalRequests,
+  openGuestTerminal,
+} from '../machines/open-terminal';
 import { VMProjectPreviews } from './VMProjectPreviews';
 import { VMProjectBackups } from './VMProjectBackups';
 import { VMProjectGitHub } from './VMProjectGitHub';
@@ -818,6 +821,38 @@ export function VMProjectFiles({
         Download Draft
       </Button>
     );
+  const [openingTerminal, setOpeningTerminal] = useState(false);
+  const openProjectTerminal = async () => {
+    if (!binding || openingTerminal) return;
+    setOpeningTerminal(true);
+    try {
+      const directory = project?.root
+        ? `/projects/${project.root}`
+        : '/projects';
+      const session = await guestTerminalRequests.execute(
+        binding.machineId,
+        binding.hostId,
+        directory,
+      );
+      if (mounted.current) {
+        openGuestTerminal(
+          desktop,
+          {
+            id: binding.machineId,
+            hostId: binding.hostId,
+            spec: { name: project?.name || binding.machineId },
+          },
+          session,
+        );
+      }
+    } catch (err) {
+      if (mounted.current) {
+        setFeedback({ kind: 'action', message: message(err) });
+      }
+    } finally {
+      if (mounted.current) setOpeningTerminal(false);
+    }
+  };
   return (
     <div className="project-browser vm-project-browser">
       <div className="app-toolbar project-browser-toolbar">
@@ -828,12 +863,10 @@ export function VMProjectFiles({
         >
           <Button
             primary
-            disabled={!windowInteractive}
-            onClick={() =>
-              openVMProjectCodex(desktop, hostId, id, project?.name)
-            }
+            disabled={!windowInteractive || !binding || openingTerminal}
+            onClick={() => void openProjectTerminal()}
           >
-            Codex
+            {openingTerminal ? 'Opening Terminal…' : 'Terminal'}
           </Button>
           <Button
             disabled={!windowInteractive}
@@ -847,6 +880,22 @@ export function VMProjectFiles({
           >
             Tasks
           </Button>
+          {binding && (
+            <Button
+              disabled={!windowInteractive}
+              onClick={() =>
+                desktop.openApp(
+                  'machine-inspector',
+                  { hostId: binding.hostId, machineId: binding.machineId },
+                  {
+                    title: `${project?.name || binding.machineId} — Inspector`,
+                  },
+                )
+              }
+            >
+              VM Inspector
+            </Button>
+          )}
           <IconButton
             icon="more"
             label="More VM project actions"

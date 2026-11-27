@@ -75,7 +75,7 @@ In **Notifications → This browser** at your stable HTTPS AXV origin (iPhone/iP
 
 ## Project Files
 
-**Project Files** browses files in either a registered **Host** directory (read-only + download up to 10 MiB) or a **VM** project on a retained volume (read/edit + Tasks + Codex + Previews + Backups).
+**Project Files** browses files in either a registered **Host** directory (read-only + download up to 10 MiB) or a **VM** project on a retained volume (read/edit + native VM Terminal + Tasks + Previews + Backups + VM Inspector).
 
 - **Host projects:** Register an absolute directory (tracked by filesystem identity; a replaced directory requires explicit new registration). Text reads support up to 1 MiB (rich Markdown preview up to 64 KiB).
 - **VM projects & initialization:** Open an existing directory on a ready retained volume of a running enhanced VM, or choose **Create Project / Clone Repository** to run a persistent initialization task inside the volume workspace, then explicitly **Open Project** once finished. Failed clones preserve partial directories without overwriting existing files.
@@ -160,6 +160,6 @@ On a ready VM, **Open Terminal** resumes a sole live session, opens Inspector's 
 
 AXV runs the official Codex CLI as the service user via persistent tmux ([supported versions](api/host-codex.md#availability-and-environment)); sign in and trust projects in Host Terminal first. Check **Sessions → Environment** for readiness and proxy diagnostics.
 
-- **Start work:** Start in the default workspace, choose another host directory via **New in Folder**, or launch a VM-project-scoped session from **Project Files → Codex** (injects the bound `axv-vm-project` Skill; provider approvals and host permissions still apply).
+- **Start work:** Start in the default host workspace or choose another host directory via **New in Folder**. For VM projects, open a native VM **Terminal** directly from **Project Files** or **Virtual Machines**.
 - **Session lifecycle:** Closing a window, reloading or stopping AXV **detaches** while tmux keeps the run alive. **End Session** terminates only that exact run; **Continue** explicitly starts a new run from verified saved provider history (never silently replacing missing history or retargeting an old window). On uncertain start/continue responses, use **Resolve Start / Resolve Continue** before starting again.
 - **Activity & organization:** Rename or archive sessions without affecting active runs. **Action needed** surfaces pending approvals/input (answered in the official Codex TUI) and undismissed failed/interrupted alerts (**Dismiss alert** clears that exact event). Normal completion requires no acknowledgment. See [Codex architecture](codex.md).

@@ -10,7 +10,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/cofy-x/axv/apps/server/internal/codex/runner"
-	"github.com/cofy-x/axv/apps/server/internal/compute"
 	"github.com/cofy-x/axv/apps/server/internal/hostdir"
 	"github.com/cofy-x/axv/apps/server/internal/storage"
 )
@@ -22,11 +21,6 @@ type StartInput struct {
 	ProjectPath        string
 	Cols               *int
 	Rows               *int
-	VMProject          *VMProjectInput
-}
-
-type VMProjectInput struct {
-	Binding compute.ProjectBinding `json:"binding"`
 }
 
 // ResumeInput identifies the exact predecessor intended for continuation.
@@ -35,7 +29,6 @@ type ResumeInput struct {
 	ExpectedDatabaseID string
 	ExpectedRunID      string
 	Cols, Rows         *int
-	VMProject          *VMProjectInput
 }
 
 // Database identity fences browser recovery to its original desktop store.
@@ -78,37 +71,18 @@ func (m *Manager) Create(ctx context.Context, request StartInput) (Session, erro
 		return Session{}, err
 	}
 	in.Mode = "new"
-	if request.VMProject != nil {
-		if request.ProjectPath != "" {
-			return Session{}, failure(Invalid, "invalid_session", "Choose either a host directory or a VM project.")
+	if request.ProjectPath == "" {
+		request.ProjectPath = m.settings.WorkspaceDir
+		if err := os.MkdirAll(request.ProjectPath, 0700); err != nil {
+			return Session{}, failure(Unavailable, "workspace_unavailable", "The default workspace could not be created. Check its path and permissions in the AXV configuration.")
 		}
-		if err := applyVMProjectInput(&in, request.VMProject); err != nil {
-			return Session{}, err
-		}
-		if session, found, err := m.previousLaunch(ctx, in); found {
-			return m.describe(session), err
-		}
-		if err := m.resolveVMProject(ctx, &in, nil); err != nil {
-			return Session{}, err
-		}
-		in.ProjectPath, err = m.vmWorkspace(in.RequestID)
-		if err != nil {
-			return Session{}, err
-		}
-	} else {
-		if request.ProjectPath == "" {
-			request.ProjectPath = m.settings.WorkspaceDir
-			if err := os.MkdirAll(request.ProjectPath, 0700); err != nil {
-				return Session{}, failure(Unavailable, "workspace_unavailable", "The default workspace could not be created. Check its path and permissions in the AXV configuration.")
-			}
-		}
-		in.ProjectPath, err = hostdir.CanonicalDirectory(request.ProjectPath)
-		if err != nil {
-			return Session{}, err
-		}
-		if session, found, err := m.previousLaunch(ctx, in); found {
-			return m.describe(session), err
-		}
+	}
+	in.ProjectPath, err = hostdir.CanonicalDirectory(request.ProjectPath)
+	if err != nil {
+		return Session{}, err
+	}
+	if session, found, err := m.previousLaunch(ctx, in); found {
+		return m.describe(session), err
 	}
 	if m.ctx.Err() != nil {
 		return Session{}, failure(Unavailable, "server_stopping", "AXV is stopping. Try again after restarting it.")
@@ -143,9 +117,6 @@ func (m *Manager) Resume(ctx context.Context, id string, request ResumeInput) (S
 		return Session{}, failure(Invalid, "invalid_session", "Identify the run you intend to continue.")
 	}
 	in.Mode, in.SessionID, in.ExpectedRunID = "resume", id, request.ExpectedRunID
-	if err := applyVMProjectInput(&in, request.VMProject); err != nil {
-		return Session{}, err
-	}
 	if session, found, err := m.previousLaunch(ctx, in); found {
 		return m.describe(session), err
 	}
@@ -170,19 +141,6 @@ func (m *Manager) Resume(ctx context.Context, id string, request ResumeInput) (S
 	}
 	if err := m.awaitRunnerCleanup(ctx, session.ID); err != nil {
 		return Session{}, err
-	}
-	if session.VMProject != nil {
-		if err := m.checkVMWorkspace(ctx, session); err != nil {
-			return Session{}, err
-		}
-	}
-	if session.VMProject != nil || request.VMProject != nil {
-		if session.VMProject == nil || request.VMProject == nil {
-			return Session{}, failure(Conflict, "project_changed", "Continue this conversation with its original work project and an explicitly reviewed VM environment.")
-		}
-		if err := m.resolveVMProject(ctx, &in, session.VMProject); err != nil {
-			return Session{}, err
-		}
 	}
 	in.ProjectPath, err = hostdir.CanonicalDirectory(session.ProjectPath)
 	if err != nil {

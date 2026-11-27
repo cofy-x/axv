@@ -18,6 +18,7 @@ import {
   reconcileWorkspaceWindows,
   sanitizeLayout,
   showDesktopApplication as updateDesktopApplication,
+  snapWindowToSide,
   switchWorkspaceLayout,
   toggleWindowZoom,
   unsupportedLayout,
@@ -435,6 +436,26 @@ export function useDesktopController(props: DesktopProps) {
       })),
     [],
   );
+  const snapWindow = useCallback(
+    (id: string, side: 'left' | 'right') =>
+      setLayout((current) => {
+        const viewport = viewportSize();
+        const area = windowWorkArea(
+          viewport,
+          minimizedWindows(current.windows, current.currentWorkspaceId).length >
+            0,
+        );
+        return {
+          ...current,
+          windows: current.windows.map((win) => {
+            if (win.id !== id) return win;
+            const app = resolveApplication(propsRef.current.apps, win.appId);
+            return snapWindowToSide(win, side, area, app.minSize);
+          }),
+        };
+      }),
+    [],
+  );
   const addClipShortcut = useCallback((shortcut: Omit<ClipShortcut, 'id'>) => {
     if (!validAppId(shortcut.appId)) return;
     setLayout((current) => ({
@@ -567,6 +588,7 @@ export function useDesktopController(props: DesktopProps) {
       minimizeWindow,
       toggleShade,
       toggleZoom,
+      snapWindow,
       addClipShortcut,
       removeClipShortcut,
       arrangeIcons,
@@ -595,6 +617,7 @@ export function useDesktopController(props: DesktopProps) {
       minimizeWindow,
       toggleShade,
       toggleZoom,
+      snapWindow,
       addClipShortcut,
       removeClipShortcut,
       arrangeIcons,

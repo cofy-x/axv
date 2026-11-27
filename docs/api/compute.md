@@ -24,7 +24,7 @@ Implementation: [`compute/gateway`](../../apps/server/internal/compute/gateway),
 | POST / PATCH | `/machines`, `/machines/:id` | `202 { machine, operation }` create / update spec |
 | POST | `/machines/:id/actions` | `202 { machine, operation }` (`start\|stop\|restart\|force-stop\|delete\|package-source`) |
 | GET / POST | `/volumes`, `/volumes/:id/actions`, `/volumes/:id/delete` | Volume list / `202` create, copy, action (`rename\|retain\|resize\|attach\|detach`) or delete |
-| GET / POST | `/projects`, `/projects/:id`, `/projects/:id/binding` | VM project list, `201` register, get or capture `{ project, binding }` |
+| GET / POST | `/projects`, `/projects/:id`, `/projects/:id/binding`, `/projects/:id/delete` | VM project list, `201` register, get, capture `{ project, binding }`, or unregister project metadata |
 | GET / POST | `/projects/:id/github`, `/projects/:id/github/{git,review,associate,clear,refresh}` | Read-only VM project GitHub association and observations |
 | GET / POST | `/project-backups`, `/projects/:id/backups`, `/project-backups/:id/{restore,bind}` | Offline backups list, `202` copy/restore, `201` explicit restored-project bind |
 | POST | `/projects/:id/initialize`, `/projects/:id/initializations/:requestId/finish` | `202` directory/clone init task; explicit post-success project registration |
@@ -72,7 +72,8 @@ All compute `requestId` values are **8–128 bytes**, globally unique in the hos
 
 All project, GitHub, init, backup and task routes require `X-AXV-Host-ID` (even on reads), strict UTF-8/Unicode JSON (rejecting unpaired surrogates and queries unless documented) and exact Origin on gateway mutations. Never falls back to host directories.
 
-- **Register (`POST /projects`):** `{ requestId, volumeId, volumeRevision, machineId, root, name? }` on a retained, attached volume of a running VM confirming `project-files`. Idempotent by `requestId` and unchanged `(volume, root, rootIdentity)`. Project-bound volumes cannot be deleted or made disposable; project deletion is unavailable.
+- **Register (`POST /projects`):** `{ requestId, volumeId, volumeRevision, machineId, root, name? }` on a retained, attached volume of a running VM confirming `project-files`. Idempotent by `requestId` and unchanged `(volume, root, rootIdentity)`. Project-bound volumes cannot be deleted or made disposable while registered projects reference them.
+- **Delete (`POST /projects/:id/delete`):** `{ requestId, revision }` unregisters project metadata (including stored task history and GitHub association rows) without modifying files inside the volume. Rejected with `409` while non-final tasks or active volume operations exist; once all projects referencing a detached volume are removed, the volume can be deleted.
 - **Binding (`GET /projects/:id/binding`):** Returns `{ project, binding }` where `binding = { hostId, projectId, projectRevision, volumeId, volumeRevision, machineId, bootId, instanceId }`. Every file POST sends the full original `binding`; VM replacement or guest restart invalidates old requests (callers never auto-rebind).
 - **File operations (`list|read|write|mkdir`):** Relative paths ≤ 4,096 UTF-8 bytes (no traversal, backslashes or `.axv`/`.axv-*`). List: default 100 / max 200 entries (10,000 scan cap). Read/write: regular UTF-8 text ≤ **1 MiB** (8 MiB write JSON envelope); symlinks/special files rejected. Write requires `expectedSha256` (`""` = create-only; lowercase SHA-256 = replace reviewed version). Synchronous with no durable receipt — inspect the path on uncertain responses instead of blindly retrying.
 

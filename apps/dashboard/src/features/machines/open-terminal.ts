@@ -10,6 +10,7 @@ interface TerminalAttempt {
   machineId: string;
   hostId: string;
   requestId: string;
+  directory?: string;
 }
 
 type SendingTerminal = {
@@ -44,19 +45,20 @@ export function currentGuestTerminalTarget({
 export class GuestTerminalRequests {
   private readonly states = new Map<string, TerminalRequestState>();
 
-  retryPending(machineId: string, hostId: string) {
-    if (this.states.has(JSON.stringify([hostId, machineId])))
-      return this.execute(machineId, hostId);
+  retryPending(machineId: string, hostId: string, directory?: string) {
+    if (this.states.has(JSON.stringify([hostId, machineId, directory || ''])))
+      return this.execute(machineId, hostId, directory);
   }
 
-  execute(machineId: string, hostId: string) {
-    const key = JSON.stringify([hostId, machineId]);
+  execute(machineId: string, hostId: string, directory?: string) {
+    const key = JSON.stringify([hostId, machineId, directory || '']);
     const state = this.states.get(key);
     if (state?.phase === 'sending') return state.promise;
     const attempt = state?.attempt || {
       machineId,
       hostId,
       requestId: crypto.randomUUID(),
+      ...(directory ? { directory } : {}),
     };
     let complete!: (result: GuestTerminal | PromiseLike<GuestTerminal>) => void;
     const promise = new Promise<GuestTerminal>((resolve) => {
@@ -69,12 +71,13 @@ export class GuestTerminalRequests {
   }
 
   private async send(key: string, sending: SendingTerminal) {
-    const { machineId, hostId, requestId } = sending.attempt;
+    const { machineId, hostId, requestId, directory } = sending.attempt;
     try {
       const result = await machinesApi.createTerminal(
         machineId,
         requestId,
         hostId,
+        directory,
       );
       if (this.states.get(key) === sending) this.states.delete(key);
       return result;

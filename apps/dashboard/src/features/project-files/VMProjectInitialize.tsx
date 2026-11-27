@@ -3,7 +3,6 @@ import { Button, Field } from '@cofy-x/axv-nextstep';
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
 import { APIError } from '../../shared/api/http';
 import { useDraftNamespace } from '../../shared/drafts/context';
-import { openVMProjectCodex } from '../codex/definition';
 import { vmProjectsAPI } from './vm-api';
 import type { VMProject } from './vm-api';
 import {
@@ -498,19 +497,6 @@ export function VMProjectInitialize({
             primary
             disabled={!interactive}
             onClick={() =>
-              openVMProjectCodex(
-                desktop,
-                project.hostId,
-                project.id,
-                project.name,
-              )
-            }
-          >
-            Codex
-          </Button>
-          <Button
-            disabled={!interactive}
-            onClick={() =>
               desktop.openApp(
                 'project-files',
                 { vmProjectId: project.id, hostId: project.hostId },
@@ -518,7 +504,19 @@ export function VMProjectInitialize({
               )
             }
           >
-            Files
+            Open Files
+          </Button>
+          <Button
+            disabled={!interactive}
+            onClick={() =>
+              desktop.openApp(
+                'project-files',
+                { hostId: project.hostId, vmTasksProjectId: project.id },
+                { title: `Tasks · ${project.name}` },
+              )
+            }
+          >
+            Tasks
           </Button>
         </div>
       )}

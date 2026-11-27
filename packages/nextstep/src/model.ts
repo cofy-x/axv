@@ -196,6 +196,32 @@ export function toggleWindowZoom(win: DesktopWindow): DesktopWindow {
       };
 }
 
+/** Tile a window onto the left or right half of the desktop work area. */
+export function snapWindowToSide(
+  win: DesktopWindow,
+  side: 'left' | 'right',
+  workArea: Bounds,
+  minSize: Size = { width: 280, height: 180 },
+): DesktopWindow {
+  const half = Math.floor(workArea.width / 2);
+  const width = Math.max(Math.min(minSize.width, workArea.width), half);
+  const x =
+    side === 'left'
+      ? workArea.x
+      : Math.max(workArea.x, workArea.x + workArea.width - width);
+  return {
+    ...win,
+    x,
+    y: workArea.y,
+    width,
+    height: workArea.height,
+    shaded: false,
+    zoomed: false,
+    minimized: false,
+    restoreBounds: undefined,
+  };
+}
+
 export function selectionAfterClick(
   current: string[],
   id: string,

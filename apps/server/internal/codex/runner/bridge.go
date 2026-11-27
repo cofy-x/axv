@@ -6,12 +6,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
-	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/coder/websocket"
-	"github.com/cofy-x/axv/apps/server/internal/vmwork"
 )
 
 const managedConversationMessage = "This AXV session keeps one Codex conversation. Use New Session in AXV to start another conversation."
@@ -32,8 +29,6 @@ type protocolBridge struct {
 	bufferBytes     int
 	deadline        <-chan time.Time
 	ready           bool
-	vmWork          *vmwork.Context
-	vmWorkLoaded    bool
 	activity        *activityObserver
 	activityPending []activityObservation
 	activityLost    bool
@@ -50,7 +45,6 @@ func newBridge(manifest Manifest, statePath string, stdin io.Writer, client *web
 		},
 		path: statePath, stdin: stdin, client: client,
 		pending: make(map[string]string), persistID: "axv-runner-persist-" + hex.EncodeToString(nonce),
-		vmWork: manifest.vmWork, vmWorkLoaded: manifest.VMContextPath == "" || manifest.vmWork != nil,
 	}
 }
 
@@ -317,46 +311,14 @@ func (bridge *protocolBridge) run(ctx context.Context, stdout io.Reader) error {
 	}
 }
 
-// The official TUI remains the only producer of turns. Preserve every original
-// turn override and input item. Append the bound VM context and Skill to actual
-// user messages for the verified conversation.
+// The official TUI remains the only producer of turns. Ensure turns target the
+// bound conversation before forwarding directly to the app-server.
 func (bridge *protocolBridge) forwardTurn(ctx context.Context, raw []byte, message wireMessage) error {
 	var params map[string]json.RawMessage
 	var threadID string
-	var input []json.RawMessage
 	if json.Unmarshal(message.Params, &params) != nil || json.Unmarshal(params["threadId"], &threadID) != nil ||
 		!bridge.ready || threadID != bridge.state.ThreadID || len(message.ID) == 0 {
 		return bridge.reject(ctx, message.ID)
 	}
-	if json.Unmarshal(params["input"], &input) != nil || len(input) == 0 ||
-		(len(params["toolOutput"]) != 0 && string(params["toolOutput"]) != "null") {
-		return writeRawMessage(bridge.stdin, raw)
-	}
-	if message.Method == "turn/steer" {
-		var expectedTurnID string
-		if json.Unmarshal(params["expectedTurnId"], &expectedTurnID) != nil || expectedTurnID == "" ||
-			len(expectedTurnID) > 128 || !utf8.ValidString(expectedTurnID) || strings.ContainsAny(expectedTurnID, "\x00\r\n") {
-			// Let the provider reject malformed steering requests.
-			return writeRawMessage(bridge.stdin, raw)
-		}
-	}
-	workInput, err := bridge.vmWorkInput()
-	if err != nil {
-		return bridge.fail("codex_vm_context_failed")
-	}
-	if len(workInput) == 0 {
-		return writeRawMessage(bridge.stdin, raw)
-	}
-	params["input"], _ = json.Marshal(append(input, workInput...))
-	var outer map[string]json.RawMessage
-	if json.Unmarshal(raw, &outer) != nil {
-		return bridge.fail("codex_protocol_error")
-	}
-	outer["params"], _ = json.Marshal(params)
-	augmented, err := json.Marshal(outer)
-	if err != nil || len(augmented) >= maxMessageBytes {
-		rejection, _ := json.Marshal(map[string]any{"id": message.ID, "error": map[string]any{"code": -32602, "message": "This message leaves no room for its VM project context. Reduce the input and submit it again."}})
-		return bridge.send(ctx, rejection)
-	}
-	return writeRawMessage(bridge.stdin, augmented)
+	return writeRawMessage(bridge.stdin, raw)
 }

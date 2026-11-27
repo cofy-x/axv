@@ -38,9 +38,11 @@ import {
   subscribeSessionMetadata,
 } from './metadata';
 import { openTerminalWindow } from '../terminal/definition';
-import { CodexResumeRequests, continueConversation } from './continuation';
-import { useVMProject } from './use-vm-project';
-import { launchRejectedBeforeStart } from './vm-project-requests';
+import {
+  CodexResumeRequests,
+  continueConversation,
+  launchRejectedBeforeStart,
+} from './continuation';
 import { useHostFolderPicker } from './use-host-folder-picker';
 import { useDraftNamespace } from '../../shared/drafts/context';
 import { CodexActivity } from './CodexActivity';
@@ -67,9 +69,6 @@ export function CodexManager({
   interactive = true,
 }: AppWindowProps) {
   const commands = useWindowCommands();
-  const vmProjectId = window.params.vmProjectId || '';
-  const vmHostId = window.params.hostId || '';
-  const vm = useVMProject(vmHostId, vmProjectId);
   const {
     open: choosingFolder,
     path,
@@ -161,13 +160,9 @@ export function CodexManager({
     setContinuationRecovery(recovery);
   }, [sessions, continuing]);
 
-  const vmName = vm.data?.project.name || 'VM project';
-  const resolvedVMName = vm.data?.project.name;
   useEffect(() => {
-    if (!vmProjectId) setTitle(window.id, 'Codex');
-    else if (resolvedVMName)
-      setTitle(window.id, `Codex Sessions · ${resolvedVMName}`);
-  }, [setTitle, window.id, vmProjectId, resolvedVMName]);
+    setTitle(window.id, 'Codex');
+  }, [setTitle, window.id]);
 
   const refresh = useCallback(async () => {
     if (listing.current) return;
@@ -205,7 +200,6 @@ export function CodexManager({
   }, []);
 
   const refreshProjects = useCallback(async () => {
-    if (vmProjectId) return;
     listingProjects.current?.abort();
     const controller = new AbortController();
     listingProjects.current = controller;
@@ -227,7 +221,7 @@ export function CodexManager({
       if (listingProjects.current === controller)
         listingProjects.current = null;
     }
-  }, [vmProjectId]);
+  }, []);
 
   const browse = (next?: string) => {
     const target = document.activeElement;
@@ -348,13 +342,7 @@ export function CodexManager({
   }, [refresh, refreshProjects, visible]);
 
   const create = async (project?: string) => {
-    if (
-      creatingRequest.current ||
-      (vmProjectId
-        ? (!vm.pending && (!canStart || !vm.data)) || !!vm.recoveryError
-        : !canStart)
-    )
-      return;
+    if (creatingRequest.current || !canStart) return;
     creatingRequest.current = true;
     const intent = {};
     launchIntent.current = intent;
@@ -365,28 +353,17 @@ export function CodexManager({
       desktopDatabase.assertUnchanged();
       if (!requestKey.current || requestKey.current.path !== project)
         requestKey.current = { path: project, id: crypto.randomUUID() };
-      const result = vmProjectId
-        ? await vm.create()
-        : {
-            session: await codexAPI.create(requestKey.current.id, project),
-            recovered: false,
-          };
+      const session = await codexAPI.create(requestKey.current.id, project);
       desktopDatabase.assertUnchanged();
-      const { session } = result;
       requestKey.current = null;
       if (mounted.current) {
-        if (sessionIsLive(session) || result.recovered) {
+        if (sessionIsLive(session)) {
           closePicker();
           if (launchIntent.current === intent && mayFocus()) {
             setBaseFilter('unarchived');
             setShowAttention(false);
             openCodexSession(desktop, session);
-          } else
-            setStartNotice(
-              result.recovered
-                ? 'Start resolved. Open the original run from Sessions.'
-                : 'Session started. Open it from Sessions.',
-            );
+          } else setStartNotice('Session started. Open it from Sessions.');
         } else
           setActionError(
             session.reason ||
@@ -537,12 +514,7 @@ export function CodexManager({
       if (mounted.current) setReviewing(null);
     }
   };
-  const scopedSessions = sessions.filter(
-    (session) =>
-      !vmProjectId ||
-      (session.vmProject?.project.id === vmProjectId &&
-        session.vmProject.project.hostId === vmHostId),
-  );
+  const scopedSessions = sessions;
   const attentionCount = scopedSessions.filter((session) =>
     hasActivityAction(session.activity),
   ).length;
@@ -629,13 +601,8 @@ export function CodexManager({
   const recentProjects = projects.filter(
     (project) => project.path !== defaultProjectPath,
   );
-  const canCreateSession =
-    creating === null &&
-    !(vmProjectId
-      ? !!vm.recoveryError || (!vm.pending && (!canStart || !vm.data))
-      : !canStart);
-  const canChooseFolder =
-    !vmProjectId && creating === null && (choosingFolder || canStart);
+  const canCreateSession = creating === null && canStart;
+  const canChooseFolder = creating === null && (choosingFolder || canStart);
   const [menuAction, setMenuAction] = useState<'create' | 'folder' | null>(
     null,
   );
@@ -696,9 +663,7 @@ export function CodexManager({
 
   return (
     <div
-      className={
-        vmProjectId ? 'codex-manager' : 'codex-manager codex-host-manager'
-      }
+      className="codex-manager codex-host-manager"
       data-testid="codex-manager"
       ref={managerElement}
       onFocusCapture={(event) => {
@@ -728,61 +693,22 @@ export function CodexManager({
       }}
     >
       <div className="app-toolbar codex-manager-toolbar">
-        {vmProjectId && <PixelIcon name="companion" size={16} />}
         <Button
           primary
           disabled={!canCreateSession}
           onClick={() => void create()}
         >
-          {creating === 'default'
-            ? 'Starting…'
-            : vmProjectId && vm.pending
-              ? 'Resolve Start'
-              : 'New Session'}
+          {creating === 'default' ? 'Starting…' : 'New Session'}
         </Button>
-        {!vmProjectId && (
-          <Button
-            disabled={!canChooseFolder}
-            aria-expanded={choosingFolder}
-            aria-controls="codex-folder-picker"
-            onClick={toggleFolderPicker}
-          >
-            New in Folder
-            <span className="codex-folder-chevron" aria-hidden="true" />
-          </Button>
-        )}
-        {vmProjectId && (
-          <>
-            <Button
-              disabled={creating !== null || !!vm.pending || !!vm.recoveryError}
-              onClick={vm.reconnect}
-            >
-              Reconnect Project
-            </Button>
-            <Button
-              onClick={() =>
-                desktop.openApp(
-                  'project-files',
-                  { hostId: vmHostId, vmProjectId },
-                  { title: `VM · ${vmName}` },
-                )
-              }
-            >
-              Project Files
-            </Button>
-            <Button
-              onClick={() =>
-                desktop.openApp(
-                  'project-files',
-                  { hostId: vmHostId, vmTasksProjectId: vmProjectId },
-                  { title: `Tasks · ${vmName}` },
-                )
-              }
-            >
-              Tasks
-            </Button>
-          </>
-        )}
+        <Button
+          disabled={!canChooseFolder}
+          aria-expanded={choosingFolder}
+          aria-controls="codex-folder-picker"
+          onClick={toggleFolderPicker}
+        >
+          New in Folder
+          <span className="codex-folder-chevron" aria-hidden="true" />
+        </Button>
         <div className="codex-manager-tools">
           <IconButton
             icon="refresh"
@@ -796,90 +722,27 @@ export function CodexManager({
       </div>
       <div className="codex-manager-content">
         <div className="codex-manager-launch-context">
-          {vmProjectId ? (
-            <section
-              className="codex-vm-project"
-              aria-label="VM project context"
-            >
-              <strong>VM · {vmName}</strong>
-              <p>
-                Codex runs on the host. The AXV Skill guides it to read and edit
-                this VM project and run persistent tasks through AXV. Host-agent
-                permissions remain unchanged.
-              </p>
-              {vm.pending ? (
-                <p role="status">
-                  The previous start is unconfirmed. Resolve Start checks the
-                  same request for VM{' '}
-                  <code>{vm.pending.binding.machineId}</code>; it does not
-                  select another environment.
-                </p>
-              ) : vm.data ? (
-                <p>
-                  New session environment:{' '}
-                  <code>{vm.data.binding.machineId}</code> ·{' '}
-                  {vm.data.project.root || 'Volume root'}
-                </p>
-              ) : (
-                !vm.error && <p role="status">Connecting to VM project…</p>
-              )}
-              {(vm.error || vm.recoveryError) && (
-                <p className="app-error" role="alert">
-                  {vm.recoveryError || vm.error}
-                </p>
-              )}
-              <details>
-                <summary>Details</summary>
-                <dl className="info-list">
-                  <dt>Host</dt>
-                  <dd>
-                    <code>{vmHostId}</code>
-                  </dd>
-                  <dt>Project</dt>
-                  <dd>
-                    <code>{vmProjectId}</code>
-                  </dd>
-                  {vm.data && (
-                    <>
-                      <dt>Volume</dt>
-                      <dd>
-                        <code>{vm.data.binding.volumeId}</code>
-                      </dd>
-                      <dt>Boot / instance</dt>
-                      <dd>
-                        <code>
-                          {vm.data.binding.bootId} /{' '}
-                          {vm.data.binding.instanceId}
-                        </code>
-                      </dd>
-                    </>
-                  )}
-                </dl>
-              </details>
-            </section>
-          ) : (
-            <details className="codex-default-project" ref={defaultFolder}>
-              <summary className="ns-disclosure" title={defaultProjectPath}>
-                <span className="codex-default-project-name">
-                  <span>Default folder</span>
-                  <strong data-testid="codex-default-project-name">
-                    {defaultProjectPath
-                      ? projectName(defaultProjectPath)
-                      : loading
-                        ? 'Loading…'
-                        : 'Unavailable'}
-                  </strong>
-                </span>
-              </summary>
-              {defaultProjectPath ? (
-                <code data-testid="codex-default-project">
-                  {defaultProjectPath}
-                </code>
-              ) : (
-                <p>Check Environment for the default host folder.</p>
-              )}
-            </details>
-          )}
+          <details className="codex-default-project" ref={defaultFolder}>
+            <summary className="ns-disclosure" title={defaultProjectPath}>
+              <span className="codex-default-project-name">
+                <span>Default folder</span>
+                <strong data-testid="codex-default-project-name">
+                  {defaultProjectPath
+                    ? projectName(defaultProjectPath)
+                    : loading
+                      ? 'Loading…'
+                      : 'Unavailable'}
+                </strong>
+              </span>
+            </summary>
+            {defaultProjectPath ? (
+              <code data-testid="codex-default-project">
+                {defaultProjectPath}
+              </code>
+            ) : (
+              <p>Check Environment for the default host folder.</p>
+            )}
+          </details>
           {environmentIssue && (
             <div className="app-error codex-environment-notice" role="alert">
               <p>{environmentIssue}</p>
@@ -888,7 +751,7 @@ export function CodexManager({
               </Button>
             </div>
           )}
-          {!vmProjectId && projectError && !choosingFolder && (
+          {projectError && !choosingFolder && (
             <p className="app-error" role="alert">
               {projectError}
             </p>
@@ -1194,9 +1057,7 @@ export function CodexManager({
                     ? 'Sessions needing a response or review appear here.'
                     : filter === 'archived'
                       ? 'Archive a session from its More menu to keep it here.'
-                      : vmProjectId
-                        ? 'Conversations and activity for this VM project appear here.'
-                        : 'New Session uses the default folder. New in Folder starts in another project.'}
+                      : 'New Session uses the default folder. New in Folder starts in another project.'}
                 </p>
               </div>
             </div>
@@ -1244,15 +1105,9 @@ export function CodexManager({
                     <span>
                       <span
                         data-testid="codex-session-project"
-                        title={
-                          session.vmProject
-                            ? session.vmProject.project.root
-                            : session.projectPath
-                        }
+                        title={session.projectPath}
                       >
-                        {session.vmProject
-                          ? `Host → VM · ${session.vmProject.project.name}`
-                          : projectName(session.projectPath)}
+                        {projectName(session.projectPath)}
                         {session.archivedAt &&
                           filter === 'attention' &&
                           ' · Archived'}

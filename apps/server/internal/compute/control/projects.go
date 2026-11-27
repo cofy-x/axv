@@ -172,3 +172,74 @@ func (s *Service) requireProjectHost(hostID string) error {
 	}
 	return nil
 }
+
+func (s *Store) deleteProject(ctx context.Context, id, requestID string, revision int64) (compute.Project, error) {
+	if err := compute.ValidateRequestID(requestID); err != nil {
+		return compute.Project{}, err
+	}
+	if revision < 1 {
+		return compute.Project{}, compute.Problem("invalid_request", "A positive project revision is required.")
+	}
+	var deleted compute.Project
+	err := s.transaction(ctx, func(tx *sql.Tx) error {
+		p, err := project(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		if p.Revision != revision {
+			return compute.Problem("revision_conflict", "The project changed. Refresh before removing it.")
+		}
+		var activeTask bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(
+			SELECT 1 FROM task_attempts a
+			JOIN project_tasks t ON t.id=a.task_id
+			WHERE t.project_id=? AND a.status NOT IN ('succeeded','failed','cancelled','interrupted')
+		)`, p.ID).Scan(&activeTask); err != nil {
+			return err
+		}
+		if activeTask {
+			return compute.Problem("task_conflict", "Finish or reconcile active project tasks before removing this project.")
+		}
+		var activeOp bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(
+			SELECT 1 FROM operations WHERE status IN ('queued','running') AND
+			(resource_id=? OR EXISTS(SELECT 1 FROM json_each(operations.data,'$.locks') WHERE value=?))
+		)`, p.VolumeID, p.VolumeID).Scan(&activeOp); err != nil {
+			return err
+		}
+		if activeOp {
+			return compute.Problem("operation_conflict", "A lifecycle operation owns the project volume. Wait for its result before removing this project.")
+		}
+		for _, stmt := range []string{
+			"DELETE FROM task_notification_events WHERE project_id=?",
+			"DELETE FROM task_requests WHERE project_id=?",
+			"DELETE FROM task_attempts WHERE task_id IN (SELECT id FROM project_tasks WHERE project_id=?)",
+			"DELETE FROM project_tasks WHERE project_id=?",
+			"DELETE FROM project_requests WHERE project_id=?",
+			"DELETE FROM projects WHERE id=?",
+		} {
+			if _, err := tx.ExecContext(ctx, stmt, p.ID); err != nil {
+				return err
+			}
+		}
+		deleted = p
+		return nil
+	})
+	return deleted, err
+}
+
+func (s *Service) DeleteProject(ctx context.Context, id, hostID, requestID string, revision int64) (compute.Project, error) {
+	if err := s.requireProjectHost(hostID); err != nil {
+		return compute.Project{}, err
+	}
+	p, err := s.store.Project(ctx, id)
+	if err != nil {
+		return compute.Project{}, err
+	}
+	release, err := s.store.projectLeases.acquire(ctx, true, p.VolumeID)
+	if err != nil {
+		return compute.Project{}, err
+	}
+	defer release()
+	return s.store.deleteProject(ctx, id, requestID, revision)
+}

@@ -1189,11 +1189,16 @@ test('Inspector opens project files for its original VM volume', async ({
     exact: true,
   });
   const open = files.getByRole('button', { name: 'Open', exact: true });
+  const openWorkspace = files.getByRole('button', {
+    name: 'Open Volume Workspace',
+    exact: true,
+  });
   await expect(
     files.getByText('Task VM project', { exact: true }),
   ).toBeVisible();
   await expect(open).toBeEnabled();
-  await expect(files.getByLabel('Project action')).toHaveCount(0);
+  await expect(openWorkspace).toBeEnabled();
+  await expect(files.getByLabel('Project action')).toBeVisible();
 
   const volume = state.volumes.find(
     (item) => item.id === machine.spec.volumeId,
@@ -1206,6 +1211,7 @@ test('Inspector opens project files for its original VM volume', async ({
     files.getByText('The original VM project volume is unavailable.'),
   ).toBeVisible();
   await expect(open).toBeDisabled();
+  await expect(openWorkspace).toHaveCount(0);
   expect(state.writes).toEqual([]);
 });
 

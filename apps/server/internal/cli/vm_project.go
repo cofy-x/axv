@@ -57,12 +57,80 @@ func newVMProject() *cobra.Command {
 		return jsonResult(cmd.OutOrStdout(), result)
 	}}
 	binding.Flags().BoolVar(&bindingJSON, "json", false, "write machine-readable JSON (also the default)")
-	parent.AddCommand(list, newRegisterVMProject(), binding, newVMProjectTask(), newVMProjectInitialize(), newVMProjectFinishInitialization())
+	parent.AddCommand(list, newRegisterVMProject(), newRemoveVMProject(), binding, newVMProjectTask(), newVMProjectInitialize(), newVMProjectFinishInitialization())
 	parent.AddCommand(newVMProjectBackup())
 	for _, action := range []string{"files", "read", "write", "mkdir"} {
 		parent.AddCommand(newVMProjectFile(action))
 	}
 	return parent
+}
+
+func newRemoveVMProject() *cobra.Command {
+	var hostID, requestID string
+	var revision int64
+	var yes, machineJSON bool
+	cmd := &cobra.Command{
+		Use:   "rm <project-id>",
+		Short: "Remove a VM project registration (preserves files on the project volume)",
+		Args:  arguments(cobra.ExactArgs(1)),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			projectID := strings.TrimSpace(args[0])
+			if projectID == "" {
+				return usageError(fmt.Errorf("project ID is required"))
+			}
+			if err := nonemptyFlags(cmd, "host-id", "request-id"); err != nil {
+				return err
+			}
+			if cmd.Flags().Changed("revision") && revision < 1 {
+				return usageError(fmt.Errorf("--revision must be positive"))
+			}
+			c, err := commandClientFor(cmd, computeclient.Binding{HostID: hostID})
+			if err != nil {
+				return err
+			}
+			defer c.Close()
+			projects, err := c.Projects(cmd.Context())
+			if err != nil {
+				return err
+			}
+			var target *compute.Project
+			for _, candidate := range projects {
+				if candidate.ID == projectID {
+					copy := candidate
+					target = &copy
+					break
+				}
+			}
+			if target == nil {
+				return compute.Problem("not_found", "VM project %q was not found", projectID)
+			}
+			if revision == 0 {
+				revision = target.Revision
+			}
+			fmt.Fprintf(cmd.ErrOrStderr(), "Remove VM project registration %q (%s) on volume %s. Files remain on disk; detached volumes can then be removed with axv vm volume rm.\n", target.Name, target.ID, target.VolumeID)
+			if err = confirmDelete(cmd, yes); err != nil {
+				return err
+			}
+			if requestID == "" {
+				requestID = compute.NewID("cli")
+			}
+			deleted, err := c.DeleteProject(cmd.Context(), target.ID, requestID, revision)
+			if err != nil {
+				return err
+			}
+			if machineJSON {
+				return jsonResult(cmd.OutOrStdout(), map[string]any{"deleted": true, "project": deleted})
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Removed VM project %q (%s)\n", deleted.Name, deleted.ID)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&hostID, "host-id", "", "require the original host identity (default: connected local host)")
+	cmd.Flags().Int64Var(&revision, "revision", 0, "expected project revision (default: current revision)")
+	cmd.Flags().StringVar(&requestID, "request-id", "", "optional request identity")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "confirm removal without a prompt")
+	cmd.Flags().BoolVar(&machineJSON, "json", false, "write machine-readable JSON")
+	return cmd
 }
 
 func newRegisterVMProject() *cobra.Command {
@@ -281,8 +349,8 @@ func newVMProjectFile(action string) *cobra.Command {
 }
 
 func projectBindingForCommandOrLive(cmd *cobra.Command, filename, projectID string) (compute.ProjectBinding, bool, error) {
-	if _, ok := boundVMProject(cmd); ok || strings.TrimSpace(filename) != "" {
-		b, err := projectBindingForCommand(cmd, filename, projectID)
+	if strings.TrimSpace(filename) != "" {
+		b, err := readProjectBinding(filename, projectID)
 		return b, false, err
 	}
 	c, err := commandClient(cmd)

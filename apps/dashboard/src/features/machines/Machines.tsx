@@ -37,6 +37,7 @@ import { computeStore } from './compute-store';
 import { MachineActions, MachineExpiry } from './MachineActions';
 import { creationImages } from './form-state';
 import { openMachineInspector } from './desktop-icons';
+import { canOpenVMProjectVolume } from '../project-files/vm-project-volume';
 import { VolumeManager } from './VolumeManager';
 import { ImageManager } from './ImageManager';
 import { MachineEnvironment } from './MachineEnvironment';
@@ -712,6 +713,29 @@ export function Machines({
                       }
                       limaShellPending={copyingLimaShell}
                       onInspect={inspect}
+                      onProjectFiles={(() => {
+                        if (!selected || data.error || transition) return;
+                        const selectedVolume = data.volumes.find(
+                          (item) => item.id === selected.spec.volumeId,
+                        );
+                        if (
+                          !selectedVolume ||
+                          !canOpenVMProjectVolume(selected, selectedVolume)
+                        )
+                          return;
+                        return () =>
+                          desktop.openApp(
+                            'project-files',
+                            {
+                              hostId: selected.hostId,
+                              machineId: selected.id,
+                              vmProjectVolumeId: selectedVolume.id,
+                            },
+                            {
+                              title: `${selected.spec.name} — Project Files`,
+                            },
+                          );
+                      })()}
                     />
                   </div>
                   {!transition &&

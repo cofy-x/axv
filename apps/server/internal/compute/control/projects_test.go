@@ -472,3 +472,62 @@ func TestProjectRejectsInvalidUTF8BeforeGuestEncoding(t *testing.T) {
 		t.Fatal("invalid Unicode reached the guest")
 	}
 }
+
+func TestDeleteProjectUnlocksVolumeDeletion(t *testing.T) {
+	f := newProjectFixture(t)
+	ctx := context.Background()
+	b := f.registered(t)
+
+	// Wrong revision is rejected.
+	if _, err := f.service.DeleteProject(ctx, b.Project.ID, f.service.store.HostID, "delete-wrong-rev", b.Project.Revision+1); compute.ErrorCode(err) != "revision_conflict" {
+		t.Fatalf("expected revision_conflict, got %v", err)
+	}
+
+	// Wrong host ID is rejected.
+	if _, err := f.service.DeleteProject(ctx, b.Project.ID, "host-other", "delete-wrong-host", b.Project.Revision); compute.ErrorCode(err) != "binding_changed" {
+		t.Fatalf("expected binding_changed, got %v", err)
+	}
+
+	// Delete the VM first so the volume becomes detached.
+	delVM, err := f.service.Action(ctx, f.machine.ID, compute.ActionRequest{RequestID: "delete-vm-for-project", Revision: f.machine.Revision, Action: "delete"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, found, err := f.service.store.Claim(ctx)
+	if err != nil || !found || op.ID != delVM.Operation.ID {
+		t.Fatalf("claim delete: %v %v", found, err)
+	}
+	if err := f.service.store.Finish(ctx, op, compute.Observation{Status: "deleted"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	vol, err := f.service.store.Volume(ctx, b.Project.VolumeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Volume deletion is still blocked while the project exists.
+	if _, err := f.service.DeleteVolume(ctx, vol.ID, "delete-vol-blocked", vol.Revision); compute.ErrorCode(err) != "volume_conflict" {
+		t.Fatalf("expected volume_conflict before project deletion, got %v", err)
+	}
+
+	// Delete the project registration cleanly.
+	deleted, err := f.service.DeleteProject(ctx, b.Project.ID, f.service.store.HostID, "delete-project-ok", b.Project.Revision)
+	if err != nil {
+		t.Fatalf("DeleteProject failed: %v", err)
+	}
+	if deleted.ID != b.Project.ID {
+		t.Fatalf("deleted project ID = %q, want %q", deleted.ID, b.Project.ID)
+	}
+	projects, err := f.service.Projects(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projects) != 0 {
+		t.Fatalf("expected 0 projects after deletion, got %d", len(projects))
+	}
+
+	// Detached volume can now be deleted cleanly.
+	if _, err := f.service.DeleteVolume(ctx, vol.ID, "delete-vol-ok", vol.Revision); err != nil {
+		t.Fatalf("DeleteVolume after project deletion failed: %v", err)
+	}
+}

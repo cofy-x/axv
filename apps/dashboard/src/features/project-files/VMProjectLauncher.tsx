@@ -33,6 +33,7 @@ export function VMProjectLauncher({
   const [root, setRoot] = useState('');
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [removingId, setRemovingId] = useState('');
   const [error, setError] = useState('');
   const { databaseId, clientId } = useDraftNamespace();
   const [mode, setMode] = useState<'open' | 'create' | 'clone'>(() => {
@@ -169,9 +170,11 @@ export function VMProjectLauncher({
     );
   }
 
-  async function register() {
+  async function register(overrideRoot?: string) {
     if (!data || !selected || busy || !verified) return;
     const { volume, machine } = selected;
+    const targetRoot = overrideRoot !== undefined ? overrideRoot : root;
+    const targetName = overrideRoot !== undefined ? '' : name.trim();
     setBusy(true);
     setError('');
     try {
@@ -179,8 +182,8 @@ export function VMProjectLauncher({
         volumeId: volume.id,
         volumeRevision: volume.revision,
         machineId: machine.id,
-        root,
-        ...(name.trim() ? { name: name.trim() } : {}),
+        root: targetRoot,
+        ...(targetName ? { name: targetName } : {}),
       };
       const requestId = requests.current.for({
         hostId: data.hostId,
@@ -204,6 +207,35 @@ export function VMProjectLauncher({
         setError(error instanceof Error ? error.message : String(error));
     } finally {
       if (mounted.current) setBusy(false);
+    }
+  }
+
+  async function removeProject(project: VMProject) {
+    if (!data || busy || removingId || !verified) return;
+    const answer = await desktop.dialog({
+      title: 'Remove VM project?',
+      message: `Remove project registration “${project.name}” from AXV? Files on the project volume remain on disk; detached volumes can then be deleted in Virtual Machines → Volumes.`,
+      buttons: [
+        { label: 'Cancel', value: 'cancel', default: true, cancel: true },
+        { label: 'Remove', value: 'remove' },
+      ],
+    });
+    if (answer?.button !== 'remove') return;
+    setRemovingId(project.id);
+    setError('');
+    try {
+      await vmProjectsAPI.delete(
+        project.id,
+        project.hostId,
+        crypto.randomUUID(),
+        project.revision,
+      );
+      if (mounted.current) setRefresh((value) => value + 1);
+    } catch (error) {
+      if (mounted.current)
+        setError(error instanceof Error ? error.message : String(error));
+    } finally {
+      if (mounted.current) setRemovingId('');
     }
   }
 
@@ -234,7 +266,7 @@ export function VMProjectLauncher({
                 (item) => item.id === project.volumeId,
               );
               return (
-                <li key={project.id}>
+                <li key={project.id} className="project-list-row">
                   <Button
                     disabled={!verified || (!!scope && !selected)}
                     onClick={() => open(project)}
@@ -251,6 +283,13 @@ export function VMProjectLauncher({
                         : `Volume ${project.volumeId.slice(0, 8)}`}{' '}
                       / {project.root || 'Volume root'}
                     </small>
+                  </Button>
+                  <Button
+                    disabled={!verified || busy || !!removingId}
+                    aria-label={`Remove ${project.name}`}
+                    onClick={() => void removeProject(project)}
+                  >
+                    {removingId === project.id ? 'Removing…' : 'Remove'}
                   </Button>
                 </li>
               );
@@ -277,6 +316,17 @@ export function VMProjectLauncher({
           Open Virtual Machines
         </Button>
       )}
+      {scope && selected && projects && projects.length === 0 && (
+        <div className="project-register-actions">
+          <Button
+            primary
+            disabled={busy || !verified}
+            onClick={() => void register('')}
+          >
+            {busy ? 'Opening…' : 'Open Volume Workspace'}
+          </Button>
+        </div>
+      )}
       <form
         className="project-register-form"
         aria-label="VM project setup"
@@ -291,48 +341,45 @@ export function VMProjectLauncher({
           <p className="project-register-volume">{selected.volume.name}</p>
         )}
         <div className="project-register-fields">
+          <Select
+            label="Project action"
+            value={mode}
+            disabled={busy || !canInteract}
+            onChange={(event) =>
+              setMode(event.target.value as 'open' | 'create' | 'clone')
+            }
+          >
+            <option value="open">Open Folder</option>
+            <option value="create">Create Project</option>
+            <option value="clone">Clone Repository</option>
+          </Select>
           {!scope && (
-            <>
-              <Select
-                label="Project action"
-                value={mode}
-                disabled={busy || !canInteract}
-                onChange={(event) =>
-                  setMode(event.target.value as 'open' | 'create' | 'clone')
-                }
-              >
-                <option value="open">Open Folder</option>
-                <option value="create">Create Project</option>
-                <option value="clone">Clone Repository</option>
-              </Select>
-              <Select
-                label="Project volume"
-                value={selected?.volume.id || ''}
-                disabled={busy || !canInteract}
-                onChange={(event) => {
-                  const choice = eligible?.find(
-                    ({ volume }) => volume.id === event.target.value,
-                  );
-                  setSelection(
-                    choice
-                      ? {
-                          hostId: choice.machine.hostId,
-                          machineId: choice.machine.id,
-                          volumeId: choice.volume.id,
-                        }
-                      : undefined,
-                  );
-                }}
-              >
-                <option value="">Choose a ready volume</option>
-                {eligible?.map(({ volume, machine }) => (
-                  <option key={volume.id} value={volume.id}>
-                    {volume.name} · {machine.spec.name} ·{' '}
-                    {volume.id.slice(0, 8)}
-                  </option>
-                ))}
-              </Select>
-            </>
+            <Select
+              label="Project volume"
+              value={selected?.volume.id || ''}
+              disabled={busy || !canInteract}
+              onChange={(event) => {
+                const choice = eligible?.find(
+                  ({ volume }) => volume.id === event.target.value,
+                );
+                setSelection(
+                  choice
+                    ? {
+                        hostId: choice.machine.hostId,
+                        machineId: choice.machine.id,
+                        volumeId: choice.volume.id,
+                      }
+                    : undefined,
+                );
+              }}
+            >
+              <option value="">Choose a ready volume</option>
+              {eligible?.map(({ volume, machine }) => (
+                <option key={volume.id} value={volume.id}>
+                  {volume.name} · {machine.spec.name} · {volume.id.slice(0, 8)}
+                </option>
+              ))}
+            </Select>
           )}
           {mode === 'open' && (
             <>
@@ -358,34 +405,32 @@ export function VMProjectLauncher({
             <Button
               type="submit"
               disabled={!selected || busy || !verified}
-              primary
+              primary={!(scope && projects && projects.length === 0)}
             >
               {busy ? 'Opening…' : 'Open'}
             </Button>
           </div>
         )}
       </form>
-      {!scope && (
-        <VMProjectInitialize
-          desktop={desktop}
-          interactive={active && canInteract}
-          inventoryAvailable={!!data}
-          mode={mode}
-          target={
-            selected && verified
-              ? {
-                  hostId: selected.machine.hostId,
-                  volumeId: selected.volume.id,
-                  volumeRevision: selected.volume.revision,
-                  machineId: selected.machine.id,
-                  machineName: selected.machine.spec.name,
-                  label: `${selected.volume.name} · ${selected.machine.spec.name}`,
-                }
-              : null
-          }
-          onCreated={() => setRefresh((value) => value + 1)}
-        />
-      )}
+      <VMProjectInitialize
+        desktop={desktop}
+        interactive={active && canInteract}
+        inventoryAvailable={!!data}
+        mode={mode}
+        target={
+          selected && verified
+            ? {
+                hostId: selected.machine.hostId,
+                volumeId: selected.volume.id,
+                volumeRevision: selected.volume.revision,
+                machineId: selected.machine.id,
+                machineName: selected.machine.spec.name,
+                label: `${selected.volume.name} · ${selected.machine.spec.name}`,
+              }
+            : null
+        }
+        onCreated={() => setRefresh((value) => value + 1)}
+      />
       {error && <p role="alert">{error}</p>}
     </section>
   );

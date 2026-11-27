@@ -564,12 +564,22 @@ export const machinesApi = {
         signal: AbortSignal.timeout(15000),
       },
     ),
-  createTerminal: (id: string, requestId: string, hostId: string) =>
+  createTerminal: (
+    id: string,
+    requestId: string,
+    hostId: string,
+    directory?: string,
+  ) =>
     request<GuestTerminal>(
       `${base}/machines/${encodeURIComponent(id)}/guest/terminals`,
       {
         method: 'POST',
-        body: JSON.stringify({ requestId, cols: 80, rows: 24 }),
+        body: JSON.stringify({
+          requestId,
+          cols: 80,
+          rows: 24,
+          ...(directory ? { directory } : {}),
+        }),
         headers: { 'X-AXV-Host-ID': hostId },
         signal: AbortSignal.timeout(15000),
       },

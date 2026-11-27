@@ -11,15 +11,10 @@ import (
 )
 
 func (m *Manager) notificationTarget(session storage.CodexSession, event runner.Activity) notificationevent.Target {
-	target := notificationevent.Target{
+	return notificationevent.Target{
 		Kind: "codex", StoreID: m.databaseID, SessionID: session.ID, RunID: session.RunID,
 		ThreadID: event.ThreadID, TurnID: event.TurnID, EventID: event.EventID,
 	}
-	if session.VMProject != nil {
-		target.HostID = session.VMProject.Project.HostID
-		target.ProjectID = session.VMProject.Project.ID
-	}
-	return target
 }
 
 // NotificationSources exposes bounded, content-free producer journals for all

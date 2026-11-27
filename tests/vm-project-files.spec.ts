@@ -1897,7 +1897,7 @@ test('file observation pauses off the visible reading pane and resumes without r
   expect(await blocksTabClose(page)).toBe(false);
 });
 
-test('a visible file keeps observing while its Codex window owns focus', async ({
+test('a visible file keeps observing while its VM Inspector window owns focus', async ({
   page,
   isMobile,
 }) => {
@@ -1908,20 +1908,24 @@ test('a visible file keeps observing while its Codex window owns focus', async (
   const state = await fixture(page);
   const text = await openProject(page);
   await browser(page)
-    .getByRole('button', { name: 'Codex', exact: true })
+    .getByRole('button', { name: 'VM Inspector', exact: true })
     .click();
-  const codex = page.locator(
-    `[data-window-id="codex:vm:${project.hostId}:${project.id}"]`,
-  );
-  await expect(codex).toBeVisible();
-  await expect(codex).toHaveClass(/is-active/);
+  const inspector = page.getByRole('region', {
+    name: `${project.name} — Inspector`,
+    exact: true,
+  });
+  await expect(inspector).toBeVisible();
+  await expect(inspector).toHaveClass(/is-active/);
   await expect(text).toBeVisible();
   state.externalWrite(
-    'Agent progress remains visible beside Codex\n',
+    'Agent progress remains visible beside Inspector\n',
     'live-sha',
   );
-  await expectEditorText(text, 'Agent progress remains visible beside Codex\n');
-  await expect(codex).toHaveClass(/is-active/);
+  await expectEditorText(
+    text,
+    'Agent progress remains visible beside Inspector\n',
+  );
+  await expect(inspector).toHaveClass(/is-active/);
   await expect(text).not.toBeFocused();
   for (const { binding } of state.reads)
     expect(binding).toEqual(originalBinding);

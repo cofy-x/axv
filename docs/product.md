@@ -37,9 +37,9 @@ Cloudflare publications serve potentially untrusted VM application code and enfo
 
 ## Agent and VM responsibilities
 
-- **Host-side official agents:** Managed coding agents run on the AXV deployment machine using official provider CLIs (retaining their own auth, approvals, sandbox and model settings). Running coding agents inside VMs is outside the current plan.
+- **Host-side official agents:** Managed coding agents run on the AXV deployment machine against host projects using official provider CLIs (retaining their own auth, approvals, sandbox and model settings).
 - **VMs as development environments:** VMs host project code, Git worktrees, dependencies, builds, tests and development services via the guest service. Authoritative VM project code lives on retained project volumes; AXV does not silently migrate or sync host projects with VM projects.
-- **Explicit agent-to-VM boundary:** Host agents operate on VM projects through explicit AXV interfaces (`axv vm project` and the per-run bundled `axv-vm-project` Skill). A Skill guides the agent; it does not redirect built-in host tools or replace provider permissions.
+- **Direct VM workspace execution:** VM projects open directly into native Guest Terminals (`/projects/<root>`), persistent project tasks, file editors, previews and SSH rather than proxying host-agent tools through a prompt-injected Skill. Native in-VM agent execution backed by a zero-credential host LLM proxy remains a clean future extension.
 - **Conversation lifetime:** Conversations outlive views; closing a view, ending a run and continuing saved context are separate user choices ([Codex architecture](codex.md)).
 
 ### VM project workspace constraints

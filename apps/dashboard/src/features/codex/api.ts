@@ -1,11 +1,5 @@
 import { request as unboundRequest } from '../../shared/api/http';
 import { requestDesktop as request } from '../../shared/api/desktop';
-import type { VMProject, VMProjectBinding } from '../project-files/vm-api';
-
-export interface CodexVMProject {
-  project: VMProject;
-  binding: VMProjectBinding;
-}
 
 export interface CodexInfo {
   supported: boolean;
@@ -38,7 +32,6 @@ export interface CodexSessionRecord {
   runId: string;
   target: 'host';
   projectPath: string;
-  vmProject?: CodexVMProject;
   title: string;
   archivedAt?: string;
   metadataRevision: number;
@@ -129,14 +122,13 @@ export const codexAPI = {
   create: async (
     requestId: string,
     projectPath?: string,
-    vmProject?: { binding: VMProjectBinding },
     databaseId?: string,
   ) =>
     (
       await request<{ session: CodexSessionRecord }>(`${root}/sessions`, {
         method: 'POST',
         ...(databaseId ? { headers: { 'X-AXV-Database-ID': databaseId } } : {}),
-        body: JSON.stringify({ requestId, projectPath, vmProject }),
+        body: JSON.stringify({ requestId, projectPath }),
       })
     ).session,
   end: async (id: string, runId: string) =>
@@ -161,7 +153,6 @@ export const codexAPI = {
     id: string,
     requestId: string,
     expectedRunId: string,
-    vmProject?: { binding: VMProjectBinding },
     databaseId?: string,
   ) =>
     (
@@ -172,7 +163,7 @@ export const codexAPI = {
           ...(databaseId
             ? { headers: { 'X-AXV-Database-ID': databaseId } }
             : {}),
-          body: JSON.stringify({ requestId, expectedRunId, vmProject }),
+          body: JSON.stringify({ requestId, expectedRunId }),
         },
       )
     ).session,
@@ -209,19 +200,13 @@ export function projectName(path: string) {
 }
 
 export function sessionTitle(session: CodexSessionRecord) {
-  return (
-    session.title ||
-    session.vmProject?.project.name ||
-    projectName(session.projectPath)
-  );
+  return session.title || projectName(session.projectPath);
 }
 
 export function sessionWindowTitle(session: CodexSessionRecord) {
-  const project =
-    session.vmProject?.project.name || projectName(session.projectPath);
-  const target = session.vmProject ? `VM · ${project}` : project;
+  const project = projectName(session.projectPath);
   const name = sessionTitle(session);
-  const title = `Codex · ${name === project ? target : `${name} — ${target}`}`;
+  const title = `Codex · ${name === project ? project : `${name} — ${project}`}`;
   const final = { ended: 'Ended', lost: 'Lost', failed: 'Failed' };
   return session.status in final
     ? `${title} · ${final[session.status as keyof typeof final]} (${session.runId.slice(0, 8)})`

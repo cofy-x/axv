@@ -16,6 +16,7 @@ import (
 
 	"github.com/cofy-x/axv/apps/server/internal/compute"
 	"github.com/cofy-x/axv/apps/server/internal/compute/internal/hostconn"
+	"github.com/cofy-x/axv/apps/server/internal/guest/protocol"
 )
 
 type Binding struct {
@@ -185,5 +186,28 @@ func (c *Client) Operation(ctx context.Context, id string, requestID bool) (comp
 	}
 	var result compute.Operation
 	err := c.DoJSON(ctx, "GET", path+url.PathEscape(id), nil, &result)
+	return result, err
+}
+
+func (c *Client) Volumes(ctx context.Context) ([]compute.Volume, error) {
+	var result struct {
+		Volumes []compute.Volume `json:"volumes"`
+	}
+	err := c.DoJSON(ctx, "GET", "volumes", nil, &result)
+	return result.Volumes, err
+}
+
+func (c *Client) DeleteVolume(ctx context.Context, id, requestID string, revision int64) (compute.Operation, error) {
+	var result compute.Operation
+	err := c.DoJSON(ctx, "POST", "volumes/"+url.PathEscape(id)+"/delete", map[string]any{
+		"requestId": requestID,
+		"revision":  revision,
+	}, &result)
+	return result, err
+}
+
+func (c *Client) Exec(ctx context.Context, machineID string, request protocol.ExecRequest) (protocol.ExecResult, error) {
+	var result protocol.ExecResult
+	err := c.DoJSON(ctx, "POST", "machines/"+url.PathEscape(machineID)+"/guest/exec", request, &result)
 	return result, err
 }
