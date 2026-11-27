@@ -59,6 +59,7 @@ func (s *service) handler() http.Handler {
 	mux.HandleFunc("POST /v1/codex/install", s.codex.handleInstallStart)
 	mux.HandleFunc("POST /v1/codex/sessions", s.codex.handleCreateSession)
 	mux.HandleFunc("GET /v1/codex/notifications", s.codex.handleNotifications)
+	mux.HandleFunc("POST /v1/codex/notifications/resolve", s.codex.handleResolveNotification)
 	mux.HandleFunc("/v1/codex/", s.codex.handleProxy)
 	mux.HandleFunc("POST /v1/shutdown", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)

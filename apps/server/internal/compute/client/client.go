@@ -33,9 +33,10 @@ func (e *ResponseError) Error() string { return e.Err.Error() }
 func (e *ResponseError) Unwrap() error { return e.Err }
 
 type Client struct {
-	Binding Binding
-	socket  string
-	http    *http.Client
+	Binding                      Binding
+	SupportsVMCodexNotifications bool
+	socket                       string
+	http                         *http.Client
 }
 
 // Connect captures an identity once. Every later socket connection, including
@@ -45,7 +46,11 @@ func Connect(ctx context.Context, socket string, expected Binding) (*Client, err
 	if err != nil {
 		return nil, err
 	}
-	c := &Client{Binding: Binding{HostID: identity.HostID, ConfigFingerprint: identity.ConfigFingerprint}, socket: socket}
+	c := &Client{
+		Binding:                      Binding{HostID: identity.HostID, ConfigFingerprint: identity.ConfigFingerprint},
+		SupportsVMCodexNotifications: identity.VMCodexNotifications,
+		socket:                       socket,
+	}
 	c.http = &http.Client{
 		Transport:     &http.Transport{Proxy: nil, DisableKeepAlives: true, ResponseHeaderTimeout: 15 * time.Second, DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) { return c.Dial(ctx) }},
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },

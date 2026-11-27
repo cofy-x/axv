@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"slices"
 
 	"github.com/cofy-x/axv/apps/server/internal/compute"
 	computeclient "github.com/cofy-x/axv/apps/server/internal/compute/client"
@@ -61,6 +62,69 @@ func (g *Gateway) ResolveNotification(ctx context.Context, target notificationev
 	result, err := client.ResolveNotification(ctx, target)
 	if err != nil {
 		return notificationevent.Resolution{Target: target}, compute.Problem("host_unavailable", "The original task status is unavailable.")
+	}
+	return result, nil
+}
+
+// VMCodexNotificationSources polls Codex notification batches from running,
+// ready VMs that declare the "codex" guest capability. Stopped or transiently
+// unreachable VMs are skipped without failing desktop notification intake.
+func (g *Gateway) VMCodexNotificationSources(ctx context.Context, _ map[string]uint64) ([]notificationevent.Batch, error) {
+	if !g.HasNotificationSource() {
+		return nil, nil
+	}
+	client, err := g.ConnectHost(ctx, "")
+	if err != nil {
+		return nil, nil
+	}
+	defer client.Close()
+	if !client.SupportsVMCodexNotifications {
+		return nil, nil
+	}
+	machines, err := client.ListMachines(ctx)
+	if err != nil {
+		return nil, nil
+	}
+	hostID := client.Binding.HostID
+	var batches []notificationevent.Batch
+	for _, machine := range machines {
+		if machine.Status != "running" || !machine.Ready || !slices.Contains(machine.GuestCapabilities, "codex") {
+			continue
+		}
+		vmBatches, err := client.VMCodexNotifications(ctx, machine.ID)
+		if err != nil {
+			continue
+		}
+		name := machine.Spec.Name
+		if name == "" {
+			name = machine.ID
+		}
+		for _, batch := range vmBatches {
+			batch.SourceID = "vm-codex:" + hostID + ":" + machine.ID + ":" + batch.SourceID
+			for i := range batch.Events {
+				batch.Events[i].Target.HostID = hostID
+				batch.Events[i].Target.MachineID = machine.ID
+				batch.Events[i].Target.MachineName = name
+			}
+			batches = append(batches, batch)
+		}
+	}
+	return batches, nil
+}
+
+// ResolveVMCodexNotification verifies an exact VM Codex notification target.
+func (g *Gateway) ResolveVMCodexNotification(ctx context.Context, target notificationevent.Target) (notificationevent.Resolution, error) {
+	if target.Kind != "codex" || target.MachineID == "" || target.HostID == "" {
+		return notificationevent.Resolution{Target: target}, nil
+	}
+	client, err := g.ConnectHost(ctx, target.HostID)
+	if err != nil {
+		return notificationevent.Resolution{Target: target}, nil
+	}
+	defer client.Close()
+	result, err := client.ResolveVMCodexNotification(ctx, target)
+	if err != nil {
+		return notificationevent.Resolution{Target: target}, nil
 	}
 	return result, nil
 }

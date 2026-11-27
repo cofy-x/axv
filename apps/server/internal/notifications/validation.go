@@ -34,16 +34,22 @@ func validTarget(t notificationevent.Target) bool {
 	if !identifier(t.StoreID, true, 128) {
 		return false
 	}
-	for _, value := range []string{t.SessionID, t.RunID, t.ThreadID, t.TurnID, t.EventID, t.HostID, t.ProjectID, t.TaskID, t.AttemptID} {
+	for _, value := range []string{t.SessionID, t.RunID, t.ThreadID, t.TurnID, t.EventID, t.HostID, t.MachineID, t.ProjectID, t.TaskID, t.AttemptID} {
 		if !identifier(value, false, 128) {
 			return false
 		}
 	}
+	if t.MachineName != "" && !validText(t.MachineName, 128) {
+		return false
+	}
 	switch t.Kind {
 	case "codex":
-		return t.SessionID != "" && t.RunID != "" && t.ThreadID != "" && t.EventID != "" && t.TaskID == "" && t.AttemptID == "" && (t.HostID == "") == (t.ProjectID == "")
+		if t.MachineID != "" {
+			return t.SessionID != "" && t.RunID != "" && t.ThreadID != "" && t.EventID != "" && t.HostID != "" && t.ProjectID == "" && t.TaskID == "" && t.AttemptID == ""
+		}
+		return t.SessionID != "" && t.RunID != "" && t.ThreadID != "" && t.EventID != "" && t.MachineName == "" && t.TaskID == "" && t.AttemptID == "" && (t.HostID == "") == (t.ProjectID == "")
 	case "task":
-		return t.HostID != "" && t.StoreID == t.HostID && t.ProjectID != "" && t.TaskID != "" && t.AttemptID != "" && t.EventID != "" && t.SessionID == "" && t.RunID == "" && t.ThreadID == "" && t.TurnID == ""
+		return t.HostID != "" && t.StoreID == t.HostID && t.MachineID == "" && t.MachineName == "" && t.ProjectID != "" && t.TaskID != "" && t.AttemptID != "" && t.EventID != "" && t.SessionID == "" && t.RunID == "" && t.ThreadID == "" && t.TurnID == ""
 	}
 	return false
 }

@@ -20,6 +20,8 @@ export interface NotificationTarget {
   turnId?: string;
   eventId?: string;
   hostId?: string;
+  machineId?: string;
+  machineName?: string;
   projectId?: string;
   taskId?: string;
   attemptId?: string;

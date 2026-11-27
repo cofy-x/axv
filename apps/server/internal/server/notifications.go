@@ -16,6 +16,7 @@ func workstationNotifications(ctx context.Context, home string, agents *codex.Ma
 		Home: home,
 		Sources: []notifications.Source{
 			{Name: "codex", Read: agents.NotificationSources},
+			{Name: "vm-codex", Read: compute.VMCodexNotificationSources},
 			{Name: "compute", Read: func(ctx context.Context, cursors map[string]uint64) ([]notificationevent.Batch, error) {
 				if !compute.HasNotificationSource() {
 					for key := range cursors {
@@ -47,6 +48,9 @@ func workstationNotifications(ctx context.Context, home string, agents *codex.Ma
 		Resolve: func(ctx context.Context, target notificationevent.Target) (notificationevent.Resolution, error) {
 			switch target.Kind {
 			case "codex":
+				if target.MachineID != "" {
+					return compute.ResolveVMCodexNotification(ctx, target)
+				}
 				return agents.ResolveNotification(ctx, target)
 			case "task":
 				return compute.ResolveNotification(ctx, target)

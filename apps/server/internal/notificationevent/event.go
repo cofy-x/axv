@@ -5,17 +5,19 @@ package notificationevent
 import "time"
 
 type Target struct {
-	Kind      string `json:"kind"`
-	StoreID   string `json:"storeId"`
-	SessionID string `json:"sessionId,omitempty"`
-	RunID     string `json:"runId,omitempty"`
-	ThreadID  string `json:"threadId,omitempty"`
-	TurnID    string `json:"turnId,omitempty"`
-	EventID   string `json:"eventId,omitempty"`
-	HostID    string `json:"hostId,omitempty"`
-	ProjectID string `json:"projectId,omitempty"`
-	TaskID    string `json:"taskId,omitempty"`
-	AttemptID string `json:"attemptId,omitempty"`
+	Kind        string `json:"kind"`
+	StoreID     string `json:"storeId"`
+	SessionID   string `json:"sessionId,omitempty"`
+	RunID       string `json:"runId,omitempty"`
+	ThreadID    string `json:"threadId,omitempty"`
+	TurnID      string `json:"turnId,omitempty"`
+	EventID     string `json:"eventId,omitempty"`
+	HostID      string `json:"hostId,omitempty"`
+	MachineID   string `json:"machineId,omitempty"`
+	MachineName string `json:"machineName,omitempty"`
+	ProjectID   string `json:"projectId,omitempty"`
+	TaskID      string `json:"taskId,omitempty"`
+	AttemptID   string `json:"attemptId,omitempty"`
 }
 
 type Event struct {
