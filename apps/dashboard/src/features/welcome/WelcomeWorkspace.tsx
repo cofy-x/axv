@@ -1,10 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { Button, IconButton } from '@cofy-x/axv-nextstep';
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
 import { codexAPI, sessionWindowTitle } from '../codex/api';
 import type { CodexSessionRecord } from '../codex/api';
+import { useCodexAvailability } from '../codex/CodexContext';
 import { openCodexSession } from '../codex/definition';
-import { useCompute } from '../machines/useCompute';
+import { computeStore } from '../machines/compute-store';
 import { openMachineInspector } from '../machines/desktop-icons';
 import {
   currentGuestTerminalTarget,
@@ -23,12 +30,20 @@ import { canOpenVMProjectVolume } from '../project-files/vm-project-volume';
 
 export function WelcomeWorkspace({
   desktop,
+  windowId,
   visible,
 }: {
   desktop: DesktopAPI;
+  windowId: string;
   visible?: boolean;
 }) {
-  const compute = useCompute(visible !== false);
+  const compute = useSyncExternalStore(
+    computeStore.subscribe,
+    computeStore.getSnapshot,
+  );
+  const { info: codexInfo } = useCodexAvailability();
+  const codexReady = codexInfo?.ready === true;
+  const active = visible !== false && desktop.activeWindowId === windowId;
   const [sessions, setSessions] = useState<CodexSessionRecord[]>([]);
   const [hostProjects, setHostProjects] = useState<Project[]>([]);
   const [vmProjects, setVMProjects] = useState<VMProject[]>([]);
@@ -50,32 +65,43 @@ export function WelcomeWorkspace({
       setRefreshing(true);
       try {
         const [codexResult, hostResult, vmResult] = await Promise.allSettled([
-          codexAPI.list(signal),
+          codexReady
+            ? codexAPI.list(signal)
+            : Promise.resolve({ sessions: [] as CodexSessionRecord[] }),
           projectsAPI.list(),
           hostId
             ? vmProjectsAPI.list(hostId, signal)
             : Promise.resolve({ projects: [] as VMProject[] }),
         ]);
         if (!mounted.current || signal?.aborted) return;
-        if (codexResult.status === 'fulfilled')
+        if (
+          codexResult.status === 'fulfilled' &&
+          Array.isArray(codexResult.value?.sessions)
+        )
           setSessions(codexResult.value.sessions);
-        if (hostResult.status === 'fulfilled')
+        if (
+          hostResult.status === 'fulfilled' &&
+          Array.isArray(hostResult.value?.projects)
+        )
           setHostProjects(hostResult.value.projects);
-        if (vmResult.status === 'fulfilled')
+        if (
+          vmResult.status === 'fulfilled' &&
+          Array.isArray(vmResult.value?.projects)
+        )
           setVMProjects(vmResult.value.projects);
       } finally {
         if (mounted.current && !signal?.aborted) setRefreshing(false);
       }
     },
-    [hostId],
+    [codexReady, hostId],
   );
 
   useEffect(() => {
-    if (visible === false) return;
+    if (!active) return;
     const controller = new AbortController();
     void loadWorkspace(controller.signal);
     return () => controller.abort();
-  }, [visible, loadWorkspace]);
+  }, [active, loadWorkspace]);
 
   const attentionSessions = sessions.filter(
     (session) => !session.archivedAt && session.activity?.needsAttention,
@@ -164,7 +190,7 @@ export function WelcomeWorkspace({
           label="Refresh workspace"
           disabled={refreshing}
           onClick={() => {
-            compute.refresh();
+            void computeStore.refresh();
             void loadWorkspace();
           }}
         />

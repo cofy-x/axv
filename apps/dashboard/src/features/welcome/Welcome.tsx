@@ -75,7 +75,11 @@ export function Welcome({ desktop, window, visible }: AppWindowProps) {
           ))}
         </div>
         <Suspense fallback={null}>
-          <WelcomeWorkspace desktop={desktop} visible={visible} />
+          <WelcomeWorkspace
+            desktop={desktop}
+            windowId={window.id}
+            visible={visible}
+          />
         </Suspense>
       </div>
       <div className="app-toolbar welcome-footer">
