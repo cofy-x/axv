@@ -6,14 +6,14 @@ function key(key: string, modifiers: Partial<KeyboardEvent> = {}) {
 }
 
 describe('terminal keyboard ownership', () => {
-  it.each(['a', 'c', 'd', 'l', 'n', 's', 'w', 'z'])(
+  it.each(['a', 'c', 'd', 'k', 'l', 'n', 's', 'w', 'z'])(
     'preserves Control-%s for the host shell',
     (letter) => {
       expect(isDesktopTerminalKey(key(letter, { ctrlKey: true }))).toBe(false);
     },
   );
 
-  it('keeps window cycling, workspace switching, workspace menus and Command-W available', () => {
+  it('keeps window cycling, workspace switching, workspace menus, Command-W and Quick Switcher available', () => {
     expect(isDesktopTerminalKey(key('F6', { ctrlKey: true }))).toBe(true);
     expect(
       isDesktopTerminalKey(key('F6', { ctrlKey: true, shiftKey: true })),
@@ -22,6 +22,10 @@ describe('terminal keyboard ownership', () => {
       expect(isDesktopTerminalKey(key(digit, { altKey: true }))).toBe(true);
     expect(isDesktopTerminalKey(key('F10'))).toBe(true);
     expect(isDesktopTerminalKey(key('w', { metaKey: true }))).toBe(true);
+    expect(isDesktopTerminalKey(key('k', { metaKey: true }))).toBe(true);
+    expect(
+      isDesktopTerminalKey(key('k', { ctrlKey: true, shiftKey: true })),
+    ).toBe(true);
   });
 
   it('leaves ordinary function, Escape, Tab and unused Alt keys to xterm', () => {

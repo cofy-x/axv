@@ -45,3 +45,32 @@
     gap: 6px;
   }
 }
+
+.desktop-quick-switcher-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 7px;
+  background: #2f2f2f;
+  color: #f0f0f0;
+  border: 1px solid #555;
+  font: 11px var(--ns-font);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.desktop-quick-switcher-trigger:hover {
+  background: #3d3d3d;
+}
+.desktop-quick-switcher-trigger kbd {
+  font: 600 10px var(--ns-mono);
+  color: #d0d0d0;
+}
+@media (max-width: 599px) {
+  .desktop-quick-switcher-trigger kbd {
+    display: none;
+  }
+  .desktop-quick-switcher-trigger {
+    padding: 0 6px;
+  }
+}

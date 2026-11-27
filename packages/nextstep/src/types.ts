@@ -233,6 +233,8 @@ export interface DesktopProps {
   initialDockOrder?: string[];
   initialWindows?: { appId: string; params?: WindowParams; title?: string }[];
   workspaceMenuIcon?: ReactNode;
+  /** Optional host-supplied quick action controls rendered in the top status bar. */
+  headerActions?: ReactNode;
   onLayoutChange?: (layout: DesktopLayout) => void;
   onDesktopMenu?: (ids: string[], desktop: DesktopAPI) => MenuItem[];
   wallpaper?: 'slate' | 'dither' | 'solid';

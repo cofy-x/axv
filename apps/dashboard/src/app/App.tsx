@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -39,6 +41,12 @@ import {
   notificationLink,
   openNotification,
 } from '../features/notifications/definition';
+
+const QuickSwitcher = lazy(() =>
+  import('../features/quick-switcher/QuickSwitcher').then((module) => ({
+    default: module.QuickSwitcher,
+  })),
+);
 
 export function App() {
   const { ready, bootError, boot } = useBootstrap();
@@ -99,6 +107,24 @@ function DesktopApp({ bootstrap, clientId }: ReadyDesktop) {
     retryAuthentication,
   } = useDesktopSession({ bootstrap, clientId });
   const [identityError, setIdentityError] = useState('');
+  const [quickSwitcherOpen, setQuickSwitcherOpen] = useState(false);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.isComposing || event.altKey) return;
+      if (event.key.toLowerCase() !== 'k') return;
+      if (!event.metaKey && !event.ctrlKey) return;
+      if (document.querySelector('.ns-dialog-layer')) return;
+      const target = event.target instanceof Element ? event.target : null;
+      const inTerminal = !!target?.closest('.terminal-emulator, .xterm');
+      if (inTerminal && event.ctrlKey && !event.shiftKey && !event.metaKey)
+        return;
+      event.preventDefault();
+      event.stopPropagation();
+      setQuickSwitcherOpen((open) => !open);
+    };
+    globalThis.addEventListener('keydown', onKeyDown, true);
+    return () => globalThis.removeEventListener('keydown', onKeyDown, true);
+  }, []);
   useEffect(() => {
     const check = () => {
       try {
@@ -235,6 +261,19 @@ function DesktopApp({ bootstrap, clientId }: ReadyDesktop) {
               workspaceMenuIcon={
                 <img src="/favicon.svg" alt="" width={17} height={17} />
               }
+              headerActions={
+                <button
+                  type="button"
+                  className="desktop-quick-switcher-trigger"
+                  aria-label="Quick Switcher"
+                  title="Quick Switcher (⌘K / Ctrl+K)"
+                  aria-keyshortcuts="Meta+K Control+Shift+K"
+                  onClick={() => setQuickSwitcherOpen(true)}
+                >
+                  <span className="desktop-quick-switcher-label">Jump</span>
+                  <kbd>⌘K</kbd>
+                </button>
+              }
               wallpaper={preferences.wallpaper}
               clock24Hour={preferences.clock24Hour}
               iconSnap={preferences.iconSnap}
@@ -344,6 +383,15 @@ function DesktopApp({ bootstrap, clientId }: ReadyDesktop) {
               onHelp={() => getDesktop()?.openApp('welcome')}
               helpLabel="Welcome"
             />
+            {quickSwitcherOpen && desktopRef.current && (
+              <Suspense fallback={null}>
+                <QuickSwitcher
+                  apps={apps}
+                  desktop={desktopRef.current}
+                  onClose={() => setQuickSwitcherOpen(false)}
+                />
+              </Suspense>
+            )}
           </ApplicationCatalogContext.Provider>
         </WindowCommandsContext.Provider>
       </PreferencesContext.Provider>
