@@ -1,6 +1,6 @@
 # Host Codex architecture
 
-This reference owns Codex provider integration, process/run ownership, VM work context, reconciliation, activity journals and terminal attachments. See [Host Codex API](api/host-codex.md) for routes/limits, [usage](usage.md#codex) for user actions, [startup](startup.md#host-agent-defaults) for proxy/tmux defaults, and [architecture](architecture.md#codex-attachment-and-process-lifetime) for surface lifetimes.
+This reference owns Codex provider integration, process/run ownership, reconciliation, activity journals and terminal attachments. See [Host Codex API](api/host-codex.md) for routes/limits, [usage](usage.md#codex) for user actions, [startup](startup.md#host-agent-defaults) for proxy/tmux defaults, and [architecture](architecture.md#codex-attachment-and-process-lifetime) for surface lifetimes.
 
 ## Implementation map
 
@@ -10,7 +10,6 @@ This reference owns Codex provider integration, process/run ownership, VM work c
 | HTTP & WebSocket adapter | [`codex/httpapi`](../apps/server/internal/codex/httpapi) |
 | Service queries, lifecycle & attachments | [`service.go`](../apps/server/internal/codex/service.go), [`lifecycle.go`](../apps/server/internal/codex/lifecycle.go), [`launch.go`](../apps/server/internal/codex/launch.go), [`attachment.go`](../apps/server/internal/codex/attachment.go), [`input.go`](../apps/server/internal/codex/input.go) |
 | Reconciliation, history & coordination | [`runtime.go`](../apps/server/internal/codex/runtime.go), [`history.go`](../apps/server/internal/codex/history.go), [`coordination.go`](../apps/server/internal/codex/coordination.go) |
-| VM work projects & bundled Skill | [`vm_project.go`](../apps/server/internal/codex/vm_project.go), [`vmwork`](../apps/server/internal/vmwork), [`runner/vmwork.go`](../apps/server/internal/codex/runner/vmwork.go), [`cli/vm_project_agent.go`](../apps/server/internal/cli/vm_project_agent.go) |
 | Independent runner, bridge & activity | [`codex/runner`](../apps/server/internal/codex/runner): `bridge.go`, `protocol.go`, `run_unix.go`, `ownership_unix.go`, `activity.go`, `activity_events_unix.go` |
 | Notification source | [`notification_events.go`](../apps/server/internal/codex/notification_events.go) |
 | Private tmux backend | [`codex/internal/tmux`](../apps/server/internal/codex/internal/tmux) |
@@ -39,15 +38,8 @@ flowchart TB
 ```
 
 - **Package boundaries:** `internal/codex` owns transport-agnostic Go operations and receives resolved [`Options`](../apps/server/internal/codex/options.go) from composition. `codex/httpapi` owns access checks, strict JSON decoding and WS framing. `codex/internal/tmux` accepts explicit targets without importing storage/config. `codex/runner` owns the independent process and official provider protocol without importing manager/storage (invoked directly by the CLI). Shared host directory browsing stays in [`hostdir`](../apps/server/internal/hostdir).
-- **Separate identities:** A **Conversation** binds one provider UUID, host directory and optional persistent VM project; each **Run** records its own ID, tmux target and socket. Attach, End, input, resize and scroll address that exact `(sessionId, runId)` pair — old windows never retarget to newer runs.
+- **Separate identities:** A **Conversation** binds one provider UUID and host directory; each **Run** records its own ID, tmux target and socket. Attach, End, input, resize and scroll address that exact `(sessionId, runId)` pair — old windows never retarget to newer runs.
 - **Process lifetime:** Runners survive browser disconnects and desktop shutdown and reap only their own children. There is no generic multi-provider abstraction; Codex identity and protocol stay provider-specific.
-
-## VM project work context
-
-- Starting from VM Project Files captures the reviewed VM project binding, environment and verified compute socket/config fingerprint into the run reservation (verified through a gateway callback injected by composition). Host and VM conversations cannot convert into each other; empty VM control directories never enter recent host projects.
-- [`vmwork`](../apps/server/internal/vmwork) owns the immutable `vm-project.json` format and embedded [`axv-vm-project` Skill](../apps/server/internal/vmwork/skills/axv-vm-project/SKILL.md). Before forwarding each user `turn/start` or `turn/steer`, the runner verifies scope/content and appends routing metadata plus an official `skill` input item without altering provider auth/approvals or submitting turns itself. Missing/changed context or oversized turns fail closed before forwarding.
-- The bound CLI (`internal-vm-project`) pins the recorded AXV executable, project, environment, compute socket and config fingerprint — never reading a mutable profile, activating a host or refreshing stale bindings.
-- Explicit continuation reviews a binding for the same persistent `(host, project, volume, root)`, verifies AXV ownership of the control workspace and saved provider history, and records a fresh immutable run context without mutating prior runs. Browser unknown-request recovery binds to its original request, binding and `databaseId` namespace across reloads.
 
 ## Runner, provider protocol, and activity
 

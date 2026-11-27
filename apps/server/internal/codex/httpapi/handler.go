@@ -151,7 +151,7 @@ func storageStatus(code string) int {
 		return http.StatusBadRequest
 	case "metadata_conflict", "request_conflict", "conversation_active", "run_changed", "history_unavailable", "history_identity_conflict", "invalid_run_state", "project_changed":
 		return http.StatusConflict
-	case "codex_limit", "vm_project_invalid":
+	case "codex_limit":
 		return http.StatusServiceUnavailable
 	default:
 		return 0
@@ -274,21 +274,15 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		RequestID   string          `json:"requestId"`
-		ProjectPath string          `json:"projectPath,omitempty"`
-		Cols        *int            `json:"cols,omitempty"`
-		Rows        *int            `json:"rows,omitempty"`
-		VMProject   json.RawMessage `json:"vmProject,omitempty"`
+		RequestID   string `json:"requestId"`
+		ProjectPath string `json:"projectPath,omitempty"`
+		Cols        *int   `json:"cols,omitempty"`
+		Rows        *int   `json:"rows,omitempty"`
 	}
 	if !decode(w, r, &input) {
 		return
 	}
-	vmProject, err := vmProjectInput(input.VMProject)
-	if err != nil {
-		respond(w, nil, err)
-		return
-	}
-	session, err := h.manager.Create(r.Context(), codex.StartInput{RequestID: input.RequestID, ExpectedDatabaseID: r.Header.Get(httpaccess.DatabaseIdentityHeader), ProjectPath: input.ProjectPath, Cols: input.Cols, Rows: input.Rows, VMProject: vmProject})
+	session, err := h.manager.Create(r.Context(), codex.StartInput{RequestID: input.RequestID, ExpectedDatabaseID: r.Header.Get(httpaccess.DatabaseIdentityHeader), ProjectPath: input.ProjectPath, Cols: input.Cols, Rows: input.Rows})
 	respond(w, map[string]any{"session": session}, err)
 }
 
@@ -297,38 +291,16 @@ func (h *Handler) resume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		RequestID     string          `json:"requestId"`
-		ExpectedRunID string          `json:"expectedRunId"`
-		Cols          *int            `json:"cols,omitempty"`
-		Rows          *int            `json:"rows,omitempty"`
-		VMProject     json.RawMessage `json:"vmProject,omitempty"`
+		RequestID     string `json:"requestId"`
+		ExpectedRunID string `json:"expectedRunId"`
+		Cols          *int   `json:"cols,omitempty"`
+		Rows          *int   `json:"rows,omitempty"`
 	}
 	if !decode(w, r, &input) {
 		return
 	}
-	vmProject, err := vmProjectInput(input.VMProject)
-	if err != nil {
-		respond(w, nil, err)
-		return
-	}
-	session, err := h.manager.Resume(r.Context(), r.PathValue("id"), codex.ResumeInput{RequestID: input.RequestID, ExpectedDatabaseID: r.Header.Get(httpaccess.DatabaseIdentityHeader), ExpectedRunID: input.ExpectedRunID, Cols: input.Cols, Rows: input.Rows, VMProject: vmProject})
+	session, err := h.manager.Resume(r.Context(), r.PathValue("id"), codex.ResumeInput{RequestID: input.RequestID, ExpectedDatabaseID: r.Header.Get(httpaccess.DatabaseIdentityHeader), ExpectedRunID: input.ExpectedRunID, Cols: input.Cols, Rows: input.Rows})
 	respond(w, map[string]any{"session": session}, err)
-}
-
-func vmProjectInput(raw json.RawMessage) (*codex.VMProjectInput, error) {
-	if raw == nil {
-		return nil, nil
-	}
-	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
-		return nil, requestFailure(400, "invalid_session", "Provide a complete VM project binding or omit vmProject for a host project.")
-	}
-	var input codex.VMProjectInput
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if decoder.Decode(&input) != nil || decoder.Decode(new(any)) != io.EOF {
-		return nil, requestFailure(400, "invalid_session", "Provide a complete VM project binding with no unknown fields.")
-	}
-	return &input, nil
 }
 
 func (h *Handler) end(w http.ResponseWriter, r *http.Request) {

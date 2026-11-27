@@ -368,59 +368,78 @@ export function MachineInspector({
         )}
         {machine ? (
           <>
-            <header className="machines-section-heading machines-inspector-heading">
-              <div className="machines-inspector-identity">
-                <PixelIcon name="virtual-machine" size={48} />
-                <div>
-                  <h2 aria-live="polite">
-                    {transition || humanize(machine.status)}
-                  </h2>
-                  {!transition && guestStatus && (
-                    <p className="machines-form-help">{guestStatus}</p>
-                  )}
-                  <MachineExpiry expiresAt={machine.expiresAt} />
+            <section
+              className="machines-inspector-hero"
+              data-status={transition ? 'transitioning' : machine.status}
+            >
+              <header className="machines-section-heading machines-inspector-heading">
+                <div className="machines-inspector-identity">
+                  <PixelIcon name="virtual-machine" size={44} />
+                  <div>
+                    <h2
+                      className="machines-inspector-status"
+                      data-status={
+                        transition ? 'transitioning' : machine.status
+                      }
+                      aria-live="polite"
+                    >
+                      {transition || humanize(machine.status)}
+                    </h2>
+                    <p className="machines-inspector-specs">
+                      {machine.spec.resources.cpus} CPU ·{' '}
+                      {machine.spec.resources.memoryMiB} MiB ·{' '}
+                      {machine.spec.resources.diskGiB} GiB root ·{' '}
+                      {machine.spec.projectGiB} GiB project
+                    </p>
+                    {!transition && guestStatus && (
+                      <p className="machines-form-help">{guestStatus}</p>
+                    )}
+                    <MachineExpiry expiresAt={machine.expiresAt} />
+                  </div>
                 </div>
+              </header>
+              <div className="machines-inspector-actions">
+                <MachineActions
+                  desktop={desktop}
+                  windowId={window.id}
+                  machine={machine}
+                  reason={reason}
+                  transition={transition}
+                  terminalReason={
+                    active
+                      ? 'Wait for the current VM operation.'
+                      : terminalReason
+                  }
+                  terminalLabel={
+                    !roster || roster.error ? 'New Terminal' : undefined
+                  }
+                  onAction={(action) => void lifecycle(action)}
+                  onTerminal={() => void newTerminal()}
+                  onResume={liveTerminals.length ? resumeTerminal : undefined}
+                  onCopyLimaShell={
+                    showCopyLimaShell ? () => void copyLimaShell() : undefined
+                  }
+                  limaShellPending={copyingLimaShell}
+                  onProjectFiles={
+                    connected &&
+                    !transition &&
+                    volume &&
+                    canOpenVMProjectVolume(machine, volume)
+                      ? () =>
+                          desktop.openApp(
+                            'project-files',
+                            {
+                              hostId,
+                              machineId: id,
+                              vmProjectVolumeId: volume.id,
+                            },
+                            { title: `${machine.spec.name} — Project Files` },
+                          )
+                      : undefined
+                  }
+                />
               </div>
-            </header>
-            <div className="machines-inspector-actions">
-              <MachineActions
-                desktop={desktop}
-                windowId={window.id}
-                machine={machine}
-                reason={reason}
-                transition={transition}
-                terminalReason={
-                  active ? 'Wait for the current VM operation.' : terminalReason
-                }
-                terminalLabel={
-                  !roster || roster.error ? 'New Terminal' : undefined
-                }
-                onAction={(action) => void lifecycle(action)}
-                onTerminal={() => void newTerminal()}
-                onResume={liveTerminals.length ? resumeTerminal : undefined}
-                onCopyLimaShell={
-                  showCopyLimaShell ? () => void copyLimaShell() : undefined
-                }
-                limaShellPending={copyingLimaShell}
-                onProjectFiles={
-                  connected &&
-                  !transition &&
-                  volume &&
-                  canOpenVMProjectVolume(machine, volume)
-                    ? () =>
-                        desktop.openApp(
-                          'project-files',
-                          {
-                            hostId,
-                            machineId: id,
-                            vmProjectVolumeId: volume.id,
-                          },
-                          { title: `${machine.spec.name} — Project Files` },
-                        )
-                    : undefined
-                }
-              />
-            </div>
+            </section>
             {!transition &&
               machine.reason &&
               !(failure && machine.status === 'unknown') &&
@@ -460,113 +479,155 @@ export function MachineInspector({
               className="machines-technical"
             >
               <summary className="ns-disclosure">Guest terminals</summary>
-              <p className="fine-print">
-                Closing a terminal window detaches it. Stopping the VM ends its
-                running sessions.
-              </p>
-              {terminals.map((session) => {
-                const title = guestTerminalLabel(session);
-                const running = session.status === 'running';
-                const label = running ? 'Resume' : 'Open';
-                return (
-                  <div key={session.id} className="machines-session">
-                    <div>
-                      <strong>{title}</strong>
-                      {!running && <span> · {humanize(session.status)}</span>}
-                    </div>
-                    <Button
-                      disabled={active}
-                      aria-label={`${label} ${title}`}
-                      onClick={() => openSession(session)}
-                    >
-                      {label}
-                    </Button>
-                  </div>
-                );
-              })}
+              <div className="machines-inspector-panel">
+                <p className="fine-print">
+                  Closing a terminal window detaches it. Stopping the VM ends
+                  its running sessions.
+                </p>
+                <div className="machines-session-list">
+                  {terminals.map((session) => {
+                    const title = guestTerminalLabel(session);
+                    const running = session.status === 'running';
+                    const label = running ? 'Resume' : 'Open';
+                    return (
+                      <div
+                        key={session.id}
+                        className="machines-session"
+                        data-running={running ? 'true' : 'false'}
+                      >
+                        <div className="machines-session-label">
+                          <strong>{title}</strong>
+                          {!running && (
+                            <span className="machines-session-state">
+                              {' '}
+                              · {humanize(session.status)}
+                            </span>
+                          )}
+                        </div>
+                        <Button
+                          disabled={active}
+                          aria-label={`${label} ${title}`}
+                          onClick={() => openSession(session)}
+                        >
+                          {label}
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </details>
             <details className="machines-technical">
               <summary className="ns-disclosure">Configuration</summary>
-              <dl className="info-list machines-details">
-                <dt>VM type</dt>
-                <dd>{humanize(machine.spec.kind)}</dd>
-                <dt>Provider</dt>
-                <dd>{humanize(machine.spec.provider)}</dd>
-                <dt>Resources</dt>
-                <dd>
-                  {machine.spec.resources.cpus} CPU ·{' '}
-                  {machine.spec.resources.memoryMiB} MiB memory
-                </dd>
-                <dt>Storage</dt>
-                <dd>
-                  {machine.spec.resources.diskGiB} GiB root ·{' '}
-                  {machine.spec.projectGiB} GiB project
-                </dd>
-                <dt>Project volume</dt>
-                <dd>{volume?.name || machine.spec.volumeId || 'Detached'}</dd>
-                <dt>Retention</dt>
-                <dd>
-                  {machine.spec.retainVolume
-                    ? 'Keep project volume after deletion'
-                    : 'Delete project volume with VM'}
-                </dd>
-              </dl>
-              <MachineSettings
-                key={machine.id}
-                machine={machine}
-                machines={snapshot.machines}
-                info={snapshot.info}
-                active={active}
-                operations={snapshot.operations}
-                unavailable={!connected}
-                onSaved={data.refresh}
-              />
+              <div className="machines-inspector-panel">
+                <dl className="info-list machines-details machines-summary-grid">
+                  <div>
+                    <dt>VM type</dt>
+                    <dd>{humanize(machine.spec.kind)}</dd>
+                  </div>
+                  <div>
+                    <dt>Provider</dt>
+                    <dd>{humanize(machine.spec.provider)}</dd>
+                  </div>
+                  <div>
+                    <dt>Resources</dt>
+                    <dd>
+                      {machine.spec.resources.cpus} CPU ·{' '}
+                      {machine.spec.resources.memoryMiB} MiB memory
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Storage</dt>
+                    <dd>
+                      {machine.spec.resources.diskGiB} GiB root ·{' '}
+                      {machine.spec.projectGiB} GiB project
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Project volume</dt>
+                    <dd>
+                      {volume?.name || machine.spec.volumeId || 'Detached'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Retention</dt>
+                    <dd>
+                      {machine.spec.retainVolume
+                        ? 'Keep project volume after deletion'
+                        : 'Delete project volume with VM'}
+                    </dd>
+                  </div>
+                </dl>
+                <MachineSettings
+                  key={machine.id}
+                  machine={machine}
+                  machines={snapshot.machines}
+                  info={snapshot.info}
+                  active={active}
+                  operations={snapshot.operations}
+                  unavailable={!connected}
+                  onSaved={data.refresh}
+                />
+              </div>
             </details>
             <details className="machines-technical">
               <summary className="ns-disclosure">Recent operations</summary>
-              {recent.length ? (
-                recent.map((op) => {
-                  const phase = operationPhase(op);
-                  return (
-                    <p key={op.id}>
-                      {humanize(op.action)} · {humanize(op.status)}
-                      {phase && ` · ${phase}`}
-                      {op.error && (
-                        <span className="machines-failure"> — {op.error}</span>
-                      )}
-                    </p>
-                  );
-                })
-              ) : (
-                <p>No operations for this VM yet.</p>
-              )}
+              <div className="machines-inspector-panel">
+                {recent.length ? (
+                  <div className="machines-operations-list">
+                    {recent.map((op) => {
+                      const phase = operationPhase(op);
+                      return (
+                        <p
+                          key={op.id}
+                          className="machines-operation-item"
+                          data-status={op.status}
+                        >
+                          {humanize(op.action)} · {humanize(op.status)}
+                          {phase && ` · ${phase}`}
+                          {op.error && (
+                            <span className="machines-failure">
+                              {' '}
+                              — {op.error}
+                            </span>
+                          )}
+                        </p>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="fine-print">No operations for this VM yet.</p>
+                )}
+              </div>
             </details>
             <details className="machines-technical">
               <summary className="ns-disclosure">Technical details</summary>
-              <dl className="info-list machines-details">
-                <dt>VM ID</dt>
-                <dd>
-                  <code>{machine.id}</code>
-                </dd>
-                <dt>Host</dt>
-                <dd>
-                  <code>{machine.hostId}</code>
-                </dd>
-                <dt>Desired state</dt>
-                <dd>{humanize(machine.desired)}</dd>
-                <dt>Revision</dt>
-                <dd>{machine.revision}</dd>
-                <dt>Image</dt>
-                <dd>
-                  <code>{machine.spec.imageId}</code>
-                </dd>
-                {machine.reason && (
-                  <>
-                    <dt>Provider observation</dt>
-                    <dd>{machine.reason}</dd>
-                  </>
-                )}
-              </dl>
+              <div className="machines-inspector-panel">
+                <dl className="info-list machines-details machines-tech-list">
+                  <dt>VM ID</dt>
+                  <dd>
+                    <code>{machine.id}</code>
+                  </dd>
+                  <dt>Host</dt>
+                  <dd>
+                    <code>{machine.hostId}</code>
+                  </dd>
+                  <dt>Desired state</dt>
+                  <dd>{humanize(machine.desired)}</dd>
+                  <dt>Revision</dt>
+                  <dd>{machine.revision}</dd>
+                  <dt>Image</dt>
+                  <dd>
+                    <code>{machine.spec.imageId}</code>
+                  </dd>
+                  {machine.reason && (
+                    <>
+                      <dt>Provider observation</dt>
+                      <dd>{machine.reason}</dd>
+                    </>
+                  )}
+                </dl>
+              </div>
             </details>
           </>
         ) : (

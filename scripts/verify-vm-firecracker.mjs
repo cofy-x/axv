@@ -25,7 +25,6 @@ import { verifyProjectWorkflow } from './lib-vm-project-workflow.mjs';
 import { verifyProjectInitialization } from './lib-vm-project-initialization.mjs';
 import { verifyProjectBackupWorkflow } from './lib-vm-project-backup.mjs';
 import { verifyVMProjectPreview } from './lib-vm-project-preview.mjs';
-import { verifyVMCodexWorkflow } from './lib-vm-codex-workflow.mjs';
 
 const requiredGuestCapabilities = [
   'exec',
@@ -460,10 +459,6 @@ async function acceptance(options) {
     0,
     'Run native Firecracker acceptance as root.',
   );
-  // Resolve the optional real-model harness before creating native resources.
-  const verifyLive = options['real-codex']
-    ? (await import('./lib-vm-codex-live.mjs')).verifyVMCodexLive
-    : undefined;
   const arch = { x64: 'amd64', arm64: 'arm64' }[process.arch];
   assert.ok(arch, 'Only native amd64 and arm64 are supported.');
   const bundle = await verifiedBundle(options['image-bundle'], arch);
@@ -563,8 +558,6 @@ async function acceptance(options) {
   let failed = false;
   let inCleanup = false;
   let failure;
-  let codexWorkflow;
-  let closeLiveCodex;
   const work = new AbortController();
   const probes = new Set();
   console.log(`Owned verification directory: ${directory}`);
@@ -1234,18 +1227,6 @@ async function acceptance(options) {
   async function cleanup(preserve = false) {
     cleaning ??= (async () => {
       let safe = true;
-      try {
-        await closeLiveCodex?.();
-      } catch (error) {
-        safe = false;
-        console.error('Real Codex cleanup needs attention:', error);
-      }
-      try {
-        await codexWorkflow?.close();
-      } catch (error) {
-        safe = false;
-        console.error('Codex workflow cleanup needs attention:', error);
-      }
       try {
         await Promise.all([...probes].map(stop));
       } catch (error) {
@@ -2303,33 +2284,6 @@ async function acceptance(options) {
     console.log(
       'Native independent-origin development preview, modules, WebSocket, control-origin isolation, stale binding refusal and exact preview revocation passed.',
     );
-    codexWorkflow = await verifyVMCodexWorkflow({
-      executable,
-      directory,
-      profileHome: join(shortRuntime, 'cx'),
-      socket,
-      env,
-      project,
-      binding: projectBinding.binding,
-      run: captureCommand,
-      signal: work.signal,
-    });
-    if (verifyLive) {
-      await verifyLive({
-        executable,
-        directory,
-        profileHome: join(shortRuntime, 'live'),
-        socket,
-        env,
-        project,
-        binding: projectBinding.binding,
-        run: captureCommand,
-        signal: work.signal,
-        registerCleanup: (close) => {
-          closeLiveCodex = close;
-        },
-      });
-    }
     projectGitState = await exec(owned.id, [
       'git',
       '-C',
@@ -2593,8 +2547,6 @@ async function acceptance(options) {
       token,
       'Retained volume metadata survived but its project data did not.',
     );
-    await codexWorkflow.verifyReplacement(replacementBinding.binding);
-    await codexWorkflow.close();
     await action(recovered, 'rm');
     console.log(
       'A new VM reattached the retained project volume: project identity, edited/untracked code and Git worktrees survived, and all old file bindings were rejected.',

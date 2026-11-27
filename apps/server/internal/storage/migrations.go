@@ -12,7 +12,7 @@ import (
 var migrationFiles embed.FS
 
 // This file-format marker is independent of the migration sequence.
-const databaseApplicationID = 0x41585635 // AXV5
+const databaseApplicationID = 0x41585636 // AXV6
 
 func (s *Store) migrate(ctx context.Context) error { return s.migrateFrom(ctx, migrationFiles) }
 

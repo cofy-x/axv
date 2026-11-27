@@ -187,99 +187,101 @@ export function CreateMachine({ desktop, window, visible }: AppWindowProps) {
         }}
       >
         <div className="app-pad machines-form machines-scroll machines-create-body">
-          <div className="machines-create-identity">
-            <Field
-              label="Name"
-              value={name}
-              required
-              maxLength={80}
-              disabled={locked}
-              onChange={(event) => setName(event.target.value)}
-            />
-            <Select
-              label="VM type"
-              disabled={locked}
-              value={kind}
-              onChange={(event) => {
-                const next =
-                  event.target.value === 'task' ? 'task' : 'development';
-                setKind(next);
-                setRetain(
-                  next === 'development' ||
-                    !!data.info?.defaults?.taskRetainVolume,
-                );
-                setVolume('');
-              }}
-            >
-              <option value="development">Development</option>
-              <option value="task">Task</option>
-            </Select>
-          </div>
-          {showImagePicker && (
-            <Select
-              label="Image"
-              value={imageId}
-              disabled={locked}
-              onChange={(event) => {
-                const next = images.find(
-                  (item) => item.id === event.target.value,
-                );
-                setImageId(event.target.value);
-                setVolume('');
-                if (next)
-                  setDisk((current) =>
-                    String(
-                      Math.max(Number(current) || 0, next.minRootGiB || 2),
-                    ),
+          <div className="machines-create-card">
+            <div className="machines-create-identity">
+              <Field
+                label="Name"
+                value={name}
+                required
+                maxLength={80}
+                disabled={locked}
+                onChange={(event) => setName(event.target.value)}
+              />
+              <Select
+                label="VM type"
+                disabled={locked}
+                value={kind}
+                onChange={(event) => {
+                  const next =
+                    event.target.value === 'task' ? 'task' : 'development';
+                  setKind(next);
+                  setRetain(
+                    next === 'development' ||
+                      !!data.info?.defaults?.taskRetainVolume,
                   );
-              }}
-            >
-              {!image && (
-                <option value={imageId}>
-                  {imageId
-                    ? 'Selected image unavailable'
-                    : 'No configured images'}
-                </option>
-              )}
-              {images.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name || item.id} · {item.provider} · {item.arch}
-                </option>
-              ))}
-            </Select>
-          )}
-          {binding && (
-            <dl className="info-list machines-create-summary">
-              {!showImagePicker && image && (
-                <>
-                  <dt>Image</dt>
-                  <dd>{image.name || image.id}</dd>
-                </>
-              )}
-              {image && (
-                <>
-                  <dt>Terminal</dt>
-                  <dd>{imageTerminalSummary(image)}</dd>
-                </>
-              )}
-              <dt>Resources</dt>
-              <dd>
-                {cpus || '—'} CPU · {memoryMiB || '—'} MiB memory
-              </dd>
-              <dt>Storage</dt>
-              <dd>
-                {diskGiB || '—'} GiB root · {projectGiB || '—'} GiB{' '}
-                {retainVolume ? 'retained' : 'temporary'} project volume
-                {volume && ` · ${volume.name}`}
-              </dd>
-              {kind === 'task' && (
-                <>
-                  <dt>Auto-delete</dt>
-                  <dd>After {ttl || '—'} minutes, even while running</dd>
-                </>
-              )}
-            </dl>
-          )}
+                  setVolume('');
+                }}
+              >
+                <option value="development">Development</option>
+                <option value="task">Task</option>
+              </Select>
+            </div>
+            {showImagePicker && (
+              <Select
+                label="Image"
+                value={imageId}
+                disabled={locked}
+                onChange={(event) => {
+                  const next = images.find(
+                    (item) => item.id === event.target.value,
+                  );
+                  setImageId(event.target.value);
+                  setVolume('');
+                  if (next)
+                    setDisk((current) =>
+                      String(
+                        Math.max(Number(current) || 0, next.minRootGiB || 2),
+                      ),
+                    );
+                }}
+              >
+                {!image && (
+                  <option value={imageId}>
+                    {imageId
+                      ? 'Selected image unavailable'
+                      : 'No configured images'}
+                  </option>
+                )}
+                {images.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name || item.id} · {item.provider} · {item.arch}
+                  </option>
+                ))}
+              </Select>
+            )}
+            {binding && (
+              <dl className="info-list machines-create-summary">
+                {!showImagePicker && image && (
+                  <>
+                    <dt>Image</dt>
+                    <dd>{image.name || image.id}</dd>
+                  </>
+                )}
+                {image && (
+                  <>
+                    <dt>Terminal</dt>
+                    <dd>{imageTerminalSummary(image)}</dd>
+                  </>
+                )}
+                <dt>Resources</dt>
+                <dd>
+                  {cpus || '—'} CPU · {memoryMiB || '—'} MiB memory
+                </dd>
+                <dt>Storage</dt>
+                <dd>
+                  {diskGiB || '—'} GiB root · {projectGiB || '—'} GiB{' '}
+                  {retainVolume ? 'retained' : 'temporary'} project volume
+                  {volume && ` · ${volume.name}`}
+                </dd>
+                {kind === 'task' && (
+                  <>
+                    <dt>Auto-delete</dt>
+                    <dd>After {ttl || '—'} minutes, even while running</dd>
+                  </>
+                )}
+              </dl>
+            )}
+          </div>
           <details className="machines-create-advanced">
             <summary className="ns-disclosure">Advanced</summary>
             <div className="machines-create-settings">

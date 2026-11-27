@@ -116,4 +116,14 @@ export const vmProjectsAPI = {
     }),
   mkdir: (id: string, binding: VMProjectBinding, path: string) =>
     operation<ProjectFile>(id, binding, 'mkdir', { path }),
+  delete: (id: string, hostId: string, requestId: string, revision: number) =>
+    request<{ deleted: boolean; project: VMProject }>(
+      `${projectPath(id)}/delete`,
+      {
+        method: 'POST',
+        headers: headers(hostId),
+        body: JSON.stringify({ requestId, revision }),
+        signal: AbortSignal.timeout(30000),
+      },
+    ),
 };

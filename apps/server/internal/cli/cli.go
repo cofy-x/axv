@@ -127,7 +127,7 @@ func newRoot(version string) *cobra.Command {
 		_, err = fmt.Fprintf(cmd.OutOrStdout(), "AXV configuration: %s\nRun axv setup to prepare VM hosting, or axv to open the desktop.\n", filepath.Join(home, "config.json"))
 		return err
 	}})
-	root.AddCommand(newServe(version), newDaemon(version), newDoctor(version), newGC(), newSetup(), newVM(), newSSHProxy(), newCache(), newRemote(), newCloudflare(), newVMProjectAgent())
+	root.AddCommand(newServe(version), newDaemon(version), newDoctor(version), newGC(), newSetup(), newVM(), newSSHProxy(), newCache(), newRemote(), newCloudflare())
 	root.AddCommand(newHost(version))
 	guestOptions := guest.Options{ConfigPath: "/etc/axv/guest.json", Listen: "vsock"}
 	guestCmd := &cobra.Command{Use: "guest", Short: "Run the Linux guest service", Args: arguments(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error {

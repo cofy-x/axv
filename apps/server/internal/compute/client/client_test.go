@@ -15,6 +15,7 @@ import (
 
 	"github.com/cofy-x/axv/apps/server/internal/compute"
 	"github.com/cofy-x/axv/apps/server/internal/compute/internal/hostconn"
+	"github.com/cofy-x/axv/apps/server/internal/guest/protocol"
 )
 
 func socketHost(t *testing.T, handler http.Handler) string {
@@ -202,5 +203,32 @@ func TestConnectRejectsUnreadyAndWrongProtocol(t *testing.T) {
 				t.Fatal("accepted incompatible host")
 			}
 		})
+	}
+}
+
+func TestExecUsesGuestExecProxyRoute(t *testing.T) {
+	var seenPath string
+	socket := socketHost(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/runtime" {
+			runtime(w, "host")
+			return
+		}
+		seenPath = r.URL.Path
+		json.NewEncoder(w).Encode(protocol.ExecResult{ExitCode: 0, Stdout: "ok\n"})
+	}))
+	c, err := Connect(context.Background(), socket, Binding{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	result, err := c.Exec(context.Background(), "vm-1", protocol.ExecRequest{Argv: []string{"echo", "ok"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seenPath != "/v1/machines/vm-1/guest/exec" {
+		t.Fatalf("Exec hit %q, want /v1/machines/vm-1/guest/exec", seenPath)
+	}
+	if result.Stdout != "ok\n" || result.ExitCode != 0 {
+		t.Fatalf("unexpected Exec result: %+v", result)
 	}
 }

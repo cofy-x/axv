@@ -1,5 +1,5 @@
--- AXV5 identifies this development baseline independently of migration versions.
-PRAGMA application_id = 0x41585635;
+-- AXV6 identifies this development baseline independently of migration versions.
+PRAGMA application_id = 0x41585636;
 
 -- Desktop state and the persistent identity used for browser recovery.
 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -39,12 +39,7 @@ CREATE TABLE codex_runs (
     ended_at TEXT NOT NULL DEFAULT '',
     reason TEXT NOT NULL DEFAULT '',
     tmux_session TEXT NOT NULL CHECK (tmux_session <> ''),
-    tmux_socket TEXT NOT NULL,
-    vm_project TEXT NOT NULL DEFAULT '',
-    vm_socket TEXT NOT NULL DEFAULT '',
-    vm_config_fingerprint TEXT NOT NULL DEFAULT '',
-    CHECK ((vm_project = '' AND vm_socket = '' AND vm_config_fingerprint = '') OR
-           (vm_project <> '' AND vm_socket <> '' AND vm_config_fingerprint <> ''))
+    tmux_socket TEXT NOT NULL
 );
 
 CREATE UNIQUE INDEX codex_one_active_run ON codex_runs (session_id)

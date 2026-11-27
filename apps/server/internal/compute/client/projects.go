@@ -56,6 +56,21 @@ func (c *Client) ProjectBinding(ctx context.Context, id string) (ProjectBindingR
 	return result, err
 }
 
+func (c *Client) DeleteProject(ctx context.Context, id, requestID string, revision int64) (compute.Project, error) {
+	if err := validProjectStrings(id, requestID); err != nil {
+		return compute.Project{}, err
+	}
+	var result struct {
+		Deleted bool            `json:"deleted"`
+		Project compute.Project `json:"project"`
+	}
+	err := c.DoJSON(ctx, "POST", "projects/"+url.PathEscape(id)+"/delete", map[string]any{
+		"requestId": requestID,
+		"revision":  revision,
+	}, &result)
+	return result.Project, err
+}
+
 func (c *Client) ProjectFiles(ctx context.Context, id string, request compute.ProjectFileRequest) (ProjectListingResult, error) {
 	var result ProjectListingResult
 	err := c.projectFile(ctx, id, "list", request, &result)

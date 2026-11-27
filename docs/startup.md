@@ -116,7 +116,9 @@ axv vm inspect dev
 axv vm stop dev        # add --force for force-stop
 axv vm start dev
 axv vm rm dev [--yes]
+axv vm exec dev -- uname -a
 axv vm volumes
+axv vm volume rm <volume-name-or-id> [--yes]
 ```
 
 - On macOS, the first VM command starts or reuses the managed Lima host under native supervision. On Linux, the administrator-managed `axv-host.service` must already be running (`axv host status|start|stop|restart|upgrade|uninstall` manages both).
@@ -140,6 +142,7 @@ Exit codes: `0` success, `1` operation failure, `2` usage error, `130` interrupt
 axv vm volumes --json
 axv vm project register --machine dev --volume <volume-id> --root repo --name 'My project' --json
 axv vm project list --json
+axv vm project rm <project-id> [--yes]
 axv vm project binding <project-id> > project-binding.json
 axv vm project files <project-id> '' --binding-file project-binding.json
 axv vm project read <project-id> src/main.go --binding-file project-binding.json
@@ -224,11 +227,7 @@ axv vm project backup bind <backup-volume-id> --host-id <host-id> \
 axv vm project binding <new-project-id> > restored-binding.json
 ```
 
-Preserve `--host-id`, `--request-id` and all original arguments when recovering uncertain backup/restore/bind calls. Old project IDs and agent run contexts remain attached to the original volume ([Compute backup API](api/compute.md#vm-project-backups)).
-
-### Bound VM project tools for Codex
-
-When starting Codex from a VM project's Project Files window, AXV creates a private run context and injects the bundled [`axv-vm-project` Skill](../apps/server/internal/vmwork/skills/axv-vm-project/SKILL.md) with an immutable bound command (`AXV_EXECUTABLE internal-vm-project RUN_CONTEXT COMMAND ...`). It exposes `files`, `read`, `write`, `mkdir` and `task` pinned to the recorded executable, project, environment, compute socket and configuration fingerprint — never loading another profile, activating a service or refreshing a stale binding. See [Codex VM work context](codex.md#vm-project-work-context).
+Preserve `--host-id`, `--request-id` and all original arguments when recovering uncertain backup/restore/bind calls. Old project IDs remain attached to the original volume ([Compute backup API](api/compute.md#vm-project-backups)).
 
 ### SSH, file transfer and forwarding
 

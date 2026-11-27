@@ -33,7 +33,7 @@ func TestSetupTerminalApprovalAndCancellationPreserveCallerInput(t *testing.T) {
 	defer master.Close()
 	defer input.Close()
 	output := setupPromptOutput{prompted: make(chan struct{})}
-	confirm := setupConfirmation(input, &output)
+	confirm := setupConfirmation(input, &output, true)
 	if confirm == nil {
 		t.Fatal("supplied terminal was not recognized")
 	}

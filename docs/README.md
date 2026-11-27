@@ -22,7 +22,6 @@ Choose the row for the behavior being changed. The primary reference owns the me
 | Host shells or project terminals | [Terminal ownership](desktop.md#terminal-sessions) | [Host Terminal API](api/host-terminal.md) |
 | Shared host directory selection | [Host directories API](api/host-directories.md) | The consuming Terminal, Codex or Project Files reference |
 | Codex conversations and runs | [Codex implementation map](codex.md#implementation-map) | [Host Codex API](api/host-codex.md) |
-| VM project Codex sessions or bound AXV Skill tools | [VM work context](codex.md#vm-project-work-context) | [Bundled Skill](../apps/server/internal/vmwork/skills/axv-vm-project/SKILL.md), [bound tools](startup.md#bound-vm-project-tools-for-codex), [VM project contract](api/compute.md#vm-projects) |
 | VMs, volumes, images or guest execution | [VM implementation map](vm-platform.md#implementation-map) | [Compute API](api/compute.md), [Guest API](api/guest.md), [VM CLI](startup.md#vm-command-line) or [image recipes](../images/guest/README.md) |
 | VM projects, retained-volume bindings or guest project files | [VM projects](vm-platform.md#vm-projects) | [Compute project API](api/compute.md#vm-projects), [guest file enforcement](api/guest.md#project-file-protocol), [VM project CLI](startup.md#vm-project-files) |
 | VM project creation, Git cloning or initialization recovery | [Project initialization](vm-platform.md#project-initialization) | [Compute initialization API](api/compute.md#vm-project-initialization), [VM project CLI](startup.md#vm-project-initialization) |
@@ -76,7 +75,6 @@ Each fact has one owner. Other pages may state the consequence their reader need
 | [Acceptance](acceptance.md) | Manual physical-device, browser-install, Web Push, live-provider and native-VM acceptance runbooks |
 | [Releasing](releasing.md) | Version selection, multi-platform/Guest candidate builds, provenance verification and publication |
 | [Image recipes](../images/guest/README.md) | Guest image-building inputs, prerequisites, package sources and commands |
-| [Bundled VM Skill](../apps/server/internal/vmwork/skills/axv-vm-project/SKILL.md) | Runtime agent prompt and bound CLI contract injected into VM-project Codex sessions |
 | [Recipes](../recipes/github-review/README.md) | Dedicated GitHub Review VM ([GitHub Review](../recipes/github-review/README.md)), optional dev email ([Resend](../recipes/resend/README.md)) and Redis ([Upstash](../recipes/upstash/README.md)) |
 | [Third-party notices](../THIRD_PARTY_NOTICES.md) | Distribution boundaries, upstream sources and retained license notices |
 | [Community docs](../CONTRIBUTING.md) | [Contributing](../CONTRIBUTING.md), [Support](../SUPPORT.md), [Code of Conduct](../CODE_OF_CONDUCT.md), [Security](../SECURITY.md) |

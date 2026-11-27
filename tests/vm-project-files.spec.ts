@@ -1897,7 +1897,39 @@ test('file observation pauses off the visible reading pane and resumes without r
   expect(await blocksTabClose(page)).toBe(false);
 });
 
-test('a visible file keeps observing while its Codex window owns focus', async ({
+test('Terminal button opens a Guest Terminal using a volume-relative directory', async ({
+  page,
+}) => {
+  await fixture(page);
+  await openProject(page);
+  const terminalPayloads: Array<Record<string, unknown>> = [];
+  await page.route(
+    `**/api/compute/machines/${originalBinding.machineId}/guest/terminals`,
+    (route) => {
+      if (route.request().method() === 'POST') {
+        terminalPayloads.push(route.request().postDataJSON());
+        return route.fulfill({
+          json: {
+            id: 'a'.repeat(32),
+            machineId: originalBinding.machineId,
+            bootId: originalBinding.bootId,
+            directory: project.root,
+            state: 'running',
+            createdAt: '2026-11-27T00:00:00Z',
+          },
+        });
+      }
+      return route.fulfill({ json: { terminals: [] } });
+    },
+  );
+  await browser(page)
+    .getByRole('button', { name: 'Terminal', exact: true })
+    .click();
+  await expect.poll(() => terminalPayloads.length).toBe(1);
+  expect(terminalPayloads[0]?.directory).toBe(project.root);
+});
+
+test('a visible file keeps observing while its VM Inspector window owns focus', async ({
   page,
   isMobile,
 }) => {
@@ -1908,20 +1940,24 @@ test('a visible file keeps observing while its Codex window owns focus', async (
   const state = await fixture(page);
   const text = await openProject(page);
   await browser(page)
-    .getByRole('button', { name: 'Codex', exact: true })
+    .getByRole('button', { name: 'VM Inspector', exact: true })
     .click();
-  const codex = page.locator(
-    `[data-window-id="codex:vm:${project.hostId}:${project.id}"]`,
-  );
-  await expect(codex).toBeVisible();
-  await expect(codex).toHaveClass(/is-active/);
+  const inspector = page.getByRole('region', {
+    name: `${project.name} — Inspector`,
+    exact: true,
+  });
+  await expect(inspector).toBeVisible();
+  await expect(inspector).toHaveClass(/is-active/);
   await expect(text).toBeVisible();
   state.externalWrite(
-    'Agent progress remains visible beside Codex\n',
+    'Agent progress remains visible beside Inspector\n',
     'live-sha',
   );
-  await expectEditorText(text, 'Agent progress remains visible beside Codex\n');
-  await expect(codex).toHaveClass(/is-active/);
+  await expectEditorText(
+    text,
+    'Agent progress remains visible beside Inspector\n',
+  );
+  await expect(inspector).toHaveClass(/is-active/);
   await expect(text).not.toBeFocused();
   for (const { binding } of state.reads)
     expect(binding).toEqual(originalBinding);

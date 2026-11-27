@@ -18,7 +18,6 @@ import (
 	"github.com/cofy-x/axv/apps/server/internal/cloudflare/publish"
 	"github.com/cofy-x/axv/apps/server/internal/codex"
 	codexhttp "github.com/cofy-x/axv/apps/server/internal/codex/httpapi"
-	"github.com/cofy-x/axv/apps/server/internal/compute"
 	computegateway "github.com/cofy-x/axv/apps/server/internal/compute/gateway"
 	"github.com/cofy-x/axv/apps/server/internal/compute/preview"
 	"github.com/cofy-x/axv/apps/server/internal/config"
@@ -30,7 +29,6 @@ import (
 	projectfileshttp "github.com/cofy-x/axv/apps/server/internal/projectfiles/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/storage"
 	"github.com/cofy-x/axv/apps/server/internal/terminal"
-	"github.com/cofy-x/axv/apps/server/internal/vmwork"
 	"github.com/cofy-x/axv/apps/server/internal/webui"
 )
 
@@ -75,13 +73,6 @@ func RunContext(ctx context.Context, settings config.Config, computeGateway *com
 		TmuxSocket:       settings.TmuxSocket,
 		RunnerExecutable: options.RunnerExecutable,
 		Logger:           diagnostics.FromContext(ctx).With("component", "codex"),
-		ResolveVMProject: func(ctx context.Context, binding compute.ProjectBinding) (codex.VMProjectResolution, error) {
-			captured, err := computeGateway.CaptureProject(ctx, binding)
-			if err != nil {
-				return codex.VMProjectResolution{}, err
-			}
-			return codex.VMProjectResolution{Project: vmwork.Project{Project: captured.Project.Project, Binding: captured.Project.Binding}, Socket: captured.Socket, ConfigFingerprint: captured.ConfigFingerprint}, nil
-		},
 	})
 	if err != nil {
 		return err

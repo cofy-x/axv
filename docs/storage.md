@@ -18,7 +18,7 @@ Every AXV-owned store uses an explicit format marker or version and seeds only o
 
 | Store (under `AXV_HOME`) | Format / Version | Owner & Scope |
 | --- | --- | --- |
-| `data/desktop.sqlite` | SQLite **AXV5** (`0x41585635`) | Database identity, shared preferences, browser layouts, host projects, Codex conversations/runs |
+| `data/desktop.sqlite` | SQLite **AXV6** (`0x41585636`) | Database identity, shared preferences, browser layouts, host projects, Codex conversations/runs |
 | `data/extensions.sqlite` | SQLite **AXE2** (`0x41584532`) | Independent store UUID, immutable extension packages, installation generations and private app JSON |
 | `data/github-review/reviews.sqlite` | SQLite **AXR3** (`0x41585233`) | GitHub Review config, PR queue, evidence, comparisons and local candidate drafts ([API](api/github-review.md)) |
 | `compute/compute.sqlite` | SQLite **AXC4** (`0x41584334`) | Host identity, VMs, volumes, images, operations, VM projects, persistent tasks and task events ([VM](vm-platform.md#ownership)) |
@@ -43,7 +43,7 @@ Registered host projects persist a canonical path and Unix device/inode root ide
 
 ## Desktop database baseline
 
-- `desktop.sqlite` initializes from one consolidated [`0001_initial.sql`](../apps/server/internal/storage/migrations/0001_initial.sql) with `PRAGMA application_id = 0x41585635` (**AXV5**), checked against `databaseApplicationID` in [`migrations.go`](../apps/server/internal/storage/migrations.go) independently of `user_version`.
+- `desktop.sqlite` initializes from one consolidated [`0001_initial.sql`](../apps/server/internal/storage/migrations/0001_initial.sql) with `PRAGMA application_id = 0x41585636` (**AXV6**), checked against `databaseApplicationID` in [`migrations.go`](../apps/server/internal/storage/migrations.go) independently of `user_version`.
 - **Experimental baseline policy:** AXV has experimental prereleases and no stable release yet. Consolidate breaking schema changes into the current clean baseline rather than adding legacy migration adapters; bump the format marker when incompatible and note breaking store changes in release notes.
 - **Explicit reset boundary:** Startup always rejects incompatible or damaged stores without deleting them. An explicit reset requires user choice after stopping affected services, writers and Codex runs (and preserving ownership records until live resources are stopped). Host projects, provider-owned history/credentials and unrelated tmux sessions stay outside AXV store resets.
 

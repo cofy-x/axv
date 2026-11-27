@@ -52,6 +52,7 @@ function desktop(): DesktopAPI {
     minimizeWindow: vi.fn(),
     toggleShade: vi.fn(),
     toggleZoom: vi.fn(),
+    snapWindow: vi.fn(),
     addClipShortcut: vi.fn(),
     removeClipShortcut: vi.fn(),
     setTitle: vi.fn(),

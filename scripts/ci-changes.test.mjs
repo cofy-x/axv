@@ -75,7 +75,7 @@ describe('classifyChanges', () => {
   test('runs macOS native and Chromium E2E for server API or embedded asset PRs', () => {
     const result = classifyChanges([
       'apps/server/internal/server/routes.go',
-      'apps/server/internal/vmwork/skills/axv-vm-project/SKILL.md',
+      'apps/server/internal/storage/migrations/0001_initial.sql',
     ]);
     expect(result.runtime).toBe(true);
     expect(result.macosNative).toBe(true);

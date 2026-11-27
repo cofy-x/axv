@@ -948,9 +948,18 @@ export function VolumeManager({
                         )}
                     </td>
                     <td>
-                      {backup
-                        ? '—'
-                        : machineName || volume.machineId || 'Detached'}
+                      {backup ? (
+                        <span className="machines-muted">—</span>
+                      ) : machineName || volume.machineId ? (
+                        <span
+                          className="machines-status-dot"
+                          data-status="running"
+                        >
+                          {machineName || volume.machineId}
+                        </span>
+                      ) : (
+                        <span className="machines-muted">Detached</span>
+                      )}
                     </td>
                     {showRowActions && (
                       <td className="machines-inventory-action machines-volume-actions-cell">

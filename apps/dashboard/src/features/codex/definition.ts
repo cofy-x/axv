@@ -115,19 +115,6 @@ export function openCodexEnvironment(desktop: DesktopAPI) {
   return desktop.openApp('codex-environment');
 }
 
-export function openVMProjectCodex(
-  desktop: Pick<DesktopAPI, 'openApp'>,
-  hostId: string,
-  projectId: string,
-  name?: string,
-) {
-  return desktop.openApp(
-    'codex',
-    { hostId, vmProjectId: projectId },
-    { title: `Codex Sessions · ${name || 'VM project'}` },
-  );
-}
-
 export const codexEnvironmentApp: AppDefinition = {
   id: 'codex-environment',
   title: 'Codex Environment',
@@ -149,9 +136,7 @@ export function createCodexApp(commands: WindowCommands): AppDefinition {
     windowKey: (params) =>
       params.sessionId && params.runId
         ? `${params.sessionId}:${params.runId}`
-        : params.vmProjectId
-          ? `vm:${params.hostId}:${params.vmProjectId}`
-          : 'manager',
+        : 'manager',
     overviewReference: ({ params }) =>
       params.sessionId && params.runId
         ? `Run ${params.runId.slice(0, 8)}`
@@ -179,16 +164,14 @@ export function createCodexApp(commands: WindowCommands): AppDefinition {
             ...(!isRun
               ? [
                   command('New Session', 'codex:new-session'),
-                  ...(!window.params.vmProjectId
-                    ? [command('New in Folder', 'codex:new-in-folder')]
-                    : []),
+                  command('New in Folder', 'codex:new-in-folder'),
                   command('Refresh', 'codex:refresh'),
                   { separator: true },
                 ]
               : []),
             {
               label: 'All Sessions',
-              checked: !isRun && !window.params.vmProjectId,
+              checked: !isRun,
               action: () => {
                 desktop.openApp('codex');
               },
@@ -219,7 +202,6 @@ export function createCodexApp(commands: WindowCommands): AppDefinition {
                 items: (
                   [
                     ['Project Files', 'codex:project-files'],
-                    ['Tasks', 'codex:tasks'],
                     ['Host Terminal', 'codex:terminal'],
                   ] as const
                 ).map(([label, id]) => ({

@@ -38,7 +38,8 @@ type Options struct {
 	Explicit bool
 	// Confirm reviews the displayed plan using the caller's interaction boundary.
 	// It must return when its context is cancelled. Nil requires explicit --yes.
-	Confirm func(context.Context) error
+	Confirm     func(context.Context) error
+	ConfirmPlan func(context.Context, prepare.Plan) error
 }
 
 func RunOptions(ctx context.Context, o Options, output, diagnostic io.Writer) error {
@@ -161,7 +162,7 @@ func execute(ctx context.Context, service preparation, o Options, output io.Writ
 			return fmt.Errorf("task %s cannot be retried in state %s", job.ID, job.Status)
 		}
 		showPlan(job.Plan, output)
-		if err = confirm(ctx, o); err != nil {
+		if err = confirm(ctx, o, job.Plan); err != nil {
 			return err
 		}
 		job, err = service.Retry(ctx, job.ID, prepare.ActionRequest{RequestID: compute.NewID("retry"), ExpectedRevision: job.Revision})
@@ -174,7 +175,7 @@ func execute(ctx context.Context, service preparation, o Options, output io.Writ
 		if !plan.CanStart {
 			return fmt.Errorf("preparation checks are blocked; resolve the listed checks and review again")
 		}
-		if err = confirm(ctx, o); err != nil {
+		if err = confirm(ctx, o, plan); err != nil {
 			return err
 		}
 		request := prepare.StartRequest{RequestID: compute.NewID("setup"), PlanID: plan.ID, Confirmed: true}
@@ -218,15 +219,24 @@ func showPlan(plan prepare.Plan, output io.Writer) {
 	fmt.Fprintf(output, "  Profile configuration: %s\n", plan.ConfigPath)
 }
 
-func confirm(ctx context.Context, o Options) error {
+func confirm(ctx context.Context, o Options, plan prepare.Plan) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if o.Yes {
 		return nil
 	}
+	if o.ConfirmPlan != nil {
+		if err := o.ConfirmPlan(ctx, plan); err != nil {
+			return err
+		}
+		return ctx.Err()
+	}
 	if o.Confirm == nil {
-		return fmt.Errorf("review the plan and rerun with --yes to approve its actions and downloads")
+		if len(plan.Downloads) > 0 {
+			return fmt.Errorf("review the plan and rerun with --yes to approve its actions and downloads")
+		}
+		return fmt.Errorf("review the plan and rerun with --yes to approve its actions")
 	}
 	if err := o.Confirm(ctx); err != nil {
 		return err

@@ -2,7 +2,7 @@
 
 [API index](README.md)
 
-Manages host Codex conversations, exact tmux-backed process runs, VM work contexts, provider activity and terminal attachments on macOS/Linux. Implementation lives in [`internal/codex`](../../apps/server/internal/codex) and [`codex/httpapi`](../../apps/server/internal/codex/httpapi); architecture belongs to [Host Codex](../codex.md).
+Manages host Codex conversations, exact tmux-backed process runs, provider activity and terminal attachments on macOS/Linux. Implementation lives in [`internal/codex`](../../apps/server/internal/codex) and [`codex/httpapi`](../../apps/server/internal/codex/httpapi); architecture belongs to [Host Codex](../codex.md).
 
 All routes use the [shared access boundary](README.md#access-and-identity-boundaries) and `Cache-Control: no-store`. JSON writes require `application/json`, one object without unknown fields, max **16 KiB**. Every route except `/info` requires the [captured desktop database identity](desktop.md#database-identity-and-local-recovery) (`X-AXV-Database-ID` header, or `databaseId` query on WS) checked before replay lookup, filesystem access or process operations.
 
@@ -13,10 +13,10 @@ All routes use the [shared access boundary](README.md#access-and-identity-bounda
 | GET | `/api/host/codex/info` | Unbound capability probe (`supported`, `installed`, `ready`, CLI/tmux versions, `guidance`, `defaultProjectPath`, `network`) |
 | GET | `/api/host/codex/sessions` | `{ sessions }` (each conversation with its latest run) |
 | GET | `/api/host/codex/projects` | `{ projects: [{ path, lastUsedAt }] }` (up to 10 recent host dirs) |
-| POST | `/api/host/codex/sessions` | `{ requestId, projectPath?, vmProject?: { binding }, cols?, rows? }` → `{ session }` |
+| POST | `/api/host/codex/sessions` | `{ requestId, projectPath?, cols?, rows? }` → `{ session }` |
 | GET | `/api/host/codex/sessions/:id` | `{ session }` (latest run) |
 | PATCH | `/api/host/codex/sessions/:id` | `{ revision, title?, archived? }` → `{ session }` |
-| POST | `/api/host/codex/sessions/:id/resume` | `{ requestId, expectedRunId, vmProject?: { binding }, cols?, rows? }` → `{ session }` |
+| POST | `/api/host/codex/sessions/:id/resume` | `{ requestId, expectedRunId, cols?, rows? }` → `{ session }` |
 | GET | `/api/host/codex/sessions/:id/runs/:runId` | `{ session }` for that exact historical or active run |
 | POST | `/api/host/codex/sessions/:id/runs/:runId/activity/review` | `{ eventId }` (dismiss failed/interrupted alert for that exact run/event) |
 | POST | `/api/host/codex/sessions/:id/runs/:runId/end` | Terminate exact run → `{ session }` |
@@ -29,8 +29,8 @@ All routes use the [shared access boundary](README.md#access-and-identity-bounda
 
 ## Conversation, run, and activity contracts
 
-- **Separate identities:** Conversations hold `(id, projectPath, title, metadataRevision, archivedAt?, conversationId?, historyHome)`; runs hold `(runId, tmuxSession, tmuxSocket, attachCommand, status, vmProject?, connections)` where `status` is `starting|running|stopping|ended|lost|failed`. Session/run IDs are opaque; callers never construct tmux targets.
-- **Metadata & recent projects:** `PATCH` requires matching `metadataRevision` (`409 metadata_conflict` on stale edit; `title` max 120 Unicode chars; does not probe tmux). Recent projects (max 10) update transactionally only on a host run's first confirmed `starting → running` transition (VM control workspaces excluded).
+- **Separate identities:** Conversations hold `(id, projectPath, title, metadataRevision, archivedAt?, conversationId?, historyHome)`; runs hold `(runId, tmuxSession, tmuxSocket, attachCommand, status, connections)` where `status` is `starting|running|stopping|ended|lost|failed`. Session/run IDs are opaque; callers never construct tmux targets.
+- **Metadata & recent projects:** `PATCH` requires matching `metadataRevision` (`409 metadata_conflict` on stale edit; `title` max 120 Unicode chars; does not probe tmux). Recent projects (max 10) update transactionally only on a host run's first confirmed `starting → running` transition.
 
 ### Activity and review
 
@@ -40,9 +40,9 @@ All routes use the [shared access boundary](README.md#access-and-identity-bounda
 
 ## Creation and explicit continuation
 
-- **Host vs VM projects:** Host sessions accept `projectPath` (empty selects/creates default workspace). VM sessions accept `vmProject: { binding }` (mutually exclusive with `projectPath`), capture the verified compute socket/config fingerprint and use a private AXV control workspace. Host and VM conversations cannot convert into each other.
-- **Idempotency & capacity:** `requestId` (1–128 UTF-8 bytes, unique per desktop DB) binds to exact payload/binding/dimensions (`409 request_conflict` on mismatch). Retain the original `requestId` after transport or ambiguous errors — never assume no run was reserved. Limit: **1 active run per conversation**, **4 active runs per service** (including archived/transitional).
-- **Explicit continuation:** Requires `expectedRunId` (`409 conversation_active` / `run_changed`), revalidates project + exact provider UUID in the stored `historyHome` (never substituting a newer `CODEX_HOME`), and for VM sessions requires a freshly reviewed binding for the same persistent `(host, project, volume, root)` (`409 vm_project_changed` / `project_changed`). Reads, reload, reconnect and restart never auto-continue.
+- **Host projects:** Sessions accept `projectPath` (empty selects/creates default workspace). VM coding agents run natively inside Guest Terminal rather than through a host Codex bridge.
+- **Idempotency & capacity:** `requestId` (1–128 UTF-8 bytes, unique per desktop DB) binds to exact payload/dimensions (`409 request_conflict` on mismatch). Retain the original `requestId` after transport or ambiguous errors — never assume no run was reserved. Limit: **1 active run per conversation**, **4 active runs per service** (including archived/transitional).
+- **Explicit continuation:** Requires `expectedRunId` (`409 conversation_active` / `run_changed`), revalidates project + exact provider UUID in the stored `historyHome` (never substituting a newer `CODEX_HOME`). Reads, reload, reconnect and restart never auto-continue.
 - **Uncertainty:** Temporary tmux inspection failure preserves known state with `reason` on list/detail (`session_exit_unconfirmed` stays retryable via inspection or End — never treated as `ended`/`lost`).
 
 ## Attachment protocol and ending

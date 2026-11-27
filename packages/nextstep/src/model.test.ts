@@ -20,6 +20,7 @@ import {
   resizeBounds,
   sanitizeLayout,
   selectionAfterClick,
+  snapWindowToSide,
   toggleWindowZoom,
   visibleBounds,
   windowIdentity,
@@ -849,5 +850,34 @@ describe('versioned workspace persistence', () => {
     expect(layout.activeWindowId).toBe(a.id);
     expect(inWorkspace({ ...a, sticky: true }, 'workspace-4')).toBe(true);
     expect(defaultWorkspaces()[0].order).toEqual([]);
+  });
+  it('snaps windows cleanly onto the left or right half of the work area', () => {
+    const area = { x: 10, y: 30, width: 1200, height: 700 };
+    const win = {
+      ...testWindow('snap'),
+      shaded: true,
+      zoomed: true,
+      minimized: true,
+    };
+    const left = snapWindowToSide(win, 'left', area);
+    expect(left).toMatchObject({
+      x: 10,
+      y: 30,
+      width: 600,
+      height: 700,
+      shaded: false,
+      zoomed: false,
+      minimized: false,
+    });
+    const right = snapWindowToSide(win, 'right', area);
+    expect(right).toMatchObject({
+      x: 610,
+      y: 30,
+      width: 600,
+      height: 700,
+      shaded: false,
+      zoomed: false,
+      minimized: false,
+    });
   });
 });

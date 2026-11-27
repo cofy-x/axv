@@ -18,6 +18,12 @@ export interface PrivateRepositoryTarget {
   instanceId?: string;
 }
 
+const GH_SETUP_COMMANDS = `umask 077
+mkdir -p "$HOME/.config/gh"
+chmod 700 "$HOME/.config/gh"
+"$HOME/.local/bin/gh" auth login --hostname github.com --git-protocol https --web
+"$HOME/.local/bin/gh" auth setup-git --hostname github.com`;
+
 export function VMPrivateRepositorySetup({
   desktop,
   interactive,
@@ -31,6 +37,7 @@ export function VMPrivateRepositorySetup({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const mounted = useRef(true);
@@ -128,6 +135,21 @@ export function VMPrivateRepositorySetup({
     }
   }
 
+  async function copyCommands() {
+    if (!navigator.clipboard?.writeText) return;
+    try {
+      await navigator.clipboard.writeText(GH_SETUP_COMMANDS);
+      if (mounted.current) {
+        setCopied(true);
+        setTimeout(() => {
+          if (mounted.current) setCopied(false);
+        }, 2000);
+      }
+    } catch {
+      // Clipboard may be unavailable outside secure contexts.
+    }
+  }
+
   const cleanRepository = repository && repositoryURLAllowed(repository);
   return (
     <details
@@ -135,19 +157,50 @@ export function VMPrivateRepositorySetup({
       ref={setup}
       onToggle={(event) => setExpanded(event.currentTarget.open)}
     >
-      <summary>Private repository setup</summary>
-      <p>
-        Preconfigured guest credentials already support private clones. Set up
-        access in the VM that will run Git.
-      </p>
-      {target ? (
-        <>
-          <p>
-            VM: <strong>{target.machineName || target.machineId}</strong>. Guest
-            user: <code>axv</code> (<code>/home/axv</code>) in AXV images.
-            Custom guests must use their guest service account.
+      <summary className="ns-disclosure">Private repository setup</summary>
+      <div className="vm-private-setup-body">
+        <div className="vm-private-setup-header">
+          <div className="vm-private-setup-meta">
+            {target ? (
+              <p>
+                VM: <strong>{target.machineName || target.machineId}</strong> ·
+                Guest user: <code>axv (/home/axv)</code>
+              </p>
+            ) : (
+              <p>
+                Choose a ready retained volume to select the authentication VM.
+              </p>
+            )}
+            {cleanRepository ? (
+              <p className="vm-private-setup-repo">
+                Repository: <code>{repository}</code>
+              </p>
+            ) : (
+              <p className="vm-private-setup-hint">
+                Use a repository URL without credentials, query strings or
+                fragments.
+              </p>
+            )}
+          </div>
+          <Button
+            disabled={!interactive || !target || busy}
+            onClick={(event) => void authenticate(event.currentTarget)}
+          >
+            {busy ? 'Opening…' : 'Guest Terminal'}
+          </Button>
+        </div>
+        {error && (
+          <p className="project-error" role="alert">
+            {error}
           </p>
-          <details>
+        )}
+        {notice && (
+          <p className="project-feedback" role="status">
+            {notice}
+          </p>
+        )}
+        {target && (
+          <details className="vm-private-setup-target">
             <summary>Target details</summary>
             <dl>
               <dt>VM</dt>
@@ -168,85 +221,62 @@ export function VMPrivateRepositorySetup({
               )}
             </dl>
           </details>
-        </>
-      ) : (
-        <p>Choose a ready retained volume to select the authentication VM.</p>
-      )}
-      {cleanRepository ? (
-        <p>
-          Repository: <code>{repository}</code>
-        </p>
-      ) : (
-        <p>
-          Use a repository URL without credentials, query strings or fragments.
-        </p>
-      )}
-      <Button
-        disabled={!interactive || !target || busy}
-        onClick={(event) => void authenticate(event.currentTarget)}
-      >
-        {busy ? 'Opening…' : 'Guest Terminal'}
-      </Button>
-      {error && <p role="alert">{error}</p>}
-      {notice && <p role="status">{notice}</p>}
-      <ol>
-        <li>
-          In Guest Terminal, use the guest service user without sudo. Existing
-          Git credential helpers and SSH configurations remain supported.
-        </li>
-        <li>
-          For GitHub HTTPS, install{' '}
-          <a href="https://cli.github.com/" target="_blank" rel="noreferrer">
-            GitHub CLI
-          </a>{' '}
-          inside the guest first; AXV images do not include it. A user-owned
-          installation at <code>~/.local/bin/gh</code> does not need sudo. For
-          that location, run:
-          <pre>{`umask 077
-mkdir -p "$HOME/.config/gh"
-chmod 700 "$HOME/.config/gh"
-"$HOME/.local/bin/gh" auth login --hostname github.com --git-protocol https --web
-"$HOME/.local/bin/gh" auth setup-git --hostname github.com`}</pre>
-          For another installation, substitute its absolute executable path. The
-          helper must keep using that path for later tasks. Open the displayed
-          GitHub device URL in your browser. Organization policies and
-          repository permissions still apply. A missing private repository and
-          denied access may look the same.
-        </li>
-        <li>
-          Return here and clone into a new directory. Clone runs as a separate,
-          noninteractive task. Persist the helper configuration; terminal-only
-          environment exports and SSH agents are not inherited by later tasks.
-          For SSH, verify the server fingerprint and configure known hosts and a
-          key usable by the same guest user without a prompt.
-        </li>
-      </ol>
-      <p>
-        Without an OS keyring, GitHub CLI may store its token in a plaintext
-        file. Check the path reported by GitHub CLI and restrict the directory
-        and file to the guest user (permissions 700 and 600). Revoke the token
-        in GitHub account settings when no longer needed. Read{' '}
-        <a
-          href="https://cli.github.com/manual/gh_auth_login"
-          target="_blank"
-          rel="noreferrer"
-        >
-          GitHub CLI authentication
-        </a>{' '}
-        for storage and account requirements.
-      </p>
-      <p>
-        Credentials belong to this VM user and can be used by other programs
-        running as that user. Keep credentials off the retained project volume.
-        The volume preserves project files, while VM replacement may require
-        setting up authentication again on its new root disk.
-      </p>
-      <p>
-        Recover checks the original initialization receipt; it does not rerun a
-        failed clone. Partial files remain. Inspect Tasks and the volume
-        workspace before explicitly choosing another directory or cleaning up in
-        the VM.
-      </p>
+        )}
+        <ol className="vm-private-setup-steps">
+          <li>
+            Open <strong>Guest Terminal</strong> as the guest service user
+            (without sudo). Existing Git credential helpers and SSH keys work
+            directly.
+          </li>
+          <li>
+            For GitHub HTTPS, install{' '}
+            <a href="https://cli.github.com/" target="_blank" rel="noreferrer">
+              GitHub CLI
+            </a>{' '}
+            (e.g. <code>~/.local/bin/gh</code>) inside the guest and run:
+            <div className="vm-private-setup-code">
+              <pre>{GH_SETUP_COMMANDS}</pre>
+              <Button
+                type="button"
+                className="vm-private-setup-copy"
+                disabled={!interactive}
+                onClick={() => void copyCommands()}
+              >
+                {copied ? 'Copied' : 'Copy'}
+              </Button>
+            </div>
+            <span className="vm-private-setup-step-note">
+              Open the device URL in your browser (use your installed{' '}
+              <code>gh</code> path if different). See{' '}
+              <a
+                href="https://cli.github.com/manual/gh_auth_login"
+                target="_blank"
+                rel="noreferrer"
+              >
+                GitHub CLI auth docs
+              </a>
+              .
+            </span>
+          </li>
+          <li>
+            Return here and clone into a new directory. Persist credential
+            helper or SSH config (with known hosts) — terminal-only environment
+            exports and SSH agents are not inherited by clone tasks.
+          </li>
+        </ol>
+        <div className="vm-private-setup-notes">
+          <p>
+            Keep credentials off the retained project volume (store them on the
+            VM root disk under the guest user with <code>0700</code>/
+            <code>0600</code> permissions). VM replacement requires setting up
+            authentication again.
+          </p>
+          <p>
+            Recover checks the original initialization receipt; it does not
+            rerun a failed clone and partial files remain until cleaned up.
+          </p>
+        </div>
+      </div>
     </details>
   );
 }

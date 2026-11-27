@@ -31,7 +31,6 @@ describe('Codex application menus', () => {
       'Project',
     ]);
     const tools = groups.find((group) => group.id === 'project')!.items;
-    expect(tools.find((item) => item.label === 'Tasks')!.disabled).toBe(true);
     tools.find((item) => item.label === 'Project Files')!.action!();
     await Promise.resolve();
     expect(original).toHaveBeenCalledOnce();

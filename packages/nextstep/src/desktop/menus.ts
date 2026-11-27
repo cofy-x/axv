@@ -163,6 +163,14 @@ export function createWindowMenu(
       label: win.zoomed ? 'Restore Size' : 'Maximize',
       action: () => api.toggleZoom(win.id),
     },
+    {
+      label: 'Tile Left',
+      action: () => api.snapWindow(win.id, 'left'),
+    },
+    {
+      label: 'Tile Right',
+      action: () => api.snapWindow(win.id, 'right'),
+    },
     { separator: true },
     {
       label: 'Move to Workspace',

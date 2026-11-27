@@ -412,7 +412,7 @@ export function ImageManager({
       )}
       {editing && (
         <form
-          className="app-pad machines-form"
+          className="app-pad machines-form machines-volume-editor"
           onSubmit={(event) => {
             event.preventDefault();
             submit();
@@ -506,56 +506,70 @@ export function ImageManager({
           </tr>
         </thead>
         <tbody>
-          {data.images.map((image) => (
-            <tr key={image.id} data-selected={selected?.id === image.id}>
-              <td>
-                {administratorImages ? (
-                  <strong>{image.name}</strong>
-                ) : (
-                  <button
-                    className="machines-select"
-                    aria-pressed={selected?.id === image.id}
-                    onClick={() => {
-                      setSelected(image.id);
-                      setSelectedHost(hostId);
-                    }}
+          {data.images.map((image) => {
+            const imageStatus =
+              !image.status ||
+              image.status === 'configured' ||
+              image.status === 'ready'
+                ? providers.some(
+                    (provider) =>
+                      provider.provider === image.provider &&
+                      provider.available,
+                  ) &&
+                  (!hostArch || image.arch === hostArch)
+                  ? 'Ready'
+                  : 'Registered'
+                : humanize(image.status);
+            const dotStatus =
+              imageStatus === 'Ready'
+                ? 'running'
+                : image.status === 'failed'
+                  ? 'failed'
+                  : imageStatus === 'Registered'
+                    ? 'stopped'
+                    : 'transitioning';
+            return (
+              <tr key={image.id} data-selected={selected?.id === image.id}>
+                <td>
+                  {administratorImages ? (
+                    <strong>{image.name}</strong>
+                  ) : (
+                    <button
+                      className="machines-select"
+                      aria-pressed={selected?.id === image.id}
+                      onClick={() => {
+                        setSelected(image.id);
+                        setSelectedHost(hostId);
+                      }}
+                    >
+                      {image.name}
+                    </button>
+                  )}
+                  <small>
+                    {humanize(image.provider)} · {image.arch}
+                  </small>
+                </td>
+                <td>
+                  <span className="machines-status-dot" data-status={dotStatus}>
+                    {imageStatus}
+                  </span>
+                  {image.reason && (
+                    <small className="machines-failure">{image.reason}</small>
+                  )}
+                </td>
+                <td className="machines-inventory-action">
+                  <Button
+                    className="machines-text-button"
+                    aria-label={`Image details for ${image.name}`}
+                    aria-haspopup="dialog"
+                    onClick={() => void showDetails(image)}
                   >
-                    {image.name}
-                  </button>
-                )}
-                <small>
-                  {humanize(image.provider)} · {image.arch}
-                </small>
-              </td>
-              <td>
-                {!image.status ||
-                image.status === 'configured' ||
-                image.status === 'ready'
-                  ? providers.some(
-                      (provider) =>
-                        provider.provider === image.provider &&
-                        provider.available,
-                    ) &&
-                    (!hostArch || image.arch === hostArch)
-                    ? 'Ready'
-                    : 'Registered'
-                  : humanize(image.status)}
-                {image.reason && (
-                  <small className="machines-failure">{image.reason}</small>
-                )}
-              </td>
-              <td className="machines-inventory-action">
-                <Button
-                  className="machines-text-button"
-                  aria-label={`Image details for ${image.name}`}
-                  aria-haspopup="dialog"
-                  onClick={() => void showDetails(image)}
-                >
-                  Details
-                </Button>
-              </td>
-            </tr>
-          ))}
+                    Details
+                  </Button>
+                </td>
+              </tr>
+            );
+          })}
           {!data.images.length && (
             <tr>
               <td colSpan={3}>

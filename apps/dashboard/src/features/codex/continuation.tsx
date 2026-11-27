@@ -1,4 +1,5 @@
 import { desktopDatabase } from '../../shared/api/desktop';
+import { APIError } from '../../shared/api/http';
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
 import {
   codexAPI,
@@ -7,17 +8,29 @@ import {
   sessionTitle,
 } from './api';
 import type { CodexSessionRecord } from './api';
-import { vmProjectsAPI } from '../project-files/vm-api';
-import type { VMProjectBinding } from '../project-files/vm-api';
-import {
-  launchRejectedBeforeStart,
-  VMProjectRequests,
-} from './vm-project-requests';
+
+// These refusals follow request replay lookup and precede run reservation.
+// Shutdown, transport and reconciliation failures can describe an existing run.
+const preLaunchRefusals = new Map<string, readonly number[]>([
+  ['codex_limit', [503]],
+  ['codex_unavailable', [503]],
+  ['conversation_active', [409]],
+  ['run_changed', [409]],
+  ['project_changed', [409]],
+  ['workspace_changed', [409]],
+  ['history_unavailable', [409, 503]],
+]);
+
+export function launchRejectedBeforeStart(error: unknown) {
+  return (
+    error instanceof APIError &&
+    preLaunchRefusals.get(error.code)?.includes(error.status) === true
+  );
+}
 
 interface ResumeRequest {
   requestId: string;
   expectedRunId: string;
-  vmProject?: { binding: VMProjectBinding };
 }
 
 interface SendingResume {
@@ -33,46 +46,13 @@ type ResumeState =
 /** Unknown outcomes retain their request identity until a definite response. */
 export class CodexResumeRequests {
   private readonly states = new Map<string, ResumeState>();
-  private readonly persisted = new Map<string, VMProjectRequests>();
 
   constructor(
-    private readonly scope?: string,
+    _scope?: string,
     private readonly databaseId?: string,
   ) {}
 
   restore(session: CodexSessionRecord) {
-    if (!session.vmProject || !this.scope)
-      return this.states.get(session.id)?.pending;
-    let store = this.persisted.get(session.id);
-    if (!store) {
-      store = new VMProjectRequests(
-        JSON.stringify(['axv-codex-vm-resume', this.scope, session.id]),
-        session.vmProject.project.hostId,
-        session.vmProject.project.id,
-      );
-      this.persisted.set(session.id, store);
-    }
-    const saved = store.read();
-    if (saved) {
-      if (!saved.expectedRunId)
-        throw new Error(
-          'The saved Codex continuation request has no original run. Preserve its recovery data before clearing it.',
-        );
-      const pending: ResumeRequest = {
-        requestId: saved.requestId,
-        expectedRunId: saved.expectedRunId,
-        vmProject: { binding: saved.binding },
-      };
-      const state = this.states.get(session.id);
-      if (state?.phase === 'sending') {
-        // A newer shared receipt changes recovery, never the request in flight.
-        state.pending = pending;
-      } else this.states.set(session.id, { phase: 'uncertain', pending });
-    } else if (this.states.get(session.id)?.phase !== 'sending') {
-      // Other mounted views can resolve and remove the shared receipt. Keep
-      // only this instance's active submission when persistence is now empty.
-      this.states.delete(session.id);
-    }
     return this.states.get(session.id)?.pending;
   }
 
@@ -85,43 +65,26 @@ export class CodexResumeRequests {
   }
 
   private settle(sessionId: string, sending: SendingResume, confirmed = false) {
-    let released = false;
-    try {
-      if (confirmed) {
-        this.persisted.get(sessionId)?.complete(sending.attempt.requestId);
-        released = true;
-      }
-    } finally {
-      if (this.states.get(sessionId) === sending) {
-        if (released && sending.pending.requestId === sending.attempt.requestId)
-          this.states.delete(sessionId);
-        else
-          this.states.set(sessionId, {
-            phase: 'uncertain',
-            pending: sending.pending,
-          });
-      }
+    if (this.states.get(sessionId) === sending) {
+      if (confirmed && sending.pending.requestId === sending.attempt.requestId)
+        this.states.delete(sessionId);
+      else
+        this.states.set(sessionId, {
+          phase: 'uncertain',
+          pending: sending.pending,
+        });
     }
   }
 
-  resume(session: CodexSessionRecord, binding?: VMProjectBinding) {
+  resume(session: CodexSessionRecord) {
     const state = this.states.get(session.id);
     if (state?.phase === 'sending') return state.promise;
     const pending = this.restore(session);
-    const saved =
-      !pending && session.vmProject && binding
-        ? this.persisted.get(session.id)?.capture(binding, session.runId)
-        : undefined;
-    if (session.vmProject && !pending?.vmProject && !binding)
-      throw new Error('Review the VM project environment before continuing.');
     const attempt: ResumeRequest = pending
       ? structuredClone(pending)
       : {
-          requestId: saved?.requestId || crypto.randomUUID(),
-          expectedRunId: saved?.expectedRunId || session.runId,
-          ...(session.vmProject && binding
-            ? { vmProject: { binding: { ...(saved?.binding || binding) } } }
-            : {}),
+          requestId: crypto.randomUUID(),
+          expectedRunId: session.runId,
         };
     let complete!: (
       result: CodexSessionRecord | PromiseLike<CodexSessionRecord>,
@@ -143,21 +106,13 @@ export class CodexResumeRequests {
   private async send(sessionId: string, sending: SendingResume) {
     const { attempt } = sending;
     try {
-      const result = await (attempt.vmProject
-        ? this.databaseId
-          ? codexAPI.resume(
-              sessionId,
-              attempt.requestId,
-              attempt.expectedRunId,
-              attempt.vmProject,
-              this.databaseId,
-            )
-          : codexAPI.resume(
-              sessionId,
-              attempt.requestId,
-              attempt.expectedRunId,
-              attempt.vmProject,
-            )
+      const result = await (this.databaseId
+        ? codexAPI.resume(
+            sessionId,
+            attempt.requestId,
+            attempt.expectedRunId,
+            this.databaseId,
+          )
         : codexAPI.resume(sessionId, attempt.requestId, attempt.expectedRunId));
       desktopDatabase.assertUnchanged();
       if (
@@ -201,17 +156,6 @@ export async function continueConversation(
       latest.continuation.reason || 'This conversation cannot be continued.',
     );
   const retrying = requests.hasPending(source.id);
-  const environment = latest.vmProject
-    ? pending?.vmProject
-      ? {
-          project: latest.vmProject.project,
-          binding: pending.vmProject.binding,
-        }
-      : await vmProjectsAPI.binding(
-          latest.vmProject.project.id,
-          latest.vmProject.project.hostId,
-        )
-    : undefined;
   const answer = await desktop.dialog({
     title: 'Continue Conversation?',
     message: (
@@ -226,40 +170,8 @@ export async function continueConversation(
           <dd>{sessionTitle(latest)}</dd>
           <dt>Project</dt>
           <dd>
-            <code>
-              {latest.vmProject
-                ? `VM · ${latest.vmProject.project.name}`
-                : latest.projectPath}
-            </code>
+            <code>{latest.projectPath}</code>
           </dd>
-          {environment && (
-            <>
-              <dt>
-                {retrying ? 'Original requested VM' : 'VM for the new run'}
-              </dt>
-              <dd>
-                <code>{environment.binding.machineId}</code>
-              </dd>
-              <dt>{retrying ? 'Latest observed VM' : 'Previous run VM'}</dt>
-              <dd>
-                <code>{latest.vmProject!.binding.machineId}</code>
-              </dd>
-              <dt>Volume / directory</dt>
-              <dd>
-                <code>
-                  {environment.binding.volumeId} /{' '}
-                  {environment.project.root || 'Volume root'}
-                </code>
-              </dd>
-              <dt>Boot / instance</dt>
-              <dd>
-                <code>
-                  {environment.binding.bootId} /{' '}
-                  {environment.binding.instanceId}
-                </code>
-              </dd>
-            </>
-          )}
           <dt>Previous run</dt>
           <dd>
             <code>{pending?.expectedRunId || latest.runId}</code>
@@ -271,13 +183,6 @@ export async function continueConversation(
             <code>{latest.conversationId || 'Not identified'}</code>
           </dd>
         </dl>
-        {environment && (
-          <p>
-            Codex runs on the host and uses the AXV Skill for this reviewed VM
-            environment. Existing runs and pending tasks keep their original
-            targets.
-          </p>
-        )}
         {latest.archivedAt && <p>This conversation will remain in Archived.</p>}
       </div>
     ),
@@ -289,7 +194,7 @@ export async function continueConversation(
   if (answer?.button !== 'continue') return null;
   if ((requests.restore(latest)?.requestId || null) !== reviewedRequestId)
     throw changedRequest();
-  const result = await requests.resume(latest, environment?.binding);
+  const result = await requests.resume(latest);
   if (!retrying && !sessionCanEnd(result))
     throw new Error(
       result.reason ||

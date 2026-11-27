@@ -57,6 +57,18 @@ func registerProjects(mux *http.ServeMux, service *control.Service) {
 		project, err := service.Project(r.Context(), r.PathValue("id"))
 		reply(w, map[string]any{"project": project}, err)
 	}))
+	mux.HandleFunc("POST /v1/projects/{id}/delete", bound(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			RequestID string `json:"requestId"`
+			Revision  int64  `json:"revision"`
+		}
+		if err := decodeProjectJSONFields(w, r, &req, 64<<10, []string{"requestId", "revision"}, []string{"requestId", "revision"}); err != nil {
+			failure(w, err)
+			return
+		}
+		project, err := service.DeleteProject(r.Context(), r.PathValue("id"), r.Header.Get("X-AXV-Host-ID"), req.RequestID, req.Revision)
+		reply(w, map[string]any{"deleted": true, "project": project}, err)
+	}))
 	mux.HandleFunc("GET /v1/projects/{id}/binding", bound(func(w http.ResponseWriter, r *http.Request) {
 		binding, err := service.ProjectBinding(r.Context(), r.PathValue("id"), r.Header.Get("X-AXV-Host-ID"))
 		reply(w, binding, err)

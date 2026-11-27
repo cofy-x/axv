@@ -151,6 +151,7 @@ export interface DesktopAPI {
   minimizeWindow: (id: string) => void;
   toggleShade: (id: string) => void;
   toggleZoom: (id: string) => void;
+  snapWindow: (id: string, side: 'left' | 'right') => void;
   addClipShortcut: (shortcut: Omit<ClipShortcut, 'id'>) => void;
   removeClipShortcut: (id: string) => void;
   openApp: (

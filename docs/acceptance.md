@@ -114,7 +114,6 @@ node scripts/test-go.mjs -race \
 ```
 
 - When changing preview transport or composition, also run `node scripts/test-go.mjs -race ./apps/server/internal/compute/preview ./apps/server/internal/tailnet ./apps/server/internal/server`.
-- When changing VM-project Codex integration or the bundled [Skill](../apps/server/internal/vmwork/skills/axv-vm-project/SKILL.md), also run `node scripts/test-go.mjs -race ./apps/server/internal/codex/... ./apps/server/internal/storage ./apps/server/internal/compute/gateway ./apps/server/internal/vmwork ./apps/server/internal/cli` and [`vm-project-codex.spec.ts`](../tests/vm-project-codex.spec.ts).
 
 ### Native VM project workflow
 
@@ -123,8 +122,6 @@ Use an invocation-owned profile/test root and a compatible enhanced Guest image 
 1. **Retained-volume Git & file confinement:** Clones a real repository (`ItsDangerous 2.2.0`) on a retained volume, edits reviewed files via `axv vm project`, checks version/path/symlink/binary/create-only rejection, survives controller restart, replaces the VM while preserving code/Git state, and rejects stale bindings.
 2. **Persistent tasks & cgroup enforcement:** Runs in-guest Python venv install, wheel build and upstream pytest suite as persistent tasks; verifies controller restart without duplicate dispatch, exact cancellation (including daemonized descendants), CPU/memory/process/timeout/log limits, nested cgroup cleanup, guest-executor termination recovery and VM-restart interruption.
 3. **Initialization, previews and offline backups:** Exercises [`lib-vm-project-initialization.mjs`](../scripts/lib-vm-project-initialization.mjs) (empty dir & HTTPS clone replay), [`lib-vm-project-preview.mjs`](../scripts/lib-vm-project-preview.mjs) (independent Chromium origin, WebSocket, revocation), and [`lib-vm-project-backup.mjs`](../scripts/lib-vm-project-backup.mjs) (stopped-VM copy, restore into a new volume/VM/project, Git/worktree check and controller recovery).
-4. **VM-project Codex integration:** Runs [`lib-vm-codex-workflow.mjs`](../scripts/lib-vm-codex-workflow.mjs) with a deterministic provider over real guest files and tasks, verifying restart, receipt recovery, continuation, VM replacement and old-context rejection.
-5. **Opt-in real-model VM Codex (`--real-codex`):** Runs [`lib-vm-codex-live.mjs`](../scripts/lib-vm-codex-live.mjs) with installed Codex CLI and existing sign-in/approvals on a synthetic Python project inside the disposable VM. If it prints `awaiting-project-trust`, open the printed `DESKTOP_READY` URL and answer the official trust prompt within two minutes. Retain `AXV_REAL_CODEX_RESULT` before cleanup removes the isolated profile.
 
 Browser editor conflict, Reload/Reconnect, tab-local draft recovery and close/Keep Draft checks remain separate interactive browser checks.
 

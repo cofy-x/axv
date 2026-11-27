@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/cofy-x/axv/apps/server/internal/compute/hostinstall"
+	"github.com/cofy-x/axv/apps/server/internal/compute/prepare"
 	"github.com/cofy-x/axv/apps/server/internal/setup"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
@@ -50,7 +51,17 @@ func newSetup() *cobra.Command {
 			return usageError(err)
 		}
 		if !o.Yes {
-			o.Confirm = setupConfirmation(cmd.InOrStdin(), cmd.OutOrStdout())
+			o.Confirm = setupConfirmation(cmd.InOrStdin(), cmd.OutOrStdout(), true)
+			o.ConfirmPlan = func(ctx context.Context, plan prepare.Plan) error {
+				confirm := setupConfirmation(cmd.InOrStdin(), cmd.OutOrStdout(), len(plan.Downloads) > 0)
+				if confirm == nil {
+					if len(plan.Downloads) > 0 {
+						return fmt.Errorf("review the plan and rerun with --yes to approve its actions and downloads")
+					}
+					return fmt.Errorf("review the plan and rerun with --yes to approve its actions")
+				}
+				return confirm(ctx)
+			}
 		}
 		// On Linux, unify setup when no custom socket/host-config/retry is requested
 		// and axv-host.service is missing or stopped.
@@ -119,7 +130,7 @@ func maybePrepareLinuxHost(cmd *cobra.Command, o setup.Options, applySysctl bool
 	return false, nil
 }
 
-func setupConfirmation(input io.Reader, output io.Writer) func(context.Context) error {
+func setupConfirmation(input io.Reader, output io.Writer, hasDownloads bool) func(context.Context) error {
 	file, ok := input.(*os.File)
 	if !ok || !isatty.IsTerminal(file.Fd()) {
 		return nil
@@ -128,7 +139,11 @@ func setupConfirmation(input io.Reader, output io.Writer) func(context.Context) 
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprint(output, "Approve these actions and downloads? [y/N]: "); err != nil {
+		prompt := "Approve these actions? [y/N]: "
+		if hasDownloads {
+			prompt = "Approve these actions and downloads? [y/N]: "
+		}
+		if _, err := fmt.Fprint(output, prompt); err != nil {
 			return err
 		}
 		line, err := setupConfirmationLine(ctx, file)

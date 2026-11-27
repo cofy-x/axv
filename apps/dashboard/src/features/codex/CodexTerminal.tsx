@@ -691,32 +691,12 @@ export function CodexTerminal({
   const projectFiles = useCallback(async () => {
     const session = connection.current?.getSnapshot().session;
     if (!session) return false;
-    if (session.vmProject) {
-      const project = session.vmProject.project;
-      desktop.openApp(
-        'project-files',
-        { vmProjectId: project.id, hostId: project.hostId },
-        { title: `VM · ${project.name}` },
-      );
-      return true;
-    }
     const { project } = await projectsAPI.register(session.projectPath);
     desktopDatabase.assertUnchanged();
     desktop.openApp(
       'project-files',
       { projectId: project.id },
       { title: project.name },
-    );
-    return true;
-  }, [desktop]);
-  const projectTasks = useCallback(async () => {
-    const project =
-      connection.current?.getSnapshot().session?.vmProject?.project;
-    if (!project) return false;
-    desktop.openApp(
-      'project-files',
-      { hostId: project.hostId, vmTasksProjectId: project.id },
-      { title: `Tasks · ${project.name}` },
     );
     return true;
   }, [desktop]);
@@ -761,12 +741,6 @@ export function CodexTerminal({
         'codex:project-files',
         projectFiles,
         !!state.session,
-      ),
-      commands.register(
-        window.id,
-        'codex:tasks',
-        projectTasks,
-        !!state.session?.vmProject,
       ),
       commands.register(
         window.id,
@@ -815,7 +789,6 @@ export function CodexTerminal({
     archive,
     projectTerminal,
     projectFiles,
-    projectTasks,
     changingMetadata,
     end,
     hasSelection,
