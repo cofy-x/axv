@@ -23,6 +23,7 @@ import (
 
 type Handler struct {
 	manager *codex.Manager
+	guest   bool
 	ctx     context.Context
 	cancel  context.CancelFunc
 	mu      sync.Mutex
@@ -31,8 +32,18 @@ type Handler struct {
 }
 
 func New(manager *codex.Manager) *Handler {
+	return newHandler(manager, false)
+}
+
+// NewGuest adapts a guest-local Codex manager where transport authentication
+// and capability checks are already enforced by the guest service boundary.
+func NewGuest(manager *codex.Manager) *Handler {
+	return newHandler(manager, true)
+}
+
+func newHandler(manager *codex.Manager, guest bool) *Handler {
 	ctx, cancel := context.WithCancel(context.Background())
-	h := &Handler{manager: manager, ctx: ctx, cancel: cancel}
+	h := &Handler{manager: manager, guest: guest, ctx: ctx, cancel: cancel}
 	go func() {
 		select {
 		case <-manager.Done():
@@ -54,17 +65,24 @@ func (h *Handler) Close() {
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/host/codex/info", h.handle(h.info))
-	mux.HandleFunc("GET /api/host/codex/projects", h.handle(h.projects))
-	mux.HandleFunc("GET /api/host/codex/sessions", h.handle(h.list))
-	mux.HandleFunc("POST /api/host/codex/sessions", h.handle(h.create))
-	mux.HandleFunc("GET /api/host/codex/sessions/{id}", h.handle(h.get))
-	mux.HandleFunc("PATCH /api/host/codex/sessions/{id}", h.handle(h.patch))
-	mux.HandleFunc("POST /api/host/codex/sessions/{id}/resume", h.handle(h.resume))
-	mux.HandleFunc("GET /api/host/codex/sessions/{id}/runs/{run}", h.handle(h.getRun))
-	mux.HandleFunc("POST /api/host/codex/sessions/{id}/runs/{run}/activity/review", h.handle(h.reviewActivity))
-	mux.HandleFunc("POST /api/host/codex/sessions/{id}/runs/{run}/end", h.handle(h.end))
-	mux.HandleFunc("GET /api/host/codex/sessions/{id}/runs/{run}/terminal", h.handle(h.connect))
+	h.RegisterAt(mux, "/api/host/codex")
+}
+
+// RegisterAt mounts Codex routes under a fixed prefix (such as /api/host/codex or /v1/codex).
+func (h *Handler) RegisterAt(mux *http.ServeMux, prefix string) {
+	if !h.guest {
+		mux.HandleFunc("GET "+prefix+"/info", h.handle(h.info))
+	}
+	mux.HandleFunc("GET "+prefix+"/projects", h.handle(h.projects))
+	mux.HandleFunc("GET "+prefix+"/sessions", h.handle(h.list))
+	mux.HandleFunc("POST "+prefix+"/sessions", h.handle(h.create))
+	mux.HandleFunc("GET "+prefix+"/sessions/{id}", h.handle(h.get))
+	mux.HandleFunc("PATCH "+prefix+"/sessions/{id}", h.handle(h.patch))
+	mux.HandleFunc("POST "+prefix+"/sessions/{id}/resume", h.handle(h.resume))
+	mux.HandleFunc("GET "+prefix+"/sessions/{id}/runs/{run}", h.handle(h.getRun))
+	mux.HandleFunc("POST "+prefix+"/sessions/{id}/runs/{run}/activity/review", h.handle(h.reviewActivity))
+	mux.HandleFunc("POST "+prefix+"/sessions/{id}/runs/{run}/end", h.handle(h.end))
+	mux.HandleFunc("GET "+prefix+"/sessions/{id}/runs/{run}/terminal", h.handle(h.connect))
 }
 
 func (h *Handler) reviewActivity(w http.ResponseWriter, r *http.Request) {
@@ -121,6 +139,9 @@ func (h *Handler) handle(handler http.HandlerFunc) http.HandlerFunc {
 }
 
 func (h *Handler) allowed(w http.ResponseWriter, r *http.Request, origin bool) bool {
+	if h.guest {
+		return true
+	}
 	return allowed(w, r, origin) && httpaccess.RequireDatabaseIdentity(w, r, h.manager.DatabaseID(), false)
 }
 

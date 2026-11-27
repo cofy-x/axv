@@ -93,7 +93,7 @@ func runOwned(manifestPath string, manifest Manifest) error {
 	if os.Chmod(socketPath, 0o600) != nil {
 		return fail("codex_start_failed")
 	}
-	server, err := startServer(manifest.CodexPath, manifest.ProjectPath, manifest.HistoryHome, os.Environ())
+	server, err := startServer(manifest.CodexPath, manifest.ProjectPath, manifest.HistoryHome, os.Environ(), manifest.FullAuto)
 	if err != nil {
 		return fail("codex_start_failed")
 	}
@@ -118,6 +118,9 @@ func runOwned(manifestPath string, manifest Manifest) error {
 	defer httpServer.Close()
 	go func() { _ = httpServer.Serve(listener) }()
 	arguments := []string{"--remote", "unix://" + socketPath, "--no-alt-screen", "--cd", manifest.ProjectPath}
+	if manifest.FullAuto {
+		arguments = append([]string{"--dangerously-bypass-approvals-and-sandbox"}, arguments...)
+	}
 	if manifest.Mode == ModeResume {
 		arguments = append(arguments, "resume", manifest.ThreadID)
 	}

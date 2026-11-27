@@ -49,7 +49,7 @@ func validSize(cols, rows int) bool {
 }
 
 func (h *Handler) connect(w http.ResponseWriter, r *http.Request) {
-	if !allowed(w, r, true) || !httpaccess.RequireDatabaseIdentity(w, r, h.manager.DatabaseID(), true) {
+	if !h.guest && (!allowed(w, r, true) || !httpaccess.RequireDatabaseIdentity(w, r, h.manager.DatabaseID(), true)) {
 		return
 	}
 	cols, rows, ok := dimensions(r.URL.RawQuery)

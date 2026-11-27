@@ -212,10 +212,14 @@ func failure(w http.ResponseWriter, err error) {
 }
 
 var terminalPath = regexp.MustCompile(`^terminals/[a-f0-9]{32}(/attach)?$`)
+var codexGuestPath = regexp.MustCompile(`^codex/(info|install|projects|notifications|sessions(/[a-zA-Z0-9_-]+(/(resume|runs/[a-zA-Z0-9_-]+(/(activity/review|end|terminal))?))?)?)$`)
 
 func proxyGuest(service *control.Service, w http.ResponseWriter, r *http.Request) {
 	path := r.PathValue("path")
-	allowed := ((path == "health" || path == "terminals") && r.Method == "GET") || ((path == "exec" || path == "terminals") && r.Method == "POST") || (terminalPath.MatchString(path) && (r.Method == "GET" || (r.Method == "DELETE" && !strings.HasSuffix(path, "/attach"))))
+	allowed := ((path == "health" || path == "terminals") && r.Method == "GET") ||
+		((path == "exec" || path == "terminals") && r.Method == "POST") ||
+		(terminalPath.MatchString(path) && (r.Method == "GET" || (r.Method == "DELETE" && !strings.HasSuffix(path, "/attach")))) ||
+		(codexGuestPath.MatchString(path) && (r.Method == "GET" || r.Method == "POST" || r.Method == "PATCH"))
 	if !allowed {
 		http.NotFound(w, r)
 		return
@@ -225,6 +229,8 @@ func proxyGuest(service *control.Service, w http.ResponseWriter, r *http.Request
 		capability = "exec"
 	} else if strings.HasPrefix(path, "terminals") {
 		capability = "terminals"
+	} else if strings.HasPrefix(path, "codex/") {
+		capability = "codex"
 	}
 	access, err := service.GuestAccess(r.Context(), r.PathValue("id"), capability)
 	if err != nil {

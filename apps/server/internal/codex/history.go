@@ -22,7 +22,11 @@ func (m *Manager) defaultRunnerCommand(manifest string) ([]string, error) {
 	if m.settings.RunnerExecutable == "" {
 		return nil, failure(Unavailable, "codex_runtime_unavailable", "The fixed AXV runner executable is unavailable. Restart AXV before starting a Codex session.")
 	}
-	return []string{m.settings.RunnerExecutable, "internal-codex-run", manifest}, nil
+	subcommand := m.settings.RunnerSubcommand
+	if subcommand == "" {
+		subcommand = "internal-codex-run"
+	}
+	return []string{m.settings.RunnerExecutable, subcommand, manifest}, nil
 }
 
 func verifyCodexHistory(ctx context.Context, cliPath, project, home string, env []string, threadID string) error {
@@ -133,7 +137,7 @@ func (m *Manager) prepareRunner(info Info, session storage.CodexSession) ([]stri
 	if err := os.MkdirAll(filepath.Dir(ownershipPath), 0700); err != nil {
 		return nil, err
 	}
-	manifest := runner.Manifest{SessionID: session.ID, RunID: session.RunID, ProjectPath: session.ProjectPath, CodexPath: info.CodexPath, HistoryHome: session.HistoryHome, SocketRoot: socketRoot, OwnershipPath: ownershipPath, Mode: session.RunMode()}
+	manifest := runner.Manifest{SessionID: session.ID, RunID: session.RunID, ProjectPath: session.ProjectPath, CodexPath: info.CodexPath, HistoryHome: session.HistoryHome, SocketRoot: socketRoot, OwnershipPath: ownershipPath, Mode: session.RunMode(), FullAuto: m.settings.DefaultFullAuto}
 	if session.RunMode() == "resume" {
 		manifest.ThreadID = session.ConversationID
 	}

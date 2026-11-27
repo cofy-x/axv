@@ -2,12 +2,14 @@ import { desktopDatabase } from '../../shared/api/desktop';
 import { APIError } from '../../shared/api/http';
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
 import {
-  codexAPI,
+  isVMSession,
   sessionCanContinue,
   sessionCanEnd,
+  sessionKey,
   sessionTitle,
 } from './api';
 import type { CodexSessionRecord } from './api';
+import { codexTargetAPI } from './vm-api';
 
 // These refusals follow request replay lookup and precede run reservation.
 // Shutdown, transport and reconciliation failures can describe an existing run.
@@ -53,7 +55,7 @@ export class CodexResumeRequests {
   ) {}
 
   restore(session: CodexSessionRecord) {
-    return this.states.get(session.id)?.pending;
+    return this.states.get(sessionKey(session))?.pending;
   }
 
   hasPending(sessionId: string) {
@@ -64,12 +66,12 @@ export class CodexResumeRequests {
     return this.states.get(sessionId)?.pending.requestId;
   }
 
-  private settle(sessionId: string, sending: SendingResume, confirmed = false) {
-    if (this.states.get(sessionId) === sending) {
+  private settle(key: string, sending: SendingResume, confirmed = false) {
+    if (this.states.get(key) === sending) {
       if (confirmed && sending.pending.requestId === sending.attempt.requestId)
-        this.states.delete(sessionId);
+        this.states.delete(key);
       else
-        this.states.set(sessionId, {
+        this.states.set(key, {
           phase: 'uncertain',
           pending: sending.pending,
         });
@@ -77,7 +79,8 @@ export class CodexResumeRequests {
   }
 
   resume(session: CodexSessionRecord) {
-    const state = this.states.get(session.id);
+    const key = sessionKey(session);
+    const state = this.states.get(key);
     if (state?.phase === 'sending') return state.promise;
     const pending = this.restore(session);
     const attempt: ResumeRequest = pending
@@ -98,36 +101,41 @@ export class CodexResumeRequests {
       pending: attempt,
       promise,
     };
-    this.states.set(session.id, sending);
-    complete(this.send(session.id, sending));
+    this.states.set(key, sending);
+    complete(this.send(session, key, sending));
     return promise;
   }
 
-  private async send(sessionId: string, sending: SendingResume) {
+  private async send(
+    session: CodexSessionRecord,
+    key: string,
+    sending: SendingResume,
+  ) {
     const { attempt } = sending;
+    const api = codexTargetAPI(session);
     try {
-      const result = await (this.databaseId
-        ? codexAPI.resume(
-            sessionId,
+      const result = await (!isVMSession(session) && this.databaseId
+        ? api.resume(
+            session.id,
             attempt.requestId,
             attempt.expectedRunId,
             this.databaseId,
           )
-        : codexAPI.resume(sessionId, attempt.requestId, attempt.expectedRunId));
+        : api.resume(session.id, attempt.requestId, attempt.expectedRunId));
       desktopDatabase.assertUnchanged();
       if (
-        result.id !== sessionId ||
+        result.id !== session.id ||
         !result.runId ||
         result.runId === attempt.expectedRunId
       )
         throw new Error(
           'The host did not confirm a new run for this conversation. Retry the same continuation request.',
         );
-      this.settle(sessionId, sending, true);
+      this.settle(key, sending, true);
       return result;
     } catch (error) {
-      if (this.states.get(sessionId) === sending)
-        this.settle(sessionId, sending, launchRejectedBeforeStart(error));
+      if (this.states.get(key) === sending)
+        this.settle(key, sending, launchRejectedBeforeStart(error));
       throw error;
     }
   }
@@ -137,12 +145,14 @@ export async function continueConversation(
   desktop: Pick<DesktopAPI, 'dialog'>,
   source: CodexSessionRecord,
   requests: CodexResumeRequests,
-  expectedRequestId: string | null = requests.pendingRequestId(source.id) ??
-    null,
+  expectedRequestId: string | null = requests.pendingRequestId(
+    sessionKey(source),
+  ) ?? null,
 ) {
   // This explicit action checks the latest run; the old window stays bound to
   // its own run for reading, reconnecting, input and termination.
-  const latest = await codexAPI.get(source.id);
+  const key = sessionKey(source);
+  const latest = await codexTargetAPI(source).get(source.id);
   const pending = requests.restore(latest);
   const reviewedRequestId = pending?.requestId || null;
   const changedRequest = () =>
@@ -150,12 +160,12 @@ export async function continueConversation(
       'The Codex continuation request changed in another window. Review the current session and request before continuing or resolving it.',
     );
   if (reviewedRequestId !== expectedRequestId) throw changedRequest();
-  if (sessionCanEnd(latest) && !requests.hasPending(source.id)) return latest;
-  if (!sessionCanContinue(latest) && !requests.hasPending(source.id))
+  if (sessionCanEnd(latest) && !requests.hasPending(key)) return latest;
+  if (!sessionCanContinue(latest) && !requests.hasPending(key))
     throw new Error(
       latest.continuation.reason || 'This conversation cannot be continued.',
     );
-  const retrying = requests.hasPending(source.id);
+  const retrying = requests.hasPending(key);
   const answer = await desktop.dialog({
     title: 'Continue Conversation?',
     message: (

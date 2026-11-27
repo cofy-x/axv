@@ -4,6 +4,7 @@ package protocol
 
 const Version = 3
 const Port uint32 = 1024
+const ProxyPort uint32 = 1025
 
 type Config struct {
 	MachineID   string `json:"machineId"`

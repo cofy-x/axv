@@ -1,6 +1,7 @@
 import { desktopDatabase } from '../../shared/api/desktop';
-import { codexAPI } from './api';
+import { sessionKey } from './api';
 import type { CodexActivity, CodexSessionRecord } from './api';
+import { codexTargetAPI } from './vm-api';
 import { mergeSessionMetadata } from './metadata';
 
 const labels: Record<CodexActivity['state'], string> = {
@@ -40,7 +41,10 @@ export function mergeSessionSnapshot(
   previous: CodexSessionRecord,
   incoming: CodexSessionRecord,
 ): CodexSessionRecord {
-  if (previous.id !== incoming.id || previous.runId !== incoming.runId)
+  if (
+    sessionKey(previous) !== sessionKey(incoming) ||
+    previous.runId !== incoming.runId
+  )
     return mergeSessionMetadata(incoming, previous);
   const currentObservation = previous.activity?.observation;
   const incomingObservation = incoming.activity?.observation;
@@ -64,7 +68,7 @@ export function mergeSessionActivity(
   update: CodexSessionRecord,
 ): CodexSessionRecord {
   if (
-    session.id !== update.id ||
+    sessionKey(session) !== sessionKey(update) ||
     session.runId !== update.runId ||
     !update.activity
   )
@@ -112,7 +116,7 @@ const observations = new Map<string, CachedActivity>();
 export function publishSessionActivity(session: CodexSessionRecord) {
   desktopDatabase.assertUnchanged();
   if (!listeners.size || !session.activity) return session;
-  const key = JSON.stringify([session.id, session.runId]);
+  const key = JSON.stringify([sessionKey(session), session.runId]);
   const previous = observations.get(key);
   const incoming = session.activity;
   const instance = incoming.observation.instanceId;
@@ -150,7 +154,7 @@ export function subscribeSessionActivity(listener: Listener) {
 
 export async function reviewSessionActivity(session: CodexSessionRecord) {
   if (!canReviewActivity(session.activity)) return;
-  const updated = await codexAPI.reviewActivity(
+  const updated = await codexTargetAPI(session).reviewActivity(
     session.id,
     session.runId,
     session.activity!.eventId!,

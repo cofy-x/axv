@@ -16,11 +16,14 @@ import { canTransferWindowFocus } from '../../shared/desktop/focus-transfer';
 import { isDesktopTerminalKey } from '../terminal/terminal-keys';
 import {
   codexAPI,
+  sessionKey,
   sessionWindowTitle,
   sessionCanEnd,
   sessionCanContinue,
   otherActiveRun,
 } from './api';
+import { vmCodexAPI } from './vm-api';
+import type { VMTarget } from './vm-api';
 import { CodexConnection } from './session';
 import type { CodexConnectionState } from './session';
 import {
@@ -32,6 +35,8 @@ import { showSessionDetails } from './details';
 import { codexMoreMenu, openCodexSession } from './definition';
 import { publishSessionMetadata, subscribeSessionMetadata } from './metadata';
 import { openTerminalWindow } from '../terminal/definition';
+import { openGuestTerminal } from '../machines/open-terminal';
+import { machinesApi } from '../machines/api';
 import { CodexResumeRequests, continueConversation } from './continuation';
 import { useCodexAvailability } from './CodexContext';
 import { projectsAPI } from '../project-files/api';
@@ -71,6 +76,11 @@ export function CodexTerminal({
 }: AppWindowProps) {
   const id = window.params.sessionId;
   const runId = window.params.runId;
+  const vmHostId = window.params.hostId || '';
+  const vmMachineId = window.params.machineId || '';
+  const vmMachineName = window.params.machineName || vmMachineId;
+  const isVM = window.params.target === 'vm' && !!vmHostId && !!vmMachineId;
+  const currentSessionKey = isVM ? `vm:${vmHostId}:${vmMachineId}:${id}` : id;
   const { info, loading, error: environmentError } = useCodexAvailability();
   const setTitle = desktop.setTitle;
   const screen = useRef<HTMLDivElement>(null);
@@ -228,12 +238,29 @@ export function CodexTerminal({
     const fit = new FitAddon();
     term.loadAddon(fit);
     terminal.current = term;
+    const target: VMTarget | null = isVM
+      ? { hostId: vmHostId, machineId: vmMachineId, machineName: vmMachineName }
+      : null;
     const session = new CodexConnection({
       databaseId: namespace.databaseId,
       sessionId: id,
       runId,
       baseURL: globalThis.location.href,
-      getSession: (signal) => codexAPI.getRun(id, runId, signal),
+      terminalURL: target
+        ? (cols, rows) =>
+            vmCodexAPI.terminalURL(
+              target,
+              id,
+              runId,
+              globalThis.location.href,
+              cols,
+              rows,
+            )
+        : undefined,
+      getSession: (signal) =>
+        target
+          ? vmCodexAPI.getRun(target, id, runId, signal)
+          : codexAPI.getRun(id, runId, signal),
       createSocket: (url) => new WebSocket(url),
       write: (data, done) => term.write(data, done),
       reset: () => {
@@ -401,24 +428,42 @@ export function CodexTerminal({
       terminal.current = null;
       connection.current = null;
     };
-  }, [id, runId, namespace.databaseId, invalidatePaste, recordPasteInput]);
+  }, [
+    id,
+    runId,
+    isVM,
+    vmHostId,
+    vmMachineId,
+    vmMachineName,
+    namespace.databaseId,
+    invalidatePaste,
+    recordPasteInput,
+  ]);
 
   useEffect(() => {
     const unsubscribe = subscribeSessionMetadata((session) => {
-      if (session.id === id) connection.current?.updateMetadata(session);
+      if (sessionKey(session) === currentSessionKey)
+        connection.current?.updateMetadata(session);
     });
     const unsubscribeActivity = subscribeSessionActivity((session) => {
-      if (connection.current?.updateActivity(session)) setMetadataError('');
+      if (
+        sessionKey(session) === currentSessionKey &&
+        connection.current?.updateActivity(session)
+      )
+        setMetadataError('');
     });
     return () => {
       unsubscribe();
       unsubscribeActivity();
     };
-  }, [id, runId]);
+  }, [id, runId, currentSessionKey]);
 
   useEffect(() => {
     let disposed = false;
     let pending: AbortController | null = null;
+    const target: VMTarget | null = isVM
+      ? { hostId: vmHostId, machineId: vmMachineId, machineName: vmMachineName }
+      : null;
     const refresh = async () => {
       if (
         desktopDatabase.getSnapshot() ||
@@ -431,7 +476,9 @@ export function CodexTerminal({
       const controller = new AbortController();
       pending = controller;
       try {
-        const received = await codexAPI.getRun(id, runId, controller.signal);
+        const received = target
+          ? await vmCodexAPI.getRun(target, id, runId, controller.signal)
+          : await codexAPI.getRun(id, runId, controller.signal);
         if (!disposed && !controller.signal.aborted) {
           const session = publishSessionActivity(received);
           connection.current?.updateRunInfo(session);
@@ -465,7 +512,7 @@ export function CodexTerminal({
       globalThis.removeEventListener('focus', focus);
       document.removeEventListener('visibilitychange', visibility);
     };
-  }, [id, runId, visible]);
+  }, [id, runId, visible, isVM, vmHostId, vmMachineId, vmMachineName]);
 
   const review = async (button: HTMLButtonElement) => {
     const session = connection.current?.getSnapshot().session;
@@ -562,9 +609,7 @@ export function CodexTerminal({
     !!state.session &&
     (!!resumePending ||
       (sessionCanContinue(state.session) &&
-        info?.ready === true &&
-        !loading &&
-        !environmentError)) &&
+        (isVM || (info?.ready === true && !loading && !environmentError)))) &&
     !resumeRecoveryError &&
     !continuing;
   const activeRun = state.session ? otherActiveRun(state.session) : undefined;
@@ -597,7 +642,7 @@ export function CodexTerminal({
             ? error.message
             : 'Could not continue the conversation.';
         setFeedback(
-          resumeRequests.current.hasPending(source.id)
+          resumeRequests.current.hasPending(sessionKey(source))
             ? `The continuation result is unknown. Choose Continue again to check the same request, or open the running session if it appears. ${reason}`
             : reason,
         );
@@ -607,7 +652,9 @@ export function CodexTerminal({
       continuingRef.current = false;
       if (mounted.current) {
         setContinuing(false);
-        setResumePending(resumeRequests.current.pendingRequestId(source.id));
+        setResumePending(
+          resumeRequests.current.pendingRequestId(sessionKey(source)),
+        );
       }
     }
   }, [desktop, resumePending]);
@@ -617,7 +664,17 @@ export function CodexTerminal({
     if (!source || !active) return false;
     setFeedback('');
     try {
-      const session = await codexAPI.getRun(source.id, active);
+      const session = isVM
+        ? await vmCodexAPI.getRun(
+            {
+              hostId: vmHostId,
+              machineId: vmMachineId,
+              machineName: vmMachineName,
+            },
+            source.id,
+            active,
+          )
+        : await codexAPI.getRun(source.id, active);
       desktopDatabase.assertUnchanged();
       if (!mounted.current) return false;
       openCodexSession(desktop, session);
@@ -631,7 +688,7 @@ export function CodexTerminal({
         );
       return false;
     }
-  }, [desktop]);
+  }, [desktop, isVM, vmHostId, vmMachineId, vmMachineName]);
   const details = useCallback(async () => {
     const snapshot = connection.current?.getSnapshot();
     const session = snapshot?.session;
@@ -685,12 +742,35 @@ export function CodexTerminal({
   const projectTerminal = useCallback(async () => {
     const session = connection.current?.getSnapshot().session;
     if (!session) return false;
+    if (isVM) {
+      const directory = session.projectPath.replace(/^\/projects\/?/, '');
+      const created = await machinesApi.createTerminal(
+        vmMachineId,
+        crypto.randomUUID(),
+        vmHostId,
+        directory || undefined,
+      );
+      openGuestTerminal(
+        desktop,
+        {
+          id: vmMachineId,
+          hostId: vmHostId,
+          spec: { name: vmMachineName },
+        },
+        created,
+      );
+      return true;
+    }
     openTerminalWindow(desktop, session.projectPath);
     return true;
-  }, [desktop]);
+  }, [desktop, isVM, vmHostId, vmMachineId, vmMachineName]);
   const projectFiles = useCallback(async () => {
     const session = connection.current?.getSnapshot().session;
     if (!session) return false;
+    if (isVM) {
+      desktop.openApp('project-files', { projectLocation: 'vm' });
+      return true;
+    }
     const { project } = await projectsAPI.register(session.projectPath);
     desktopDatabase.assertUnchanged();
     desktop.openApp(
@@ -699,7 +779,7 @@ export function CodexTerminal({
       { title: project.name },
     );
     return true;
-  }, [desktop]);
+  }, [desktop, isVM]);
   useEffect(() => {
     const unregister = [
       commands.register(window.id, 'codex:copy', copy, hasSelection),
@@ -852,6 +932,14 @@ export function CodexTerminal({
           ) : null}
         </div>
         <div className="codex-toolbar-status">
+          {isVM && (
+            <span
+              className="codex-target-badge codex-target-badge--vm"
+              data-testid="codex-target-badge"
+            >
+              VM · {vmMachineName}
+            </span>
+          )}
           {state.session?.archivedAt && (
             <span className="codex-archived-label">Archived</span>
           )}

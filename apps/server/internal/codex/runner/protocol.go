@@ -131,8 +131,13 @@ func historyEnvironment(environment []string, home string) []string {
 	return append(out, "CODEX_HOME="+home)
 }
 
-func startServer(cliPath, project, home string, environment []string) (*ownedProcess, error) {
-	command := exec.Command(cliPath, "app-server", "--listen", "stdio://")
+func startServer(cliPath, project, home string, environment []string, fullAuto bool) (*ownedProcess, error) {
+	args := []string{}
+	if fullAuto {
+		args = append(args, "-c", `approval_policy="never"`, "-c", `sandbox_mode="danger-full-access"`)
+	}
+	args = append(args, "app-server", "--listen", "stdio://")
+	command := exec.Command(cliPath, args...)
 	command.Dir = project
 	command.Env = historyEnvironment(environment, home)
 	command.Stderr = io.Discard
@@ -169,7 +174,7 @@ func VerifyHistory(ctx context.Context, cliPath, project, home string, environme
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	process, err := startServer(cliPath, project, home, environment)
+	process, err := startServer(cliPath, project, home, environment, false)
 	if err != nil {
 		return err
 	}

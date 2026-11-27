@@ -54,6 +54,12 @@ func (s *service) handler() http.Handler {
 	mux.HandleFunc("GET /v1/terminals/{id}", s.terminals.info)
 	mux.HandleFunc("DELETE /v1/terminals/{id}", s.terminals.end)
 	mux.HandleFunc("GET /v1/terminals/{id}/attach", s.terminals.attach)
+	mux.HandleFunc("GET /v1/codex/info", s.codex.handleInfo)
+	mux.HandleFunc("GET /v1/codex/install", s.codex.handleInstallStatus)
+	mux.HandleFunc("POST /v1/codex/install", s.codex.handleInstallStart)
+	mux.HandleFunc("POST /v1/codex/sessions", s.codex.handleCreateSession)
+	mux.HandleFunc("GET /v1/codex/notifications", s.codex.handleNotifications)
+	mux.HandleFunc("/v1/codex/", s.codex.handleProxy)
 	mux.HandleFunc("POST /v1/shutdown", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 		defer cancel()
@@ -85,6 +91,8 @@ func (s *service) handler() http.Handler {
 			capability = "project-tasks"
 		case strings.HasPrefix(r.URL.Path, "/v1/terminals"):
 			capability = "terminals"
+		case strings.HasPrefix(r.URL.Path, "/v1/codex"):
+			capability = "codex"
 		case strings.HasPrefix(r.URL.Path, "/v1/ssh"):
 			capability = "ssh"
 		case strings.HasPrefix(r.URL.Path, "/v1/network"):

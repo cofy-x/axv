@@ -16,12 +16,16 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/cofy-x/axv/apps/server/internal/codex/runner"
 	"github.com/cofy-x/axv/apps/server/internal/guest/image"
 	"github.com/cofy-x/axv/apps/server/internal/guest/protocol"
 	"github.com/mdlayher/vsock"
 )
 
 func Run(args []string, output io.Writer) error {
+	if len(args) == 2 && args[0] == "codex-runner" {
+		return runner.Run(args[1])
+	}
 	flags := flag.NewFlagSet("guest", flag.ContinueOnError)
 	flags.SetOutput(output)
 	configPath := flags.String("config", "/etc/axv/guest.json", "guest identity and project-root JSON")

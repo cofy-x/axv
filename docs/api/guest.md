@@ -15,6 +15,15 @@ Commands, detachable terminals, project files, persistent tasks, read-only GitHu
 | GET | `/terminals/:id` | Single terminal status |
 | DELETE | `/terminals/:id` | Terminate terminal process group |
 | GET | `/terminals/:id/attach` | WebSocket upgrade (disconnect detaches; single active attachment per terminal) |
+| GET | `/codex/info` | Guest Codex dependency, auth mode (`proxy`/`oauth`/`api_key`/`none`), full-auto default & CLI install status (`codex` capability) |
+| POST | `/codex/install` | Explicit on-demand official Codex CLI install/upgrade into VM root disk (`~/.local/bin/codex`) |
+| GET | `/codex/install` | Poll on-demand Codex CLI install status |
+| * | `/codex/sessions/*` | Full Codex conversation/run/activity/WebSocket terminal API confined to `/projects`, backed by VM root-disk SQLite and tmux |
+| GET | `/codex/notifications` | Structured activity notification batches for VM Codex runs |
+
+### In-VM Codex boundary
+
+When a guest declares the `codex` capability, `axv-guest` embeds `internal/codex` and `codex/httpapi` directly on the VM root disk (`~/.local/share/axv/codex/codex.sqlite`, tmux + `axv-guest codex-runner`, `~/.codex` conversation history). New VM Codex sessions default to full-auto sandbox mode (`--dangerously-bypass-approvals-and-sandbox`, `approval_policy="never"`, `sandbox_mode="danger-full-access"`). Credentials never cross from the host into VM disks or project volumes: VMs either authenticate independently with local OAuth (`~/.codex/auth.json`, `0600`) or use the optional host-side zero-credential LLM proxy over Firecracker vsock port **1025** (`AXV_VM_CODEX_API_KEY` / `OPENAI_API_KEY` stays strictly on the host).
 
 Implementation entry points: [`internal/guest`](../../apps/server/internal/guest), wire types in [`guest/protocol`](../../apps/server/internal/guest/protocol/protocol.go) and host transport in [`compute/guest_client.go`](../../apps/server/internal/compute/guest_client.go).
 

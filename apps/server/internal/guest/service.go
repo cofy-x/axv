@@ -23,6 +23,7 @@ type service struct {
 	projectFilesMu sync.Mutex
 	terminals      *terminals
 	tasks          *projectTasks
+	codex          *guestCodex
 	taskError      error
 	access         *access.Server
 	capabilities   []string
@@ -43,12 +44,16 @@ func newService(ctx context.Context, config protocol.Config, bootID string, capa
 	}
 	s.access = access.New(ctx, config.MachineID, bootID)
 	s.terminals = newTerminals(s)
+	s.codex = newGuestCodex(s)
 	return s
 }
 
 func (s *service) close() {
 	s.cancel()
 	s.terminals.close()
+	if s.codex != nil {
+		s.codex.close()
+	}
 	if s.tasks != nil {
 		s.tasks.close()
 	}

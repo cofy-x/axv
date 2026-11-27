@@ -1,6 +1,7 @@
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
-import { codexAPI, sessionTitle } from './api';
+import { sessionTitle } from './api';
 import type { CodexSessionRecord } from './api';
+import { codexTargetAPI } from './vm-api';
 import { APIError } from '../../shared/api/http';
 import { publishSessionMetadata } from './metadata';
 
@@ -17,7 +18,7 @@ export async function confirmEndSession(
     ],
   });
   return answer?.button === 'end'
-    ? codexAPI.end(session.id, session.runId)
+    ? codexTargetAPI(session).end(session.id, session.runId)
     : null;
 }
 
@@ -49,7 +50,7 @@ export async function renameSession(
     if (answer?.button !== 'rename') return null;
     draft = answer.value;
     try {
-      const updated = await codexAPI.update(current.id, {
+      const updated = await codexTargetAPI(current).update(current.id, {
         revision: current.metadataRevision,
         title: draft,
       });
@@ -62,7 +63,7 @@ export async function renameSession(
           : 'Could not rename the session.';
       if (metadataConflict(error)) {
         try {
-          current = await codexAPI.get(current.id);
+          current = await codexTargetAPI(current).get(current.id);
           publishSessionMetadata(current);
           feedback = `This session changed elsewhere. Its current name is “${sessionTitle(current)}”. Review your name and choose Rename again to apply it.`;
         } catch (refreshError) {
@@ -74,8 +75,9 @@ export async function renameSession(
 }
 
 export async function setSessionArchived(session: CodexSessionRecord) {
+  const api = codexTargetAPI(session);
   try {
-    const updated = await codexAPI.update(session.id, {
+    const updated = await api.update(session.id, {
       revision: session.metadataRevision,
       archived: !session.archivedAt,
     });
@@ -83,7 +85,7 @@ export async function setSessionArchived(session: CodexSessionRecord) {
     return updated;
   } catch (error) {
     if (!metadataConflict(error)) throw error;
-    const current = await codexAPI.get(session.id);
+    const current = await api.get(session.id);
     publishSessionMetadata(current);
     throw new Error(
       'This session changed elsewhere. Review its latest details, then choose Archive or Unarchive again.',

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { IconButton } from '@cofy-x/axv-nextstep';
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
 import type { CodexSessionRecord } from './api';
-import { sessionTitle } from './api';
+import { isVMSession, sessionTitle } from './api';
 import { activityLabel } from './activity';
 import { openTerminalWindow } from '../terminal/definition';
 
@@ -57,7 +57,11 @@ function SessionDetails({
           </>
         )}
         <dt>Target</dt>
-        <dd>Host</dd>
+        <dd>
+          {isVMSession(session)
+            ? `VM · ${session.machineName || session.machineId}${session.fullAuto ? ' (Full-Auto sandbox)' : ''}`
+            : 'Host'}
+        </dd>
         <dt>Project</dt>
         <dd>
           <code>{session.projectPath}</code>
@@ -133,15 +137,16 @@ export async function showSessionDetails(
   session: CodexSessionRecord,
   terminal?: TerminalDetails,
 ) {
+  const vmSession = isVMSession(session);
   const answer = await desktop.dialog({
     title: 'Codex Session Details',
     message: <SessionDetails session={session} terminal={terminal} />,
     buttons: [
-      { label: 'Host Terminal', value: 'terminal' },
+      ...(vmSession ? [] : [{ label: 'Host Terminal', value: 'terminal' }]),
       { label: 'Close', value: 'close', default: true, cancel: true },
     ],
   });
-  if (answer?.button === 'terminal')
+  if (!vmSession && answer?.button === 'terminal')
     openTerminalWindow(desktop, session.projectPath);
   return answer;
 }

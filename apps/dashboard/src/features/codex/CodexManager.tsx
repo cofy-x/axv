@@ -17,13 +17,20 @@ import {
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import {
   codexAPI,
+  isVMSession,
   projectName,
+  sessionKey,
   sessionTitle,
   sessionIsLive,
   sessionCanEnd,
   sessionCanContinue,
 } from './api';
 import type { CodexProject, CodexSessionRecord } from './api';
+import { vmCodexAPI } from './vm-api';
+import { VMNewSessionPanel } from './VMNewSessionPanel';
+import { machinesApi } from '../machines/api';
+import type { Machine } from '../machines/types';
+import { openGuestTerminal } from '../machines/open-terminal';
 import { useCodexAvailability } from './CodexContext';
 import { openCodexEnvironment, openCodexSession } from './definition';
 import {
@@ -91,6 +98,13 @@ export function CodexManager({
       : '');
   const setTitle = desktop.setTitle;
   const [sessions, setSessions] = useState<CodexSessionRecord[]>([]);
+  const [vmMachines, setVmMachines] = useState<Machine[]>([]);
+  const [choosingVM, setChoosingVM] = useState(
+    () => !!window.params.newVmMachineId,
+  );
+  const [targetFilter, setTargetFilter] = useState<'all' | 'host' | 'vm'>(
+    'all',
+  );
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [projects, setProjects] = useState<CodexProject[]>([]);
   const [projectError, setProjectError] = useState('');
@@ -145,14 +159,22 @@ export function CodexManager({
   );
 
   useEffect(() => {
+    if (window.params.newVmMachineId) {
+      setChoosingVM(true);
+      closeFolderPicker();
+    }
+  }, [window.params.newVmMachineId, closeFolderPicker]);
+
+  useEffect(() => {
     const recovery = new Map<string, ContinuationRecovery>();
     for (const session of sessions) {
+      const key = sessionKey(session);
       try {
-        recovery.set(session.id, {
+        recovery.set(key, {
           requestId: resumeRequests.current.restore(session)?.requestId,
         });
       } catch (error) {
-        recovery.set(session.id, {
+        recovery.set(key, {
           error: error instanceof Error ? error.message : String(error),
         });
       }
@@ -169,19 +191,55 @@ export function CodexManager({
     const controller = new AbortController();
     listing.current = controller;
     try {
-      const result = await codexAPI.list(controller.signal);
+      const [hostResult, machinesResult] = await Promise.all([
+        codexAPI.list(controller.signal),
+        machinesApi
+          .machines(controller.signal)
+          .catch(() => ({ machines: [] as Machine[] })),
+      ]);
+      desktopDatabase.assertUnchanged();
+      const machines = Array.isArray(machinesResult.machines)
+        ? machinesResult.machines
+        : [];
+      const codexRunning = machines.filter(
+        (machine) =>
+          machine.status === 'running' &&
+          machine.ready &&
+          machine.guestCapabilities?.includes('codex'),
+      );
+      const vmSessionBatches = await Promise.all(
+        codexRunning.map((machine) =>
+          vmCodexAPI
+            .list(
+              {
+                hostId: machine.hostId,
+                machineId: machine.id,
+                machineName: machine.spec.name || machine.id,
+              },
+              controller.signal,
+            )
+            .then((result) => result.sessions)
+            .catch(() => [] as CodexSessionRecord[]),
+        ),
+      );
       desktopDatabase.assertUnchanged();
       if (!controller.signal.aborted && mounted.current) {
-        const snapshots = result.sessions.map((session) =>
+        setVmMachines(machines);
+        const combined = [
+          ...hostResult.sessions,
+          ...vmSessionBatches.flat(),
+        ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        const snapshots = combined.map((session) =>
           publishSessionActivity(session),
         );
         setSessions((current) =>
           snapshots.map((session) => {
-            const previous = current.find((item) => item.id === session.id);
+            const key = sessionKey(session);
+            const previous = current.find((item) => sessionKey(item) === key);
             return previous ? mergeSessionSnapshot(previous, session) : session;
           }),
         );
-        for (const session of result.sessions) {
+        for (const session of combined) {
           publishSessionMetadata(session);
         }
         setSessionsLoaded(true);
@@ -387,7 +445,8 @@ export function CodexManager({
 
   const end = async (session: CodexSessionRecord) => {
     if (ending) return;
-    setEnding(session.id);
+    const key = sessionKey(session);
+    setEnding(key);
     setActionError('');
     try {
       const result = await confirmEndSession(desktop, session);
@@ -395,7 +454,8 @@ export function CodexManager({
         const snapshot = publishSessionActivity(result);
         setSessions((current) =>
           current.map((item) =>
-            item.id === result.id && item.runId === result.runId
+            sessionKey(item) === sessionKey(result) &&
+            item.runId === result.runId
               ? mergeSessionSnapshot(item, snapshot)
               : mergeSessionMetadata(item, result),
           ),
@@ -419,7 +479,7 @@ export function CodexManager({
     action: 'rename' | 'archive',
   ) => {
     if (changingMetadata) return;
-    setChangingMetadata(session.id);
+    setChangingMetadata(sessionKey(session));
     setActionError('');
     try {
       if (action === 'rename') await renameSession(desktop, session);
@@ -443,7 +503,8 @@ export function CodexManager({
     continuingRequest.current = true;
     const intent = {};
     launchIntent.current = intent;
-    setContinuing(session.id);
+    const key = sessionKey(session);
+    setContinuing(key);
     setActionError('');
     setStartNotice('');
     try {
@@ -477,7 +538,7 @@ export function CodexManager({
             ? error.message
             : 'Could not continue the conversation.';
         setActionError(
-          resumeRequests.current.hasPending(session.id)
+          resumeRequests.current.hasPending(key)
             ? `The continuation result is unknown. Choose Continue again to check the same request, or open the running session if it appears. ${reason}`
             : reason,
         );
@@ -496,7 +557,7 @@ export function CodexManager({
     if (reviewingRequest.current || !canReviewActivity(session.activity))
       return;
     reviewingRequest.current = true;
-    setReviewing(session.id);
+    setReviewing(sessionKey(session));
     setActionError('');
     try {
       await reviewSessionActivity(session);
@@ -514,7 +575,14 @@ export function CodexManager({
       if (mounted.current) setReviewing(null);
     }
   };
-  const scopedSessions = sessions;
+  const hasVMSessions = sessions.some(isVMSession);
+  const showVMControls = vmMachines.length > 0 || hasVMSessions || choosingVM;
+  const scopedSessions =
+    targetFilter === 'all'
+      ? sessions
+      : targetFilter === 'vm'
+        ? sessions.filter(isVMSession)
+        : sessions.filter((session) => !isVMSession(session));
   const attentionCount = scopedSessions.filter((session) =>
     hasActivityAction(session.activity),
   ).length;
@@ -704,11 +772,31 @@ export function CodexManager({
           disabled={!canChooseFolder}
           aria-expanded={choosingFolder}
           aria-controls="codex-folder-picker"
-          onClick={toggleFolderPicker}
+          onClick={() => {
+            setChoosingVM(false);
+            toggleFolderPicker();
+          }}
         >
           New in Folder
           <span className="codex-folder-chevron" aria-hidden="true" />
         </Button>
+        {showVMControls && (
+          <Button
+            aria-expanded={choosingVM}
+            aria-controls="codex-vm-picker"
+            onClick={() => {
+              if (choosingVM) {
+                setChoosingVM(false);
+              } else {
+                closePicker();
+                setChoosingVM(true);
+              }
+            }}
+          >
+            New in VM
+            <span className="codex-folder-chevron" aria-hidden="true" />
+          </Button>
+        )}
         <div className="codex-manager-tools">
           <IconButton
             icon="refresh"
@@ -961,6 +1049,22 @@ export function CodexManager({
               </div>
             </section>
           )}
+          {choosingVM && (
+            <VMNewSessionPanel
+              desktop={desktop}
+              machines={vmMachines}
+              initialMachineId={window.params.newVmMachineId}
+              initialProjectPath={window.params.newVmProjectPath}
+              onClose={() => setChoosingVM(false)}
+              onStarted={(session) => {
+                setChoosingVM(false);
+                setBaseFilter('unarchived');
+                setShowAttention(false);
+                openCodexSession(desktop, session);
+                void refresh();
+              }}
+            />
+          )}
           {actionError && (
             <p className="app-error" role="alert">
               {actionError}
@@ -997,28 +1101,48 @@ export function CodexManager({
                 </Button>
               )}
             </div>
-            <ButtonGroup label="Session list">
-              <Button
-                aria-pressed={filter === 'unarchived'}
-                data-session-filter="unarchived"
-                onClick={() => {
-                  setBaseFilter('unarchived');
-                  setShowAttention(false);
-                }}
-              >
-                Unarchived
-              </Button>
-              <Button
-                aria-pressed={filter === 'archived'}
-                data-session-filter="archived"
-                onClick={() => {
-                  setBaseFilter('archived');
-                  setShowAttention(false);
-                }}
-              >
-                Archived
-              </Button>
-            </ButtonGroup>
+            <div className="codex-session-filters">
+              {showVMControls && (
+                <ButtonGroup label="Target filter">
+                  {(['all', 'host', 'vm'] as const).map((target) => (
+                    <Button
+                      key={target}
+                      aria-pressed={targetFilter === target}
+                      data-target-filter={target}
+                      onClick={() => setTargetFilter(target)}
+                    >
+                      {target === 'all'
+                        ? 'All'
+                        : target === 'host'
+                          ? 'Host'
+                          : 'VM'}
+                    </Button>
+                  ))}
+                </ButtonGroup>
+              )}
+              <ButtonGroup label="Session list">
+                <Button
+                  aria-pressed={filter === 'unarchived'}
+                  data-session-filter="unarchived"
+                  onClick={() => {
+                    setBaseFilter('unarchived');
+                    setShowAttention(false);
+                  }}
+                >
+                  Unarchived
+                </Button>
+                <Button
+                  aria-pressed={filter === 'archived'}
+                  data-session-filter="archived"
+                  onClick={() => {
+                    setBaseFilter('archived');
+                    setShowAttention(false);
+                  }}
+                >
+                  Archived
+                </Button>
+              </ButtonGroup>
+            </div>
           </div>
           {(!sessionsLoaded || workingCount > 0) && (
             <p
@@ -1064,7 +1188,9 @@ export function CodexManager({
           )}
           <ul className="codex-session-list">
             {visibleSessions.map((session) => {
-              const recovery = continuationRecovery.get(session.id);
+              const key = sessionKey(session);
+              const vmSession = isVMSession(session);
+              const recovery = continuationRecovery.get(key);
               const ended = session.status === 'ended';
               const showActivity =
                 !ended ||
@@ -1074,17 +1200,33 @@ export function CodexManager({
               const canContinue =
                 !recovery?.error &&
                 (!!recovery?.requestId ||
-                  (sessionCanContinue(session) && canStart));
+                  (sessionCanContinue(session) && (vmSession || canStart)));
               return (
                 <li
-                  key={session.id}
+                  key={key}
                   data-session-id={session.id}
+                  data-session-target={vmSession ? 'vm' : 'host'}
                   data-run-id={session.runId}
                   data-action-needed={hasActivityAction(session.activity)}
                 >
                   <div className="codex-session-summary">
                     <div className="codex-session-header">
                       <strong>{sessionTitle(session)}</strong>
+                      {vmSession ? (
+                        <span
+                          className="codex-target-badge codex-target-badge--vm"
+                          data-testid="codex-session-target"
+                        >
+                          VM · {session.machineName || session.machineId}
+                        </span>
+                      ) : hasVMSessions ? (
+                        <span
+                          className="codex-target-badge"
+                          data-testid="codex-session-target"
+                        >
+                          Host
+                        </span>
+                      ) : null}
                       {(sessionNameCounts.get(sessionTitle(session)) || 0) >
                         1 && (
                         <code
@@ -1112,7 +1254,7 @@ export function CodexManager({
                           filter === 'attention' &&
                           ' · Archived'}
                       </span>
-                      {ending === session.id
+                      {ending === key
                         ? ' · Ending…'
                         : session.status !== 'running' &&
                           ` · Run ${session.status}`}
@@ -1137,8 +1279,7 @@ export function CodexManager({
                       data-session-primary-action
                       disabled={
                         !hasActivityAction(session.activity) &&
-                        (continuing === session.id ||
-                          (shouldContinue && !canContinue))
+                        (continuing === key || (shouldContinue && !canContinue))
                       }
                       onClick={() => {
                         setStartNotice('');
@@ -1155,7 +1296,7 @@ export function CodexManager({
                     >
                       {hasActivityAction(session.activity)
                         ? 'Open'
-                        : continuing === session.id
+                        : continuing === key
                           ? 'Continuing…'
                           : recovery?.requestId
                             ? 'Resolve Continue'
@@ -1171,18 +1312,14 @@ export function CodexManager({
                           disabled={reviewing !== null}
                           onClick={() => void review(session)}
                         >
-                          {reviewing === session.id
-                            ? 'Dismissing…'
-                            : 'Dismiss alert'}
+                          {reviewing === key ? 'Dismissing…' : 'Dismiss alert'}
                         </Button>
                       )}
                     <IconButton
                       icon="more"
                       label={`More session actions for ${sessionTitle(session)}, run ${session.runId.slice(0, 8)}`}
                       aria-haspopup="menu"
-                      disabled={
-                        changingMetadata === session.id || ending === session.id
-                      }
+                      disabled={changingMetadata === key || ending === key}
                       onClick={(event) => {
                         const rect =
                           event.currentTarget.getBoundingClientRect();
@@ -1197,7 +1334,7 @@ export function CodexManager({
                               ? [
                                   {
                                     label:
-                                      reviewing === session.id
+                                      reviewing === key
                                         ? 'Dismissing…'
                                         : 'Dismiss alert',
                                     disabled: reviewing !== null,
@@ -1232,15 +1369,55 @@ export function CodexManager({
                               action: () =>
                                 void changeMetadata(session, 'archive'),
                             },
-                            {
-                              label: 'Host Terminal',
-                              action: () => {
-                                openTerminalWindow(
-                                  desktop,
-                                  session.projectPath,
-                                );
-                              },
-                            },
+                            vmSession
+                              ? {
+                                  label: 'VM Terminal',
+                                  action: () => {
+                                    const dir = session.projectPath.replace(
+                                      /^\/projects\/?/,
+                                      '',
+                                    );
+                                    void machinesApi
+                                      .createTerminal(
+                                        session.machineId!,
+                                        crypto.randomUUID(),
+                                        session.hostId!,
+                                        dir || undefined,
+                                      )
+                                      .then((terminal) =>
+                                        openGuestTerminal(
+                                          desktop,
+                                          {
+                                            id: session.machineId!,
+                                            hostId: session.hostId!,
+                                            spec: {
+                                              name:
+                                                session.machineName ||
+                                                session.machineId!,
+                                            },
+                                          },
+                                          terminal,
+                                        ),
+                                      )
+                                      .catch((err: unknown) => {
+                                        if (mounted.current)
+                                          setActionError(
+                                            err instanceof Error
+                                              ? err.message
+                                              : 'Could not open VM terminal.',
+                                          );
+                                      });
+                                  },
+                                }
+                              : {
+                                  label: 'Host Terminal',
+                                  action: () => {
+                                    openTerminalWindow(
+                                      desktop,
+                                      session.projectPath,
+                                    );
+                                  },
+                                },
                             { separator: true },
                             {
                               label: 'End Session',
@@ -1267,7 +1444,12 @@ export function CodexManager({
         <span role="status" data-testid="codex-environment-status">
           Host · {status}
         </span>
-        <span>{sessions.filter(sessionCanEnd).length} active / 4 maximum</span>
+        <span>
+          {sessions.filter((s) => !isVMSession(s) && sessionCanEnd(s)).length}{' '}
+          active / 4 maximum
+          {hasVMSessions &&
+            ` · ${sessions.filter((s) => isVMSession(s) && sessionCanEnd(s)).length} VM active`}
+        </span>
       </StatusBar>
     </div>
   );

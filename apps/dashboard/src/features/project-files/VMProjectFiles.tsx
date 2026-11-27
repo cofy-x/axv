@@ -15,6 +15,8 @@ import {
   guestTerminalRequests,
   openGuestTerminal,
 } from '../machines/open-terminal';
+import { openCodexSession } from '../codex/definition';
+import { vmCodexAPI } from '../codex/vm-api';
 import { VMProjectPreviews } from './VMProjectPreviews';
 import { VMProjectBackups } from './VMProjectBackups';
 import { VMProjectGitHub } from './VMProjectGitHub';
@@ -819,6 +821,46 @@ export function VMProjectFiles({
       </Button>
     );
   const [openingTerminal, setOpeningTerminal] = useState(false);
+  const [openingCodex, setOpeningCodex] = useState(false);
+  const openProjectCodex = async () => {
+    if (!binding || openingCodex) return;
+    setOpeningCodex(true);
+    setFeedback(null);
+    const relativePath = [project?.root, folder].filter(Boolean).join('/');
+    const target = {
+      hostId: binding.hostId,
+      machineId: binding.machineId,
+      machineName: project?.name || binding.machineId,
+    };
+    try {
+      const info = await vmCodexAPI.info(target);
+      if (!mounted.current) return;
+      if (!info.ready) {
+        desktop.openApp('codex', {
+          newVmHostId: binding.hostId,
+          newVmMachineId: binding.machineId,
+          newVmProjectPath: relativePath,
+        });
+        return;
+      }
+      const session = await vmCodexAPI.create(
+        target,
+        crypto.randomUUID(),
+        relativePath ? `/projects/${relativePath}` : undefined,
+      );
+      if (mounted.current) openCodexSession(desktop, session);
+    } catch {
+      if (mounted.current) {
+        desktop.openApp('codex', {
+          newVmHostId: binding.hostId,
+          newVmMachineId: binding.machineId,
+          newVmProjectPath: relativePath,
+        });
+      }
+    } finally {
+      if (mounted.current) setOpeningCodex(false);
+    }
+  };
   const openProjectTerminal = async () => {
     if (!binding || openingTerminal) return;
     setOpeningTerminal(true);
@@ -864,6 +906,12 @@ export function VMProjectFiles({
             onClick={() => void openProjectTerminal()}
           >
             {openingTerminal ? 'Opening Terminal…' : 'Terminal'}
+          </Button>
+          <Button
+            disabled={!windowInteractive || !binding || openingCodex}
+            onClick={() => void openProjectCodex()}
+          >
+            {openingCodex ? 'Opening Codex…' : 'Codex'}
           </Button>
           <Button
             disabled={!windowInteractive}
