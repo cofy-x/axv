@@ -159,6 +159,7 @@ async function host(
     else if (path === '/volumes') value = { volumes: state.volumes };
     else if (path === '/operations') value = { operations: state.operations };
     else if (path === '/images') value = { images: state.images };
+    else if (path === '/projects') value = { projects: [] };
     else if (path.endsWith('/guest/terminals')) value = { terminals: [] };
     else throw new Error(`Unexpected compute request ${method} ${path}`);
     await route.fulfill({ json: value });
@@ -725,3 +726,121 @@ for (const resource of ['volume', 'image'] as const) {
     await expect(selectedOperation).toContainText('Queued');
   });
 }
+
+test('New VM chains into scoped project setup and unlocks automatically once the VM is ready', async ({
+  page,
+}) => {
+  const state = fixture();
+  state.images[0] = {
+    ...state.images[0],
+    guest: {
+      imageVersion: 2,
+      protocolVersion: 1,
+      capabilities: [
+        'terminal',
+        'project-files',
+        'project-tasks',
+        'project-initialization',
+      ],
+    },
+  };
+  const manager = await host(page, state, async (route, path) => {
+    if (path !== '/machines') return;
+    const createdVolume = {
+      id: 'vol-chained-setup',
+      name: 'Chained VM',
+      revision: 1,
+      provider: 'lima',
+      sizeGiB: 16,
+      retain: true,
+      machineId: 'vm-chained-setup',
+      status: 'ready',
+    };
+    const createdMachine = {
+      ...state.machines[0],
+      id: 'vm-chained-setup',
+      revision: 1,
+      desired: 'running',
+      status: 'starting',
+      ready: false,
+      guestState: 'starting',
+      guestCapabilities: [
+        'terminal',
+        'project-files',
+        'project-tasks',
+        'project-initialization',
+      ],
+      spec: {
+        ...state.machines[0].spec,
+        name: 'Chained VM',
+        volumeId: createdVolume.id,
+        retainVolume: true,
+      },
+    };
+    state.volumes = [...state.volumes, createdVolume];
+    state.machines = [...state.machines, createdMachine];
+    await route.fulfill({
+      status: 202,
+      json: {
+        machine: createdMachine,
+        operation: {
+          id: 'op-chained-create',
+          machineId: createdMachine.id,
+          action: 'create',
+          status: 'running',
+          createdAt: '2026-10-17T00:05:00Z',
+        },
+      },
+    });
+  });
+
+  await manager.getByRole('button', { name: 'New VM', exact: true }).click();
+  const create = page.locator('[data-window-id="machine-create:main"]');
+  await create.getByLabel('Name', { exact: true }).fill('Chained VM');
+  await create
+    .getByRole('combobox', { name: 'After creation', exact: true })
+    .selectOption('clone');
+  await create
+    .getByRole('button', { name: 'Create & Start', exact: true })
+    .click();
+
+  const setup = page.locator('[data-app-id="project-files"]').last();
+  await expect(setup).toContainText('Waiting for VM “Chained VM”');
+  await expect(
+    setup.getByRole('combobox', { name: 'Project action', exact: true }),
+  ).toHaveValue('clone');
+
+  state.machines = state.machines.map((machine) =>
+    machine.id === 'vm-chained-setup'
+      ? {
+          ...machine,
+          status: 'running',
+          ready: true,
+          guestState: 'ready',
+        }
+      : machine,
+  );
+
+  await expect(
+    setup.getByLabel('Repository URL', { exact: true }),
+  ).toBeVisible();
+  await expect(setup).not.toContainText('Waiting for VM “Chained VM”');
+});
+
+test('Welcome shows live Workspace overview when VMs exist', async ({
+  page,
+}) => {
+  const state = fixture();
+  await host(page, state);
+  await page
+    .getByRole('button', { name: /Welcome · 1 running window/ })
+    .click();
+  const welcome = page.locator('[data-app-id="welcome"]');
+  const overview = welcome.getByRole('region', { name: 'Workspace overview' });
+  await expect(overview).toBeVisible();
+  await expect(overview).toContainText('Form VM');
+  await overview.getByRole('button', { name: 'Inspect', exact: true }).click();
+  await expect(
+    page.locator('[data-app-id="machine-inspector"]').last(),
+  ).toBeVisible();
+});

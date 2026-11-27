@@ -56,6 +56,9 @@
 .project-launcher-fallback,
 .project-workspace-quick {
   margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .project-register-form {
   display: grid;

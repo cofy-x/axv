@@ -145,6 +145,7 @@ async function host(page: Page, state: ReturnType<typeof fixture>) {
           },
         ],
       };
+    else if (path === '/projects') value = { projects: [] };
     else if (path.endsWith('/guest/terminals')) {
       state.terminalReads++;
       value = { terminals: [] };

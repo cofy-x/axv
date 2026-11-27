@@ -69,6 +69,144 @@
   display: block;
   color: #333;
 }
+.welcome-workspace {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ns-shadow);
+  display: grid;
+  gap: 10px;
+}
+.welcome-workspace-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.welcome-workspace-header h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+.welcome-workspace-summary {
+  display: block;
+  font-size: var(--ns-font-size-secondary);
+  color: #3a3a3a;
+  margin-top: 2px;
+}
+.welcome-workspace-error {
+  margin: 0;
+  padding: 6px 8px;
+  background: #f5dede;
+  border: 1px solid #9b2626;
+  color: #6b1111;
+  font-size: var(--ns-font-size-secondary);
+}
+.welcome-section {
+  display: grid;
+  gap: 5px;
+}
+.welcome-section h3 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #444;
+}
+.welcome-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.welcome-section-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: #1f4d7a;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.welcome-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 5px;
+}
+.welcome-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+  background: color-mix(in srgb, var(--ns-face), var(--ns-light) 35%);
+  border: 1px solid var(--ns-shadow);
+  box-shadow: inset 1px 1px 0 var(--ns-light);
+  min-width: 0;
+}
+.welcome-item.is-attention {
+  background: #f8eed9;
+  border-color: #9e6a11;
+}
+.welcome-item-main {
+  min-width: 0;
+  flex: 1;
+}
+.welcome-item-main strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.welcome-item-main small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: #3d3d3d;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.welcome-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.welcome-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #777;
+  flex-shrink: 0;
+}
+.welcome-status-dot[data-status='running'] {
+  background: #1f7a3d;
+}
+.welcome-status-dot[data-status='starting'],
+.welcome-status-dot[data-status='stopping'] {
+  background: #b56c00;
+}
+.welcome-status-dot[data-status='failed'] {
+  background: #b3261e;
+}
+.welcome-badge {
+  display: inline-block;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  background: #dcdcdc;
+  border: 1px solid var(--ns-shadow);
+  color: #222;
+  flex-shrink: 0;
+}
 .welcome-install-guide p {
   margin: 0;
 }

@@ -344,6 +344,7 @@ async function host(page: Page, state: PreparationFixture) {
             ]
           : [],
       };
+    else if (path === '/projects') value = { projects: [] };
     else throw new Error(`Unexpected preparation read ${path}`);
     await route.fulfill({ json: value });
   });
