@@ -1,13 +1,12 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
-import { Button, Field, IconButton, Select } from '@cofy-x/axv-nextstep';
+import { useEffect, useRef, useState } from 'react';
+import { Button, Field, Select } from '@cofy-x/axv-nextstep';
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
-import type { PreparationPlan, PreparationRequirement } from './api';
+import type { PreparationPlan } from './api';
 import {
   defaultFirecrackerSocket,
   preparationDraft,
   preparationDraftError,
   preparationRequest,
-  preparationSize,
 } from './preparation-form';
 import type { PreparationDraft } from './preparation-form';
 import { preparationRunning } from './preparation-store';
@@ -15,6 +14,9 @@ import { operationError } from './operation-requests';
 import { humanize, linuxVMSetupGuide } from './presentation';
 import type { useCompute } from './useCompute';
 import { openMachineDiagnostics } from './MachineDiagnostics';
+import { EnvironmentChecks, HostOverview } from './HostOverview';
+import { PreparationProgress } from './PreparationProgress';
+import { PreparationReview } from './PreparationReview';
 import {
   getHostServiceGuidance,
   HostServiceGuidance,
@@ -27,48 +29,6 @@ const serviceStatusLabel = {
   unavailable: 'Firecracker service unavailable',
   ready: 'Firecracker service detected',
 };
-
-function Checks({ checks }: { checks: PreparationRequirement[] }) {
-  function list(items: PreparationRequirement[]) {
-    return (
-      <ul
-        className="machines-environment-checks"
-        aria-label="Environment checks"
-      >
-        {items.map((check) => (
-          <li key={check.id} data-state={check.status}>
-            <span className="machines-check-state">
-              {check.status === 'ready'
-                ? 'Ready'
-                : check.status === 'needed'
-                  ? 'Needed'
-                  : 'Needs attention'}
-            </span>
-            <div>
-              <strong>{check.label}</strong>
-              <p>{check.detail}</p>
-            </div>
-          </li>
-        ))}
-      </ul>
-    );
-  }
-
-  const blocked = checks.filter((check) => check.status === 'blocked');
-  const other = checks.filter((check) => check.status !== 'blocked');
-
-  return (
-    <>
-      {!!blocked.length && list(blocked)}
-      {!!other.length && (
-        <details className="machines-technical">
-          <summary>Environment checks ({other.length})</summary>
-          {list(other)}
-        </details>
-      )}
-    </>
-  );
-}
 
 export function MachineEnvironment({
   data,
@@ -367,95 +327,16 @@ export function MachineEnvironment({
     void openMachineDiagnostics(desktop, data, { status, detail, connection });
   }
 
-  const capacity = info?.capacity;
-  const hostPlatformLabel = [
-    platform === 'darwin' ? 'macOS' : platform && humanize(platform),
-    check?.arch || info?.hostArch,
-  ]
-    .filter(Boolean)
-    .join(' · ');
-  const hostRuntimeLabel =
-    runtime && runtime.state !== 'not_configured'
-      ? [humanize(runtime.state), runtime.mode && humanize(runtime.mode)]
-          .filter(Boolean)
-          .join(' · ')
-      : '';
-  const runningVMs = data.machines.filter((m) => m.status === 'running').length;
-  const readyImages = data.images.filter(
-    (img) =>
-      !img.status || img.status === 'ready' || img.status === 'configured',
-  ).length;
-  const hostCapacity = capacity && (
-    <>
-      <div className="machines-host-limits">
-        <h3>Capacity limits</h3>
-        <dl className="machines-host-capacity">
-          <div>
-            <dt>CPUs</dt>
-            <dd>{capacity.cpus}</dd>
-          </div>
-          <div>
-            <dt>Memory</dt>
-            <dd>
-              {capacity.memoryMiB % 1024 === 0
-                ? `${capacity.memoryMiB / 1024} GiB`
-                : `${capacity.memoryMiB} MiB`}
-            </dd>
-          </div>
-          <div>
-            <dt>Storage</dt>
-            <dd>{capacity.diskGiB} GiB</dd>
-          </div>
-          <div>
-            <dt>VM slots</dt>
-            <dd>
-              {data.machines.length} of {capacity.machines} used
-            </dd>
-          </div>
-        </dl>
-      </div>
-      <div className="machines-host-details">
-        <h3>Host &amp; providers</h3>
-        <dl className="info-list machines-details machines-host-overview-list">
-          {hostPlatformLabel && (
-            <>
-              <dt>Platform</dt>
-              <dd>{hostPlatformLabel}</dd>
-            </>
-          )}
-          {hostRuntimeLabel && (
-            <>
-              <dt>Runtime</dt>
-              <dd>{hostRuntimeLabel}</dd>
-            </>
-          )}
-          <dt>Active inventory</dt>
-          <dd>
-            {runningVMs} running · {data.volumes.length} volume
-            {data.volumes.length === 1 ? '' : 's'} · {readyImages} image
-            {readyImages === 1 ? '' : 's'} ready
-          </dd>
-          {info?.providers?.map((provider) => (
-            <Fragment key={provider.provider}>
-              <dt>{humanize(provider.provider)}</dt>
-              <dd>
-                <span
-                  className="machines-status-dot"
-                  data-status={provider.available ? 'running' : 'failed'}
-                >
-                  {[
-                    provider.available ? 'Available' : 'Unavailable',
-                    provider.version,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </span>
-              </dd>
-            </Fragment>
-          ))}
-        </dl>
-      </div>
-    </>
+  const hostCapacity = (
+    <HostOverview
+      info={info}
+      platform={platform}
+      arch={check?.arch}
+      runtime={runtime}
+      machines={data.machines}
+      volumes={data.volumes}
+      images={data.images}
+    />
   );
   const providerWarnings = info?.providers
     ?.filter(
@@ -576,145 +457,26 @@ export function MachineEnvironment({
             </div>
           )}
           {showJob && job ? (
-            <>
-              {!linux && (
-                <ol
-                  className="machines-preparation-stages"
-                  aria-label="Setup steps"
-                >
-                  <li>1. Settings</li>
-                  <li>2. Review</li>
-                  <li aria-current="step">3. Prepare</li>
-                </ol>
-              )}
-              <p className="machines-preparation-phase" role="status">
-                {humanize(job.status)} · {humanize(job.phase)} · Attempt{' '}
-                {job.attempt}
-              </p>
-              <ol
-                className="machines-preparation-progress"
-                aria-label={
-                  linux ? 'Connection progress' : 'Preparation progress'
-                }
-              >
-                {job.steps.map((step) => (
-                  <li key={step.id} data-state={step.status}>
-                    <div className="machines-step-heading">
-                      <strong>{step.label}</strong>
-                      <span>{humanize(step.status)}</span>
-                    </div>
-                    {step.detail && <p>{step.detail}</p>}
-                    {step.status === 'running' && (
-                      <progress
-                        aria-label={`${step.label} progress`}
-                        value={
-                          step.bytesTotal ? step.bytesDone || 0 : undefined
-                        }
-                        max={step.bytesTotal || undefined}
-                      />
-                    )}
-                    {!!step.bytesDone && (
-                      <p>
-                        {preparationSize(step.bytesDone)}
-                        {step.bytesTotal
-                          ? ` of ${preparationSize(step.bytesTotal)}`
-                          : ' transferred'}
-                      </p>
-                    )}
-                  </li>
-                ))}
-              </ol>
-              {job.error && (
-                <p className="machines-error" role="alert">
-                  {job.error.message}
-                </p>
-              )}
-              {!linux && (
-                <p className="machines-form-help">
-                  {job.committed
-                    ? 'Configuration saved. Remaining work starts and verifies the VM service.'
-                    : running
-                      ? 'Preparation continues after closing this window. Cancel is available until configuration is saved.'
-                      : job.status === 'cancelled'
-                        ? 'Preparation cancelled. Verified downloads are kept for the next attempt.'
-                        : 'Completed files are kept. Retry continues this job with its reviewed settings.'}
-                </p>
-              )}
-              <div className="machines-form-actions">
-                {job.canRetry && (
-                  <Button
-                    disabled={busy || !!preparation.connectionError}
-                    onClick={() => void prepare.retry(job)}
-                  >
-                    Retry
-                  </Button>
-                )}
-                {running && (
-                  <Button
-                    disabled={
-                      !!preparation.mutation ||
-                      !!preparation.pending ||
-                      !job.canCancel ||
-                      job.committed
-                    }
-                    onClick={() => void prepare.cancel(job)}
-                  >
-                    Cancel
-                  </Button>
-                )}
-                {(job.status === 'cancelled' || failed) && (
-                  <Button
-                    disabled={busy}
-                    onClick={() => {
-                      setStage('settings');
-                      setPlan(undefined);
-                      setReviewedJob(jobVersion);
-                    }}
-                  >
-                    Settings
-                  </Button>
-                )}
-                {job.status === 'succeeded' && configured && (
-                  <Button onClick={onShowMachines}>Show VMs</Button>
-                )}
-              </div>
-              {job.status === 'succeeded' && !ready && (
-                <p className="machines-form-help">
-                  {linux
-                    ? 'Connection saved. Checking VM service readiness…'
-                    : 'Preparation completed. Checking VM service readiness…'}
-                </p>
-              )}
-              <details className="machines-technical">
-                <summary>
-                  {linux ? 'Connection details' : 'Reviewed preparation'}
-                </summary>
-                <dl className="info-list machines-details">
-                  <dt>Job</dt>
-                  <dd>
-                    <code>{job.id}</code>
-                  </dd>
-                  <dt>Configuration</dt>
-                  <dd>
-                    <code>{job.plan.configPath}</code>
-                  </dd>
-                  {job.plan.platform === 'darwin' &&
-                    job.plan.request.storageRoot && (
-                      <>
-                        <dt>Storage</dt>
-                        <dd>
-                          <code>{job.plan.request.storageRoot}</code>
-                        </dd>
-                      </>
-                    )}
-                </dl>
-                <ol>
-                  {job.plan.actions.map((action, index) => (
-                    <li key={`${index}:${action}`}>{action}</li>
-                  ))}
-                </ol>
-              </details>
-            </>
+            <PreparationProgress
+              job={job}
+              linux={linux}
+              running={running}
+              failed={failed}
+              busy={busy}
+              ready={ready}
+              configured={configured}
+              hasMutation={!!preparation.mutation}
+              hasPending={!!preparation.pending}
+              hasConnectionError={!!preparation.connectionError}
+              onRetry={() => void prepare.retry(job)}
+              onCancel={() => void prepare.cancel(job)}
+              onSettings={() => {
+                setStage('settings');
+                setPlan(undefined);
+                setReviewedJob(jobVersion);
+              }}
+              onShowMachines={onShowMachines}
+            />
           ) : linuxSetup ? (
             <form
               className="machines-form machines-linux-setup"
@@ -897,133 +659,26 @@ export function MachineEnvironment({
               </div>
             </form>
           ) : showReview && plan ? (
-            <>
-              <ol
-                className="machines-preparation-stages"
-                aria-label="Setup steps"
-              >
-                <li>1. Settings</li>
-                <li aria-current="step">2. Review</li>
-                <li>3. Prepare</li>
-              </ol>
-              <Checks checks={plan.checks} />
-              <dl className="info-list machines-details">
-                <dt>Provider</dt>
-                <dd>
-                  {plan.provider} · {plan.arch}
-                </dd>
-                <dt>Configuration</dt>
-                <dd>
-                  <code>{plan.configPath}</code>
-                </dd>
-                {plan.platform === 'darwin' && plan.request.storageRoot && (
-                  <>
-                    <dt>VM storage</dt>
-                    <dd>
-                      <code>{plan.request.storageRoot}</code>
-                    </dd>
-                  </>
-                )}
-                {plan.platform === 'darwin' && plan.request.limaHome && (
-                  <>
-                    <dt>Lima state</dt>
-                    <dd>
-                      <code>{plan.request.limaHome}</code>
-                    </dd>
-                  </>
-                )}
-                {plan.platform === 'darwin' && !!plan.request.cpus && (
-                  <>
-                    <dt>Resource limits</dt>
-                    <dd>
-                      {plan.request.cpus} CPU · {plan.request.memoryMiB} MiB
-                      memory · {plan.request.diskGiB} GiB storage ·{' '}
-                      {plan.request.machines} VMs
-                    </dd>
-                  </>
-                )}
-                {(plan.request.hostConfig || plan.request.socket) && (
-                  <>
-                    <dt>Local service</dt>
-                    <dd>
-                      <code>
-                        {plan.request.hostConfig || plan.request.socket}
-                      </code>
-                    </dd>
-                  </>
-                )}
-              </dl>
-              <h3>Actions</h3>
-              <ol className="machines-preparation-actions">
-                {plan.actions.map((action, index) => (
-                  <li key={`${index}:${action}`}>{action}</li>
-                ))}
-              </ol>
-              <h3>Downloads</h3>
-              {plan.downloads.length ? (
-                <ul className="machines-preparation-downloads">
-                  {plan.downloads.map((download) => (
-                    <li key={download.id}>
-                      <strong>{download.name}</strong>
-                      <span>
-                        {download.cached
-                          ? 'Verified cached download'
-                          : preparationSize(download.bytes)}
-                      </span>
-                      <a href={download.url} target="_blank" rel="noreferrer">
-                        {download.url}
-                      </a>
-                      <details>
-                        <summary>SHA-256</summary>
-                        <code>{download.sha256}</code>
-                      </details>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p>No downloads are required for this plan.</p>
-              )}
-              {expired && (
-                <p className="machines-warning">
-                  Review expired. Refresh before preparing.
-                </p>
-              )}
-              <div className="machines-form-actions">
-                <Button
-                  disabled={
-                    !plan.canStart ||
-                    busy ||
-                    reviewing ||
-                    expired ||
-                    !!preparation.connectionError
-                  }
-                  onClick={() => void start()}
-                >
-                  {startLabel}
-                </Button>
-                <IconButton
-                  icon="refresh"
-                  label="Refresh Review"
-                  disabled={busy || reviewing}
-                  onClick={() => void review()}
-                />
-                <IconButton
-                  icon="back"
-                  label="Back"
-                  disabled={busy || reviewing}
-                  onClick={() => setStage('settings')}
-                />
-              </div>
-            </>
+            <PreparationReview
+              plan={plan}
+              expired={expired}
+              busy={busy}
+              reviewing={reviewing}
+              hasConnectionError={!!preparation.connectionError}
+              startLabel={startLabel}
+              onStart={() => void start()}
+              onRefresh={() => void review()}
+              onBack={() => setStage('settings')}
+            />
           ) : ready ? (
             <>
               {hostCapacity}
               {providerWarnings}
-              <Checks checks={check.checks} />
+              <EnvironmentChecks checks={check.checks} />
             </>
           ) : (
             <>
-              <Checks checks={check.checks} />
+              <EnvironmentChecks checks={check.checks} />
               {environment?.runtime?.error && (
                 <p className="machines-error">{environment.runtime.error}</p>
               )}

@@ -6,16 +6,10 @@ import {
   useRef,
   useState,
 } from 'react';
-import {
-  Button,
-  Checkbox,
-  Field,
-  IconButton,
-  Select,
-} from '@cofy-x/axv-nextstep';
+import { Button, Checkbox, IconButton, Select } from '@cofy-x/axv-nextstep';
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
 import { machinesApi } from './api';
-import type { ComputeBinding, Machine, Operation, Volume } from './api';
+import type { ComputeBinding, Operation, Volume } from './api';
 import { integer, nameError, resourceBusy } from './form-state';
 import { OperationFeedback, RequestDetails } from './OperationFeedback';
 import { computeStore } from './compute-store';
@@ -24,6 +18,8 @@ import { humanize } from './presentation';
 import type { useCompute } from './useCompute';
 import { isProjectBackup, volumeActionAllowed } from './volume-policy';
 import type { VolumePolicyAction } from './volume-policy';
+import { VolumeEditorForm } from './VolumeEditorForm';
+import type { VolumeEditor } from './VolumeEditorForm';
 
 type VolumeChange = Parameters<typeof machinesApi.volumeAction>[1];
 type VolumeMenuAction = 'rename' | 'resize' | 'detach' | 'delete';
@@ -33,17 +29,6 @@ type VolumeInput = { binding: ComputeBinding } & (
   | { kind: 'action'; volume: Volume; change: VolumeChange }
   | { kind: 'delete'; volume: Volume }
 );
-
-type VolumeEditor = {
-  kind: 'create' | 'copy' | 'rename' | 'resize' | 'retain';
-  provider: string;
-  hostId: string;
-  volume?: Volume;
-  machine?: Machine;
-  name: string;
-  size: string;
-  retain: boolean;
-};
 
 export function VolumeManager({
   data,
@@ -761,96 +746,21 @@ export function VolumeManager({
         </p>
       )}
       {editor && (
-        <form
-          ref={reveal}
-          className="app-pad machines-form machines-volume-editor"
-          onSubmit={(event) => {
-            event.preventDefault();
-            applyEditor();
-          }}
-        >
-          <fieldset disabled={locked}>
-            <legend>
-              {editor.kind === 'create'
-                ? 'New project volume'
-                : `${editor.kind === 'copy' ? 'Copy' : editor.kind === 'rename' ? 'Rename' : editor.kind === 'resize' ? 'Grow' : 'Retention for'} “${editor.volume?.name || editor.volume?.id}”`}
-            </legend>
-            {['create', 'copy', 'rename'].includes(editor.kind) && (
-              <Field
-                label="Volume name"
-                value={editor.name}
-                required
-                maxLength={80}
-                onChange={(event) =>
-                  setEditor({ ...editor, name: event.target.value })
-                }
-              />
-            )}
-            {['create', 'copy', 'resize'].includes(editor.kind) && (
-              <>
-                <Field
-                  label={
-                    editor.kind === 'resize' ? 'New size (GiB)' : 'Size (GiB)'
-                  }
-                  type="number"
-                  min={minimumSize}
-                  max={data.info?.capacity?.diskGiB}
-                  value={editor.size}
-                  required
-                  onChange={(event) =>
-                    setEditor({ ...editor, size: event.target.value })
-                  }
-                />
-                <p className="machines-form-help">
-                  {editor.kind === 'resize'
-                    ? 'Disk space shares the host budget. Disks cannot shrink; an attached VM must be stopped before growth. Its filesystem grows on the next boot.'
-                    : 'Disk space shares the host budget. Volumes cannot shrink.'}
-                </p>
-              </>
-            )}
-            {['create', 'copy', 'retain'].includes(editor.kind) && (
-              <Checkbox
-                label="Keep after VM deletion"
-                checked={editor.retain}
-                onChange={(event) =>
-                  setEditor({ ...editor, retain: event.target.checked })
-                }
-              />
-            )}
-            {editorReason && <p className="machines-warning">{editorReason}</p>}
-            {editorChanged &&
-              latestEditorVolume &&
-              editor.hostId === hostId && (
-                <Button
-                  onClick={() =>
-                    setEditor({
-                      ...editor,
-                      volume: structuredClone(latestEditorVolume),
-                      machine: latestEditorMachine
-                        ? structuredClone(latestEditorMachine)
-                        : undefined,
-                    })
-                  }
-                >
-                  Use Latest
-                </Button>
-              )}
-            <div className="machines-form-actions">
-              <Button type="submit" disabled={!!editorReason}>
-                {editor.kind === 'copy'
-                  ? 'Create Copy'
-                  : editor.kind === 'create'
-                    ? 'Create'
-                    : editor.kind === 'rename'
-                      ? 'Rename'
-                      : editor.kind === 'resize'
-                        ? 'Grow'
-                        : 'Apply'}
-              </Button>
-              <Button onClick={() => setEditor(undefined)}>Cancel</Button>
-            </div>
-          </fieldset>
-        </form>
+        <VolumeEditorForm
+          editor={editor}
+          locked={locked}
+          minimumSize={minimumSize}
+          maxDiskGiB={data.info?.capacity?.diskGiB}
+          editorReason={editorReason}
+          editorChanged={editorChanged}
+          latestEditorVolume={latestEditorVolume}
+          latestEditorMachine={latestEditorMachine}
+          hostId={hostId}
+          revealRef={reveal}
+          onChange={setEditor}
+          onSubmit={applyEditor}
+          onCancel={() => setEditor(undefined)}
+        />
       )}
       {data.volumes.length ? (
         <table className="machines-table machines-inventory-table">

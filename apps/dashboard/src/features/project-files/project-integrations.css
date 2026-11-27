@@ -1,0 +1,161 @@
+.project-browser {
+  container: project-files / inline-size;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.vm-project-previews {
+  flex-shrink: 0;
+  padding: 8px;
+  border-bottom: 1px solid var(--ns-mid);
+  overflow-wrap: anywhere;
+}
+.vm-project-sections,
+.vm-project-sections > .ns-tabs,
+.vm-project-sections > .ns-tabs > .ns-tab-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.vm-project-sections {
+  min-height: min(260px, 55%);
+}
+.vm-project-sections > .ns-tabs > .ns-tab-list {
+  padding: 4px 8px 0;
+  background: #cfcfcf;
+}
+.vm-project-sections > .ns-tabs > .ns-tab-panel {
+  padding: 0;
+  border-inline: 0;
+  border-bottom: 0;
+  box-shadow: none;
+}
+.vm-project-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.vm-project-pane[hidden],
+.project-browser-navigation[hidden] {
+  display: none;
+}
+.vm-project-browser {
+  overflow: auto;
+}
+.vm-project-files-pane > .project-content {
+  min-height: min(240px, 60%);
+}
+.vm-project-files-pane > :not(.project-content) {
+  flex-shrink: 0;
+}
+.vm-project-notices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 8px;
+  border-block-end: 1px solid var(--ns-mid);
+}
+.vm-project-workflow-title {
+  margin: 0 0 8px;
+  font-size: inherit;
+}
+.vm-project-previews summary {
+  cursor: pointer;
+}
+.vm-project-previews > summary {
+  font-weight: bold;
+}
+.vm-project-previews > p,
+.vm-preview-access p {
+  margin-block: 6px;
+}
+.vm-preview-register {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 6px;
+  margin-block: 8px 4px;
+}
+.vm-preview-register .ns-field-label {
+  flex: 0 1 100px;
+  min-width: 0;
+}
+.vm-preview-register input {
+  width: 100%;
+}
+.vm-preview-target {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.vm-preview-actions,
+.vm-preview-entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.vm-preview-actions {
+  margin-top: 6px;
+}
+.vm-preview-actions a.ns-button {
+  text-decoration: none;
+  color: inherit;
+}
+.vm-preview-access {
+  margin-top: 8px;
+}
+.vm-project-preview-list {
+  display: grid;
+  gap: 8px;
+  margin-block: 8px;
+  padding: 0;
+  list-style: none;
+}
+.vm-project-preview-list > li {
+  border-block-start: 1px solid var(--ns-mid);
+  padding-top: 6px;
+}
+.vm-project-github {
+  padding: 8px;
+  overflow-wrap: anywhere;
+}
+.vm-project-github h3,
+.vm-project-github h4 {
+  font-size: inherit;
+  margin-block: 12px 6px;
+}
+.vm-project-github p {
+  margin-block: 6px;
+}
+.vm-project-github .ns-field-label {
+  width: 100%;
+}
+.vm-project-github input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.vm-github-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-block: 8px;
+}
+.vm-github-review,
+.vm-github-prs > li,
+.vm-github-setup {
+  border-block-start: 1px solid var(--ns-mid);
+  padding-block-start: 6px;
+  margin-block-start: 8px;
+}
+.vm-github-prs {
+  list-style: none;
+  padding: 0;
+}
+.vm-github-setup pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

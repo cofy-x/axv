@@ -5,14 +5,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import {
-  Button,
-  Field,
-  IconButton,
-  Select,
-  StatusBar,
-  TextArea,
-} from '@cofy-x/axv-nextstep';
+import { Button, IconButton, StatusBar } from '@cofy-x/axv-nextstep';
 import type { VMProjectTaskProps } from './VMProjectWindows';
 import { vmProjectsAPI } from './vm-api';
 import type { VMProject, VMProjectBinding } from './vm-api';
@@ -25,6 +18,8 @@ import {
 } from './vm-task-api';
 import type { VMTaskAttempt, VMTaskResult } from './vm-task-api';
 import { createVMTaskRequests } from './vm-task-requests';
+import { VMTaskComposeForm } from './VMTaskComposeForm';
+import { VMTaskDetailPane } from './VMTaskDetailPane';
 
 const describe = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
@@ -36,7 +31,6 @@ const commandLabel = (result: VMTaskResult) =>
   result.task.spec.initialization
     ? `${result.task.spec.initialization.repository ? 'Clone Repository' : 'Create Project'} · ${result.task.spec.initialization.directory}`
     : shellLabel(result.task.spec.argv);
-const dateLabel = (value: string) => new Date(value).toLocaleString();
 const timeLabel = (value: string) =>
   new Date(value).toLocaleTimeString([], {
     hour: '2-digit',
@@ -750,476 +744,65 @@ export function VMProjectTasks({
             );
           })}
         </nav>
-        <form
-          className="vm-task-form"
-          aria-label="New task"
-          noValidate
-          hidden={!composing}
-          ref={composer}
+        <VMTaskComposeForm
+          composerRef={composer}
+          executionOptionsRef={executionOptions}
+          composing={composing}
+          interactive={!!interactive}
+          busy={busy}
+          hasPending={!!pending}
+          hasRecoveryError={!!recoveryError}
+          submitting={action === 'submit'}
+          binding={binding}
+          hostId={hostId}
+          projectId={projectId}
+          command={command}
+          directory={directory}
+          timeout={timeout}
+          cpus={cpus}
+          memoryMiB={memoryMiB}
+          maxProcesses={maxProcesses}
+          logKiB={logKiB}
+          customOptions={customOptions}
           onFocusCapture={() => setFocusRequest(0)}
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit();
-          }}
-        >
-          <p className="vm-task-target" title={binding?.machineId}>
-            <strong>
-              {binding ? `VM · ${binding.machineId}` : 'No VM available'}
-            </strong>
-          </p>
-          <TextArea
-            label="Shell command"
-            value={command}
-            rows={2}
-            spellCheck={false}
-            disabled={!interactive || busy || !!pending || !!recoveryError}
-            onChange={(event) => setCommand(event.target.value)}
-          />
-          <details className="vm-task-options" ref={executionOptions}>
-            <summary>
-              <span>Execution options</span>
-              {customOptions ? ' · Customized' : ''}
-            </summary>
-            <div className="vm-task-fields">
-              <Field
-                label="Directory in project"
-                value={directory}
-                disabled={!interactive || busy || !!pending || !!recoveryError}
-                onChange={(event) => setDirectory(event.target.value)}
-                placeholder="Project root"
-              />
-              <Field
-                label="Timeout (seconds)"
-                type="number"
-                min={1}
-                max={86400}
-                value={timeout}
-                disabled={!interactive || busy || !!pending || !!recoveryError}
-                onChange={(event) =>
-                  setTimeoutSeconds(Number(event.target.value))
-                }
-              />
-            </div>
-            <div className="vm-task-limit-fields">
-              <Field
-                label="CPU limit"
-                type="number"
-                min={1}
-                max={128}
-                value={cpus}
-                disabled={!interactive || busy || !!pending || !!recoveryError}
-                onChange={(event) => setCPUs(Number(event.target.value))}
-              />
-              <Field
-                label="Memory limit (MiB)"
-                type="number"
-                min={64}
-                max={1048576}
-                value={memoryMiB}
-                disabled={!interactive || busy || !!pending || !!recoveryError}
-                onChange={(event) => setMemoryMiB(Number(event.target.value))}
-              />
-              <Field
-                label="Process limit"
-                type="number"
-                min={2}
-                max={256}
-                value={maxProcesses}
-                disabled={!interactive || busy || !!pending || !!recoveryError}
-                onChange={(event) =>
-                  setMaxProcesses(Number(event.target.value))
-                }
-              />
-              <Field
-                label="Log limit (KiB)"
-                type="number"
-                min={1}
-                max={8192}
-                value={logKiB}
-                disabled={!interactive || busy || !!pending || !!recoveryError}
-                onChange={(event) => setLogKiB(Number(event.target.value))}
-              />
-            </div>
-            <details>
-              <summary>Execution environment</summary>
-              <dl className="info-list">
-                <dt>Host / project</dt>
-                <dd>
-                  <code>
-                    {hostId} / {projectId}
-                  </code>
-                </dd>
-                <dt>VM / volume</dt>
-                <dd>
-                  <code>
-                    {binding
-                      ? `${binding.machineId} / ${binding.volumeId}`
-                      : 'Unavailable'}
-                  </code>
-                </dd>
-                <dt>Boot / guest</dt>
-                <dd>
-                  <code>
-                    {binding
-                      ? `${binding.bootId} / ${binding.instanceId}`
-                      : 'Unavailable'}
-                  </code>
-                </dd>
-                <dt>New task limits</dt>
-                <dd>
-                  Unsupported guest enforcement rejects the task. Reaching the
-                  log limit stops that attempt.
-                </dd>
-                <dt>Additional controls</dt>
-                <dd>
-                  Per-task disk, I/O and network controls are unavailable.
-                </dd>
-              </dl>
-            </details>
-          </details>
-          <div className="vm-task-compose-actions">
-            <Button
-              type="submit"
-              primary
-              aria-label={action === 'submit' ? 'Submitting…' : 'Run in VM'}
-              disabled={
-                !interactive ||
-                busy ||
-                !binding ||
-                !command.trim() ||
-                !!pending ||
-                !!recoveryError
-              }
-            >
-              {action === 'submit' ? 'Submitting…' : 'Run'}
-            </Button>
-          </div>
-        </form>
-        <section
-          hidden={composing}
-          aria-label="Task results"
-          className="vm-task-result"
-          ref={resultSurface}
-          tabIndex={-1}
-        >
-          {selected && attempt ? (
-            <>
-              <h3>{commandLabel(selected)}</h3>
-              <div className="vm-task-attempt-actions">
-                {selected.attempts.length > 1 ? (
-                  <Select
-                    className="vm-task-attempt-select"
-                    aria-label="Attempt"
-                    value={attempt.id}
-                    disabled={!interactive}
-                    onChange={(event) =>
-                      desktop.updateWindowState(window.id, {
-                        attemptId: event.target.value,
-                      })
-                    }
-                  >
-                    {selected.attempts.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        Attempt {item.number} · {item.status}
-                      </option>
-                    ))}
-                  </Select>
-                ) : (
-                  <span
-                    role="status"
-                    aria-label="Attempt status"
-                    className="vm-task-state"
-                  >
-                    {attempt.status} · Attempt {attempt.number}
-                    {attempt.exitCode !== undefined
-                      ? ` · Exit ${attempt.exitCode}`
-                      : ''}
-                  </span>
-                )}
-
-                <div className="vm-task-actions">
-                  {!taskFinished(attempt.status) && (
-                    <Button
-                      disabled={
-                        !interactive ||
-                        busy ||
-                        taskFinished(attempt.status) ||
-                        attempt.cancelRequested
-                      }
-                      aria-label={
-                        attempt.cancelRequested
-                          ? 'Cancellation requested'
-                          : 'Cancel Attempt'
-                      }
-                      onClick={() =>
-                        void cancel(attempt, commandLabel(selected))
-                      }
-                    >
-                      {attempt.cancelRequested ? 'Cancelling…' : 'Cancel'}
-                    </Button>
-                  )}
-                  {!selected.task.spec.initialization &&
-                    (taskFinished(currentTaskAttempt(selected)?.status || '') ||
-                      attempt.status === 'unknown') && (
-                      <Button
-                        disabled={
-                          !interactive ||
-                          busy ||
-                          !!pending ||
-                          !!recoveryError ||
-                          !binding ||
-                          !taskFinished(
-                            currentTaskAttempt(selected)?.status || '',
-                          )
-                        }
-                        aria-label="Retry Task"
-                        onClick={() => void retry(selected)}
-                      >
-                        Retry
-                      </Button>
-                    )}
-                </div>
-              </div>
-              <p className="vm-task-origin" title={attempt.binding.machineId}>
-                VM · {attempt.binding.machineId}
-                {selected.task.spec.directory
-                  ? ` · ${selected.task.spec.directory}`
-                  : ''}
-                {selected.attempts.length > 1 && attempt.exitCode !== undefined
-                  ? ` · Exit ${attempt.exitCode}`
-                  : ''}
-              </p>
-              {attempt.reason && <p role="status">{attempt.reason}</p>}
-              {attempt.syncError && (
-                <p role="alert">
-                  {attempt.syncError} Retained results and cached output remain
-                  available.
-                </p>
-              )}
-              {attempt.status === 'unknown' && (
-                <p>
-                  The original execution could not be verified. Reconnect to its
-                  VM to reconcile; no replacement execution starts
-                  automatically.
-                </p>
-              )}
-              <pre
-                ref={output}
-                aria-label="Task output"
-                tabIndex={interactive ? 0 : -1}
-              >
-                {log?.text ||
-                  (pollError
-                    ? 'Task output could not be refreshed.'
-                    : !log
-                      ? 'Loading output…'
-                      : log.logBytes > log.nextOffset
-                        ? 'Output is not cached yet.'
-                        : taskFinished(attempt.status)
-                          ? 'This attempt produced no output.'
-                          : 'No output yet.')}
-              </pre>
-              {pagePending && (
-                <p className="vm-task-output-notice" role="status">
-                  {pollError
-                    ? 'Requested page unavailable. The displayed output is retained.'
-                    : 'Loading requested page…'}
-                </p>
-              )}
-              {log &&
-                log.nextOffset < log.logBytes &&
-                log.nextOffset >= attempt.cachedBytes && (
-                  <p>
-                    Cached output is still arriving. Refresh checks for more.
-                  </p>
-                )}
-              {attempt.logLimited && (
-                <p>
-                  Task stopped after reaching the log limit. Retained output is
-                  incomplete.
-                </p>
-              )}
-              <div className="vm-task-output-footer">
-                {(paginated || showLatest) && (
-                  <div
-                    className="vm-task-log-navigation"
-                    aria-label="Output pages"
-                  >
-                    <div className="vm-task-actions">
-                      {paginated && (
-                        <>
-                          <Button
-                            disabled={
-                              !interactive ||
-                              !log ||
-                              (log.offset === 0 &&
-                                !followLatest &&
-                                logOffset === 0)
-                            }
-                            onClick={() =>
-                              setLogView({
-                                key: logKey,
-                                offset: 0,
-                                follow: false,
-                              })
-                            }
-                          >
-                            First
-                          </Button>
-                          <Button
-                            disabled={!interactive || !log || log.offset === 0}
-                            onClick={() =>
-                              setLogView({
-                                key: logKey,
-                                offset: Math.max(
-                                  0,
-                                  (log?.offset || 0) - vmTaskLogPageBytes,
-                                ),
-                                follow: false,
-                              })
-                            }
-                          >
-                            Previous
-                          </Button>
-                          <Button
-                            disabled={
-                              !interactive ||
-                              !log ||
-                              log.nextOffset >= attempt.cachedBytes
-                            }
-                            onClick={() =>
-                              setLogView({
-                                key: logKey,
-                                offset: log?.nextOffset || 0,
-                                follow: false,
-                              })
-                            }
-                          >
-                            Next
-                          </Button>
-                        </>
-                      )}
-                      {showLatest && (
-                        <Button
-                          disabled={!interactive}
-                          aria-pressed={followLatest}
-                          onClick={() =>
-                            setLogView({
-                              key: logKey,
-                              offset: log?.offset || 0,
-                              follow: !followLatest,
-                            })
-                          }
-                        >
-                          Latest
-                        </Button>
-                      )}
-                    </div>
-                    {followLatest && (
-                      <span className="visually-hidden" role="status">
-                        Following latest
-                      </span>
-                    )}
-                  </div>
-                )}
-                <details>
-                  <summary>Execution details</summary>
-                  <dl className="info-list">
-                    <dt>Output range</dt>
-                    <dd>
-                      {log
-                        ? `Bytes ${log.offset}–${log.nextOffset} of ${log.logBytes}`
-                        : 'Loading output…'}
-                    </dd>
-                    <dt>Task / attempt</dt>
-                    <dd>
-                      <code>
-                        {selected.task.id} / {attempt.id}
-                      </code>
-                    </dd>
-                    <dt>Submitted</dt>
-                    <dd>
-                      <time dateTime={selected.task.createdAt}>
-                        {dateLabel(selected.task.createdAt)}
-                      </time>
-                    </dd>
-                    <dt>Started / finished</dt>
-                    <dd>
-                      {attempt.startedAt
-                        ? dateLabel(attempt.startedAt)
-                        : 'Not recorded'}{' '}
-                      /{' '}
-                      {attempt.finishedAt
-                        ? dateLabel(attempt.finishedAt)
-                        : 'Not recorded'}
-                    </dd>
-                    <dt>Host / project</dt>
-                    <dd>
-                      <code>
-                        {hostId} / {projectId}
-                      </code>
-                    </dd>
-                    <dt>VM / boot / guest</dt>
-                    <dd>
-                      <code>
-                        {attempt.binding.machineId} / {attempt.binding.bootId} /{' '}
-                        {attempt.binding.instanceId}
-                      </code>
-                    </dd>
-                    <dt>Requested limits</dt>
-                    <dd>
-                      {selected.task.spec.limits.cpus} CPU;{' '}
-                      {selected.task.spec.limits.memoryMiB} MiB memory;{' '}
-                      {selected.task.spec.limits.maxProcesses} processes;{' '}
-                      {selected.task.spec.limits.timeoutSeconds} seconds;{' '}
-                      {selected.task.spec.limits.maxLogBytes} log bytes
-                    </dd>
-                    <dt>Additional controls</dt>
-                    <dd>
-                      Per-task disk, I/O and network limits are unavailable.
-                      VM-wide limits remain separate.
-                    </dd>
-                    <dt>Directory</dt>
-                    <dd>
-                      <code>
-                        {selected.task.spec.directory || 'Project root'}
-                      </code>
-                    </dd>
-                  </dl>
-                </details>
-              </div>
-            </>
-          ) : selected ? (
-            <>
-              <p role="alert">
-                The selected attempt is unavailable in the recorded history.
-                Choose a recorded attempt to inspect it; no other execution was
-                selected automatically.
-              </p>
-              <Select
-                label="Attempt"
-                value=""
-                disabled={!interactive}
-                onChange={(event) =>
-                  desktop.updateWindowState(window.id, {
-                    attemptId: event.target.value,
-                  })
-                }
-              >
-                <option value="" disabled>
-                  Choose a recorded attempt
-                </option>
-                {selected.attempts.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    Attempt {item.number} · {item.status}
-                  </option>
-                ))}
-              </Select>
-            </>
-          ) : (
-            <p>Select a task to inspect its attempts and output.</p>
-          )}
-        </section>
+          onSubmit={submit}
+          onCommandChange={setCommand}
+          onDirectoryChange={setDirectory}
+          onTimeoutChange={setTimeoutSeconds}
+          onCPUsChange={setCPUs}
+          onMemoryMiBChange={setMemoryMiB}
+          onMaxProcessesChange={setMaxProcesses}
+          onLogKiBChange={setLogKiB}
+        />
+        <VMTaskDetailPane
+          resultSurfaceRef={resultSurface}
+          outputRef={output}
+          composing={composing}
+          interactive={!!interactive}
+          busy={busy}
+          hasPending={!!pending}
+          hasRecoveryError={!!recoveryError}
+          binding={binding}
+          hostId={hostId}
+          projectId={projectId}
+          selected={selected}
+          attempt={attempt}
+          commandLabel={commandLabel}
+          log={log}
+          logKey={logKey}
+          logOffset={logOffset}
+          followLatest={followLatest}
+          pagePending={pagePending}
+          paginated={paginated}
+          showLatest={showLatest}
+          pollError={pollError}
+          onSelectAttempt={(nextAttemptId) =>
+            desktop.updateWindowState(window.id, { attemptId: nextAttemptId })
+          }
+          onCancel={cancel}
+          onRetry={retry}
+          onLogViewChange={setLogView}
+        />
       </div>
       <StatusBar>
         <span title={stale ? pollError : feedback}>
