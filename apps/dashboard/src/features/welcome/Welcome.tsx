@@ -1,9 +1,15 @@
-import { useId } from 'react';
+import { lazy, Suspense, useId } from 'react';
 import { Button, IconButton, PixelIcon } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { openRemoteAccessPreferences } from '../appearance/definition';
 
-export function Welcome({ desktop, window }: AppWindowProps) {
+const WelcomeWorkspace = lazy(() =>
+  import('./WelcomeWorkspace').then((module) => ({
+    default: module.WelcomeWorkspace,
+  })),
+);
+
+export function Welcome({ desktop, window, visible }: AppWindowProps) {
   const linkDescriptions = useId();
 
   return (
@@ -68,6 +74,9 @@ export function Welcome({ desktop, window }: AppWindowProps) {
             </button>
           ))}
         </div>
+        <Suspense fallback={null}>
+          <WelcomeWorkspace desktop={desktop} visible={visible} />
+        </Suspense>
       </div>
       <div className="app-toolbar welcome-footer">
         <IconButton

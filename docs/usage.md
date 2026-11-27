@@ -7,7 +7,7 @@ This guide owns visible user workflows, confirmations and persistence consequenc
 Run `axv` to start or reopen the workstation; background services survive closing the launching shell ([daily commands](startup.md#daily-commands)).
 
 - **Workspaces & windows:** Switch across four workspaces (`Alt+1–4` or top-bar buttons), rename workspaces or save workspace shortcuts under **Workspace → Workspaces**, and use **Window Overview** to jump to any open or minimized window. Folding, minimizing and switching workspaces preserve drafts, selections and scroll positions.
-- **Dock & Preferences:** A fresh layout pins **Codex**, **Virtual Machines**, **Project Files** and **Terminal**. Reorder or pin apps from the Dock menu. **Preferences** groups Wallpaper, Desktop grid/clock, Remote access and Notifications on one page; **Welcome → More** provides **Application Manager**, **Browser installation guide**, **Preferences**, **Component Gallery** and **About AXV**.
+- **Dock & Preferences:** A fresh layout pins **Codex**, **Virtual Machines**, **Project Files** and **Terminal**. Reorder or pin apps from the Dock menu. **Welcome** launches these four apps and shows a live **Workspace** overview (sessions needing attention, recent VMs, recent Host/VM projects and active Codex sessions) once activity exists. **Preferences** groups Wallpaper, Desktop grid/clock, Remote access and Notifications on one page; **Welcome → More** provides **Application Manager**, **Browser installation guide**, **Preferences**, **Component Gallery** and **About AXV**.
 
 | Shortcut | Action |
 | --- | --- |
@@ -141,7 +141,7 @@ Submit the clean HTTPS/SSH URL in **Clone Repository**, wait for task completion
 **Virtual Machines** manages VMs on the deployment machine ([VM architecture](vm-platform.md)).
 
 - **Connect the VM host:** On macOS, review storage/limits/downloads in **VM Host** before starting preparation (runs in background; cancelable before config commit). On Linux, choose **Connect** for a detected `axv-host.service`, or copy and run the displayed `sudo ... host install-service` command in Host Terminal ([Linux setup](startup.md#linux-privilege-boundary)).
-- **Create & manage VMs:** Choose **New VM**, set a unique name, VM type (**Development** retains project volumes on delete; **Task** expires by TTL and defaults to disposable storage) and optional resource limits under **Advanced**. VM deletion removes only the root disk; retained volumes survive independently.
+- **Create & manage VMs:** Choose **New VM**, set a unique name, VM type (**Development** retains project volumes on delete; **Task** expires by TTL and defaults to disposable storage), optional **After creation** handoff (**Open VM Inspector**, **Create a new project**, or **Clone a Git repository**) and optional resource limits under **Advanced**. VM deletion removes only the root disk; retained volumes survive independently.
 - **Volumes, Images & Activity:** Manage detached/retained volumes (**Attach** requires a stopped VM; **Delete** is permanent), inspect image compatibility/checksums, and track durable operations in **Activity** (acceptance is not completion).
 
 ### Guest Terminal

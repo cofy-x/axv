@@ -10,7 +10,9 @@ import { VMProjectLauncherView } from './ProjectFiles';
 
 export function ProjectLauncher(props: AppWindowProps) {
   const { desktop, interactive } = props;
-  const [location, setLocation] = useState<'host' | 'vm'>('host');
+  const [location, setLocation] = useState<'host' | 'vm'>(() =>
+    props.window.params.projectLocation === 'vm' ? 'vm' : 'host',
+  );
   const [root, setRoot] = useState('');
   const [choosingFolder, setChoosingFolder] = useState(false);
   const [pickerPath, setPickerPath] = useState('');

@@ -7,6 +7,7 @@ import { desktopDatabase } from '../../shared/api/desktop';
 import { usePageVisibility } from '../../shared/desktop/usePageVisibility';
 import { useDraftNamespace } from '../../shared/drafts/context';
 import { machinesApi } from '../machines/api';
+import { openMachineInspector } from '../machines/desktop-icons';
 import { vmProjectsAPI } from './vm-api';
 import type { VMProject } from './vm-api';
 import { VMProjectInitialize } from './VMProjectInitialize';
@@ -42,6 +43,9 @@ export function VMProjectLauncher({
   const [error, setError] = useState('');
   const { databaseId, clientId } = useDraftNamespace();
   const [mode, setMode] = useState<'open' | 'create' | 'clone'>(() => {
+    const requested = window.params.initialMode;
+    if (requested === 'create' || requested === 'clone' || requested === 'open')
+      return requested;
     if (scope) return 'open';
     try {
       return localStorage.getItem(
@@ -124,6 +128,31 @@ export function VMProjectLauncher({
             machine.id === selection.machineId,
         )
       : undefined;
+  const scopedMachine =
+    scope && data?.hostId === scope.hostId
+      ? data.machines.find((item) => item.id === scope.machineId)
+      : undefined;
+  const scopedVolume =
+    scope && data?.hostId === scope.hostId
+      ? data.volumes.find((item) => item.id === scope.volumeId)
+      : undefined;
+  const scopedBooting =
+    !!scopedMachine &&
+    scopedMachine.desired === 'running' &&
+    (!scopedMachine.ready ||
+      scopedMachine.status !== 'running' ||
+      (!!scopedVolume && scopedVolume.status !== 'ready')) &&
+    !['failed', 'deleted'].includes(scopedMachine.status);
+
+  useEffect(() => {
+    if (!scopedBooting || !active) return;
+    const timer = globalThis.setTimeout(
+      () => setRefresh((value) => value + 1),
+      1500,
+    );
+    return () => globalThis.clearTimeout(timer);
+  }, [scopedBooting, active, refresh]);
+
   const projects = data?.projects.filter(
     (item) =>
       item.hostId === data.hostId &&
@@ -314,21 +343,46 @@ export function VMProjectLauncher({
           !inventory.pending &&
           !inventory.error &&
           eligible?.length === 0 && (
-            <p className="project-launcher-notice">
-              {scope
-                ? 'The original VM project volume is unavailable.'
-                : `No ready retained volumes are attached to a running VM with project file access${mode !== 'open' ? ' and persistent task support' : ''}.`}
+            <p
+              className="project-launcher-notice"
+              role={scopedBooting ? 'status' : undefined}
+            >
+              {scopedBooting && scopedMachine
+                ? `Waiting for VM “${scopedMachine.spec.name}” to finish starting and connect its guest service… Project actions unlock automatically once ready.`
+                : scope
+                  ? 'The original VM project volume is unavailable.'
+                  : `No ready retained volumes are attached to a running VM with project file access${mode !== 'open' ? ' and persistent task support' : ''}.`}
             </p>
           )}
         {(inventory.error ||
           (!inventory.pending && eligible?.length === 0)) && (
           <div className="project-launcher-fallback">
-            <Button
-              disabled={!canInteract}
-              onClick={() => desktop.openApp('machines')}
-            >
-              Open Virtual Machines
-            </Button>
+            {scopedBooting && scopedMachine ? (
+              <Button
+                disabled={!canInteract}
+                onClick={() => openMachineInspector(desktop, scopedMachine)}
+              >
+                Open VM Inspector
+              </Button>
+            ) : (
+              <>
+                {!scope && !inventory.error && (
+                  <Button
+                    primary
+                    disabled={!canInteract}
+                    onClick={() => desktop.openApp('machine-create')}
+                  >
+                    New VM
+                  </Button>
+                )}
+                <Button
+                  disabled={!canInteract}
+                  onClick={() => desktop.openApp('machines')}
+                >
+                  Open Virtual Machines
+                </Button>
+              </>
+            )}
           </div>
         )}
         {scope && selected && projects && projects.length === 0 && (

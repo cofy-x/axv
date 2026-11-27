@@ -41,6 +41,9 @@ export function CreateMachine({ desktop, window, visible }: AppWindowProps) {
   const [retainVolume, setRetain] = useState(true);
   const [ttl, setTTL] = useState('');
   const [startByDefault, setStartByDefault] = useState(true);
+  const [afterCreate, setAfterCreate] = useState<
+    'inspector' | 'create' | 'clone'
+  >('inspector');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [requests] = useState(
@@ -85,6 +88,11 @@ export function CreateMachine({ desktop, window, visible }: AppWindowProps) {
 
   const images = creationImages(data.info);
   const image = images.find((item) => item.id === imageId);
+  const supportsProjectSetup =
+    retainVolume &&
+    !!image?.guest?.capabilities?.includes('project-files') &&
+    !!image?.guest?.capabilities?.includes('project-initialization');
+  const effectiveAfterCreate = supportsProjectSetup ? afterCreate : 'inspector';
   const showImagePicker = images.length > 1 || (images.length > 0 && !image);
   const volume = data.volumes.find((item) => item.id === volumeId);
   const availableVolumes = data.volumes.filter((item) =>
@@ -168,7 +176,24 @@ export function CreateMachine({ desktop, window, visible }: AppWindowProps) {
             `Create “${normalizeMachineName(name)}”`,
           );
       computeStore.receiveMachineOperation(result.machine, result.operation);
-      openMachineInspector(desktop, result.machine);
+      if (
+        start &&
+        effectiveAfterCreate !== 'inspector' &&
+        result.machine.spec.volumeId
+      ) {
+        desktop.openApp(
+          'project-files',
+          {
+            hostId: result.machine.hostId,
+            machineId: result.machine.id,
+            vmProjectVolumeId: result.machine.spec.volumeId,
+            initialMode: effectiveAfterCreate,
+          },
+          { title: `${result.machine.spec.name} — Project Setup` },
+        );
+      } else {
+        openMachineInspector(desktop, result.machine);
+      }
       await desktop.closeWindow(window.id);
     } catch (failure) {
       setError(operationError(failure));
@@ -247,6 +272,22 @@ export function CreateMachine({ desktop, window, visible }: AppWindowProps) {
                     {item.name || item.id} · {item.provider} · {item.arch}
                   </option>
                 ))}
+              </Select>
+            )}
+            {supportsProjectSetup && (
+              <Select
+                label="After creation"
+                value={effectiveAfterCreate}
+                disabled={locked}
+                onChange={(event) =>
+                  setAfterCreate(
+                    event.target.value as 'inspector' | 'create' | 'clone',
+                  )
+                }
+              >
+                <option value="inspector">Open VM Inspector</option>
+                <option value="create">Create a new project</option>
+                <option value="clone">Clone a Git repository</option>
               </Select>
             )}
             {binding && (
