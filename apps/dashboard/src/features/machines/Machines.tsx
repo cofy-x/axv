@@ -976,7 +976,18 @@ export function Machines({
                           {operationTarget(op, data.machines, data.volumes)}
                         </td>
                         <td>
-                          {humanize(op.status)}
+                          <span
+                            className="machines-status-dot"
+                            data-status={
+                              op.status === 'succeeded'
+                                ? 'running'
+                                : op.status === 'failed'
+                                  ? 'failed'
+                                  : 'transitioning'
+                            }
+                          >
+                            {humanize(op.status)}
+                          </span>
                           {phase && <small>{phase}</small>}
                           {op.error && (
                             <small className="machines-failure">
