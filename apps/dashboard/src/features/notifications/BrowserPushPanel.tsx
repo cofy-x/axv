@@ -86,6 +86,7 @@ export function BrowserPushPanel({ active }: { active: boolean }) {
     'task_failed',
     'task_interrupted',
     'task_unknown',
+    'github_review_findings',
   ]);
   const pending = useRef<AbortController | null>(null);
   const generation = useRef(0);

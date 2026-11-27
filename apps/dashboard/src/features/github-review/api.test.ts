@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   reviewCheckURL,
   reviewCommentURL,
+  reviewEnvironment,
   reviewLoginURL,
   reviewPRURL,
 } from './api';
-import type { ReviewJob } from './api';
+import type { ReviewJob, ReviewSnapshot } from './api';
+import { configDraft, configFromDraft } from './review-settings';
 
 describe('GitHub Review links', () => {
   it('links only to the expected device authorization page for each provider', () => {
@@ -55,5 +57,50 @@ describe('GitHub Review links', () => {
     expect(
       reviewCommentURL({ ...job, commentUrl: `${prURL}#issuecomment` }),
     ).toBeUndefined();
+  });
+
+  it('round-trips UI-bound repository VM targets and preserves environment metadata', () => {
+    const target = {
+      name: 'Dev VM · web',
+      hostId: 'host-0123456789abcdef0123456789abcdef',
+      machineId: 'vm-0123456789abcdef0123456789abcdef',
+      projectId: 'project-0123456789abcdef0123456789abcdef',
+    };
+    const draft = configDraft({
+      repositories: ['Owner/Repo'],
+      publishRepositories: [],
+      repositoryPolicies: {},
+      repositoryVmTargets: { 'Owner/Repo': target },
+      intervalMinutes: 10,
+      dailyLimit: 10,
+      enabled: true,
+      revision: 3,
+    });
+    expect(draft.vmTargets['owner/repo']).toEqual(target);
+    const saved = configFromDraft(draft);
+    expect(saved.repositoryVmTargets).toEqual({ 'Owner/Repo': target });
+
+    const snapshot: ReviewSnapshot = {
+      config: saved,
+      github: { available: true, connected: true },
+      codex: { available: true, connected: true },
+      jobs: [],
+      budget: { used: 0, resetsAt: '2026-11-29T00:00:00Z' },
+      repositoryEnvironments: {
+        'Owner/Repo': {
+          name: target.name,
+          configured: true,
+          source: 'settings',
+          hostId: target.hostId,
+          machineId: target.machineId,
+          projectId: target.projectId,
+        },
+      },
+    };
+    const env = reviewEnvironment(snapshot, 'owner/repo');
+    expect(env.configured).toBe(true);
+    expect(env.source).toBe('settings');
+    expect(env.machineId).toBe(target.machineId);
+    expect(env.projectId).toBe(target.projectId);
   });
 });

@@ -156,7 +156,8 @@ export function GitHubReview({
       next.dailyLimit === saved.dailyLimit &&
       next.enabled === saved.enabled &&
       next.watchOnly === saved.watchOnly &&
-      JSON.stringify(next.policies) === JSON.stringify(saved.policies);
+      JSON.stringify(next.policies) === JSON.stringify(saved.policies) &&
+      JSON.stringify(next.vmTargets) === JSON.stringify(saved.vmTargets);
     setDraft(unchanged ? undefined : next);
     setNotice('');
     setActionError('');
@@ -604,6 +605,17 @@ export function GitHubReview({
           setNotice('Local assessment saved');
         },
       );
+    },
+    onOpenInCodex: (job) => {
+      const env = reviewEnvironment(snapshot, job.repository);
+      if (env.configured && env.machineId) {
+        desktop.openApp('codex', {
+          newVmMachineId: env.machineId,
+          ...(env.projectId ? { newVmProjectId: env.projectId } : {}),
+        });
+      } else {
+        desktop.openApp('codex');
+      }
     },
   };
 

@@ -77,6 +77,9 @@ type Service struct {
 	policyMu        sync.Mutex
 	deferredOutcome *Job // owned by the worker loop
 
+	vmTargetsMu sync.RWMutex
+	vmTargets   map[string]ReviewVMTarget
+
 	discoveryMu        sync.Mutex
 	selectedDuringScan map[string]bool
 	pollMu             sync.Mutex
@@ -99,6 +102,9 @@ func Open(parent context.Context, options Options) (*Service, error) {
 	runner := CodexRunner{WorkDir: options.Directory, ProxyURL: options.ProxyURL}
 	s := newService(ctx, cancel, storage, github, auth, runner)
 	s.vm = options.VMTests
+	if initial, err := storage.settings(parent); err == nil {
+		s.setSavedVMTargets(initial.RepositoryVMTargets)
+	}
 	go s.run()
 	return s, nil
 }
@@ -214,12 +220,36 @@ func (s *Service) attach(ctx context.Context, provider, identity string) error {
 	return s.store.attach(ctx, provider, identity)
 }
 
+func (s *Service) setSavedVMTargets(targets map[string]ReviewVMTarget) {
+	normalized := make(map[string]ReviewVMTarget, len(targets))
+	for repo, target := range targets {
+		normalized[strings.ToLower(repo)] = target
+	}
+	s.vmTargetsMu.Lock()
+	s.vmTargets = normalized
+	s.vmTargetsMu.Unlock()
+}
+
+func (s *Service) savedVMTargets() map[string]ReviewVMTarget {
+	s.vmTargetsMu.RLock()
+	defer s.vmTargetsMu.RUnlock()
+	if len(s.vmTargets) == 0 {
+		return nil
+	}
+	copyMap := make(map[string]ReviewVMTarget, len(s.vmTargets))
+	for key, target := range s.vmTargets {
+		copyMap[key] = target
+	}
+	return copyMap
+}
+
 func (s *Service) configure(ctx context.Context, config Config) error {
 	s.policyMu.Lock()
 	defer s.policyMu.Unlock()
 	if err := s.store.configure(ctx, config); err != nil {
 		return err
 	}
+	s.setSavedVMTargets(config.RepositoryVMTargets)
 	s.schedule()
 	return nil
 }
@@ -278,6 +308,7 @@ func (s *Service) readSnapshot(ctx context.Context, summaryOnly bool) (Snapshot,
 	if err != nil {
 		return Snapshot{}, err
 	}
+	s.setSavedVMTargets(saved.RepositoryVMTargets)
 	if saved.account == "" {
 		github.Connected = false
 	} else if !strings.EqualFold(saved.account, github.Account) {

@@ -2,7 +2,7 @@
 
 [API index](README.md)
 
-Consumes content-free observations from the [Codex runner](../codex.md#provider-activity) and [compute task owner](compute.md#vm-project-tasks) for optional Pocket Alert and browser Web Push delivery. Observation never approves requests, cancels tasks or controls execution. Implementation: [`internal/notifications`](../../apps/server/internal/notifications), composed in [`server/notifications.go`](../../apps/server/internal/server/notifications.go).
+Consumes content-free observations from the [Codex runner](../codex.md#provider-activity), [compute task owner](compute.md#vm-project-tasks) and [GitHub Review](github-review.md) for optional Pocket Alert and browser Web Push delivery. Observation never approves requests, cancels tasks or controls execution. Implementation: [`internal/notifications`](../../apps/server/internal/notifications), composed in [`server/notifications.go`](../../apps/server/internal/server/notifications.go).
 
 ## Intake and storage
 
@@ -27,7 +27,7 @@ Consumes content-free observations from the [Codex runner](../codex.md#provider-
 | POST | `/api/notifications/push/unsubscribe` | Local/owner + Origin; remove exact server subscription record |
 | POST | `/api/notifications/push/rotate` | Local + Origin; rotate VAPID key/contact, invalidating prior subscriptions and pending sends |
 
-Strict JSON rules (max 64 KiB, no unknown/duplicate fields, valid Unicode). Supported event kinds: `agent_waiting_approval`, `agent_waiting_input`, `agent_succeeded`, `agent_failed`, `agent_interrupted`, `task_succeeded`, `task_failed`, `task_cancelled`, `task_interrupted`, `task_unknown` (success events opt-in separately).
+Strict JSON rules (max 64 KiB, no unknown/duplicate fields, valid Unicode). Supported event kinds: `agent_waiting_approval`, `agent_waiting_input`, `agent_succeeded`, `agent_failed`, `agent_interrupted`, `task_succeeded`, `task_failed`, `task_cancelled`, `task_interrupted`, `task_unknown`, `github_review_findings` (success events opt-in separately).
 
 Error codes: `400` (`invalid_notification_request`, `push_service_unsupported`), `404` (`notification_unavailable`), `409` (`notification_conflict`), `503` (`notification_store_unavailable`).
 

@@ -76,8 +76,17 @@ func (s *store) initialize(ctx context.Context) error {
 	if err := sqlitemigrate.Apply(ctx, s.db, migrations, reviewDatabaseFormat, nil); err != nil {
 		return err
 	}
+	storeID, err := randomNotificationStoreID()
+	if err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, `
+		INSERT OR IGNORE INTO review_notification_store (singleton, store_id) VALUES (1, ?)
+	`, storeID); err != nil {
+		return err
+	}
 	// A review interrupted by a desktop shutdown can be retried.
-	_, err := s.db.ExecContext(ctx, `
+	_, err = s.db.ExecContext(ctx, `
 		UPDATE review_jobs SET status='queued', error='',review_stage=json_set(review_stage,'$.status','queued') WHERE status='reviewing';
   UPDATE review_jobs SET review_stage=json_set(review_stage,'$.status','failed',
     '$.error','AXV stopped while reviewing this superseded revision.')
@@ -92,18 +101,26 @@ func (s *store) settings(ctx context.Context) (savedSettings, error) {
 
 func readSettings(ctx context.Context, db rowQuerier) (savedSettings, error) {
 	var result savedSettings
-	var repositories, policies string
+	var repositories, policies, vmTargets string
 	err := db.QueryRowContext(ctx, `
 		SELECT repositories, interval_minutes, daily_limit, enabled, revision,
-			github_account, codex_connected, repository_policies, watch_only
+			github_account, codex_connected, repository_policies, watch_only, repository_vm_targets
 		FROM review_settings WHERE singleton=1
 	`).Scan(&repositories, &result.IntervalMinutes, &result.DailyLimit, &result.Enabled,
-		&result.Revision, &result.account, &result.codex, &policies, &result.WatchOnly)
+		&result.Revision, &result.account, &result.codex, &policies, &result.WatchOnly, &vmTargets)
 	if err != nil {
 		return savedSettings{}, err
 	}
 	result.PublishRepositories = []string{}
-	err = errors.Join(json.Unmarshal([]byte(repositories), &result.Repositories), json.Unmarshal([]byte(policies), &result.RepositoryPolicies))
+	var decodedVMTargets map[string]ReviewVMTarget
+	err = errors.Join(
+		json.Unmarshal([]byte(repositories), &result.Repositories),
+		json.Unmarshal([]byte(policies), &result.RepositoryPolicies),
+		json.Unmarshal([]byte(vmTargets), &decodedVMTargets),
+	)
+	if len(decodedVMTargets) > 0 {
+		result.RepositoryVMTargets = decodedVMTargets
+	}
 	return result, err
 }
 
@@ -120,11 +137,19 @@ func (s *store) configure(ctx context.Context, c Config) error {
 	if err != nil {
 		return err
 	}
+	vmTargetsMap := c.RepositoryVMTargets
+	if vmTargetsMap == nil {
+		vmTargetsMap = map[string]ReviewVMTarget{}
+	}
+	vmTargets, err := json.Marshal(vmTargetsMap)
+	if err != nil {
+		return err
+	}
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE review_settings SET repositories=?, interval_minutes=?, daily_limit=?,
-			enabled=?, repository_policies=?, watch_only=?, revision=revision+1
+			enabled=?, repository_policies=?, watch_only=?, repository_vm_targets=?, revision=revision+1
 		WHERE singleton=1 AND revision=?`, string(repositories), c.IntervalMinutes,
-		c.DailyLimit, c.Enabled, string(policies), c.WatchOnly, c.Revision)
+		c.DailyLimit, c.Enabled, string(policies), c.WatchOnly, string(vmTargets), c.Revision)
 	if err != nil {
 		return err
 	}
@@ -491,6 +516,9 @@ func (s *store) update(ctx context.Context, job Job) error {
 			return err
 		}
 		if err := indexCandidates(ctx, tx, persisted); err != nil {
+			return err
+		}
+		if err := recordReviewNotification(ctx, tx, persisted, job.UpdatedAt); err != nil {
 			return err
 		}
 	}

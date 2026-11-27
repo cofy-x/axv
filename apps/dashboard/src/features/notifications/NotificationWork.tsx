@@ -83,6 +83,15 @@ export function NotificationWork({
         );
         return { detail, attempt, log };
       }
+      if (target.kind === 'github_review' && target.repository) {
+        return {
+          detail,
+          githubReview: {
+            repository: target.repository,
+            pullRequest: target.pullRequest,
+          },
+        };
+      }
       return { detail, unavailable: true };
     },
     [storeId, notificationId],
@@ -154,6 +163,29 @@ export function NotificationWork({
                     onClick={() => openCodexSession(desktop, value.session!)}
                   >
                     Open Codex session
+                  </Button>
+                </div>
+              </>
+            )}
+            {value.githubReview && (
+              <>
+                <dl className="info-list">
+                  <dt>Repository</dt>
+                  <dd>{value.githubReview.repository}</dd>
+                  {value.githubReview.pullRequest && (
+                    <>
+                      <dt>Pull request</dt>
+                      <dd>#{value.githubReview.pullRequest}</dd>
+                    </>
+                  )}
+                </dl>
+                <div className="app-actions">
+                  <Button
+                    primary
+                    disabled={!interactive}
+                    onClick={() => desktop.openApp('github-review')}
+                  >
+                    Open GitHub Review
                   </Button>
                 </div>
               </>

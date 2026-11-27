@@ -56,7 +56,7 @@ func newWorkstationNotificationFixture(t *testing.T) *workstationNotificationFix
 func (f *workstationNotificationFixture) open(t *testing.T) (*notifications.Manager, http.Handler) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	manager, err := workstationNotifications(ctx, f.home, f.agents, f.compute)
+	manager, err := workstationNotifications(ctx, f.home, f.agents, f.compute, nil)
 	if err != nil {
 		cancel()
 		t.Fatal(err)

@@ -859,6 +859,7 @@ export function CodexManager({
               desktop={desktop}
               machines={vmMachines}
               initialMachineId={window.params.newVmMachineId}
+              initialProjectId={window.params.newVmProjectId}
               initialProjectPath={window.params.newVmProjectPath}
               onClose={() => setChoosingVM(false)}
               onStarted={(session) => {

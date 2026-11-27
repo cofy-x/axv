@@ -81,9 +81,17 @@ export interface RepositoryPolicy {
   testCommand: string[];
 }
 
+export interface ReviewVMTarget {
+  name: string;
+  hostId: string;
+  machineId: string;
+  projectId: string;
+}
+
 export interface ReviewConfig {
   watchOnly?: boolean;
   repositoryPolicies?: Record<string, RepositoryPolicy>;
+  repositoryVmTargets?: Record<string, ReviewVMTarget>;
   repositories: string[];
   publishRepositories: string[];
   intervalMinutes: number;
@@ -312,6 +320,10 @@ export type ReviewTarget = Pick<
 export interface RepositoryReviewEnvironment {
   name: string;
   configured: boolean;
+  source?: 'env' | 'settings' | 'default';
+  hostId?: string;
+  machineId?: string;
+  projectId?: string;
 }
 
 export interface ReviewVMReadiness {
@@ -320,6 +332,7 @@ export interface ReviewVMReadiness {
 }
 
 export interface ReviewSnapshot {
+  canConfigure?: boolean;
   config: ReviewConfig;
   comparisonReady?: boolean;
   repositoryEnvironments?: Record<string, RepositoryReviewEnvironment>;

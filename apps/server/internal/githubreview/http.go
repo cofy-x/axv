@@ -33,9 +33,29 @@ func RegisterUnavailable(mux *http.ServeMux, vmRegistryInvalid bool) {
 	})
 }
 
+func localOnlyRoute(r *http.Request) bool {
+	path := strings.TrimPrefix(r.URL.Path, route)
+	switch {
+	case r.Method == http.MethodPut && path == "/config":
+		return true
+	case r.Method == http.MethodPost && (strings.HasPrefix(path, "/connect/") || strings.HasPrefix(path, "/disconnect/") || path == "/approve-comparison-scenario"):
+		return true
+	default:
+		return false
+	}
+}
+
 func register(mux *http.ServeMux, handler http.HandlerFunc) {
-	local := func(w http.ResponseWriter, r *http.Request) {
-		if !httpaccess.LocalRequest(r, r.Method != http.MethodGet) {
+	guarded := func(w http.ResponseWriter, r *http.Request) {
+		requireOrigin := r.Method != http.MethodGet
+		if localOnlyRoute(r) {
+			if !httpaccess.LocalRequest(r, requireOrigin) {
+				writeResponse(w, http.StatusForbidden, map[string]string{
+					"code": "github_review_local_only", "error": "Change GitHub Review settings and CLI connections on the computer running AXV.",
+				})
+				return
+			}
+		} else if !httpaccess.AllowRequest(r, requireOrigin) {
 			writeResponse(w, http.StatusForbidden, map[string]string{
 				"code": "github_review_local_only", "error": "Open GitHub Review on the computer running AXV.",
 			})
@@ -43,8 +63,8 @@ func register(mux *http.ServeMux, handler http.HandlerFunc) {
 		}
 		handler(w, r)
 	}
-	mux.HandleFunc(route, local)
-	mux.HandleFunc(route+"/", local)
+	mux.HandleFunc(route, guarded)
+	mux.HandleFunc(route+"/", guarded)
 }
 
 func (s *Service) serve(w http.ResponseWriter, r *http.Request) {
@@ -54,6 +74,7 @@ func (s *Service) serve(w http.ResponseWriter, r *http.Request) {
 		case "":
 			if r.URL.RawQuery == "summary=1" {
 				view, err := s.readSnapshot(r.Context(), true)
+				view.CanConfigure = httpaccess.LocalRequest(r, false)
 				writeReviewRead(w, view, err)
 				return
 			}
@@ -209,6 +230,7 @@ func (s *Service) serve(w http.ResponseWriter, r *http.Request) {
 		writeFailure(w, errStore)
 		return
 	}
+	view.CanConfigure = httpaccess.LocalRequest(r, false)
 	if path == "/review-pr" || path == "/review-latest" {
 		writeResponse(w, http.StatusOK, struct {
 			Snapshot
@@ -278,9 +300,10 @@ func parseConfig(w http.ResponseWriter, r *http.Request) (Config, error) {
 	err := readObject(w, r, 2<<20, map[string]any{
 		"repositories": &config.Repositories, "intervalMinutes": &config.IntervalMinutes,
 		"enabled": &config.Enabled, "publishRepositories": &config.PublishRepositories,
-		"repositoryPolicies": &config.RepositoryPolicies, "dailyLimit": &config.DailyLimit, "revision": &config.Revision,
+		"repositoryPolicies": &config.RepositoryPolicies, "repositoryVmTargets": &config.RepositoryVMTargets,
+		"dailyLimit": &config.DailyLimit, "revision": &config.Revision,
 		"watchOnly": &config.WatchOnly,
-	}, "watchOnly")
+	}, "watchOnly", "repositoryVmTargets")
 	if err != nil || config.Revision == 0 || len(config.PublishRepositories) > 0 {
 		return Config{}, ErrInvalid
 	}

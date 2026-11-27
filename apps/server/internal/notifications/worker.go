@@ -75,17 +75,22 @@ func (m *Manager) collect(ctx context.Context) {
 }
 
 func eventKind(e notificationevent.Event) string {
-	if e.Target.Kind == "codex" {
+	switch e.Target.Kind {
+	case "codex":
 		switch e.State {
 		case "completed":
 			return "agent_succeeded"
 		case "waiting_approval", "waiting_input", "failed", "interrupted":
 			return "agent_" + e.State
 		}
-	} else if e.Target.Kind == "task" {
+	case "task":
 		switch e.State {
 		case "succeeded", "failed", "cancelled", "interrupted", "unknown":
 			return "task_" + e.State
+		}
+	case "github_review":
+		if e.State == "findings" {
+			return "github_review_findings"
 		}
 	}
 	return ""
@@ -96,13 +101,17 @@ func waiting(kind string) bool {
 }
 
 func scope(t notificationevent.Target) string {
-	if t.Kind == "codex" {
+	switch t.Kind {
+	case "codex":
 		if t.MachineID != "" {
 			return t.HostID + ":" + t.MachineID + ":" + t.StoreID + ":" + t.RunID
 		}
 		return t.StoreID + ":" + t.RunID
+	case "github_review":
+		return t.StoreID + ":" + t.EventID
+	default:
+		return t.StoreID + ":" + t.AttemptID
 	}
-	return t.StoreID + ":" + t.AttemptID
 }
 
 func selected(types []string, kind string) bool {
