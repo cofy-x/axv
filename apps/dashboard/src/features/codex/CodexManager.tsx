@@ -9,7 +9,6 @@ import {
 import {
   Button,
   ButtonGroup,
-  Field,
   IconButton,
   PixelIcon,
   StatusBar,
@@ -23,14 +22,15 @@ import {
   sessionTitle,
   sessionIsLive,
   sessionCanEnd,
-  sessionCanContinue,
 } from './api';
 import type { CodexProject, CodexSessionRecord } from './api';
 import { vmCodexAPI } from './vm-api';
+import { CodexFolderPicker } from './CodexFolderPicker';
+import { CodexSessionRow } from './CodexSessionRow';
+import type { SessionContinuationRecovery } from './CodexSessionRow';
 import { VMNewSessionPanel } from './VMNewSessionPanel';
 import { machinesApi } from '../machines/api';
 import type { Machine } from '../machines/types';
-import { openGuestTerminal } from '../machines/open-terminal';
 import { useCodexAvailability } from './CodexContext';
 import { openCodexEnvironment, openCodexSession } from './definition';
 import {
@@ -38,13 +38,11 @@ import {
   renameSession,
   setSessionArchived,
 } from './actions';
-import { showSessionDetails } from './details';
 import {
   mergeSessionMetadata,
   publishSessionMetadata,
   subscribeSessionMetadata,
 } from './metadata';
-import { openTerminalWindow } from '../terminal/definition';
 import {
   CodexResumeRequests,
   continueConversation,
@@ -52,7 +50,6 @@ import {
 } from './continuation';
 import { useHostFolderPicker } from './use-host-folder-picker';
 import { useDraftNamespace } from '../../shared/drafts/context';
-import { CodexActivity } from './CodexActivity';
 import { useWindowCommands } from '../../shared/desktop/WindowCommandsContext';
 import {
   canReviewActivity,
@@ -63,11 +60,6 @@ import {
   reviewSessionActivity,
   subscribeSessionActivity,
 } from './activity';
-
-interface ContinuationRecovery {
-  requestId?: string;
-  error?: string;
-}
 
 export function CodexManager({
   desktop,
@@ -125,7 +117,7 @@ export function CodexManager({
   const [changingMetadata, setChangingMetadata] = useState<string | null>(null);
   const [continuing, setContinuing] = useState<string | null>(null);
   const [continuationRecovery, setContinuationRecovery] = useState(
-    new Map<string, ContinuationRecovery>(),
+    new Map<string, SessionContinuationRecovery>(),
   );
   const [sessionError, setSessionError] = useState('');
   const [creating, setCreating] = useState<'default' | 'folder' | null>(null);
@@ -166,7 +158,7 @@ export function CodexManager({
   }, [window.params.newVmMachineId, closeFolderPicker]);
 
   useEffect(() => {
-    const recovery = new Map<string, ContinuationRecovery>();
+    const recovery = new Map<string, SessionContinuationRecovery>();
     for (const session of sessions) {
       const key = sessionKey(session);
       try {
@@ -845,209 +837,22 @@ export function CodexManager({
             </p>
           )}
           {choosingFolder && (
-            <section
-              id="codex-folder-picker"
-              className="codex-section codex-folder-picker"
-              aria-label="New Codex session"
-              onKeyDown={(event) => {
-                if (
-                  event.key === 'Escape' &&
-                  !event.nativeEvent.isComposing &&
-                  creating === null
-                ) {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  closePicker(true);
-                }
-              }}
-            >
-              <form
-                className="codex-path-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void browse(path);
-                }}
-              >
-                <Field
-                  label="Project directory"
-                  value={path}
-                  disabled={creating !== null}
-                  onChange={(event) => changePath(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (
-                      event.key === 'Enter' &&
-                      !event.nativeEvent.isComposing
-                    ) {
-                      event.preventDefault();
-                      if (!browsing && creating === null) browse(path);
-                    }
-                  }}
-                />
-                <div className="codex-directory-actions">
-                  <Button
-                    type="submit"
-                    disabled={browsing || creating !== null}
-                  >
-                    Go
-                  </Button>
-                  <Button
-                    disabled={browsing || creating !== null}
-                    onClick={() => void browse()}
-                  >
-                    Home
-                  </Button>
-                  <IconButton
-                    icon="up"
-                    label="Up"
-                    disabled={
-                      browsing ||
-                      creating !== null ||
-                      !directories?.parentPath ||
-                      !!directoryError
-                    }
-                    onClick={() =>
-                      void browse(directories?.parentPath || undefined)
-                    }
-                  />
-                  {(recentProjects.length > 0 || projectError) && (
-                    <section
-                      className="codex-recent"
-                      aria-label="Recent projects"
-                    >
-                      <Button
-                        aria-haspopup="menu"
-                        disabled={creating !== null || !recentProjects.length}
-                        onKeyDown={(event) => {
-                          if (
-                            event.key === 'ArrowDown' &&
-                            !event.altKey &&
-                            !event.ctrlKey &&
-                            !event.metaKey &&
-                            !event.nativeEvent.isComposing
-                          ) {
-                            event.preventDefault();
-                            event.currentTarget.click();
-                          }
-                        }}
-                        onClick={(event) => {
-                          const rect =
-                            event.currentTarget.getBoundingClientRect();
-                          desktop.contextMenu(
-                            recentProjects.map((project) => {
-                              // Host projects use canonical POSIX paths; a
-                              // backslash can be part of a directory name.
-                              const separator = project.path.lastIndexOf('/');
-                              return {
-                                label:
-                                  project.path.slice(separator + 1) ||
-                                  project.path,
-                                description:
-                                  project.path === '/'
-                                    ? undefined
-                                    : project.path.slice(0, separator) || '/',
-                                action: () => {
-                                  changePath(project.path);
-                                  browse(project.path);
-                                },
-                              };
-                            }),
-                            { x: rect.right, y: rect.bottom },
-                            {
-                              title: 'Recent Projects',
-                              ownerWindowId: window.id,
-                              align: 'end',
-                              width: 'wide',
-                            },
-                          );
-                        }}
-                      >
-                        Recent Projects{projectError && ' · Outdated'}
-                        <span aria-hidden="true">▾</span>
-                      </Button>
-                    </section>
-                  )}
-                </div>
-              </form>
-              {projectError && (
-                <p className="app-error" role="alert">
-                  {projectError}
-                </p>
-              )}
-              {directoryError && (
-                <p className="app-error" role="alert">
-                  {directoryError}
-                </p>
-              )}
-              {!browsing && directories && path !== directories.path && (
-                <p
-                  className="codex-note codex-directory-context"
-                  data-testid="codex-directory-context"
-                >
-                  Showing: <code>{directories.path}</code>
-                </p>
-              )}
-              <div
-                className="codex-directory-list"
-                aria-label="Host folders"
-                aria-busy={browsing}
-              >
-                {!browsing && directoryError && directories && (
-                  <p className="codex-note">
-                    Previous folder contents · Outdated
-                  </p>
-                )}
-                {browsing ? (
-                  <p role="status">Loading folders…</p>
-                ) : (
-                  directories?.directories.map((directory) => (
-                    <button
-                      type="button"
-                      key={directory.path}
-                      disabled={creating !== null || !!directoryError}
-                      aria-label={`Open folder ${directory.name}`}
-                      onClick={() => void browse(directory.path)}
-                    >
-                      <PixelIcon name="folder" size={16} />
-                      <span>{directory.name}</span>
-                    </button>
-                  ))
-                )}
-                {!browsing && directories?.directories.length === 0 && (
-                  <p>No subfolders.</p>
-                )}
-              </div>
-              {directories?.truncated && (
-                <p className="codex-note">
-                  Some folders are not shown. Enter a full path to browse.
-                </p>
-              )}
-              <div className="codex-project-choice">
-                <Button
-                  disabled={creating !== null}
-                  onClick={() => {
-                    closePicker(true);
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  primary
-                  disabled={
-                    !canStart ||
-                    !directories ||
-                    browsing ||
-                    !!directoryError ||
-                    creating !== null ||
-                    path !== directories.path
-                  }
-                  onClick={() => {
-                    if (directories) void create(directories.path);
-                  }}
-                >
-                  {creating === 'folder' ? 'Starting…' : 'Start Here'}
-                </Button>
-              </div>
-            </section>
+            <CodexFolderPicker
+              desktop={desktop}
+              windowId={window.id}
+              path={path}
+              directories={directories}
+              directoryError={directoryError}
+              projectError={projectError}
+              recentProjects={recentProjects}
+              browsing={browsing}
+              creating={creating}
+              canStart={canStart}
+              onChangePath={changePath}
+              onBrowse={browse}
+              onClose={closePicker}
+              onStart={(directory) => void create(directory)}
+            />
           )}
           {choosingVM && (
             <VMNewSessionPanel
@@ -1189,252 +994,36 @@ export function CodexManager({
           <ul className="codex-session-list">
             {visibleSessions.map((session) => {
               const key = sessionKey(session);
-              const vmSession = isVMSession(session);
-              const recovery = continuationRecovery.get(key);
-              const ended = session.status === 'ended';
-              const showActivity =
-                !ended ||
-                (session.activity && session.activity.state !== 'unknown');
-              const shouldContinue =
-                !!recovery?.requestId || sessionCanContinue(session);
-              const canContinue =
-                !recovery?.error &&
-                (!!recovery?.requestId ||
-                  (sessionCanContinue(session) && (vmSession || canStart)));
               return (
-                <li
+                <CodexSessionRow
                   key={key}
-                  data-session-id={session.id}
-                  data-session-target={vmSession ? 'vm' : 'host'}
-                  data-run-id={session.runId}
-                  data-action-needed={hasActivityAction(session.activity)}
-                >
-                  <div className="codex-session-summary">
-                    <div className="codex-session-header">
-                      <strong>{sessionTitle(session)}</strong>
-                      {vmSession ? (
-                        <span
-                          className="codex-target-badge codex-target-badge--vm"
-                          data-testid="codex-session-target"
-                        >
-                          VM · {session.machineName || session.machineId}
-                        </span>
-                      ) : hasVMSessions ? (
-                        <span
-                          className="codex-target-badge"
-                          data-testid="codex-session-target"
-                        >
-                          Host
-                        </span>
-                      ) : null}
-                      {(sessionNameCounts.get(sessionTitle(session)) || 0) >
-                        1 && (
-                        <code
-                          className="codex-session-reference"
-                          data-testid="codex-run-id"
-                          title={session.runId}
-                        >
-                          Run {session.runId.slice(0, 8)}
-                        </code>
-                      )}
-                      {showActivity && (
-                        <CodexActivity
-                          activity={session.activity}
-                          stale={!!sessionError}
-                        />
-                      )}
-                    </div>
-                    <span>
-                      <span
-                        data-testid="codex-session-project"
-                        title={session.projectPath}
-                      >
-                        {projectName(session.projectPath)}
-                        {session.archivedAt &&
-                          filter === 'attention' &&
-                          ' · Archived'}
-                      </span>
-                      {ending === key
-                        ? ' · Ending…'
-                        : session.status !== 'running' &&
-                          ` · Run ${session.status}`}
-                    </span>
-                    {showActivity && session.activity?.reason && (
-                      <span>{session.activity.reason}</span>
-                    )}
-                    {!ended && session.reason && <span>{session.reason}</span>}
-                    {recovery?.error && (
-                      <span role="alert">{recovery.error}</span>
-                    )}
-                    {!sessionCanEnd(session) &&
-                      session.continuation.state === 'unavailable' && (
-                        <span>
-                          {session.continuation.reason ||
-                            'Conversation history is unavailable.'}
-                        </span>
-                      )}
-                  </div>
-                  <div className="codex-session-actions">
-                    <Button
-                      data-session-primary-action
-                      disabled={
-                        !hasActivityAction(session.activity) &&
-                        (continuing === key || (shouldContinue && !canContinue))
-                      }
-                      onClick={() => {
-                        setStartNotice('');
-                        if (
-                          shouldContinue &&
-                          !hasActivityAction(session.activity)
-                        )
-                          void continueSession(
-                            session,
-                            recovery?.requestId || null,
-                          );
-                        else openCodexSession(desktop, session);
-                      }}
-                    >
-                      {hasActivityAction(session.activity)
-                        ? 'Open'
-                        : continuing === key
-                          ? 'Continuing…'
-                          : recovery?.requestId
-                            ? 'Resolve Continue'
-                            : sessionIsLive(session)
-                              ? 'Open'
-                              : sessionCanContinue(session)
-                                ? 'Continue'
-                                : 'View'}
-                    </Button>
-                    {filter === 'attention' &&
-                      canReviewActivity(session.activity) && (
-                        <Button
-                          disabled={reviewing !== null}
-                          onClick={() => void review(session)}
-                        >
-                          {reviewing === key ? 'Dismissing…' : 'Dismiss alert'}
-                        </Button>
-                      )}
-                    <IconButton
-                      icon="more"
-                      label={`More session actions for ${sessionTitle(session)}, run ${session.runId.slice(0, 8)}`}
-                      aria-haspopup="menu"
-                      disabled={changingMetadata === key || ending === key}
-                      onClick={(event) => {
-                        const rect =
-                          event.currentTarget.getBoundingClientRect();
-                        desktop.contextMenu(
-                          [
-                            {
-                              label: 'Details',
-                              action: () =>
-                                void showSessionDetails(desktop, session),
-                            },
-                            ...(canReviewActivity(session.activity)
-                              ? [
-                                  {
-                                    label:
-                                      reviewing === key
-                                        ? 'Dismissing…'
-                                        : 'Dismiss alert',
-                                    disabled: reviewing !== null,
-                                    action: () => void review(session),
-                                  },
-                                ]
-                              : []),
-                            { separator: true },
-                            {
-                              label: recovery?.requestId
-                                ? 'Resolve Continue'
-                                : 'Continue',
-                              disabled: !canContinue || continuing !== null,
-                              action: () =>
-                                void continueSession(
-                                  session,
-                                  recovery?.requestId || null,
-                                ),
-                            },
-                            { separator: true },
-                            {
-                              label: 'Rename',
-                              disabled: changingMetadata !== null,
-                              action: () =>
-                                void changeMetadata(session, 'rename'),
-                            },
-                            {
-                              label: session.archivedAt
-                                ? 'Unarchive'
-                                : 'Archive',
-                              disabled: changingMetadata !== null,
-                              action: () =>
-                                void changeMetadata(session, 'archive'),
-                            },
-                            vmSession
-                              ? {
-                                  label: 'VM Terminal',
-                                  action: () => {
-                                    const dir = session.projectPath.replace(
-                                      /^\/projects\/?/,
-                                      '',
-                                    );
-                                    void machinesApi
-                                      .createTerminal(
-                                        session.machineId!,
-                                        crypto.randomUUID(),
-                                        session.hostId!,
-                                        dir || undefined,
-                                      )
-                                      .then((terminal) =>
-                                        openGuestTerminal(
-                                          desktop,
-                                          {
-                                            id: session.machineId!,
-                                            hostId: session.hostId!,
-                                            spec: {
-                                              name:
-                                                session.machineName ||
-                                                session.machineId!,
-                                            },
-                                          },
-                                          terminal,
-                                        ),
-                                      )
-                                      .catch((err: unknown) => {
-                                        if (mounted.current)
-                                          setActionError(
-                                            err instanceof Error
-                                              ? err.message
-                                              : 'Could not open VM terminal.',
-                                          );
-                                      });
-                                  },
-                                }
-                              : {
-                                  label: 'Host Terminal',
-                                  action: () => {
-                                    openTerminalWindow(
-                                      desktop,
-                                      session.projectPath,
-                                    );
-                                  },
-                                },
-                            { separator: true },
-                            {
-                              label: 'End Session',
-                              disabled:
-                                !sessionCanEnd(session) || ending !== null,
-                              action: () => void end(session),
-                            },
-                          ],
-                          { x: rect.left, y: rect.bottom },
-                          {
-                            title: `Run ${session.runId.slice(0, 8)} · ${sessionTitle(session)}`,
-                          },
-                        );
-                      }}
-                    />
-                  </div>
-                </li>
+                  desktop={desktop}
+                  session={session}
+                  hasVMSessions={hasVMSessions}
+                  duplicateTitle={
+                    (sessionNameCounts.get(sessionTitle(session)) || 0) > 1
+                  }
+                  filter={filter}
+                  sessionError={sessionError}
+                  canStart={canStart}
+                  recovery={continuationRecovery.get(key)}
+                  continuing={continuing}
+                  reviewing={reviewing}
+                  changingMetadata={changingMetadata}
+                  ending={ending}
+                  onClearNotice={() => setStartNotice('')}
+                  onContinue={(target, requestId) =>
+                    void continueSession(target, requestId)
+                  }
+                  onReview={(target) => void review(target)}
+                  onChangeMetadata={(target, action) =>
+                    void changeMetadata(target, action)
+                  }
+                  onEnd={(target) => void end(target)}
+                  onError={(message) => {
+                    if (mounted.current) setActionError(message);
+                  }}
+                />
               );
             })}
           </ul>
