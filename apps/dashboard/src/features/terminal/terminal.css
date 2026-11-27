@@ -76,3 +76,48 @@
   gap: 10px;
   flex-shrink: 0;
 }
+
+.terminal-touch-keybar {
+  display: none;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+  background: var(--ns-face);
+  border-top: 1px solid var(--ns-shadow);
+  scrollbar-width: none;
+}
+.terminal-touch-keybar::-webkit-scrollbar {
+  display: none;
+}
+.terminal-touch-key {
+  flex: none;
+  min-width: 34px;
+  min-height: 30px;
+  padding: 2px 8px;
+  background: var(--ns-light);
+  color: var(--ns-text);
+  border: 1px solid var(--ns-shadow);
+  box-shadow: var(--ns-raised);
+  font: 600 12px var(--ns-mono);
+  line-height: 1;
+  touch-action: manipulation;
+  user-select: none;
+}
+.terminal-touch-key:active:not(:disabled),
+.terminal-touch-key.is-active {
+  background: #272727;
+  color: #ffffff;
+  box-shadow: var(--ns-recessed);
+}
+.terminal-touch-key:disabled {
+  opacity: 0.5;
+}
+@media (max-width: 600px), (pointer: coarse) {
+  .terminal-touch-keybar {
+    display: flex;
+  }
+}

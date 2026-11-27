@@ -7,8 +7,9 @@ import {
 } from 'react';
 import { Button, IconButton } from '@cofy-x/axv-nextstep';
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
-import { codexAPI, sessionWindowTitle } from '../codex/api';
+import { codexAPI, sessionKey, sessionWindowTitle } from '../codex/api';
 import type { CodexSessionRecord } from '../codex/api';
+import { vmCodexAPI } from '../codex/vm-api';
 import { useCodexAvailability } from '../codex/CodexContext';
 import { openCodexSession } from '../codex/definition';
 import { computeStore } from '../machines/compute-store';
@@ -46,6 +47,9 @@ export function WelcomeWorkspace({
   const [sessions, setSessions] = useState<CodexSessionRecord[]>([]);
   const [hostProjects, setHostProjects] = useState<Project[]>([]);
   const [vmProjects, setVMProjects] = useState<VMProject[]>([]);
+  const [focusTab, setFocusTab] = useState<
+    'all' | 'alerts' | 'codex' | 'vms' | 'projects'
+  >('all');
   const [refreshing, setRefreshing] = useState(false);
   const [openingTerminalId, setOpeningTerminalId] = useState('');
   const [actionError, setActionError] = useState('');
@@ -59,25 +63,56 @@ export function WelcomeWorkspace({
     };
   }, []);
 
+  const codexMachinesRef = useRef<Machine[]>([]);
+  codexMachinesRef.current = compute.machines.filter(
+    (machine) =>
+      machine.status === 'running' &&
+      machine.ready &&
+      machine.guestCapabilities?.includes('codex'),
+  );
+  const codexMachineIds = codexMachinesRef.current.map((m) => m.id).join(',');
+
   const loadWorkspace = useCallback(
     async (signal?: AbortSignal) => {
       setRefreshing(true);
       try {
-        const [codexResult, hostResult, vmResult] = await Promise.allSettled([
-          codexReady
-            ? codexAPI.list(signal)
-            : Promise.resolve({ sessions: [] as CodexSessionRecord[] }),
-          projectsAPI.list(),
-          hostId
-            ? vmProjectsAPI.list(hostId, signal)
-            : Promise.resolve({ projects: [] as VMProject[] }),
-        ]);
+        const vmTargets = codexMachinesRef.current;
+        const [codexResult, hostResult, vmResult, vmCodexResult] =
+          await Promise.allSettled([
+            codexReady
+              ? codexAPI.list(signal)
+              : Promise.resolve({ sessions: [] as CodexSessionRecord[] }),
+            projectsAPI.list(),
+            hostId
+              ? vmProjectsAPI.list(hostId, signal)
+              : Promise.resolve({ projects: [] as VMProject[] }),
+            Promise.all(
+              vmTargets.map((machine) =>
+                vmCodexAPI
+                  .list(
+                    {
+                      hostId: machine.hostId,
+                      machineId: machine.id,
+                      machineName: machine.spec.name || machine.id,
+                    },
+                    signal,
+                  )
+                  .then((res) => res.sessions)
+                  .catch(() => [] as CodexSessionRecord[]),
+              ),
+            ),
+          ]);
         if (!mounted.current || signal?.aborted) return;
-        if (
+        const hostList =
           codexResult.status === 'fulfilled' &&
           Array.isArray(codexResult.value?.sessions)
-        )
-          setSessions(codexResult.value.sessions);
+            ? codexResult.value.sessions
+            : [];
+        const vmList =
+          vmCodexResult.status === 'fulfilled'
+            ? vmCodexResult.value.flat()
+            : [];
+        setSessions([...hostList, ...vmList]);
         if (
           hostResult.status === 'fulfilled' &&
           Array.isArray(hostResult.value?.projects)
@@ -100,7 +135,7 @@ export function WelcomeWorkspace({
     const controller = new AbortController();
     void loadWorkspace(controller.signal);
     return () => controller.abort();
-  }, [active, loadWorkspace]);
+  }, [active, loadWorkspace, codexMachineIds]);
 
   const attentionSessions = sessions.filter(
     (session) => !session.archivedAt && session.activity?.needsAttention,
@@ -201,125 +236,182 @@ export function WelcomeWorkspace({
         </p>
       )}
 
-      {attentionSessions.length > 0 && (
-        <div
-          className="welcome-section"
-          role="region"
-          aria-label="Action needed"
+      <nav
+        className="welcome-mobile-focus"
+        aria-label="Mobile workspace focus"
+        data-testid="welcome-mobile-focus"
+      >
+        {(
+          [
+            { id: 'all', label: 'All', count: 0 },
+            {
+              id: 'alerts',
+              label: 'Alerts',
+              count: attentionSessions.length,
+            },
+            {
+              id: 'codex',
+              label: 'Codex',
+              count: attentionSessions.length + activeSessions.length,
+            },
+            { id: 'vms', label: 'VMs', count: compute.machines.length },
+            { id: 'projects', label: 'Projects', count: totalProjects },
+          ] as const
+        ).map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            className={`welcome-focus-tab${focusTab === tab.id ? ' is-active' : ''}${tab.id === 'alerts' && tab.count > 0 ? ' is-attention' : ''}`}
+            aria-pressed={focusTab === tab.id}
+            data-focus-tab={tab.id}
+            onClick={() => setFocusTab(tab.id)}
+          >
+            <span>{tab.label}</span>
+            {tab.count > 0 && (
+              <span className="welcome-focus-count">{tab.count}</span>
+            )}
+          </button>
+        ))}
+        <button
+          type="button"
+          className="welcome-focus-tab"
+          onClick={() => desktop.openApp('notifications')}
         >
-          <h3>Action needed</h3>
-          <ul className="welcome-list">
-            {attentionSessions.slice(0, 3).map((session) => (
-              <li key={session.id} className="welcome-item is-attention">
-                <div className="welcome-item-main">
-                  <strong>{sessionWindowTitle(session)}</strong>
-                  <small>
-                    {humanize(session.activity?.state || session.status)} ·{' '}
-                    {session.projectPath}
-                  </small>
-                </div>
-                <div className="welcome-item-actions">
-                  <Button
-                    primary
-                    onClick={() => openCodexSession(desktop, session)}
-                  >
-                    Open
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
+          Inbox
+        </button>
+      </nav>
+
+      {focusTab === 'alerts' && attentionSessions.length === 0 && (
+        <p className="welcome-focus-empty" role="status">
+          No pending approvals or alerts right now.
+        </p>
       )}
 
-      {visibleMachines.length > 0 && (
-        <div
-          className="welcome-section"
-          role="region"
-          aria-label="Recent virtual machines"
-        >
-          <div className="welcome-section-heading">
-            <h3>Virtual Machines</h3>
-            <button
-              type="button"
-              className="welcome-section-link"
-              onClick={() => desktop.openApp('machines')}
-            >
-              View all
-            </button>
-          </div>
-          <ul className="welcome-list">
-            {visibleMachines.map((machine) => {
-              const volumeId = machine.spec.volumeId;
-              const canOpenFiles =
-                !!volumeId &&
-                machine.spec.retainVolume &&
-                machine.status === 'running' &&
-                machine.desired === 'running' &&
-                machine.ready &&
-                !!machine.guestCapabilities?.includes('project-files');
-              const canTerminal = !guestTerminalReason(machine);
-              return (
+      {(focusTab === 'all' || focusTab === 'alerts' || focusTab === 'codex') &&
+        attentionSessions.length > 0 && (
+          <div
+            className="welcome-section"
+            role="region"
+            aria-label="Action needed"
+          >
+            <h3>Action needed</h3>
+            <ul className="welcome-list">
+              {attentionSessions.slice(0, 3).map((session) => (
                 <li
-                  key={`${machine.hostId}:${machine.id}`}
-                  className="welcome-item"
+                  key={sessionKey(session)}
+                  className="welcome-item is-attention"
                 >
                   <div className="welcome-item-main">
-                    <strong>
-                      <span
-                        className="welcome-status-dot"
-                        data-status={machine.status}
-                        aria-hidden="true"
-                      />
-                      {machine.spec.name}
-                    </strong>
+                    <strong>{sessionWindowTitle(session)}</strong>
                     <small>
-                      {humanize(machine.status)} · {machine.spec.resources.cpus}{' '}
-                      CPU · {machine.spec.resources.memoryMiB} MiB
+                      {humanize(session.activity?.state || session.status)} ·{' '}
+                      {session.projectPath}
                     </small>
                   </div>
                   <div className="welcome-item-actions">
-                    {canTerminal && (
-                      <Button
-                        disabled={openingTerminalId === machine.id}
-                        onClick={() => void openTerminal(machine)}
-                      >
-                        {openingTerminalId === machine.id
-                          ? 'Opening…'
-                          : 'Terminal'}
-                      </Button>
-                    )}
-                    {canOpenFiles && volumeId && (
-                      <Button
-                        onClick={() =>
-                          desktop.openApp(
-                            'project-files',
-                            {
-                              hostId: machine.hostId,
-                              machineId: machine.id,
-                              vmProjectVolumeId: volumeId,
-                            },
-                            { title: `${machine.spec.name} — Project Files` },
-                          )
-                        }
-                      >
-                        Projects
-                      </Button>
-                    )}
                     <Button
-                      onClick={() => openMachineInspector(desktop, machine)}
+                      primary
+                      onClick={() => openCodexSession(desktop, session)}
                     >
-                      Inspect
+                      Open
                     </Button>
                   </div>
                 </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
+              ))}
+            </ul>
+          </div>
+        )}
 
-      {totalProjects > 0 && (
+      {(focusTab === 'all' || focusTab === 'vms') &&
+        visibleMachines.length > 0 && (
+          <div
+            className="welcome-section"
+            role="region"
+            aria-label="Recent virtual machines"
+          >
+            <div className="welcome-section-heading">
+              <h3>Virtual Machines</h3>
+              <button
+                type="button"
+                className="welcome-section-link"
+                onClick={() => desktop.openApp('machines')}
+              >
+                View all
+              </button>
+            </div>
+            <ul className="welcome-list">
+              {visibleMachines.map((machine) => {
+                const volumeId = machine.spec.volumeId;
+                const canOpenFiles =
+                  !!volumeId &&
+                  machine.spec.retainVolume &&
+                  machine.status === 'running' &&
+                  machine.desired === 'running' &&
+                  machine.ready &&
+                  !!machine.guestCapabilities?.includes('project-files');
+                const canTerminal = !guestTerminalReason(machine);
+                return (
+                  <li
+                    key={`${machine.hostId}:${machine.id}`}
+                    className="welcome-item"
+                  >
+                    <div className="welcome-item-main">
+                      <strong>
+                        <span
+                          className="welcome-status-dot"
+                          data-status={machine.status}
+                          aria-hidden="true"
+                        />
+                        {machine.spec.name}
+                      </strong>
+                      <small>
+                        {humanize(machine.status)} ·{' '}
+                        {machine.spec.resources.cpus} CPU ·{' '}
+                        {machine.spec.resources.memoryMiB} MiB
+                      </small>
+                    </div>
+                    <div className="welcome-item-actions">
+                      {canTerminal && (
+                        <Button
+                          disabled={openingTerminalId === machine.id}
+                          onClick={() => void openTerminal(machine)}
+                        >
+                          {openingTerminalId === machine.id
+                            ? 'Opening…'
+                            : 'Terminal'}
+                        </Button>
+                      )}
+                      {canOpenFiles && volumeId && (
+                        <Button
+                          onClick={() =>
+                            desktop.openApp(
+                              'project-files',
+                              {
+                                hostId: machine.hostId,
+                                machineId: machine.id,
+                                vmProjectVolumeId: volumeId,
+                              },
+                              { title: `${machine.spec.name} — Project Files` },
+                            )
+                          }
+                        >
+                          Projects
+                        </Button>
+                      )}
+                      <Button
+                        onClick={() => openMachineInspector(desktop, machine)}
+                      >
+                        Inspect
+                      </Button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
+      {(focusTab === 'all' || focusTab === 'projects') && totalProjects > 0 && (
         <div
           className="welcome-section"
           role="region"
@@ -397,39 +489,40 @@ export function WelcomeWorkspace({
         </div>
       )}
 
-      {activeSessions.length > 0 && (
-        <div
-          className="welcome-section"
-          role="region"
-          aria-label="Active Codex sessions"
-        >
-          <div className="welcome-section-heading">
-            <h3>Active Codex Sessions</h3>
-            <button
-              type="button"
-              className="welcome-section-link"
-              onClick={() => desktop.openApp('codex')}
-            >
-              All sessions
-            </button>
+      {(focusTab === 'all' || focusTab === 'codex') &&
+        activeSessions.length > 0 && (
+          <div
+            className="welcome-section"
+            role="region"
+            aria-label="Active Codex sessions"
+          >
+            <div className="welcome-section-heading">
+              <h3>Active Codex Sessions</h3>
+              <button
+                type="button"
+                className="welcome-section-link"
+                onClick={() => desktop.openApp('codex')}
+              >
+                All sessions
+              </button>
+            </div>
+            <ul className="welcome-list">
+              {activeSessions.slice(0, 3).map((session) => (
+                <li key={sessionKey(session)} className="welcome-item">
+                  <div className="welcome-item-main">
+                    <strong>{sessionWindowTitle(session)}</strong>
+                    <small>{session.projectPath}</small>
+                  </div>
+                  <div className="welcome-item-actions">
+                    <Button onClick={() => openCodexSession(desktop, session)}>
+                      Open
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
           </div>
-          <ul className="welcome-list">
-            {activeSessions.slice(0, 3).map((session) => (
-              <li key={session.id} className="welcome-item">
-                <div className="welcome-item-main">
-                  <strong>{sessionWindowTitle(session)}</strong>
-                  <small>{session.projectPath}</small>
-                </div>
-                <div className="welcome-item-actions">
-                  <Button onClick={() => openCodexSession(desktop, session)}>
-                    Open
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+        )}
     </section>
   );
 }

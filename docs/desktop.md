@@ -64,7 +64,11 @@ Key registration invariants:
 
 ### Clipboard input
 
-Host Terminal, Guest Terminal and Codex share [`use-terminal-paste.tsx`](../apps/dashboard/src/shared/terminal/use-terminal-paste.tsx) and [`terminal-paste.ts`](../apps/dashboard/src/shared/terminal/terminal-paste.ts). Each paste captures `(emulator, connection, inputGeneration)`; disconnecting or replacing the connection invalidates pending clipboard reads and fallback dialogs so stale input can never reach a later session.
+Host Terminal, Guest Terminal and Codex share [`use-terminal-paste.tsx`](../apps/dashboard/src/shared/terminal/use-terminal-paste.tsx), [`terminal-paste.ts`](../apps/dashboard/src/shared/terminal/terminal-paste.ts), and [`MobileTerminalKeybar.tsx`](../apps/dashboard/src/shared/terminal/MobileTerminalKeybar.tsx). Each paste captures `(emulator, connection, inputGeneration)`; disconnecting or replacing the connection invalidates pending clipboard reads and fallback dialogs so stale input can never reach a later session. On narrow or coarse-pointer viewports (`<= 600 px` or touch), the shared keybar provides non-focus-stealing `Esc`, `Tab`, sticky `Ctrl`, `^C`/`^D`, arrows and `Enter` controls.
+
+### Mobile focus workspace
+
+On narrow viewports (`< 600 px`), [`WelcomeWorkspace.tsx`](../apps/dashboard/src/features/welcome/WelcomeWorkspace.tsx) exposes a mobile focus bar (`All`, `Alerts`, `Codex`, `VMs`, `Projects`, `Inbox`) over live Host/VM Codex sessions, VMs and projects while keeping `packages/nextstep` strictly generic.
 
 ### Project terminals
 
