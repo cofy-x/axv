@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, IconButton, StatusBar, Tabs } from '@cofy-x/axv-nextstep';
+import { Button, StatusBar, Tabs } from '@cofy-x/axv-nextstep';
 import { useResource } from '../../shared/api/useResource';
 import { APIError } from '../../shared/api/http';
 import { CodeEditor } from '../../shared/code-editor';
@@ -23,6 +23,8 @@ import { VMProjectGitHub } from './VMProjectGitHub';
 import { VMProjectLocationDetails } from './VMProjectLocationDetails';
 import { VMProjectDirectoryPane } from './VMProjectDirectoryPane';
 import { VMProjectFileHeader } from './VMProjectFileHeader';
+import { VMProjectRecoveryBanners } from './VMProjectRecoveryBanners';
+import { VMProjectToolbar } from './VMProjectToolbar';
 import { useVMFileObserver } from './useVMFileObserver';
 import {
   vmFileBindingError,
@@ -894,127 +896,70 @@ export function VMProjectFiles({
   };
   return (
     <div className="project-browser vm-project-browser">
-      <div className="app-toolbar project-browser-toolbar">
-        <div
-          className="project-browser-actions"
-          role="group"
-          aria-label="VM project actions"
-        >
-          <Button
-            primary
-            disabled={!windowInteractive || !binding || openingTerminal}
-            onClick={() => void openProjectTerminal()}
-          >
-            {openingTerminal ? 'Opening Terminal…' : 'Terminal'}
-          </Button>
-          <Button
-            disabled={!windowInteractive || !binding || openingCodex}
-            onClick={() => void openProjectCodex()}
-          >
-            {openingCodex ? 'Opening Codex…' : 'Codex'}
-          </Button>
-          <Button
-            disabled={!windowInteractive}
-            onClick={() =>
-              desktop.openApp(
-                'project-files',
-                { hostId, vmTasksProjectId: id },
-                { title: `Tasks · ${project?.name || 'VM project'}` },
-              )
-            }
-          >
-            Tasks
-          </Button>
-          {binding && (
-            <Button
-              disabled={!windowInteractive}
-              onClick={() =>
-                desktop.openApp(
-                  'machine-inspector',
-                  { hostId: binding.hostId, machineId: binding.machineId },
-                  {
-                    title: `${project?.name || binding.machineId} — Inspector`,
-                  },
-                )
-              }
-            >
-              VM Inspector
-            </Button>
-          )}
-          <IconButton
-            icon="more"
-            label="More VM project actions"
-            aria-haspopup="menu"
-            disabled={!windowInteractive}
-            onClick={(event) => {
-              const rect = event.currentTarget.getBoundingClientRect();
-              const target = latest.current.binding;
-              const generation = navigationGeneration.current;
-              const path = editor?.path || '';
-              desktop.contextMenu(
-                [
-                  ...(['file', 'folder'] as const).map((kind) => ({
-                    label: kind === 'file' ? 'New File' : 'New Folder',
-                    disabled:
-                      unavailable || saving || composing || !interactive,
-                    action: () => {
-                      if (ownsLocation(target, generation)) void create(kind);
-                    },
-                  })),
-                  { separator: true },
-                  {
-                    label: 'Download Draft',
-                    description: path ? path : undefined,
-                    disabled:
-                      !interactive ||
-                      !path ||
-                      composing ||
-                      !!pendingRecovery ||
-                      blockedRecovery,
-                    action: () => downloadFileDraft(target, path, generation),
-                  },
-                  {
-                    label: 'Reconnect',
-                    disabled: !interactive || saving || composing,
-                    action: () => void reconnectProject(target, generation),
-                  },
-                  { separator: true },
-                  {
-                    label: 'Projects',
-                    action: () => {
-                      if (mounted.current) desktop.openApp('project-files');
-                    },
-                  },
-                ],
-                { x: rect.left, y: rect.bottom },
-                { title: menuTitle },
-              );
-            }}
-          />
-        </div>
-        <div
-          className="project-browser-navigation"
-          role="group"
-          aria-label="Project navigation"
-          hidden={section !== 'files'}
-          inert={!interactive}
-        >
-          <IconButton
-            icon="up"
-            label="Up"
-            disabled={!folder || saving || composing || !interactive}
-            onClick={() =>
-              void navigate(folder.split('/').slice(0, -1).join('/'))
-            }
-          />
-          <IconButton
-            icon="refresh"
-            label="Refresh directory"
-            disabled={unavailable || !interactive}
-            onClick={() => setRefresh((value) => value + 1)}
-          />
-        </div>
-      </div>
+      <VMProjectToolbar
+        desktop={desktop}
+        projectId={id}
+        hostId={hostId}
+        project={project}
+        binding={binding}
+        section={section}
+        folder={folder}
+        windowInteractive={windowInteractive}
+        interactive={interactive}
+        unavailable={unavailable}
+        saving={saving}
+        composing={composing}
+        openingTerminal={openingTerminal}
+        openingCodex={openingCodex}
+        onOpenTerminal={() => void openProjectTerminal()}
+        onOpenCodex={() => void openProjectCodex()}
+        onOpenMoreMenu={(rect) => {
+          const target = latest.current.binding;
+          const generation = navigationGeneration.current;
+          const path = editor?.path || '';
+          desktop.contextMenu(
+            [
+              ...(['file', 'folder'] as const).map((kind) => ({
+                label: kind === 'file' ? 'New File' : 'New Folder',
+                disabled: unavailable || saving || composing || !interactive,
+                action: () => {
+                  if (ownsLocation(target, generation)) void create(kind);
+                },
+              })),
+              { separator: true },
+              {
+                label: 'Download Draft',
+                description: path ? path : undefined,
+                disabled:
+                  !interactive ||
+                  !path ||
+                  composing ||
+                  !!pendingRecovery ||
+                  blockedRecovery,
+                action: () => downloadFileDraft(target, path, generation),
+              },
+              {
+                label: 'Reconnect',
+                disabled: !interactive || saving || composing,
+                action: () => void reconnectProject(target, generation),
+              },
+              { separator: true },
+              {
+                label: 'Projects',
+                action: () => {
+                  if (mounted.current) desktop.openApp('project-files');
+                },
+              },
+            ],
+            { x: rect.left, y: rect.bottom },
+            { title: menuTitle },
+          );
+        }}
+        onNavigateUp={() =>
+          void navigate(folder.split('/').slice(0, -1).join('/'))
+        }
+        onRefresh={() => setRefresh((value) => value + 1)}
+      />
       <VMProjectLocationDetails
         section={section}
         folder={folder}
@@ -1104,178 +1049,83 @@ export function VMProjectFiles({
             hidden={section !== 'files'}
             inert={!interactive}
           >
-            {fileErrors.length > 0 && (
-              <div className="project-error" role="alert">
-                <div>
-                  {fileErrors.map((reason) => (
-                    <p key={reason}>{reason}</p>
-                  ))}
-                </div>
-                <div className="app-actions">
-                  {downloadAction}
-                  {error?.operation === 'read' && !needsReconnect(error) && (
-                    <Button
-                      disabled={reading || !interactive}
-                      onClick={() => {
-                        focusContent();
-                        setReadRequest((value) => value + 1);
-                      }}
-                    >
-                      Retry
-                    </Button>
-                  )}
-                  {error?.operation === 'save' &&
-                    !needsReconnect(error) &&
-                    editor && (
-                      <Button
-                        disabled={saving || composing || !interactive}
-                        onClick={() => {
-                          focusContent();
-                          void reloadFile(
-                            binding,
-                            editor.path,
-                            navigationGeneration.current,
-                          );
-                        }}
-                      >
-                        Reload
-                      </Button>
-                    )}
-                  {listing.error && (
-                    <Button
-                      disabled={!interactive}
-                      onClick={() => {
-                        focusContent();
-                        setRefresh((value) => value + 1);
-                      }}
-                    >
-                      Refresh
-                    </Button>
-                  )}
-                  {(needsReconnect(error) ||
-                    connection.error ||
-                    listing.error) && (
-                    <Button
-                      disabled={saving || composing || !interactive}
-                      onClick={() => {
-                        focusContent();
-                        void reconnectProject();
-                      }}
-                    >
-                      Reconnect
-                    </Button>
-                  )}
-                </div>
-              </div>
-            )}
-            {feedback?.kind === 'action' && (
-              <p className="project-feedback" role="status">
-                {feedback.message}
-              </p>
-            )}
-            {blockedRecovery && (
-              <section
-                className="project-recovery app-pad"
-                aria-label="Unavailable VM project recovery"
-              >
-                <p>
-                  The stored recovery record could not be read. Editing is
-                  paused to preserve it. Copy or inspect that browser record
-                  before choosing to discard it.
-                </p>
-                <Button
-                  disabled={!interactive}
-                  onClick={() =>
-                    void (async () => {
-                      const answer = await desktop.dialog({
-                        title: 'Discard stored recovery?',
-                        message:
-                          'This removes the unreadable VM project recovery record from this tab. Its contents cannot be recovered by AXV afterward.',
-                        buttons: [
-                          { label: 'Cancel', value: 'cancel', cancel: true },
-                          { label: 'Discard', value: 'discard', default: true },
-                        ],
-                      });
-                      if (answer?.button === 'discard' && persist(null))
-                        setBlockedRecovery(false);
-                    })()
-                  }
-                >
-                  Discard Recovery
-                </Button>
-              </section>
-            )}
-            {pendingRecovery && (
-              <section
-                className="project-recovery app-pad"
-                aria-label="VM project draft recovery"
-              >
-                <strong>Unsaved draft: {pendingRecovery.editor.path}</strong>
-                <p>
-                  This tab kept your text and its original VM binding. Restore
-                  keeps the original file version check.
-                </p>
-                <Button
-                  disabled={!interactive}
-                  onClick={() => {
-                    navigationGeneration.current++;
-                    setOriginalBinding(pendingRecovery.binding);
-                    setEditor(pendingRecovery.editor);
-                    setManualFile(pendingRecovery.editor.path);
-                    desktop.updateWindowState(window.id, {
-                      file: pendingRecovery.editor.path,
-                      folder: pendingRecovery.editor.path
-                        .split('/')
-                        .slice(0, -1)
-                        .join('/'),
-                      reading: true,
-                    });
-                    setPendingRecovery(null);
-                  }}
-                >
-                  Restore Draft
-                </Button>
-                <Button
-                  disabled={!interactive}
-                  onClick={() => {
-                    if (persist(null)) setPendingRecovery(null);
-                  }}
-                >
-                  Discard Draft
-                </Button>
-              </section>
-            )}
-            {!connection.data && !connection.error && (
-              <p className="project-feedback" role="status">
-                Connecting to VM project…
-              </p>
-            )}
-            {visibleNotice && (
-              <section
-                className="project-file-observation"
-                role="status"
-                aria-label="VM file updates"
-              >
-                <p>{visibleNotice.message}</p>
-                <div className="app-actions">
-                  {visibleNotice.kind !== 'changed' &&
-                    fileErrors.length === 0 &&
-                    downloadAction}
-                  {visibleNotice.kind === 'binding' && !existingReconnect ? (
-                    <Button
-                      disabled={saving || composing || !interactive}
-                      onClick={() => void reconnectProject()}
-                    >
-                      Reconnect
-                    </Button>
-                  ) : visibleNotice.kind === 'error' ? (
-                    <Button disabled={!interactive} onClick={checkFile}>
-                      Retry check
-                    </Button>
-                  ) : null}
-                </div>
-              </section>
-            )}
+            <VMProjectRecoveryBanners
+              interactive={interactive}
+              saving={saving}
+              reading={reading}
+              composing={composing}
+              hasEditor={!!editor}
+              fileErrors={fileErrors}
+              errorOperation={error?.operation}
+              errorNeedsReconnect={needsReconnect(error)}
+              hasConnectionError={!!connection.error}
+              hasListingError={!!listing.error}
+              existingReconnect={existingReconnect}
+              connecting={!connection.data && !connection.error}
+              actionFeedback={
+                feedback?.kind === 'action' ? feedback.message : undefined
+              }
+              blockedRecovery={blockedRecovery}
+              pendingRecoveryPath={pendingRecovery?.editor.path}
+              visibleNotice={visibleNotice}
+              downloadAction={downloadAction}
+              onRetryRead={() => {
+                focusContent();
+                setReadRequest((value) => value + 1);
+              }}
+              onReloadFile={() => {
+                if (!editor) return;
+                focusContent();
+                void reloadFile(
+                  binding,
+                  editor.path,
+                  navigationGeneration.current,
+                );
+              }}
+              onRefreshListing={() => {
+                focusContent();
+                setRefresh((value) => value + 1);
+              }}
+              onReconnect={() => {
+                focusContent();
+                void reconnectProject();
+              }}
+              onDiscardBlockedRecovery={() =>
+                void (async () => {
+                  const answer = await desktop.dialog({
+                    title: 'Discard stored recovery?',
+                    message:
+                      'This removes the unreadable VM project recovery record from this tab. Its contents cannot be recovered by AXV afterward.',
+                    buttons: [
+                      { label: 'Cancel', value: 'cancel', cancel: true },
+                      { label: 'Discard', value: 'discard', default: true },
+                    ],
+                  });
+                  if (answer?.button === 'discard' && persist(null))
+                    setBlockedRecovery(false);
+                })()
+              }
+              onRestoreDraft={() => {
+                if (!pendingRecovery) return;
+                navigationGeneration.current++;
+                setOriginalBinding(pendingRecovery.binding);
+                setEditor(pendingRecovery.editor);
+                setManualFile(pendingRecovery.editor.path);
+                desktop.updateWindowState(window.id, {
+                  file: pendingRecovery.editor.path,
+                  folder: pendingRecovery.editor.path
+                    .split('/')
+                    .slice(0, -1)
+                    .join('/'),
+                  reading: true,
+                });
+                setPendingRecovery(null);
+              }}
+              onDiscardDraft={() => {
+                if (persist(null)) setPendingRecovery(null);
+              }}
+              onRetryCheck={checkFile}
+            />
             <div className={`project-content${isReading ? ' is-reading' : ''}`}>
               <VMProjectDirectoryPane
                 directoryRef={directory}

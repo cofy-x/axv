@@ -36,7 +36,7 @@ import {
   setSessionArchived,
 } from './actions';
 import { showSessionDetails } from './details';
-import { codexMoreMenu, openCodexSession } from './definition';
+import { openCodexSession } from './definition';
 import { publishSessionMetadata, subscribeSessionMetadata } from './metadata';
 import { openTerminalWindow } from '../terminal/definition';
 import { openGuestTerminal } from '../machines/open-terminal';
@@ -44,9 +44,8 @@ import { machinesApi } from '../machines/api';
 import { CodexResumeRequests, continueConversation } from './continuation';
 import { useCodexAvailability } from './CodexContext';
 import { projectsAPI } from '../project-files/api';
-import { runCommand } from '../../shared/desktop/dialogs';
 import { useDraftNamespace } from '../../shared/drafts/context';
-import { CodexActivity } from './CodexActivity';
+import { CodexTerminalToolbar } from './CodexTerminalToolbar';
 import {
   canReviewActivity,
   publishSessionActivity,
@@ -915,125 +914,29 @@ export function CodexTerminal({
           reviewFocus.current = null;
       }}
     >
-      <div className="app-toolbar terminal-toolbar codex-primary-toolbar">
-        <div className="codex-toolbar-actions">
-          <Button onClick={() => desktop.openApp('codex')}>Sessions</Button>
-          <Button
-            disabled={state.phase !== 'connected'}
-            onClick={() => void interrupt()}
-          >
-            Interrupt
-          </Button>
-          {canReconnect && (
-            <Button onClick={() => void reconnect()}>Reconnect</Button>
-          )}
-          {resumePending ? (
-            <Button
-              disabled={!canContinue}
-              onClick={() => void continueSession()}
-            >
-              {continuing ? 'Continuing…' : 'Resolve Continue'}
-            </Button>
-          ) : activeRun ? (
-            <Button onClick={() => void openRunning()}>
-              Open Running Session
-            </Button>
-          ) : state.session && sessionCanContinue(state.session) ? (
-            <Button
-              disabled={!canContinue}
-              onClick={() => void continueSession()}
-            >
-              {continuing ? 'Continuing…' : 'Continue'}
-            </Button>
-          ) : null}
-        </div>
-        <div className="codex-toolbar-status">
-          {isVM && (
-            <span
-              className="codex-target-badge codex-target-badge--vm"
-              data-testid="codex-target-badge"
-            >
-              VM · {vmMachineName}
-            </span>
-          )}
-          {state.session?.archivedAt && (
-            <span className="codex-archived-label">Archived</span>
-          )}
-          <div className="codex-terminal-activity">
-            <CodexActivity
-              activity={state.session?.activity}
-              stale={!!metadataError}
-            />
-            {canReviewActivity(state.session?.activity) && (
-              <Button
-                disabled={reviewing}
-                onClick={(event) => void review(event.currentTarget)}
-              >
-                {reviewing ? 'Dismissing…' : 'Dismiss alert'}
-              </Button>
-            )}
-          </div>
-          <IconButton
-            icon="more"
-            label="More Codex actions"
-            className="codex-more-actions"
-            aria-haspopup="menu"
-            onClick={(event) => {
-              const rect = event.currentTarget.getBoundingClientRect();
-              desktop.contextMenu(
-                codexMoreMenu(commands, window.id, {
-                  projectFiles: () =>
-                    void runCommand(desktop, async () => {
-                      await projectFiles();
-                    }),
-                  projectFilesAvailable: !!state.session,
-                }),
-                { x: rect.left, y: rect.bottom },
-                { title: 'Codex' },
-              );
-            }}
-          />
-        </div>
-      </div>
-      {state.session?.activity?.reason && (
-        <div className="terminal-message" role="status">
-          {state.session.activity.reason}
-        </div>
-      )}
-      {(state.message || feedback || metadataError || resumeRecoveryError) && (
-        <div
-          className="terminal-message"
-          role={
-            !feedback &&
-            !metadataError &&
-            !resumeRecoveryError &&
-            (state.phase === 'ended' || state.phase === 'reconnecting')
-              ? 'status'
-              : 'alert'
-          }
-        >
-          {[
-            ...new Set(
-              [
-                resumeRecoveryError,
-                state.message,
-                feedback,
-                metadataError,
-              ].filter(Boolean),
-            ),
-          ].map((message) => (
-            <div key={message}>{message}</div>
-          ))}
-        </div>
-      )}
-      {state.session &&
-        !sessionCanEnd(state.session) &&
-        state.session.continuation.state === 'unavailable' && (
-          <div className="terminal-message" role="status">
-            {state.session.continuation.reason ||
-              'Conversation history is unavailable. This run cannot be continued.'}
-          </div>
-        )}
+      <CodexTerminalToolbar
+        desktop={desktop}
+        commands={commands}
+        windowId={window.id}
+        isVM={isVM}
+        vmMachineName={vmMachineName}
+        state={state}
+        canReconnect={canReconnect}
+        canContinue={canContinue}
+        continuing={continuing}
+        resumePending={resumePending}
+        activeRun={activeRun}
+        metadataError={metadataError}
+        feedback={feedback}
+        resumeRecoveryError={resumeRecoveryError}
+        reviewing={reviewing}
+        onInterrupt={() => void interrupt()}
+        onReconnect={() => void reconnect()}
+        onContinue={() => void continueSession()}
+        onOpenRunning={() => void openRunning()}
+        onReview={(button) => void review(button)}
+        onProjectFiles={projectFiles}
+      />
       <div
         className="terminal-screen codex-terminal-screen"
         data-testid="codex-screen"
