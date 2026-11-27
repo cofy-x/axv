@@ -124,15 +124,49 @@ function diagnosticRows(
   };
 }
 
+function statusTone(
+  value?: string,
+): 'running' | 'failed' | 'transitioning' | undefined {
+  if (!value) return undefined;
+  const lower = value.toLowerCase();
+  if (
+    lower.includes('connected') ||
+    lower.includes('ready') ||
+    lower.includes('verified')
+  )
+    return 'running';
+  if (
+    lower.includes('fail') ||
+    lower.includes('error') ||
+    lower.includes('attention') ||
+    lower.includes('unavailable')
+  )
+    return 'failed';
+  return 'transitioning';
+}
+
 function DiagnosticList({ rows }: { rows: DiagnosticRow[] }) {
   return (
-    <dl className="info-list machines-details">
-      {rows.map(([label, value, code]) => (
-        <Fragment key={label}>
-          <dt>{label}</dt>
-          <dd>{code ? <code>{value}</code> : value}</dd>
-        </Fragment>
-      ))}
+    <dl className="info-list machines-details machine-diagnostics-table">
+      {rows.map(([label, value, code]) => {
+        const tone = label === 'Status' ? statusTone(value) : undefined;
+        return (
+          <Fragment key={label}>
+            <dt>{label}</dt>
+            <dd>
+              {tone ? (
+                <span className="machines-status-dot" data-status={tone}>
+                  {value}
+                </span>
+              ) : code ? (
+                <code>{value}</code>
+              ) : (
+                value
+              )}
+            </dd>
+          </Fragment>
+        );
+      })}
     </dl>
   );
 }
@@ -205,8 +239,9 @@ function MachineDiagnostics({
     <div className="machine-diagnostics">
       <DiagnosticList rows={sections.summary} />
       {!!sections.context.length && (
-        <details>
+        <details className="machine-diagnostics-section">
           <summary
+            className="ns-disclosure"
             tabIndex={0}
             onKeyDown={(event) => {
               if (event.key === 'Enter') event.stopPropagation();
@@ -214,10 +249,13 @@ function MachineDiagnostics({
           >
             Environment details
           </summary>
-          <DiagnosticList rows={sections.context} />
+          <div className="machine-diagnostics-section-body">
+            <DiagnosticList rows={sections.context} />
+          </div>
         </details>
       )}
       <details
+        className="machine-diagnostics-section"
         open={doctorOpen}
         onToggle={(event) => {
           const open = event.currentTarget.open;
@@ -226,6 +264,7 @@ function MachineDiagnostics({
         }}
       >
         <summary
+          className="ns-disclosure"
           tabIndex={0}
           onKeyDown={(event) => {
             if (event.key === 'Enter') event.stopPropagation();
@@ -233,41 +272,57 @@ function MachineDiagnostics({
         >
           System health (axv doctor)
         </summary>
-        <div className="machine-diagnostics-doctor">
-          {doctorLoading && <p role="status">Running host checks…</p>}
-          {doctorError && <p role="alert">{doctorError}</p>}
-          {doctorReport && (
-            <>
-              <p className="fine-print">
-                {doctorReport.ok} ok · {doctorReport.info} info ·{' '}
-                {doctorReport.warn} warn · {doctorReport.fail} fail
+        <div className="machine-diagnostics-section-body machine-diagnostics-doctor">
+          <div className="machine-diagnostics-doctor-bar">
+            {doctorLoading ? (
+              <p className="fine-print" role="status">
+                Running host checks…
               </p>
-              <ul className="machine-diagnostics-checks">
-                {doctorReport.checks.map((item) => (
-                  <li key={item.id} data-status={item.status}>
-                    <span className="machine-diagnostics-badge">
-                      {item.status.toUpperCase()}
-                    </span>
-                    <div>
-                      <strong>{item.label}</strong>
-                      <p>{item.detail}</p>
-                      {item.fix && (
-                        <p className="machine-diagnostics-fix">
-                          Fix: <code>{item.fix}</code>
-                        </p>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </>
+            ) : doctorReport ? (
+              <p className="machine-diagnostics-summary">
+                <span data-status="ok">{doctorReport.ok} ok</span>
+                <span data-status="info">{doctorReport.info} info</span>
+                <span data-status="warn">{doctorReport.warn} warn</span>
+                <span data-status="fail">{doctorReport.fail} fail</span>
+              </p>
+            ) : (
+              <span className="fine-print">Host diagnostics</span>
+            )}
+            {!doctorLoading && (
+              <Button onClick={() => void loadDoctor()}>Refresh checks</Button>
+            )}
+          </div>
+          {doctorError && (
+            <p className="machines-error" role="alert">
+              {doctorError}
+            </p>
           )}
-          {!doctorLoading && (
-            <Button onClick={() => void loadDoctor()}>Refresh checks</Button>
+          {doctorReport && (
+            <ul className="machine-diagnostics-checks">
+              {doctorReport.checks.map((item) => (
+                <li key={item.id} data-status={item.status}>
+                  <span
+                    className="machine-diagnostics-badge"
+                    data-status={item.status}
+                  >
+                    {item.status.toUpperCase()}
+                  </span>
+                  <div className="machine-diagnostics-check-body">
+                    <strong>{item.label}</strong>
+                    <p>{item.detail}</p>
+                    {item.fix && (
+                      <p className="machine-diagnostics-fix">
+                        Fix: <code>{item.fix}</code>
+                      </p>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       </details>
-      <div className="app-actions">
+      <div className="app-actions machine-diagnostics-footer">
         <Button
           aria-disabled={copyState === 'copying'}
           onClick={() => void copy()}

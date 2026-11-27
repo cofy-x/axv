@@ -1,61 +1,223 @@
-.machine-diagnostics .info-list {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
-  column-gap: 10px;
+.ns-dialog:has(.machine-diagnostics) {
+  width: min(560px, calc(100vw - 24px));
 }
 
-.machine-diagnostics .info-list dt {
+.machine-diagnostics {
+  display: grid;
+  gap: 10px;
+}
+
+.machine-diagnostics-table {
+  grid-template-columns: minmax(110px, 150px) minmax(0, 1fr);
+  gap: 0 12px;
+  padding: 4px 10px;
+  background: var(--ns-light);
+  border: 1px solid var(--ns-mid);
+  box-shadow: var(--ns-recessed);
+}
+
+.machine-diagnostics-table dt,
+.machine-diagnostics-table dd {
+  padding: 6px 0;
+  font-size: var(--ns-font-size-secondary);
+  line-height: 1.45;
+}
+
+.machine-diagnostics-table dt {
+  color: #4a4a4a;
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 
-.machine-diagnostics > details,
-.machine-diagnostics > .ns-field-label {
-  margin-block-start: 12px;
+.machine-diagnostics-table dt:not(:first-of-type),
+.machine-diagnostics-table dd:not(:first-of-type) {
+  border-top: 1px solid #e4e4e4;
 }
 
-.machine-diagnostics > details > .info-list {
-  margin-block-start: 8px;
+.machine-diagnostics-table code {
+  font-family: var(--ns-mono);
+  font-size: 11.5px;
+  word-break: break-all;
+}
+
+.machine-diagnostics-section {
+  border: 1px solid var(--ns-shadow);
+  background: color-mix(in srgb, var(--ns-face), var(--ns-light) 24%);
+  box-shadow: inset 1px 1px var(--ns-light);
+}
+
+.machine-diagnostics-section > summary.ns-disclosure {
+  padding: 6px calc(var(--ns-disclosure-indicator-size) + 12px) 6px 10px;
+  font-size: var(--ns-font-size-secondary);
+  font-weight: 600;
+}
+
+.machine-diagnostics-section > summary.ns-disclosure::before {
+  inset-inline-end: 6px;
+}
+
+.machine-diagnostics-section > summary.ns-disclosure::after {
+  inset-inline-end: calc(6px + (var(--ns-disclosure-indicator-size) - 7px) / 2);
+}
+
+.machine-diagnostics-section[open] > summary.ns-disclosure {
+  border-bottom: 1px solid color-mix(in srgb, var(--ns-shadow), transparent 35%);
+  background: color-mix(in srgb, var(--ns-face), var(--ns-light) 12%);
+}
+
+.machine-diagnostics-section-body {
+  padding: 10px;
 }
 
 .machine-diagnostics-doctor {
-  margin-block-start: 8px;
   display: grid;
   gap: 8px;
+}
+
+.machine-diagnostics-doctor-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.machine-diagnostics-doctor-bar p {
+  margin: 0;
+}
+
+.machine-diagnostics-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.machine-diagnostics-summary span {
+  padding: 2px 6px;
+  border: 1px solid var(--ns-mid);
+  background: var(--ns-light);
+}
+
+.machine-diagnostics-summary span[data-status='ok'] {
+  color: #1e6b36;
+  border-color: #9bc8a8;
+  background: #edf7f0;
+}
+
+.machine-diagnostics-summary span[data-status='info'] {
+  color: #1c4f7a;
+  border-color: #a6c4dc;
+  background: #eef5fa;
+}
+
+.machine-diagnostics-summary span[data-status='warn'] {
+  color: #7c5200;
+  border-color: #d5b562;
+  background: #fdf6e0;
+}
+
+.machine-diagnostics-summary span[data-status='fail'] {
+  color: #8c241d;
+  border-color: #d99b96;
+  background: #fceeed;
 }
 
 .machine-diagnostics-checks {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: grid;
-  gap: 6px;
+  max-height: 240px;
+  overflow: auto;
+  background: var(--ns-light);
+  border: 1px solid var(--ns-mid);
+  box-shadow: var(--ns-recessed);
 }
 
 .machine-diagnostics-checks li {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: 44px minmax(0, 1fr);
   gap: 8px;
   align-items: start;
+  padding: 7px 9px;
+  font-size: var(--ns-font-size-secondary);
+}
+
+.machine-diagnostics-checks li + li {
+  border-top: 1px solid #e2e2e2;
+}
+
+.machine-diagnostics-check-body {
+  min-width: 0;
 }
 
 .machine-diagnostics-checks p {
   margin: 2px 0 0;
+  color: #444;
+  line-height: 1.4;
 }
 
 .machine-diagnostics-badge {
-  font-family: var(--ns-font-mono);
+  display: inline-block;
+  text-align: center;
+  font-family: var(--ns-mono);
   font-size: 10px;
+  font-weight: 700;
   padding: 1px 4px;
-  border: 1px solid var(--ns-border);
-  background: var(--ns-surface-recessed);
+  border: 1px solid var(--ns-mid);
+  background: #eee;
+  color: #333;
+}
+
+.machine-diagnostics-badge[data-status='ok'] {
+  background: #e6f4ea;
+  border-color: #8ec49e;
+  color: #1e6b36;
+}
+
+.machine-diagnostics-badge[data-status='info'] {
+  background: #e8f0f8;
+  border-color: #9cbcd6;
+  color: #1c4f7a;
+}
+
+.machine-diagnostics-badge[data-status='warn'] {
+  background: #fdf3d7;
+  border-color: #d5b562;
+  color: #7c5200;
+}
+
+.machine-diagnostics-badge[data-status='fail'] {
+  background: #fbe9e7;
+  border-color: #d99b96;
+  color: #8c241d;
 }
 
 .machine-diagnostics-fix {
   font-size: 11px;
+  margin-top: 4px !important;
 }
 
-@media (max-width: 420px) {
+.machine-diagnostics-fix code {
+  display: inline-block;
+  padding: 2px 6px;
+  background: #1f2328;
+  color: #e6edf3;
+  font-family: var(--ns-mono);
+  font-size: 11px;
+}
+
+.machine-diagnostics-footer {
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--ns-shadow), transparent 40%);
+  gap: 8px 12px;
+}
+
+@media (max-width: 460px) {
   .ns-dialog-main:has(.machine-diagnostics) {
-    padding: 12px 14px 4px;
+    padding: 10px 12px 4px;
   }
 
   .ns-dialog-main:has(.machine-diagnostics) .ns-dialog-message {
@@ -63,14 +225,22 @@
   }
 
   .ns-dialog:has(.machine-diagnostics) > .ns-dialog-actions {
-    padding: 4px 14px 12px;
+    padding: 4px 12px 10px;
   }
 
-  .machine-diagnostics .info-list {
-    row-gap: 5px;
+  .machine-diagnostics-table {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .machine-diagnostics code {
-    word-break: break-all;
+  .machine-diagnostics-table dt {
+    padding-bottom: 1px;
+  }
+
+  .machine-diagnostics-table dd {
+    padding-top: 0;
+  }
+
+  .machine-diagnostics-table dd:not(:first-of-type) {
+    border-top: 0;
   }
 }

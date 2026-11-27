@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { Button, Field, IconButton, Select } from '@cofy-x/axv-nextstep';
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
 import type { PreparationPlan, PreparationRequirement } from './api';
@@ -368,34 +368,94 @@ export function MachineEnvironment({
   }
 
   const capacity = info?.capacity;
+  const hostPlatformLabel = [
+    platform === 'darwin' ? 'macOS' : platform && humanize(platform),
+    check?.arch || info?.hostArch,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const hostRuntimeLabel =
+    runtime && runtime.state !== 'not_configured'
+      ? [humanize(runtime.state), runtime.mode && humanize(runtime.mode)]
+          .filter(Boolean)
+          .join(' · ')
+      : '';
+  const runningVMs = data.machines.filter((m) => m.status === 'running').length;
+  const readyImages = data.images.filter(
+    (img) =>
+      !img.status || img.status === 'ready' || img.status === 'configured',
+  ).length;
   const hostCapacity = capacity && (
-    <div className="machines-host-limits">
-      <h3>Capacity limits</h3>
-      <dl className="machines-host-capacity">
-        <div>
-          <dt>CPUs</dt>
-          <dd>{capacity.cpus}</dd>
-        </div>
-        <div>
-          <dt>Memory</dt>
+    <>
+      <div className="machines-host-limits">
+        <h3>Capacity limits</h3>
+        <dl className="machines-host-capacity">
+          <div>
+            <dt>CPUs</dt>
+            <dd>{capacity.cpus}</dd>
+          </div>
+          <div>
+            <dt>Memory</dt>
+            <dd>
+              {capacity.memoryMiB % 1024 === 0
+                ? `${capacity.memoryMiB / 1024} GiB`
+                : `${capacity.memoryMiB} MiB`}
+            </dd>
+          </div>
+          <div>
+            <dt>Storage</dt>
+            <dd>{capacity.diskGiB} GiB</dd>
+          </div>
+          <div>
+            <dt>VM slots</dt>
+            <dd>
+              {data.machines.length} of {capacity.machines} used
+            </dd>
+          </div>
+        </dl>
+      </div>
+      <div className="machines-host-details">
+        <h3>Host &amp; providers</h3>
+        <dl className="info-list machines-details machines-host-overview-list">
+          {hostPlatformLabel && (
+            <>
+              <dt>Platform</dt>
+              <dd>{hostPlatformLabel}</dd>
+            </>
+          )}
+          {hostRuntimeLabel && (
+            <>
+              <dt>Runtime</dt>
+              <dd>{hostRuntimeLabel}</dd>
+            </>
+          )}
+          <dt>Active inventory</dt>
           <dd>
-            {capacity.memoryMiB % 1024 === 0
-              ? `${capacity.memoryMiB / 1024} GiB`
-              : `${capacity.memoryMiB} MiB`}
+            {runningVMs} running · {data.volumes.length} volume
+            {data.volumes.length === 1 ? '' : 's'} · {readyImages} image
+            {readyImages === 1 ? '' : 's'} ready
           </dd>
-        </div>
-        <div>
-          <dt>Storage</dt>
-          <dd>{capacity.diskGiB} GiB</dd>
-        </div>
-        <div>
-          <dt>VM slots</dt>
-          <dd>
-            {data.machines.length} of {capacity.machines} used
-          </dd>
-        </div>
-      </dl>
-    </div>
+          {info?.providers?.map((provider) => (
+            <Fragment key={provider.provider}>
+              <dt>{humanize(provider.provider)}</dt>
+              <dd>
+                <span
+                  className="machines-status-dot"
+                  data-status={provider.available ? 'running' : 'failed'}
+                >
+                  {[
+                    provider.available ? 'Available' : 'Unavailable',
+                    provider.version,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </span>
+              </dd>
+            </Fragment>
+          ))}
+        </dl>
+      </div>
+    </>
   );
   const providerWarnings = info?.providers
     ?.filter(
