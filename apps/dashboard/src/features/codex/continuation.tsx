@@ -9,27 +9,22 @@ import {
 } from './api';
 import type { CodexSessionRecord } from './api';
 
-const definitePreLaunchCodes = new Set([
-  'codex_limit',
-  'codex_unavailable',
-  'workspace_unavailable',
-  'history_unavailable',
-  'server_stopping',
+// These refusals follow request replay lookup and precede run reservation.
+// Shutdown, transport and reconciliation failures can describe an existing run.
+const preLaunchRefusals = new Map<string, readonly number[]>([
+  ['codex_limit', [503]],
+  ['codex_unavailable', [503]],
+  ['conversation_active', [409]],
+  ['run_changed', [409]],
+  ['project_changed', [409]],
+  ['workspace_changed', [409]],
+  ['history_unavailable', [409, 503]],
 ]);
 
 export function launchRejectedBeforeStart(error: unknown) {
-  if (!(error instanceof APIError)) return false;
-  if (
-    error.status >= 400 &&
-    error.status < 500 &&
-    error.status !== 408 &&
-    error.status !== 429
-  )
-    return true;
   return (
-    error.status === 503 &&
-    !!error.code &&
-    definitePreLaunchCodes.has(error.code)
+    error instanceof APIError &&
+    preLaunchRefusals.get(error.code)?.includes(error.status) === true
   );
 }
 
