@@ -12,6 +12,10 @@ import { FitAddon } from '@xterm/addon-fit';
 import { useWindowCommands } from '../../shared/desktop/WindowCommandsContext';
 import { desktopDatabase } from '../../shared/api/desktop';
 import { useTerminalPaste } from '../../shared/terminal/use-terminal-paste';
+import {
+  applyCtrlModifier,
+  MobileTerminalKeybar,
+} from '../../shared/terminal/MobileTerminalKeybar';
 import { canTransferWindowFocus } from '../../shared/desktop/focus-transfer';
 import { isDesktopTerminalKey } from '../terminal/terminal-keys';
 import {
@@ -109,6 +113,9 @@ export function CodexTerminal({
   const [size, setSize] = useState({ cols: 80, rows: 24 });
   const [hasSelection, setHasSelection] = useState(false);
   const [feedback, setFeedback] = useState('');
+  const [ctrlActive, setCtrlActive] = useState(false);
+  const ctrlActiveRef = useRef(false);
+  ctrlActiveRef.current = ctrlActive;
   const {
     pasteClipboard: paste,
     pasteText,
@@ -293,6 +300,15 @@ export function CodexTerminal({
     const subscriptions = [
       term.onData((data) => {
         returnToLive();
+        if (ctrlActiveRef.current) {
+          const modified = applyCtrlModifier(data);
+          ctrlActiveRef.current = false;
+          setCtrlActive(false);
+          if (modified) {
+            recordPasteInput(session.sendText(modified));
+            return;
+          }
+        }
         recordPasteInput(session.sendText(data));
       }),
       term.onBinary((data) => {
@@ -1024,6 +1040,28 @@ export function CodexTerminal({
       >
         <div className="terminal-emulator" ref={screen} />
       </div>
+      <MobileTerminalKeybar
+        disabled={state.phase !== 'connected'}
+        ctrlActive={ctrlActive}
+        onToggleCtrl={() => setCtrlActive((active) => !active)}
+        onSend={(sequence) => {
+          const current = connection.current;
+          if (current?.getSnapshot().phase !== 'connected') return;
+          if (scrolling.current) {
+            current.scroll(0);
+            scrolling.current = false;
+          }
+          if (ctrlActiveRef.current) {
+            const modified = applyCtrlModifier(sequence);
+            ctrlActiveRef.current = false;
+            setCtrlActive(false);
+            current.sendText(modified ?? sequence);
+          } else {
+            current.sendText(sequence);
+          }
+          if (interactiveRef.current && mayFocus()) terminal.current?.focus();
+        }}
+      />
       <div className="app-toolbar bottom-toolbar codex-terminal-footer">
         <div
           className="codex-scroll-controls"

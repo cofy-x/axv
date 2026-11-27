@@ -11,6 +11,10 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { useWindowCommands } from '../../shared/desktop/WindowCommandsContext';
 import { useTerminalPaste } from '../../shared/terminal/use-terminal-paste';
+import {
+  applyCtrlModifier,
+  MobileTerminalKeybar,
+} from '../../shared/terminal/MobileTerminalKeybar';
 import { canTransferWindowFocus } from '../../shared/desktop/focus-transfer';
 import { GuestTerminalSession } from './guest-terminal-session';
 import { machinesApi } from './api';
@@ -51,6 +55,9 @@ export function GuestTerminalApp({
   const [size, setSize] = useState({ cols: 80, rows: 24 });
   const [hasSelection, setHasSelection] = useState(false);
   const [feedback, setFeedback] = useState('');
+  const [ctrlActive, setCtrlActive] = useState(false);
+  const ctrlActiveRef = useRef(false);
+  ctrlActiveRef.current = ctrlActive;
   const { pasteClipboard, pasteText, invalidatePaste, recordPasteInput } =
     useTerminalPaste({
       desktop,
@@ -166,6 +173,15 @@ export function GuestTerminalApp({
     session.current = connection;
     const subscriptions = [
       term.onData((data) => {
+        if (ctrlActiveRef.current) {
+          const modified = applyCtrlModifier(data);
+          ctrlActiveRef.current = false;
+          setCtrlActive(false);
+          if (modified) {
+            recordPasteInput(connection.sendText(modified));
+            return;
+          }
+        }
         recordPasteInput(connection.sendText(data));
       }),
       term.onBinary((data) => {
@@ -492,6 +508,23 @@ export function GuestTerminalApp({
       <div className="terminal-screen" data-testid="terminal-screen">
         <div className="terminal-emulator" ref={screen} />
       </div>
+      <MobileTerminalKeybar
+        disabled={state.phase !== 'connected'}
+        ctrlActive={ctrlActive}
+        onToggleCtrl={() => setCtrlActive((active) => !active)}
+        onSend={(sequence) => {
+          if (session.current?.getSnapshot().phase !== 'connected') return;
+          if (ctrlActiveRef.current) {
+            const modified = applyCtrlModifier(sequence);
+            ctrlActiveRef.current = false;
+            setCtrlActive(false);
+            session.current.sendText(modified ?? sequence);
+          } else {
+            session.current.sendText(sequence);
+          }
+          if (interactiveRef.current && mayFocus()) terminal.current?.focus();
+        }}
+      />
       <StatusBar>
         <span data-testid="terminal-status" data-state={state.phase}>
           {state.phase === 'connecting'
