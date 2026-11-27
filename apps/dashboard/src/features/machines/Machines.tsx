@@ -540,6 +540,34 @@ export function Machines({
     </Button>
   );
 
+  const viewSwitcher = (
+    <div className="machines-tabs" ref={viewNav}>
+      <ButtonGroup label="VM views">
+        {(['machines', 'volumes', 'images', 'operations'] as const).map(
+          (name) => (
+            <Button
+              key={name}
+              data-view={name}
+              aria-pressed={!showHost && tab === name}
+              onClick={() => {
+                setTab(name);
+                setShowHost(false);
+              }}
+            >
+              {name === 'machines'
+                ? 'VMs'
+                : name === 'volumes'
+                  ? 'Volumes'
+                  : name === 'images'
+                    ? 'Images'
+                    : 'Activity'}
+            </Button>
+          ),
+        )}
+      </ButtonGroup>
+    </div>
+  );
+
   return (
     <div className="machines-app">
       {configured && !offlineActions && (
@@ -558,6 +586,7 @@ export function Machines({
               New VM
             </Button>
           )}
+          {viewSwitcher}
           <div className="machines-toolbar-actions">{hostButton}</div>
         </div>
       )}
@@ -614,31 +643,7 @@ export function Machines({
         </div>
       ) : (
         <>
-          <div className="machines-tabs" ref={viewNav}>
-            <ButtonGroup label="VM views">
-              {(['machines', 'volumes', 'images', 'operations'] as const).map(
-                (name) => (
-                  <Button
-                    key={name}
-                    data-view={name}
-                    aria-pressed={!showHost && tab === name}
-                    onClick={() => {
-                      setTab(name);
-                      setShowHost(false);
-                    }}
-                  >
-                    {name === 'machines'
-                      ? 'VMs'
-                      : name === 'volumes'
-                        ? 'Volumes'
-                        : name === 'images'
-                          ? 'Images'
-                          : 'Activity'}
-                  </Button>
-                ),
-              )}
-            </ButtonGroup>
-          </div>
+          {offlineActions && viewSwitcher}
           <div className="machines-scroll">
             <div hidden={!showHost} inert={!showHost}>
               <MachineEnvironment
@@ -656,6 +661,7 @@ export function Machines({
                   <div className="machines-filter">
                     <Field
                       label="Search VMs"
+                      placeholder="Filter by name…"
                       value={search}
                       onChange={(event) => setSearch(event.target.value)}
                     />
@@ -688,7 +694,12 @@ export function Machines({
                   aria-label="Selected VM actions"
                 >
                   <div className="machines-selection-heading">
-                    <div className="machines-selection-identity">
+                    <div
+                      className="machines-selection-identity"
+                      data-status={
+                        transition ? 'transitioning' : selected.status
+                      }
+                    >
                       <strong title={selected.spec.name}>
                         {selected.spec.name}
                       </strong>
@@ -774,37 +785,54 @@ export function Machines({
               )}
               {visible.length ? (
                 <div className="machines-grid" aria-label="Virtual machines">
-                  {visible.map((machine) => (
-                    <button
-                      key={`${machine.hostId}:${machine.id}`}
-                      className="machines-tile"
-                      aria-label={`${machine.spec.name} ${machine.spec.provider}`}
-                      aria-pressed={
-                        selected?.id === machine.id &&
-                        selected.hostId === machine.hostId
-                      }
-                      onClick={() =>
-                        desktop.updateWindowState(window.id, {
-                          machineId: machine.id,
-                          machineHostId: machine.hostId,
-                        })
-                      }
-                      onDoubleClick={() =>
-                        openMachineInspector(desktop, machine)
-                      }
-                    >
-                      <PixelIcon name="virtual-machine" size={48} />
-                      <strong>{machine.spec.name}</strong>
-                      <span>
-                        {(selected?.id === machine.id && transition) ||
-                          machineTransition(
-                            machine,
-                            activeVMOperation(machine, data.operations),
-                          ) ||
-                          humanize(machine.status)}
-                      </span>
-                    </button>
-                  ))}
+                  {visible.map((machine) => {
+                    const tileTransition =
+                      (selected?.id === machine.id && transition) ||
+                      machineTransition(
+                        machine,
+                        activeVMOperation(machine, data.operations),
+                      );
+                    const tileStatus = tileTransition
+                      ? 'transitioning'
+                      : machine.status;
+                    return (
+                      <button
+                        key={`${machine.hostId}:${machine.id}`}
+                        className="machines-tile"
+                        aria-label={`${machine.spec.name} ${machine.spec.provider}`}
+                        aria-pressed={
+                          selected?.id === machine.id &&
+                          selected.hostId === machine.hostId
+                        }
+                        onClick={() =>
+                          desktop.updateWindowState(window.id, {
+                            machineId: machine.id,
+                            machineHostId: machine.hostId,
+                          })
+                        }
+                        onDoubleClick={() =>
+                          openMachineInspector(desktop, machine)
+                        }
+                      >
+                        <PixelIcon name="virtual-machine" size={38} />
+                        <div className="machines-tile-meta">
+                          <strong>{machine.spec.name}</strong>
+                          <span
+                            className="machines-tile-status"
+                            data-status={tileStatus}
+                          >
+                            {tileTransition || humanize(machine.status)}
+                          </span>
+                          <span className="machines-tile-specs">
+                            {machine.spec.resources.cpus} CPU ·{' '}
+                            {machine.spec.resources.memoryMiB} MiB ·{' '}
+                            {machine.spec.projectGiB} GiB ·{' '}
+                            {humanize(machine.spec.provider)}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               ) : data.error && !data.machines.length ? null : (
                 <div
