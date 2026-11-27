@@ -41,6 +41,7 @@ type Manifest struct {
 	OwnershipPath string `json:"ownershipPath"`
 	Mode          string `json:"mode"`
 	ThreadID      string `json:"threadId,omitempty"`
+	FullAuto      bool   `json:"fullAuto,omitempty"`
 }
 
 // State publishes provider readiness separately from the final Exit proof.

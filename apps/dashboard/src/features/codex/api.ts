@@ -17,6 +17,11 @@ export interface CodexInfo {
     proxySource: 'environment' | 'configuration' | 'system' | 'direct';
     proxy?: string;
   };
+  vmProxy?: {
+    enabled: boolean;
+    baseUrl?: string;
+    source: string;
+  };
 }
 
 export interface HostDirectories {
@@ -30,7 +35,11 @@ export interface HostDirectories {
 export interface CodexSessionRecord {
   id: string;
   runId: string;
-  target: 'host';
+  target: 'host' | 'vm';
+  hostId?: string;
+  machineId?: string;
+  machineName?: string;
+  fullAuto?: boolean;
   projectPath: string;
   title: string;
   archivedAt?: string;
@@ -203,10 +212,23 @@ export function sessionTitle(session: CodexSessionRecord) {
   return session.title || projectName(session.projectPath);
 }
 
+export function isVMSession(session: CodexSessionRecord) {
+  return session.target === 'vm' && !!session.machineId && !!session.hostId;
+}
+
+export function sessionKey(session: CodexSessionRecord) {
+  return isVMSession(session)
+    ? `vm:${session.hostId}:${session.machineId}:${session.id}`
+    : session.id;
+}
+
 export function sessionWindowTitle(session: CodexSessionRecord) {
   const project = projectName(session.projectPath);
   const name = sessionTitle(session);
-  const title = `Codex · ${name === project ? project : `${name} — ${project}`}`;
+  const scope = isVMSession(session)
+    ? `Codex (${session.machineName || session.machineId})`
+    : 'Codex';
+  const title = `${scope} · ${name === project ? project : `${name} — ${project}`}`;
   const final = { ended: 'Ended', lost: 'Lost', failed: 'Failed' };
   return session.status in final
     ? `${title} · ${final[session.status as keyof typeof final]} (${session.runId.slice(0, 8)})`

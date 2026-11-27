@@ -17,22 +17,24 @@ import (
 
 	"github.com/cofy-x/axv/apps/server/internal/codex/internal/tmux"
 	"github.com/cofy-x/axv/apps/server/internal/codex/runner"
+	"github.com/cofy-x/axv/apps/server/internal/codex/vmproxy"
 	"github.com/cofy-x/axv/apps/server/internal/storage"
 )
 
 type Info struct {
-	Supported          bool     `json:"supported"`
-	Installed          bool     `json:"installed"`
-	Ready              bool     `json:"ready"`
-	CodexPath          string   `json:"codexPath,omitempty"`
-	CodexVersion       string   `json:"codexVersion,omitempty"`
-	TmuxPath           string   `json:"tmuxPath,omitempty"`
-	TmuxVersion        string   `json:"tmuxVersion,omitempty"`
-	Reason             string   `json:"reason,omitempty"`
-	Guidance           []string `json:"guidance"`
-	DefaultProjectPath string   `json:"defaultProjectPath"`
-	ConfigPath         string   `json:"configPath"`
-	Network            Network  `json:"network"`
+	Supported          bool            `json:"supported"`
+	Installed          bool            `json:"installed"`
+	Ready              bool            `json:"ready"`
+	CodexPath          string          `json:"codexPath,omitempty"`
+	CodexVersion       string          `json:"codexVersion,omitempty"`
+	TmuxPath           string          `json:"tmuxPath,omitempty"`
+	TmuxVersion        string          `json:"tmuxVersion,omitempty"`
+	Reason             string          `json:"reason,omitempty"`
+	Guidance           []string        `json:"guidance"`
+	DefaultProjectPath string          `json:"defaultProjectPath"`
+	ConfigPath         string          `json:"configPath"`
+	Network            Network         `json:"network"`
+	VMProxy            *vmproxy.Status `json:"vmProxy,omitempty"`
 }
 
 type cappedOutput struct{ bytes.Buffer }

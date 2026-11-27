@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/cofy-x/axv/apps/server/internal/codex/vmproxy"
 	"github.com/cofy-x/axv/apps/server/internal/storage"
 )
 
@@ -17,6 +18,8 @@ func (m *Manager) Info(ctx context.Context) (Info, error) {
 	info := m.probe(ctx)
 	info.DefaultProjectPath, info.ConfigPath = m.settings.WorkspaceDir, m.settings.ConfigPath
 	_, info.Network = m.environment(ctx)
+	status := vmproxy.FromEnvironment().Status()
+	info.VMProxy = &status
 	return info, ctx.Err()
 }
 

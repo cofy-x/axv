@@ -39,6 +39,7 @@ interface Options {
   sessionId: string;
   runId: string;
   baseURL: string;
+  terminalURL?: (cols: number, rows: number) => string;
   getSession: (signal: AbortSignal) => Promise<CodexSessionRecord>;
   createSocket: (url: string) => CodexSocket;
   write: (data: Uint8Array, done: () => void) => void;
@@ -328,16 +329,21 @@ export class CodexConnection {
         return;
       }
       this.publish({ ...this.state, session });
-      const url = new URL(
-        `/api/host/codex/sessions/${encodeURIComponent(this.options.sessionId)}/runs/${encodeURIComponent(this.options.runId)}/terminal`,
-        this.options.baseURL,
-      );
-      url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-      url.searchParams.set('cols', String(this.cols));
-      url.searchParams.set('rows', String(this.rows));
-      url.searchParams.set('databaseId', this.options.databaseId);
+      const href = this.options.terminalURL
+        ? this.options.terminalURL(this.cols, this.rows)
+        : (() => {
+            const url = new URL(
+              `/api/host/codex/sessions/${encodeURIComponent(this.options.sessionId)}/runs/${encodeURIComponent(this.options.runId)}/terminal`,
+              this.options.baseURL,
+            );
+            url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+            url.searchParams.set('cols', String(this.cols));
+            url.searchParams.set('rows', String(this.rows));
+            url.searchParams.set('databaseId', this.options.databaseId);
+            return url.href;
+          })();
       this.options.reset();
-      const socket = this.options.createSocket(url.href);
+      const socket = this.options.createSocket(href);
       this.socket = socket;
       socket.binaryType = 'arraybuffer';
       socket.onmessage = (event) => {

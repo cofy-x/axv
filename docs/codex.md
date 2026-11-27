@@ -6,8 +6,10 @@ This reference owns Codex provider integration, process/run ownership, reconcili
 
 | Change | Start here |
 | --- | --- |
-| Dashboard manager, continuation & terminal | [`definition.ts`](../apps/dashboard/src/features/codex/definition.ts), [`CodexManager.tsx`](../apps/dashboard/src/features/codex/CodexManager.tsx), [`continuation.tsx`](../apps/dashboard/src/features/codex/continuation.tsx), [`session.ts`](../apps/dashboard/src/features/codex/session.ts) |
+| Dashboard manager, continuation & terminal | [`definition.ts`](../apps/dashboard/src/features/codex/definition.ts), [`CodexManager.tsx`](../apps/dashboard/src/features/codex/CodexManager.tsx), [`VMNewSessionPanel.tsx`](../apps/dashboard/src/features/codex/VMNewSessionPanel.tsx), [`vm-api.ts`](../apps/dashboard/src/features/codex/vm-api.ts), [`continuation.tsx`](../apps/dashboard/src/features/codex/continuation.tsx), [`session.ts`](../apps/dashboard/src/features/codex/session.ts) |
 | HTTP & WebSocket adapter | [`codex/httpapi`](../apps/server/internal/codex/httpapi) |
+| Zero-credential host VM LLM proxy | [`codex/vmproxy`](../apps/server/internal/codex/vmproxy), [`vmproxy_linux.go`](../apps/server/internal/compute/provider/firecracker/vmproxy_linux.go) |
+| Guest-embedded Codex service | [`guest/codex.go`](../apps/server/internal/guest/codex.go), [`guest/codex_proxy_linux.go`](../apps/server/internal/guest/codex_proxy_linux.go) |
 | Service queries, lifecycle & attachments | [`service.go`](../apps/server/internal/codex/service.go), [`lifecycle.go`](../apps/server/internal/codex/lifecycle.go), [`launch.go`](../apps/server/internal/codex/launch.go), [`attachment.go`](../apps/server/internal/codex/attachment.go), [`input.go`](../apps/server/internal/codex/input.go) |
 | Reconciliation, history & coordination | [`runtime.go`](../apps/server/internal/codex/runtime.go), [`history.go`](../apps/server/internal/codex/history.go), [`coordination.go`](../apps/server/internal/codex/coordination.go) |
 | Independent runner, bridge & activity | [`codex/runner`](../apps/server/internal/codex/runner): `bridge.go`, `protocol.go`, `run_unix.go`, `ownership_unix.go`, `activity.go`, `activity_events_unix.go` |

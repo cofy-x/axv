@@ -39,6 +39,17 @@ export function CodexEnvironment() {
           </dd>
         </>
       )}
+      {info.vmProxy && (
+        <>
+          <dt>VM API proxy</dt>
+          <dd>
+            {info.vmProxy.enabled
+              ? 'Enabled (zero-credential host proxy for VMs)'
+              : 'Not configured (VMs use local OAuth or AXV_VM_CODEX_API_KEY)'}
+            {info.vmProxy.baseUrl && <code>{info.vmProxy.baseUrl}</code>}
+          </dd>
+        </>
+      )}
     </dl>
   );
   return (

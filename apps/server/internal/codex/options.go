@@ -12,5 +12,8 @@ type Options struct {
 	ProxyURL         string
 	TmuxSocket       string
 	RunnerExecutable string
+	RunnerSubcommand string
+	DefaultFullAuto  bool
+	ExtraEnv         func() []string
 	Logger           *diagnostics.Logger
 }

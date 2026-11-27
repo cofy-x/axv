@@ -1,4 +1,5 @@
 import { desktopDatabase } from '../../shared/api/desktop';
+import { sessionKey } from './api';
 import type { CodexSessionRecord } from './api';
 
 type Listener = (session: CodexSessionRecord) => void;
@@ -11,7 +12,7 @@ export function mergeSessionMetadata(
   metadata: CodexSessionRecord,
 ): CodexSessionRecord {
   if (
-    session.id !== metadata.id ||
+    sessionKey(session) !== sessionKey(metadata) ||
     metadata.metadataRevision <= session.metadataRevision
   )
     return session;

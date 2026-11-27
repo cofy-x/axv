@@ -6,7 +6,7 @@ import type {
 import { CodexApp } from './CodexApp';
 import { deferWindow } from '../../shared/desktop/defer-window';
 import { runCommand } from '../../shared/desktop/dialogs';
-import { sessionWindowTitle } from './api';
+import { isVMSession, sessionWindowTitle } from './api';
 import type { CodexSessionRecord } from './api';
 
 const CodexEnvironment = deferWindow(() =>
@@ -106,7 +106,16 @@ export function openCodexSession(
 ) {
   return desktop.openApp(
     'codex',
-    { sessionId: session.id, runId: session.runId },
+    isVMSession(session)
+      ? {
+          sessionId: session.id,
+          runId: session.runId,
+          target: 'vm',
+          hostId: session.hostId!,
+          machineId: session.machineId!,
+          machineName: session.machineName || session.machineId!,
+        }
+      : { sessionId: session.id, runId: session.runId },
     { title: sessionWindowTitle(session) },
   );
 }
@@ -135,7 +144,9 @@ export function createCodexApp(commands: WindowCommands): AppDefinition {
     component: CodexApp,
     windowKey: (params) =>
       params.sessionId && params.runId
-        ? `${params.sessionId}:${params.runId}`
+        ? params.target === 'vm' && params.machineId
+          ? `vm:${params.hostId || ''}:${params.machineId}:${params.sessionId}:${params.runId}`
+          : `${params.sessionId}:${params.runId}`
         : 'manager',
     overviewReference: ({ params }) =>
       params.sessionId && params.runId

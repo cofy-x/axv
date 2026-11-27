@@ -35,6 +35,8 @@ type Driver struct {
 	subnet              netip.Prefix
 	verifier            filedigest.Verifier
 	networkMu           sync.Mutex
+	proxyMu             sync.Mutex
+	proxies             map[string]context.CancelFunc
 }
 
 type state struct {
@@ -295,7 +297,11 @@ func (d *Driver) Start(ctx context.Context, m compute.Machine, _ compute.Image, 
 	if err = jsonfile.Write(filepath.Join(d.directory(m), "launch.json"), map[string]time.Time{"at": time.Now().UTC()}, 0600); err != nil {
 		return err
 	}
+	if err = d.startVMProxy(m); err != nil {
+		return err
+	}
 	if _, err = providerutil.Command(ctx, d.config.Jailer, d.jailerArgs(m)...); err != nil {
+		d.stopVMProxy(m.ID)
 		return err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -355,6 +361,7 @@ func (d *Driver) Inspect(ctx context.Context, m compute.Machine) (compute.Observ
 }
 
 func (d *Driver) Stop(ctx context.Context, m compute.Machine) error {
+	defer d.stopVMProxy(m.ID)
 	if exists, err := d.checkMachineDirectory(m); err != nil {
 		return err
 	} else if !exists {
@@ -416,6 +423,7 @@ func (d *Driver) Stop(ctx context.Context, m compute.Machine) error {
 }
 
 func (d *Driver) Delete(ctx context.Context, m compute.Machine) error {
+	d.stopVMProxy(m.ID)
 	o, err := d.Inspect(ctx, m)
 	if err != nil {
 		return err
