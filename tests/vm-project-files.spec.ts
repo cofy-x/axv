@@ -1897,6 +1897,38 @@ test('file observation pauses off the visible reading pane and resumes without r
   expect(await blocksTabClose(page)).toBe(false);
 });
 
+test('Terminal button opens a Guest Terminal using a volume-relative directory', async ({
+  page,
+}) => {
+  await fixture(page);
+  await openProject(page);
+  const terminalPayloads: Array<Record<string, unknown>> = [];
+  await page.route(
+    `**/api/compute/machines/${originalBinding.machineId}/guest/terminals`,
+    (route) => {
+      if (route.request().method() === 'POST') {
+        terminalPayloads.push(route.request().postDataJSON());
+        return route.fulfill({
+          json: {
+            id: 'a'.repeat(32),
+            machineId: originalBinding.machineId,
+            bootId: originalBinding.bootId,
+            directory: project.root,
+            state: 'running',
+            createdAt: '2026-11-27T00:00:00Z',
+          },
+        });
+      }
+      return route.fulfill({ json: { terminals: [] } });
+    },
+  );
+  await browser(page)
+    .getByRole('button', { name: 'Terminal', exact: true })
+    .click();
+  await expect.poll(() => terminalPayloads.length).toBe(1);
+  expect(terminalPayloads[0]?.directory).toBe(project.root);
+});
+
 test('a visible file keeps observing while its VM Inspector window owns focus', async ({
   page,
   isMobile,

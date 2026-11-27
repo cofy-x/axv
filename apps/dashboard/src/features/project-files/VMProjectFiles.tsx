@@ -825,10 +825,10 @@ export function VMProjectFiles({
   const openProjectTerminal = async () => {
     if (!binding || openingTerminal) return;
     setOpeningTerminal(true);
+    setFeedback(null);
     try {
-      const directory = project?.root
-        ? `/projects/${project.root}`
-        : '/projects';
+      const directory =
+        [project?.root, folder].filter(Boolean).join('/') || undefined;
       const session = await guestTerminalRequests.execute(
         binding.machineId,
         binding.hostId,
