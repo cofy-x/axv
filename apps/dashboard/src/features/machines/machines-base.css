@@ -1,0 +1,304 @@
+.machines-app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  color: var(--ns-text);
+  background: var(--ns-face);
+}
+
+.machines-toolbar {
+  flex-wrap: wrap;
+  padding-block: 5px;
+  min-height: 34px;
+  gap: 6px 10px;
+}
+.machines-toolbar .machines-tabs {
+  padding: 0;
+}
+.machines-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  margin-inline-start: auto;
+}
+.machines-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 6px 10px;
+  background: color-mix(in srgb, var(--ns-face), var(--ns-light) 16%);
+  border-bottom: 1px solid color-mix(in srgb, var(--ns-shadow), transparent 25%);
+}
+.machines-filter > .ns-field-label {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+.machines-filter > .ns-field-label:first-child {
+  flex: 1 1 200px;
+  max-width: 360px;
+  min-width: 150px;
+}
+.machines-filter .ns-field {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+}
+.machines-warning {
+  border-left: 3px solid var(--ns-shadow);
+  padding-left: 8px;
+  font-size: 12px;
+}
+.machines-message {
+  padding: 6px 9px;
+  font-size: 12px;
+}
+.machines-tabs {
+  padding: 5px 8px;
+}
+.machines-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.machines-notice {
+  padding: 6px 9px;
+  font-size: 11px;
+  border-bottom: 1px solid var(--ns-shadow);
+}
+.machines-error,
+.machines-failure {
+  color: var(--ns-danger, #8c241d);
+  overflow-wrap: anywhere;
+}
+.machines-error {
+  padding: 6px 9px;
+}
+.machines-inventory-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.machines-inventory-error > [role='alert'] {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.machines-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.machines-table th {
+  text-align: left;
+  position: sticky;
+  top: 0;
+  background: var(--ns-face);
+  z-index: 1;
+}
+.machines-table td,
+.machines-table th {
+  padding: 8px;
+  border-bottom: 1px solid var(--ns-shadow);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.machines-table small {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+}
+.machines-inventory-table {
+  border-top: 1px solid var(--ns-shadow);
+  background: var(--ns-light);
+}
+.machines-inventory-table th,
+.machines-inventory-table td {
+  padding: 9px 12px;
+  border-bottom: 1px solid #dddddd;
+}
+.machines-inventory-table th {
+  background: #dadada;
+  color: #3a3a3a;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid var(--ns-shadow);
+}
+.machines-inventory-table td {
+  vertical-align: middle;
+}
+.machines-inventory-table tbody tr:not(.machines-volume-selection):hover {
+  background: #f2f4f7;
+}
+.machines-inventory-table small {
+  margin-top: 2px;
+  color: #555;
+}
+.machines-inventory-table tr[data-selected='true'] {
+  background: #23272b;
+  color: var(--ns-light);
+}
+.machines-inventory-table tr[data-selected='true']:hover {
+  background: #23272b;
+}
+.machines-inventory-table tr[data-selected='true'] small,
+.machines-inventory-table tr[data-selected='true'] .machines-muted {
+  color: #c8cdd3;
+}
+.machines-muted {
+  color: #666;
+}
+.machines-status-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.machines-status-dot::before {
+  content: '';
+  display: inline-block;
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border: 1px solid #666;
+  background: #8c8c8c;
+}
+.machines-status-dot[data-status='running']::before {
+  background: #37804d;
+  border-color: #245734;
+}
+.machines-status-dot[data-status='transitioning']::before {
+  background: #b57600;
+}
+.machines-status-dot[data-status='failed']::before {
+  background: #8c241d;
+  border-color: #611510;
+}
+tr[data-selected='true'] .machines-status-dot[data-status='running']::before {
+  background: #4cc970;
+}
+.machines-inventory-secondary-column {
+  width: 32%;
+}
+.machines-details-column {
+  width: 84px;
+}
+.machines-volume-actions-column {
+  width: 52px;
+}
+.machines-inventory-table .machines-inventory-action {
+  text-align: right;
+  padding-block: 4px;
+}
+.machines-inventory-table .machines-volume-actions-cell {
+  padding-inline: 6px 8px;
+}
+.machines-activity-label-column {
+  width: 31%;
+}
+.machines-activity-table td {
+  vertical-align: top;
+}
+.machines-activity-table time > span {
+  white-space: nowrap;
+}
+.ns-button.machines-text-button {
+  min-width: 0;
+  padding: 3px 8px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.ns-button.machines-text-button:hover:not(:disabled),
+.ns-button.machines-text-button:active:not(:disabled) {
+  padding: 3px 8px;
+  border-color: currentColor;
+  background: transparent;
+  box-shadow: none;
+  text-decoration: none;
+}
+.ns-button.machines-text-button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
+}
+.ns-button.machines-text-button:disabled {
+  opacity: 0.65;
+  text-shadow: none;
+}
+.machines-resource-details code {
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.machines-resource-details .info-list {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 3px;
+  margin-top: 10px;
+}
+.machines-resource-details dd + dt {
+  margin-top: 7px;
+}
+.machines-resource-details p {
+  margin: 12px 0 0;
+}
+.machines-table tr[data-selected='true'] {
+  background: var(--ns-highlight);
+  color: var(--ns-light);
+}
+.machines-table tr[data-selected='true'] .machines-failure {
+  color: inherit;
+}
+.machines-select {
+  appearance: none;
+  background: none;
+  color: inherit;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  font-weight: 600;
+}
+.machines-select:hover {
+  text-decoration: underline;
+}
+.machines-select:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+.machines-form fieldset {
+  margin-bottom: 12px;
+}
+.machines-form .ns-field,
+.machines-form .ns-select {
+  margin-bottom: 8px;
+}
+.machines-resource-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  align-items: end;
+  gap: 10px;
+}
+.machines-resource-fields input {
+  width: 100%;
+  min-width: 0;
+}
+.machines-details dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.machines-session {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 0;
+}

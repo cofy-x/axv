@@ -6,19 +6,12 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import {
-  Button,
-  ButtonGroup,
-  Field,
-  PixelIcon,
-  Select,
-  StatusBar,
-} from '@cofy-x/axv-nextstep';
+import { Button, ButtonGroup, StatusBar } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { useWindowCommands } from '../../shared/desktop/WindowCommandsContext';
 import { machineMenuCommand } from './menus';
 import { useCompute } from './useCompute';
-import { RequestDetails, VMOperationNotice } from './OperationFeedback';
+import { RequestDetails } from './OperationFeedback';
 import { machinesApi } from './api';
 import type { GuestTerminal } from './api';
 import {
@@ -34,26 +27,22 @@ import {
 } from './lifecycle';
 import type { VMAction } from './lifecycle';
 import { computeStore } from './compute-store';
-import { MachineActions, MachineExpiry } from './MachineActions';
 import { creationImages } from './form-state';
 import { openMachineInspector } from './desktop-icons';
-import { canOpenVMProjectVolume } from '../project-files/vm-project-volume';
 import { VolumeManager } from './VolumeManager';
 import { ImageManager } from './ImageManager';
 import { MachineEnvironment } from './MachineEnvironment';
+import { MachinesGridView } from './MachinesGridView';
+import { MachinesActivityTable } from './MachinesActivityTable';
 import { preparationRunning } from './preparation-store';
 import {
   canCopyLocalLimaShell,
   guestTerminalReason,
   humanize,
   latestVMFailure,
-  linuxVMSetupGuide,
-  machineGuestStatus,
   machineGuidance,
   machineTransition,
-  operationLabel,
   operationPhase,
-  operationTarget,
 } from './presentation';
 
 export function Machines({
@@ -656,241 +645,49 @@ export function Machines({
               hidden={showHost || tab !== 'machines'}
               inert={showHost || tab !== 'machines'}
             >
-              {data.machines.length > 0 && (
-                <>
-                  <div className="machines-filter">
-                    <Field
-                      label="Search VMs"
-                      placeholder="Filter by name…"
-                      value={search}
-                      onChange={(event) => setSearch(event.target.value)}
-                    />
-                    <Select
-                      label="State"
-                      value={stateFilter}
-                      onChange={(event) => setStateFilter(event.target.value)}
-                    >
-                      <option value="all">All states</option>
-                      {[
-                        ...new Set([
-                          ...data.machines.map((machine) => machine.status),
-                          ...(stateFilter === 'all' ? [] : [stateFilter]),
-                        ]),
-                      ]
-                        .sort()
-                        .map((state) => (
-                          <option key={state} value={state}>
-                            {humanize(state)}
-                          </option>
-                        ))}
-                    </Select>
-                  </div>
-                </>
-              )}
-              {selected && (
-                <div
-                  className="machines-selection"
-                  role="group"
-                  aria-label="Selected VM actions"
-                >
-                  <div className="machines-selection-heading">
-                    <div
-                      className="machines-selection-identity"
-                      data-status={
-                        transition ? 'transitioning' : selected.status
-                      }
-                    >
-                      <strong title={selected.spec.name}>
-                        {selected.spec.name}
-                      </strong>
-                      <MachineExpiry expiresAt={selected.expiresAt} />
-                    </div>
-                    <MachineActions
-                      desktop={desktop}
-                      windowId={window.id}
-                      machine={selected}
-                      reason={actionReason}
-                      transition={transition}
-                      terminalReason={terminalReason}
-                      terminalPending={
-                        openingTerminal === terminalIntent && !data.error
-                      }
-                      onAction={(action) => void lifecycle(action)}
-                      onTerminal={() => void terminal()}
-                      onCopyLimaShell={
-                        canCopyLimaShell
-                          ? () => void copyLimaShell()
-                          : undefined
-                      }
-                      limaShellPending={copyingLimaShell}
-                      onInspect={inspect}
-                      onProjectFiles={(() => {
-                        if (!selected || data.error || transition) return;
-                        const selectedVolume = data.volumes.find(
-                          (item) => item.id === selected.spec.volumeId,
-                        );
-                        if (
-                          !selectedVolume ||
-                          !canOpenVMProjectVolume(selected, selectedVolume)
-                        )
-                          return;
-                        return () =>
-                          desktop.openApp(
-                            'project-files',
-                            {
-                              hostId: selected.hostId,
-                              machineId: selected.id,
-                              vmProjectVolumeId: selectedVolume.id,
-                            },
-                            {
-                              title: `${selected.spec.name} — Project Files`,
-                            },
-                          );
-                      })()}
-                    />
-                  </div>
-                  {!transition &&
-                    selected.status === 'running' &&
-                    machineGuestStatus(selected) && (
-                      <p className="machines-form-help">
-                        {humanize(selected.status)} ·{' '}
-                        {machineGuestStatus(selected)}
-                      </p>
-                    )}
-                  {transition && (
-                    <p className="machines-vm-transition" role="status">
-                      {transition}
-                    </p>
-                  )}
-                  {notice &&
-                  feedbackInSelection &&
-                  notice.id === operationId ? (
-                    actionFeedback
-                  ) : notice ? (
-                    <VMOperationNotice
-                      operation={notice}
-                      onShowActivity={showActivity}
-                    />
-                  ) : null}
-                  {guidance && <p className="machines-form-help">{guidance}</p>}
-                  {limaShellNotice?.key === selectedKey && (
-                    <p className="machines-form-help" role="status">
-                      {limaShellNotice.copied
-                        ? 'Copied local Lima shell command: '
-                        : 'Run on this Mac: '}
-                      <code>{limaShellNotice.command}</code>
-                    </p>
-                  )}
-                </div>
-              )}
-              {visible.length ? (
-                <div className="machines-grid" aria-label="Virtual machines">
-                  {visible.map((machine) => {
-                    const tileTransition =
-                      (selected?.id === machine.id && transition) ||
-                      machineTransition(
-                        machine,
-                        activeVMOperation(machine, data.operations),
-                      );
-                    const tileStatus = tileTransition
-                      ? 'transitioning'
-                      : machine.status;
-                    return (
-                      <button
-                        key={`${machine.hostId}:${machine.id}`}
-                        className="machines-tile"
-                        aria-label={`${machine.spec.name} ${machine.spec.provider}`}
-                        aria-pressed={
-                          selected?.id === machine.id &&
-                          selected.hostId === machine.hostId
-                        }
-                        onClick={() =>
-                          desktop.updateWindowState(window.id, {
-                            machineId: machine.id,
-                            machineHostId: machine.hostId,
-                          })
-                        }
-                        onDoubleClick={() =>
-                          openMachineInspector(desktop, machine)
-                        }
-                      >
-                        <PixelIcon name="virtual-machine" size={38} />
-                        <div className="machines-tile-meta">
-                          <strong>{machine.spec.name}</strong>
-                          <span
-                            className="machines-tile-status"
-                            data-status={tileStatus}
-                          >
-                            {tileTransition || humanize(machine.status)}
-                          </span>
-                          <span className="machines-tile-specs">
-                            {machine.spec.resources.cpus} CPU ·{' '}
-                            {machine.spec.resources.memoryMiB} MiB ·{' '}
-                            {machine.spec.projectGiB} GiB ·{' '}
-                            {humanize(machine.spec.provider)}
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : data.error && !data.machines.length ? null : (
-                <div
-                  className={
-                    emptyInventory ? 'machines-empty-status' : 'machines-empty'
-                  }
-                >
-                  <h2>
-                    {data.machines.length
-                      ? 'No VMs match your filters'
-                      : data.loading
-                        ? 'Loading virtual machines…'
-                        : firecrackerImageRequired
-                          ? 'Firecracker guest image required'
-                          : !availableProviders.length
-                            ? 'VM provider unavailable'
-                            : !hasReadyImage
-                              ? 'VM image required'
-                              : 'No VMs yet'}
-                  </h2>
-                  {firecrackerImageRequired && (
-                    <p>
-                      Ask the deployment host administrator to register a
-                      compatible Firecracker guest image. See the{' '}
-                      <a
-                        href={linuxVMSetupGuide}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Linux VM setup guide
-                      </a>
-                      .
-                    </p>
-                  )}
-                  {data.machines.length ? (
-                    <Button
-                      onClick={() => {
-                        setSearch('');
-                        setStateFilter('all');
-                      }}
-                    >
-                      Clear filters
-                    </Button>
-                  ) : (
-                    !canCreate &&
-                    !data.loading &&
-                    (!data.error && canImportImages ? (
-                      <Button onClick={() => setTab('images')}>
-                        Open Images
-                      </Button>
-                    ) : (
-                      <Button onClick={() => setShowHost(true)}>
-                        View environment
-                      </Button>
-                    ))
-                  )}
-                </div>
-              )}
+              <MachinesGridView
+                desktop={desktop}
+                windowId={window.id}
+                machines={data.machines}
+                visible={visible}
+                volumes={data.volumes}
+                operations={data.operations}
+                selected={selected}
+                search={search}
+                stateFilter={stateFilter}
+                loading={data.loading}
+                error={data.error}
+                transition={transition}
+                notice={notice}
+                operationId={operationId}
+                feedbackInSelection={!!feedbackInSelection}
+                actionFeedback={actionFeedback}
+                guidance={guidance}
+                limaShellNotice={limaShellNotice}
+                selectedKey={selectedKey}
+                emptyInventory={emptyInventory}
+                firecrackerImageRequired={firecrackerImageRequired}
+                availableProvidersCount={availableProviders.length}
+                hasReadyImage={hasReadyImage}
+                canCreate={canCreate}
+                canImportImages={canImportImages}
+                actionReason={actionReason}
+                terminalReason={terminalReason}
+                terminalPending={
+                  openingTerminal === terminalIntent && !data.error
+                }
+                canCopyLimaShell={canCopyLimaShell}
+                copyingLimaShell={copyingLimaShell}
+                onSearchChange={setSearch}
+                onStateFilterChange={setStateFilter}
+                onLifecycle={(action) => void lifecycle(action)}
+                onTerminal={() => void terminal()}
+                onCopyLimaShell={() => void copyLimaShell()}
+                onInspect={inspect}
+                onShowActivity={showActivity}
+                onOpenImages={() => setTab('images')}
+                onShowHost={() => setShowHost(true)}
+              />
             </div>
             <div
               hidden={showHost || tab !== 'volumes'}
@@ -920,91 +717,17 @@ export function Machines({
               hidden={showHost || tab !== 'operations'}
               inert={showHost || tab !== 'operations'}
             >
-              {selectedActivity &&
-                !activityFound &&
-                !data.loading &&
-                !data.refreshing &&
-                !data.error && (
-                  <p className="machines-message">
-                    This operation is unavailable in recent Activity.
-                  </p>
-                )}
-              <table className="machines-table machines-inventory-table machines-activity-table">
-                <colgroup>
-                  <col span={2} className="machines-activity-label-column" />
-                  <col />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th scope="col">Operation</th>
-                    <th scope="col">Target</th>
-                    <th scope="col">State</th>
-                  </tr>
-                </thead>
-                <tbody ref={activityBody}>
-                  {data.operations.map((op) => {
-                    const createdAt = new Date(op.createdAt);
-                    const phase = operationPhase(op);
-                    return (
-                      <tr
-                        key={op.id}
-                        data-operation-id={op.id}
-                        data-selected={selectedActivity === op.id}
-                        aria-current={
-                          selectedActivity === op.id ? 'true' : undefined
-                        }
-                      >
-                        <td>
-                          <strong>{operationLabel(op, data.volumes)}</strong>
-                          <small>
-                            <time
-                              dateTime={op.createdAt}
-                              title={createdAt.toLocaleString()}
-                            >
-                              {createdAt.toLocaleDateString(undefined, {
-                                dateStyle: 'short',
-                              })}{' '}
-                              <span>
-                                {createdAt.toLocaleTimeString(undefined, {
-                                  timeStyle: 'short',
-                                })}
-                              </span>
-                            </time>
-                          </small>
-                        </td>
-                        <td>
-                          {operationTarget(op, data.machines, data.volumes)}
-                        </td>
-                        <td>
-                          <span
-                            className="machines-status-dot"
-                            data-status={
-                              op.status === 'succeeded'
-                                ? 'running'
-                                : op.status === 'failed'
-                                  ? 'failed'
-                                  : 'transitioning'
-                            }
-                          >
-                            {humanize(op.status)}
-                          </span>
-                          {phase && <small>{phase}</small>}
-                          {op.error && (
-                            <small className="machines-failure">
-                              {op.error}
-                            </small>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {!data.operations.length && (
-                    <tr>
-                      <td colSpan={3}>No activity yet.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+              <MachinesActivityTable
+                operations={data.operations}
+                machines={data.machines}
+                volumes={data.volumes}
+                selectedActivity={selectedActivity}
+                activityFound={activityFound}
+                loading={data.loading}
+                refreshing={data.refreshing}
+                error={data.error}
+                activityBodyRef={activityBody}
+              />
             </div>
           </div>
         </>

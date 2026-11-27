@@ -1,0 +1,247 @@
+.machines-inspector-body {
+  padding: 12px 14px 16px;
+}
+.machines-inspector-hero {
+  background: color-mix(in srgb, var(--ns-face), var(--ns-light) 34%);
+  border: 1px solid var(--ns-shadow);
+  box-shadow: inset 1px 1px var(--ns-light);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+.machines-inspector-heading {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0;
+}
+.machines-inspector-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 !important;
+  font-size: 16px !important;
+  line-height: 1.25;
+}
+.machines-inspector-status::before {
+  content: '';
+  display: inline-block;
+  flex-shrink: 0;
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--ns-shadow);
+  background: #888;
+}
+.machines-inspector-status[data-status='running']::before {
+  background: #37804d;
+}
+.machines-inspector-status[data-status='transitioning']::before,
+.machines-inspector-status[data-status='starting']::before,
+.machines-inspector-status[data-status='stopping']::before {
+  background: #b57600;
+}
+.machines-inspector-status[data-status='failed']::before,
+.machines-inspector-status[data-status='unknown']::before {
+  background: #8c241d;
+}
+.machines-inspector-specs {
+  margin: 4px 0 0 !important;
+  color: #3f3f3f;
+  font-size: var(--ns-font-size-secondary);
+  line-height: 1.4;
+}
+.machines-inspector-body > .machines-empty-status {
+  padding: 0;
+  border-top: 0;
+}
+.machines-inspector-body > .machines-technical {
+  margin: 0 0 10px;
+  padding: 0;
+  border: 1px solid var(--ns-shadow);
+  background: color-mix(in srgb, var(--ns-face), var(--ns-light) 24%);
+  box-shadow: inset 1px 1px var(--ns-light);
+}
+.machines-inspector-body > .machines-technical > summary.ns-disclosure {
+  padding: 6px calc(var(--ns-disclosure-indicator-size) + 12px) 6px 12px;
+  font-size: var(--ns-font-size-secondary);
+  font-weight: 600;
+}
+.machines-inspector-body > .machines-technical > summary.ns-disclosure::before {
+  inset-inline-end: 6px;
+}
+.machines-inspector-body > .machines-technical > summary.ns-disclosure::after {
+  inset-inline-end: calc(6px + (var(--ns-disclosure-indicator-size) - 7px) / 2);
+}
+.machines-inspector-body > .machines-technical > summary.ns-disclosure:hover {
+  background: color-mix(in srgb, var(--ns-face), var(--ns-light) 14%);
+}
+.machines-inspector-body > .machines-technical[open] > summary.ns-disclosure {
+  border-bottom: 1px solid color-mix(in srgb, var(--ns-shadow), transparent 35%);
+  background: color-mix(in srgb, var(--ns-face), var(--ns-light) 12%);
+}
+.machines-inspector-panel {
+  padding: 10px 12px 12px;
+}
+.machines-inspector-panel > .fine-print {
+  margin: 0 0 8px;
+}
+.machines-inspector-panel > .fine-print:last-child {
+  margin-bottom: 0;
+}
+.machines-session-list {
+  background: var(--ns-light);
+  border: 1px solid var(--ns-mid);
+  box-shadow: var(--ns-recessed);
+}
+.machines-session-list .machines-session {
+  margin: 0;
+  padding: 7px 10px;
+}
+.machines-session-list .machines-session + .machines-session {
+  border-top: 1px solid #d8d8d8;
+}
+.machines-session-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: var(--ns-font-size-secondary);
+}
+.machines-session-label::before {
+  content: '';
+  display: inline-block;
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border: 1px solid #666;
+  background: #a0a0a0;
+}
+.machines-session[data-running='true'] .machines-session-label::before {
+  background: #37804d;
+  border-color: #245734;
+}
+.machines-session-state {
+  color: #555;
+}
+.machines-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+  gap: 1px;
+  margin: 0;
+  border: 1px solid var(--ns-mid);
+  background: var(--ns-mid);
+}
+.machines-summary-grid > div {
+  padding: 7px 9px;
+  background: var(--ns-light);
+  min-width: 0;
+}
+.machines-summary-grid dt {
+  font-size: 11px;
+  font-weight: 600;
+  color: #555;
+  margin-bottom: 2px;
+}
+.machines-summary-grid dd {
+  font-size: var(--ns-font-size-secondary);
+  color: var(--ns-text);
+}
+.machines-inspector-panel .machines-form fieldset {
+  margin: 12px 0 0;
+  padding: 12px 0 0;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--ns-shadow), transparent 35%);
+  box-shadow: none;
+}
+.machines-inspector-panel .machines-form .app-actions {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--ns-shadow), transparent 45%);
+  gap: 8px;
+}
+.machines-operations-list {
+  background: var(--ns-light);
+  border: 1px solid var(--ns-mid);
+  box-shadow: var(--ns-recessed);
+}
+.machines-operation-item {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin: 0;
+  padding: 7px 10px;
+  font-size: var(--ns-font-size-secondary);
+  overflow-wrap: anywhere;
+}
+.machines-operation-item + .machines-operation-item {
+  border-top: 1px solid #d8d8d8;
+}
+.machines-operation-item::before {
+  content: '';
+  display: inline-block;
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border: 1px solid #666;
+  background: #b57600;
+}
+.machines-operation-item[data-status='succeeded']::before {
+  background: #37804d;
+  border-color: #245734;
+}
+.machines-operation-item[data-status='failed']::before {
+  background: #8c241d;
+  border-color: #611510;
+}
+.machines-tech-list {
+  background: var(--ns-light);
+  border: 1px solid var(--ns-mid);
+  box-shadow: var(--ns-recessed);
+  padding: 4px 10px;
+  gap: 0 14px;
+}
+.machines-tech-list dt,
+.machines-tech-list dd {
+  padding: 5px 0;
+}
+.machines-tech-list dt:not(:first-of-type),
+.machines-tech-list dd:not(:first-of-type) {
+  border-top: 1px solid #e2e2e2;
+}
+.machines-tech-list dt {
+  color: #4a4a4a;
+}
+.machines-inspector-body > .machines-inspector-notice {
+  margin-bottom: 10px;
+}
+.machines-inspector-identity {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.machines-inspector-identity > div {
+  min-width: 0;
+}
+.machines-inspector-actions {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--ns-shadow), transparent 40%);
+}
+.machines-inspector-actions .machines-action-buttons {
+  margin: 0;
+}
+.machines-inspector-actions .machines-action-buttons:empty {
+  margin: 0;
+}
+.machines-inspector-actions .ns-button:not(.ns-icon-button) {
+  flex: 0 0 auto;
+}
+.machines-inspector-actions .ns-icon-button {
+  margin-inline-start: auto;
+}
+.machines-inspector-heading .machines-inspector-identity p {
+  margin-bottom: 0;
+}
+.machines-inspector-heading h2 {
+  overflow-wrap: anywhere;
+}

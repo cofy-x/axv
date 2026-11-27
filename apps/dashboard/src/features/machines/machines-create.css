@@ -1,0 +1,258 @@
+.machines-create-form {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.machines-create-body {
+  container: vm-create / inline-size;
+  padding: 12px 14px 16px;
+  font-size: 13px;
+}
+.machines-create-card {
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--ns-face), var(--ns-light) 30%);
+  border: 1px solid var(--ns-shadow);
+  box-shadow: inset 1px 1px var(--ns-light);
+}
+.machines-create-identity {
+  display: grid;
+  gap: 10px;
+  align-items: end;
+}
+@container vm-create (min-width: 360px) {
+  .machines-create-identity {
+    grid-template-columns: minmax(0, 2fr) minmax(135px, 1fr);
+  }
+}
+.machines-create-summary {
+  margin: 8px 0 0;
+  padding: 4px 10px;
+  background: var(--ns-light);
+  border: 1px solid var(--ns-mid);
+  box-shadow: var(--ns-recessed);
+  gap: 0 14px;
+  line-height: 1.45;
+}
+.machines-create-summary dt,
+.machines-create-summary dd {
+  padding: 5px 0;
+}
+.machines-create-summary dt:not(:first-of-type),
+.machines-create-summary dd:not(:first-of-type) {
+  border-top: 1px solid #e4e4e4;
+}
+.machines-create-summary dt {
+  font-weight: 600;
+  color: #4a4a4a;
+}
+.machines-create-summary dd {
+  min-width: 0;
+}
+.machines-create-advanced {
+  margin-top: 10px;
+  border: 1px solid var(--ns-shadow);
+  background: color-mix(in srgb, var(--ns-face), var(--ns-light) 24%);
+  box-shadow: inset 1px 1px var(--ns-light);
+}
+.machines-create-advanced > summary.ns-disclosure {
+  padding: 6px calc(var(--ns-disclosure-indicator-size) + 12px) 6px 12px;
+  font-size: var(--ns-font-size-secondary);
+  font-weight: 600;
+}
+.machines-create-advanced > summary.ns-disclosure::before {
+  inset-inline-end: 6px;
+}
+.machines-create-advanced > summary.ns-disclosure::after {
+  inset-inline-end: calc(6px + (var(--ns-disclosure-indicator-size) - 7px) / 2);
+}
+.machines-create-advanced[open] > summary.ns-disclosure {
+  border-bottom: 1px solid color-mix(in srgb, var(--ns-shadow), transparent 35%);
+  background: color-mix(in srgb, var(--ns-face), var(--ns-light) 12%);
+}
+.machines-create-settings {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--ns-face), var(--ns-light) 28%);
+}
+.machines-create-body .machines-create-settings > fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
+.machines-create-settings legend {
+  width: 100%;
+  margin: 0 0 8px;
+  padding: 0 0 5px;
+  border-bottom: 1px solid var(--ns-mid);
+  background: transparent;
+  font-size: var(--ns-font-size-secondary);
+  font-weight: 600;
+}
+.machines-create-footer {
+  flex: 0 0 auto;
+  max-height: 50%;
+  overflow: auto;
+  padding: 9px 14px;
+  border-top: 1px solid var(--ns-shadow);
+  background: color-mix(in srgb, var(--ns-face), var(--ns-light) 28%);
+  box-shadow: inset 0 1px var(--ns-light);
+}
+.machines-create-footer > p {
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+}
+.machines-create-footer > .machines-error {
+  padding: 0;
+}
+.machines-create-actions {
+  justify-content: flex-end;
+}
+.machines-volume-editor {
+  margin: 10px;
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--ns-face), var(--ns-light) 30%);
+  border: 1px solid var(--ns-shadow);
+  box-shadow: inset 1px 1px var(--ns-light);
+}
+.machines-volume-editor fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
+.machines-volume-editor legend {
+  width: 100%;
+  margin: 0 0 10px;
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--ns-mid);
+  background: transparent;
+}
+.machines-volume-editor .ns-checkbox {
+  display: flex;
+}
+.machines-volume-editor .machines-form-actions {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--ns-shadow), transparent 40%);
+}
+.machines-inventory-table .machines-volume-selection > td {
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--ns-face), var(--ns-light) 36%);
+  box-shadow: inset 0 1px var(--ns-light);
+}
+.machines-volume-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.machines-volume-controls .ns-icon-button {
+  margin-inline-start: auto;
+}
+.machines-volume-retention {
+  margin-top: 8px;
+}
+.machines-volume-attachment fieldset {
+  margin-block: 10px 0;
+}
+.machines-operation-feedback {
+  padding: 6px 8px;
+  border-top: 1px solid var(--ns-shadow);
+  font-size: 12px;
+}
+.machines-operation-feedback > span,
+.machines-operation-feedback > p {
+  flex: 1;
+  min-width: 120px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.machines-selection > .machines-operation-feedback,
+.machines-inspector-notice {
+  padding-inline: 0;
+  margin-top: 8px;
+}
+.machines-selection .machines-vm-transition {
+  margin: 6px 0 0;
+  font-weight: 600;
+}
+.machines-form-help {
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.machines-empty {
+  max-width: 620px;
+  margin: 0 auto;
+  padding: 28px 20px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.machines-empty-status {
+  padding: 12px 9px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.machines-empty-status:first-child {
+  border-top: 1px solid var(--ns-shadow);
+}
+.machines-empty-status h2 {
+  margin: 0;
+  font: inherit;
+}
+.machines-empty-status p {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+@media (max-width: 599px) {
+  .machines-empty-status {
+    padding-inline: 7px;
+  }
+}
+.machines-table {
+  table-layout: fixed;
+}
+.machines-app fieldset {
+  min-width: 0;
+  margin: 14px 0;
+}
+.machines-app [hidden] {
+  display: none;
+}
+
+@media (max-width: 600px) {
+  .machines-environment,
+  .machines-empty {
+    padding: 14px 10px;
+  }
+  .machines-table th,
+  .machines-table td {
+    padding: 7px 5px;
+  }
+  .machines-table {
+    font-size: 11px;
+  }
+  .machines-inventory-table {
+    font-size: 12px;
+  }
+  .machines-inventory-table td,
+  .machines-inventory-table th {
+    padding-inline: 7px;
+  }
+  .machines-details-column {
+    width: 69px;
+  }
+  .machines-action-buttons .ns-button:not(.ns-icon-button) {
+    flex: 1 0 auto;
+  }
+  .machines-create-actions .ns-button {
+    flex: 1 0 auto;
+  }
+  .machines-section-heading h2 {
+    overflow-wrap: anywhere;
+  }
+}

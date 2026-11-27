@@ -1,0 +1,95 @@
+.machines-technical {
+  margin: 16px 0;
+  padding: 10px 0;
+  border-top: 1px solid var(--ns-shadow);
+}
+.machines-technical summary {
+  cursor: pointer;
+}
+.machines-selection {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: color-mix(in srgb, var(--ns-face), var(--ns-light) 34%);
+  box-shadow: inset 0 1px var(--ns-light);
+  border-bottom: 1px solid var(--ns-shadow);
+  padding: 8px;
+  font-size: 12px;
+}
+.machines-selection-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+.machines-selection-identity {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+.machines-selection-identity::before {
+  content: '';
+  display: inline-block;
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--ns-shadow);
+  background: #888;
+}
+.machines-selection-identity[data-status='running']::before {
+  background: #37804d;
+  border-color: #245734;
+}
+.machines-selection-identity[data-status='transitioning']::before,
+.machines-selection-identity[data-status='starting']::before,
+.machines-selection-identity[data-status='stopping']::before {
+  background: #b57600;
+}
+.machines-selection-identity[data-status='failed']::before,
+.machines-selection-identity[data-status='unknown']::before {
+  background: #8c241d;
+}
+.machines-selection-identity > strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.machines-vm-expiry {
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+.machines-selection-identity > .machines-vm-expiry {
+  flex: none;
+  max-width: 100%;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.machines-selection-heading .machines-action-buttons {
+  margin: 0;
+  margin-inline-start: auto;
+}
+.machines-selection > .machines-form-help {
+  margin: 8px 0 0;
+}
+.machines-resource-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-inline-start: auto;
+}
+.machines-action-buttons,
+.machines-form-actions,
+.machines-operation-feedback {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.machines-action-buttons {
+  margin: 8px 0;
+}

@@ -1,0 +1,92 @@
+.machines-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(235px, 1fr));
+  align-content: start;
+  gap: 10px;
+  padding: 12px;
+}
+.machines-tile {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  min-height: 76px;
+  min-width: 0;
+  padding: 11px 13px;
+  border: 1px solid var(--ns-shadow);
+  border-radius: 0;
+  color: var(--ns-text);
+  background: color-mix(in srgb, var(--ns-face), var(--ns-light) 34%);
+  box-shadow: inset 1px 1px var(--ns-light);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.machines-tile:hover:not([aria-pressed='true']) {
+  background: color-mix(in srgb, var(--ns-face), var(--ns-light) 50%);
+}
+.machines-tile-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+.machines-tile-meta strong {
+  max-width: 100%;
+  font-size: 13px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.machines-tile-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.machines-tile-status::before {
+  content: '';
+  display: inline-block;
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border: 1px solid #666;
+  background: #8c8c8c;
+}
+.machines-tile-status[data-status='running']::before {
+  background: #37804d;
+  border-color: #245734;
+}
+.machines-tile-status[data-status='transitioning']::before,
+.machines-tile-status[data-status='starting']::before,
+.machines-tile-status[data-status='stopping']::before {
+  background: #b57600;
+}
+.machines-tile-status[data-status='failed']::before,
+.machines-tile-status[data-status='unknown']::before {
+  background: #8c241d;
+}
+.machines-tile-specs {
+  font-size: 11px;
+  color: #4a4a4a;
+  line-height: 1.3;
+}
+.machines-tile[aria-pressed='true'] {
+  color: var(--ns-light);
+  background: #23272b;
+  border-color: #000;
+  box-shadow: inset 1px 1px #444;
+}
+.machines-tile[aria-pressed='true'] .machines-tile-specs {
+  color: #c8cdd3;
+}
+.machines-tile[aria-pressed='true']
+  .machines-tile-status[data-status='running']::before {
+  background: #4cc970;
+  border-color: #245734;
+}
+.machines-tile:focus-visible {
+  outline: 2px solid var(--ns-text);
+  outline-offset: 2px;
+}

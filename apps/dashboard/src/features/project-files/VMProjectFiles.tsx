@@ -1,11 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  Button,
-  IconButton,
-  PixelIcon,
-  StatusBar,
-  Tabs,
-} from '@cofy-x/axv-nextstep';
+import { Button, IconButton, StatusBar, Tabs } from '@cofy-x/axv-nextstep';
 import { useResource } from '../../shared/api/useResource';
 import { APIError } from '../../shared/api/http';
 import { CodeEditor } from '../../shared/code-editor';
@@ -24,6 +18,9 @@ import {
 import { VMProjectPreviews } from './VMProjectPreviews';
 import { VMProjectBackups } from './VMProjectBackups';
 import { VMProjectGitHub } from './VMProjectGitHub';
+import { VMProjectLocationDetails } from './VMProjectLocationDetails';
+import { VMProjectDirectoryPane } from './VMProjectDirectoryPane';
+import { VMProjectFileHeader } from './VMProjectFileHeader';
 import { useVMFileObserver } from './useVMFileObserver';
 import {
   vmFileBindingError,
@@ -970,61 +967,14 @@ export function VMProjectFiles({
           />
         </div>
       </div>
-      <details className="project-location">
-        {section === 'files' ? (
-          <summary title={folder || 'Project root'}>
-            <strong>VM · {folder || 'Project root'}</strong> · Details
-          </summary>
-        ) : (
-          <summary>Project details</summary>
-        )}
-        <dl className="info-list">
-          {project && (
-            <>
-              <dt>Project name</dt>
-              <dd>{project.name}</dd>
-            </>
-          )}
-          <dt>Project</dt>
-          <dd>
-            <code>{id}</code>
-          </dd>
-          <dt>Host</dt>
-          <dd>
-            <code>{hostId}</code>
-          </dd>
-          <dt>Volume</dt>
-          <dd>
-            <code>
-              {binding?.volumeId || project?.volumeId || 'Unavailable'}
-            </code>
-          </dd>
-          <dt>Directory in volume</dt>
-          <dd>
-            <code>{project?.root || 'Volume root'}</code>
-          </dd>
-          {section === 'files' && folder && (
-            <>
-              <dt>Current folder</dt>
-              <dd>
-                <code>{folder}</code>
-              </dd>
-            </>
-          )}
-          <dt>VM</dt>
-          <dd>
-            <code>{binding?.machineId || 'Unavailable'}</code>
-          </dd>
-          <dt>Boot / instance</dt>
-          <dd>
-            <code>
-              {binding
-                ? `${binding.bootId} / ${binding.instanceId}`
-                : 'Unavailable'}
-            </code>
-          </dd>
-        </dl>
-      </details>
+      <VMProjectLocationDetails
+        section={section}
+        folder={folder}
+        id={id}
+        hostId={hostId}
+        project={project}
+        binding={binding}
+      />
       <div className="vm-project-sections">
         <Tabs
           label="VM project view"
@@ -1279,79 +1229,23 @@ export function VMProjectFiles({
               </section>
             )}
             <div className={`project-content${isReading ? ' is-reading' : ''}`}>
-              <nav
-                className="project-directory"
-                aria-label="VM project directory"
-                ref={directory}
-                tabIndex={-1}
-              >
-                <ul>
-                  {listing.data?.entries.map((entry) => (
-                    <li key={entry.path}>
-                      <button
-                        disabled={
-                          !interactive ||
-                          saving ||
-                          composing ||
-                          entry.kind === 'symlink'
-                        }
-                        className={entry.path === file ? 'is-selected' : ''}
-                        aria-current={entry.path === file ? 'true' : undefined}
-                        onClick={(event) => {
-                          event.currentTarget.focus({ preventScroll: true });
-                          void navigate(
-                            entry.kind === 'folder' ? entry.path : folder,
-                            entry.kind === 'file' ? entry.path : '',
-                          );
-                        }}
-                      >
-                        <PixelIcon
-                          size={16}
-                          name={entry.kind === 'folder' ? 'folder' : 'document'}
-                        />
-                        <span>
-                          {entry.name}
-                          {entry.kind === 'symlink' && ' (symlink)'}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                {binding &&
-                  !pendingRecovery &&
-                  !listing.data &&
-                  !listing.error && <p role="status">Loading directory…</p>}
-                {listing.data?.entries.length === 0 && (
-                  <p>This directory is empty.</p>
-                )}
-                <div className="project-pagination">
-                  {cursor && (
-                    <Button
-                      disabled={!interactive}
-                      onClick={() =>
-                        desktop.updateWindowState(window.id, { cursor: '' })
-                      }
-                    >
-                      First page
-                    </Button>
-                  )}
-                  {listing.data?.nextCursor && (
-                    <Button
-                      disabled={!interactive}
-                      onClick={() =>
-                        desktop.updateWindowState(window.id, {
-                          cursor: listing.data!.nextCursor!,
-                        })
-                      }
-                    >
-                      Next page
-                    </Button>
-                  )}
-                  {listing.data?.truncated && !listing.data.nextCursor && (
-                    <p>Directory limit reached.</p>
-                  )}
-                </div>
-              </nav>
+              <VMProjectDirectoryPane
+                directoryRef={directory}
+                binding={binding}
+                pendingRecovery={!!pendingRecovery}
+                listingData={listing.data}
+                listingError={listing.error}
+                folder={folder}
+                file={file}
+                cursor={cursor}
+                interactive={interactive}
+                saving={saving}
+                composing={composing}
+                onNavigate={(path, nextFile) => void navigate(path, nextFile)}
+                onCursorChange={(nextCursor) =>
+                  desktop.updateWindowState(window.id, { cursor: nextCursor })
+                }
+              />
               <section
                 className="project-preview vm-project-editor"
                 aria-label="VM project file editor"
@@ -1359,104 +1253,47 @@ export function VMProjectFiles({
                 tabIndex={-1}
               >
                 {(file || editor) && (
-                  <div className="project-preview-heading vm-project-file-toolbar">
-                    <div className="vm-project-file-name">
-                      <code
-                        title={editor && !pendingRecovery ? editor.path : file}
-                      >
-                        {editor && !pendingRecovery ? editor.path : file}
-                      </code>
-                      {dirty && <strong>Unsaved</strong>}
-                    </div>
-                    <div
-                      className="vm-project-file-controls"
-                      role="group"
-                      aria-label="File actions"
-                    >
-                      <IconButton
-                        className="project-back"
-                        icon="back"
-                        label="Back"
-                        title="Back to files"
-                        disabled={!interactive || composing}
-                        onClick={(event) => {
-                          if (!filesActive.current || inputPending()) return;
-                          event.currentTarget.focus({ preventScroll: true });
-                          navigationGeneration.current++;
-                          returnToDirectory.current = true;
-                          desktop.updateWindowState(window.id, {
-                            reading: false,
-                          });
-                        }}
-                      />
-                      {editor && !pendingRecovery && (
-                        <>
-                          <IconButton
-                            icon="refresh"
-                            label="Reload file"
-                            disabled={
-                              saving ||
-                              reading ||
-                              composing ||
-                              unavailable ||
-                              !interactive
-                            }
-                            onClick={() =>
-                              void reloadFile(
-                                binding,
-                                editor.path,
-                                navigationGeneration.current,
-                              )
-                            }
-                          />
-                          {editing ? (
-                            <>
-                              <Button
-                                primary
-                                disabled={
-                                  !dirty ||
-                                  saving ||
-                                  composing ||
-                                  unavailable ||
-                                  !interactive
-                                }
-                                onClick={() => void save()}
-                              >
-                                {saving ? 'Saving…' : 'Save'}
-                              </Button>
-                              <Button
-                                disabled={saving || composing || !interactive}
-                                onClick={() => void finishEditing()}
-                              >
-                                {dirty ? 'Cancel' : 'Done'}
-                              </Button>
-                            </>
-                          ) : (
-                            <Button
-                              disabled={
-                                reading ||
-                                saving ||
-                                composing ||
-                                unavailable ||
-                                !interactive
-                              }
-                              onClick={() => {
-                                if (!filesActive.current) return;
-                                setManualFile(editor.path);
-                                latest.current = {
-                                  ...latest.current,
-                                  manualFile: editor.path,
-                                };
-                                editorInput.current?.focus();
-                              }}
-                            >
-                              Edit
-                            </Button>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </div>
+                  <VMProjectFileHeader
+                    displayPath={
+                      editor && !pendingRecovery ? editor.path : file
+                    }
+                    hasEditor={!!(editor && !pendingRecovery)}
+                    dirty={dirty}
+                    editing={editing}
+                    saving={saving}
+                    reading={reading}
+                    composing={composing}
+                    unavailable={unavailable}
+                    interactive={interactive}
+                    onBack={(event) => {
+                      if (!filesActive.current || inputPending()) return;
+                      event.currentTarget.focus({ preventScroll: true });
+                      navigationGeneration.current++;
+                      returnToDirectory.current = true;
+                      desktop.updateWindowState(window.id, {
+                        reading: false,
+                      });
+                    }}
+                    onReload={() => {
+                      if (editor)
+                        void reloadFile(
+                          binding,
+                          editor.path,
+                          navigationGeneration.current,
+                        );
+                    }}
+                    onSave={() => void save()}
+                    onFinishEditing={() => void finishEditing()}
+                    onStartEditing={() => {
+                      if (!filesActive.current || !editor) return;
+                      setManualFile(editor.path);
+                      latest.current = {
+                        ...latest.current,
+                        manualFile: editor.path,
+                      };
+                      editorInput.current?.focus();
+                    }}
+                  />
                 )}
                 {editor && !pendingRecovery ? (
                   <CodeEditor
