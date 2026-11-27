@@ -10,7 +10,13 @@ import (
 
 // Runtime reports controller recovery and identity without provider I/O.
 func (s *Service) Runtime() compute.Runtime {
-	return compute.Runtime{Ready: s.Ready(), HostID: s.store.HostID, ProtocolVersion: compute.ProtocolVersion, ConfigFingerprint: s.config.Fingerprint()}
+	return compute.Runtime{
+		Ready:                s.Ready(),
+		HostID:               s.store.HostID,
+		ProtocolVersion:      compute.ProtocolVersion,
+		ConfigFingerprint:    s.config.Fingerprint(),
+		VMCodexNotifications: true,
+	}
 }
 
 func (s *Service) Info(ctx context.Context) (compute.Info, error) {

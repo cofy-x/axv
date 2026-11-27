@@ -18,6 +18,7 @@ import (
 	"github.com/cofy-x/axv/apps/server/internal/codex"
 	codexhttp "github.com/cofy-x/axv/apps/server/internal/codex/httpapi"
 	"github.com/cofy-x/axv/apps/server/internal/limitedbuffer"
+	"github.com/cofy-x/axv/apps/server/internal/notificationevent"
 	"github.com/cofy-x/axv/apps/server/internal/storage"
 )
 
@@ -321,6 +322,30 @@ func (g *guestCodex) handleNotifications(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	respond(w, http.StatusOK, map[string]any{"batches": batches})
+}
+
+func (g *guestCodex) handleResolveNotification(w http.ResponseWriter, r *http.Request) {
+	manager, _, err := g.ensure()
+	if err != nil {
+		fail(w, http.StatusServiceUnavailable, "codex_unavailable", err)
+		return
+	}
+	var target notificationevent.Target
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&target); err != nil {
+		fail(w, http.StatusBadRequest, "invalid_json", err)
+		return
+	}
+	local := target
+	local.HostID, local.MachineID, local.MachineName = "", "", ""
+	resolution, err := manager.ResolveNotification(r.Context(), local)
+	if err != nil {
+		fail(w, http.StatusServiceUnavailable, "notification_activity_unavailable", err)
+		return
+	}
+	resolution.Target = target
+	respond(w, http.StatusOK, resolution)
 }
 
 func (g *guestCodex) handleProxy(w http.ResponseWriter, r *http.Request) {

@@ -2,6 +2,8 @@ import { useCallback } from 'react';
 import { Button, StatusBar } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { codexAPI } from '../codex/api';
+import { openCodexSession } from '../codex/definition';
+import { vmCodexAPI } from '../codex/vm-api';
 import { readVMTaskLog, vmTasksAPI } from '../project-files/vm-task-api';
 import { notificationsAPI } from './api';
 import { TargetIdentity } from './NotificationDetails';
@@ -10,6 +12,7 @@ import { useNotificationResource } from './useNotificationResource';
 
 export function NotificationWork({
   window,
+  desktop,
   interactive = true,
 }: AppWindowProps) {
   const storeId = window.params.storeId || '';
@@ -31,11 +34,19 @@ export function NotificationWork({
       )
         throw new Error('Original work identity changed.');
       if (target.kind === 'codex' && target.sessionId && target.runId) {
-        const session = await codexAPI.getRun(
-          target.sessionId,
-          target.runId,
-          signal,
-        );
+        const session =
+          target.machineId && target.hostId
+            ? await vmCodexAPI.getRun(
+                {
+                  hostId: target.hostId,
+                  machineId: target.machineId,
+                  machineName: target.machineName || target.machineId,
+                },
+                target.sessionId,
+                target.runId,
+                signal,
+              )
+            : await codexAPI.getRun(target.sessionId, target.runId, signal);
         if (session.id !== target.sessionId || session.runId !== target.runId)
           throw new Error('Original run identity changed.');
         return { detail, session };
@@ -118,14 +129,34 @@ export function NotificationWork({
               </p>
             )}
             {value.session && (
-              <dl className="info-list">
-                <dt>Session</dt>
-                <dd>{value.session.title}</dd>
-                <dt>Process</dt>
-                <dd>{value.session.status}</dd>
-                <dt>Last inspected activity</dt>
-                <dd>{value.session.activity?.state || 'Unknown'}</dd>
-              </dl>
+              <>
+                <dl className="info-list">
+                  <dt>Session</dt>
+                  <dd>{value.session.title}</dd>
+                  {value.session.machineId && (
+                    <>
+                      <dt>Target</dt>
+                      <dd>
+                        VM ·{' '}
+                        {value.session.machineName || value.session.machineId}
+                      </dd>
+                    </>
+                  )}
+                  <dt>Process</dt>
+                  <dd>{value.session.status}</dd>
+                  <dt>Last inspected activity</dt>
+                  <dd>{value.session.activity?.state || 'Unknown'}</dd>
+                </dl>
+                <div className="app-actions">
+                  <Button
+                    primary
+                    disabled={!interactive}
+                    onClick={() => openCodexSession(desktop, value.session!)}
+                  >
+                    Open Codex session
+                  </Button>
+                </div>
+              </>
             )}
             {value.attempt && (
               <dl className="info-list">

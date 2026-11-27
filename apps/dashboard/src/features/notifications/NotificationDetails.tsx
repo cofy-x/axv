@@ -26,6 +26,8 @@ export function TargetIdentity({ target }: { target: NotificationTarget }) {
                   turnId: 'Turn',
                   eventId: 'Event',
                   hostId: 'Host',
+                  machineId: 'VM',
+                  machineName: 'VM name',
                   projectId: 'Project',
                   taskId: 'Task',
                   attemptId: 'Attempt',
@@ -97,8 +99,43 @@ export function NotificationDetails({
                   : 'The original event is still current.'}
           </p>
           <div className="app-actions">
+            {detail.event.target.kind === 'codex' &&
+              detail.event.target.sessionId &&
+              detail.event.target.runId && (
+                <Button
+                  primary
+                  disabled={
+                    !active || !!resource.error || !detail.resolution.available
+                  }
+                  onClick={() => {
+                    const target = detail.event.target;
+                    const isVM = !!target.machineId && !!target.hostId;
+                    desktop.openApp(
+                      'codex',
+                      isVM
+                        ? {
+                            sessionId: target.sessionId!,
+                            runId: target.runId!,
+                            target: 'vm',
+                            hostId: target.hostId!,
+                            machineId: target.machineId!,
+                            machineName:
+                              target.machineName || target.machineId!,
+                          }
+                        : {
+                            sessionId: target.sessionId!,
+                            runId: target.runId!,
+                          },
+                    );
+                  }}
+                >
+                  {detail.event.target.machineId
+                    ? `Open VM Codex (${detail.event.target.machineName || detail.event.target.machineId})`
+                    : 'Open Codex session'}
+                </Button>
+              )}
             <Button
-              primary
+              primary={detail.event.target.kind !== 'codex'}
               disabled={
                 !active || !!resource.error || !detail.resolution.available
               }

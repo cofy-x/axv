@@ -97,6 +97,9 @@ func waiting(kind string) bool {
 
 func scope(t notificationevent.Target) string {
 	if t.Kind == "codex" {
+		if t.MachineID != "" {
+			return t.HostID + ":" + t.MachineID + ":" + t.StoreID + ":" + t.RunID
+		}
 		return t.StoreID + ":" + t.RunID
 	}
 	return t.StoreID + ":" + t.AttemptID
