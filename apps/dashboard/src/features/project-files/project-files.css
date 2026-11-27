@@ -164,27 +164,67 @@
   overflow: auto;
   height: 100%;
 }
-.project-launcher-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.vm-project-launcher {
+  display: grid;
   gap: 12px;
 }
-.project-launcher-heading h2 {
+.project-launcher-card {
+  background: color-mix(in srgb, var(--ns-face), var(--ns-light) 26%);
+  border: 1px solid var(--ns-shadow);
+  box-shadow: inset 1px 1px var(--ns-light);
+  padding: 12px 14px;
+}
+.project-launcher-card[hidden] {
+  display: none;
+}
+.project-launcher-heading,
+.project-setup-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+.project-launcher-heading h2,
+.project-setup-header h3 {
   margin: 0;
   font-size: var(--ns-font-size-body);
+  font-weight: 600;
+}
+.project-volume-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  background: var(--ns-light);
+  border: 1px solid var(--ns-mid);
+  font-size: var(--ns-font-size-secondary);
+  color: #444;
+}
+.project-volume-badge strong {
+  color: var(--ns-text);
 }
 .project-launcher-pane[hidden] {
   display: none;
 }
-.project-launcher .project-list-empty {
-  margin: 4px 0 0;
+.project-launcher .project-list-empty,
+.project-launcher-notice {
+  margin: 8px 0 0;
+  color: #444;
   font-size: var(--ns-font-size-secondary);
+  line-height: 1.45;
+}
+.project-launcher-fallback,
+.project-workspace-quick {
+  margin-top: 10px;
 }
 .project-register-form {
   display: grid;
   gap: 12px;
   margin-block: 12px;
+}
+.project-launcher-card > .project-register-form {
+  margin-block: 0;
 }
 .project-register-volume {
   margin: 0;
@@ -201,6 +241,10 @@
   justify-content: flex-end;
   gap: 8px;
 }
+.project-launcher-card .project-register-form > .project-register-actions {
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--ns-shadow), transparent 40%);
+}
 .project-register-actions .ns-button {
   flex: 0 0 auto;
 }
@@ -216,59 +260,73 @@
 }
 .project-list {
   list-style: none;
-  max-block-size: min(11rem, 30vh);
+  max-block-size: min(14rem, 36vh);
   overflow: auto;
-  margin: 6px 0 0;
-  padding: 2px;
+  margin: 8px 0 0;
+  padding: 0;
   background: var(--ns-light);
+  border: 1px solid var(--ns-mid);
   box-shadow: var(--ns-recessed);
 }
 .project-list > li + li {
-  border-block-start: 1px solid var(--ns-mid);
+  border-block-start: 1px solid #d8d8d8;
 }
 .project-list > li.project-list-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  padding-inline-end: 8px;
 }
-.project-list > li.project-list-row > .ns-button:first-child {
-  flex: 1 1 auto;
-  min-width: 0;
+.project-list > li.project-list-row:hover {
+  background: #f1f3f5;
 }
-.project-list > li.project-list-row > .ns-button:last-child {
-  flex: 0 0 auto;
-  width: auto;
-  flex-direction: row;
-  align-items: center;
-  margin-inline-end: 4px;
-  padding: 2px 8px;
-  border: 1px solid var(--ns-dark);
-  background: var(--ns-face);
-  box-shadow: var(--ns-bevel);
-}
-.project-list .ns-button,
-.project-list .ns-button:active:not(:disabled) {
+.project-list .ns-button:not(.project-list-remove),
+.project-list .ns-button:not(.project-list-remove):active:not(:disabled) {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
   width: 100%;
   align-items: start;
   text-align: left;
   overflow-wrap: anywhere;
-  gap: 1px;
-  padding: 5px 8px;
+  gap: 2px;
+  padding: 8px 10px;
   border: 0;
   box-shadow: none;
   background: transparent;
 }
-.project-list .ns-button:focus-visible {
+.project-list .ns-button:not(.project-list-remove):focus-visible {
   outline-offset: -2px;
 }
-.project-list .ns-button small {
+.project-list .ns-button:not(.project-list-remove) small {
+  color: #555;
   font-size: var(--ns-font-size-secondary);
 }
-.project-list .ns-button:active:not(:disabled) {
+.project-list-id {
+  font-weight: 400;
+  color: #666;
+  font-family: var(--ns-mono);
+  font-size: var(--ns-font-size-secondary);
+}
+.project-list .ns-button:not(.project-list-remove):active:not(:disabled) {
   color: var(--ns-light);
   background: var(--ns-highlight);
+}
+.project-list .ns-button:not(.project-list-remove):active:not(:disabled) small,
+.project-list
+  .ns-button:not(.project-list-remove):active:not(:disabled)
+  .project-list-id {
+  color: inherit;
+}
+.project-list .project-list-remove {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 3px 10px;
+  font-size: var(--ns-font-size-secondary);
+}
+.project-list .project-list-remove:hover:not(:disabled) {
+  color: #7a1010;
 }
 .project-location {
   background: #d8d8d8;
@@ -479,8 +537,11 @@
 .project-register-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  gap: 10px;
   align-items: end;
+}
+.project-register-fields.is-scoped > :first-child {
+  grid-column: 1 / -1;
 }
 .project-register-fields .ns-select {
   width: 100%;
