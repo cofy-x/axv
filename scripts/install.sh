@@ -7,8 +7,9 @@ set -eu
 REPO="${AXV_RELEASE_REPO:-cofy-x/axv}"
 API_BASE="${AXV_RELEASE_API_BASE:-https://api.github.com/repos/${REPO}}"
 DOWNLOAD_BASE="${AXV_RELEASE_DOWNLOAD_BASE:-https://github.com/${REPO}/releases/download}"
-VERSION=""
-BIN_DIR=""
+VERSION="${AXV_VERSION:-}"
+VERSION="${VERSION#v}"
+BIN_DIR="${AXV_BIN_DIR:-}"
 
 usage() {
   cat <<'EOF'
@@ -18,8 +19,8 @@ Usage:
   install.sh [--version <version>] [--bin-dir <dir>]
 
 Options:
-  --version <ver>   Release version without leading 'v' (default: latest matching release or prerelease)
-  --bin-dir <dir>   Destination directory (default: /usr/local/bin if root, else ~/.local/bin)
+  --version <ver>   Release version with or without leading 'v' (default: AXV_VERSION or highest matching release/prerelease)
+  --bin-dir <dir>   Destination directory (default: AXV_BIN_DIR, or /usr/local/bin if root, else ~/.local/bin)
   -h, --help        Show this help
 EOF
 }
@@ -96,13 +97,15 @@ fetch() {
   fi
 }
 
-# Extract the first non-draft AXV application release version (excluding Guest
-# releases) whose assets include axv_<ver>_<os>_<arch>.tar.gz.
+# Extract the highest SemVer non-draft AXV application release version (excluding
+# Guest releases) whose assets include axv_<ver>_<os>_<arch>.tar.gz.
 # Uses POSIX awk only so it works identically on macOS BSD awk and GNU awk.
 extract_matching_version() {
   awk -v os="$OS" -v arch="$ARCH" '
   { buf = buf " " $0 }
   END {
+    found = 0
+    best_maj = -1; best_min = -1; best_pat = -1; best_stable = -1; best_rc = -1; best_ver = ""
     n = split(buf, recs, /"tag_name"/)
     for (i = 2; i <= n; i++) {
       rec = recs[i]
@@ -120,11 +123,38 @@ extract_matching_version() {
       ver = substr(tag, 2)
       if (ver !~ /^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$/) continue
       asset = "\"axv_" ver "_" os "_" arch ".tar.gz\""
-      if (index(rec, asset) > 0) {
-        print ver
-        exit
+      if (index(rec, asset) == 0) continue
+
+      rc_idx = index(ver, "-rc.")
+      if (rc_idx > 0) {
+        base = substr(ver, 1, rc_idx - 1)
+        is_stable = 0
+        rc = substr(ver, rc_idx + 4) + 0
+      } else {
+        base = ver
+        is_stable = 1
+        rc = 0
+      }
+      split(base, parts, ".")
+      maj = parts[1] + 0
+      min = parts[2] + 0
+      pat = parts[3] + 0
+
+      better = 0
+      if (!found) better = 1
+      else if (maj != best_maj) better = (maj > best_maj)
+      else if (min != best_min) better = (min > best_min)
+      else if (pat != best_pat) better = (pat > best_pat)
+      else if (is_stable != best_stable) better = (is_stable > best_stable)
+      else if (rc != best_rc) better = (rc > best_rc)
+
+      if (better) {
+        found = 1
+        best_maj = maj; best_min = min; best_pat = pat
+        best_stable = is_stable; best_rc = rc; best_ver = ver
       }
     }
+    if (found) print best_ver
   }'
 }
 

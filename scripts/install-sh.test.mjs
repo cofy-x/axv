@@ -204,3 +204,110 @@ test('install.sh prefers a matching stable release from /releases/latest and rej
   expect(bad.code).toBe(1);
   expect(bad.stderr).toContain('checksum mismatch');
 });
+
+test('install.sh selects the highest numeric SemVer across out-of-order releases and honors AXV_VERSION/AXV_BIN_DIR', async () => {
+  if (process.platform !== 'linux' && process.platform !== 'darwin') return;
+  const workDir = await mkdtemp(join(tmpdir(), 'axv-install-semver-'));
+  dirs.push(workDir);
+  const autoBinDir = join(workDir, 'auto-bin');
+  const envBinDir = join(workDir, 'env-bin');
+  const { os, arch } = hostTarget();
+  const rc9 = await createFakeArchive(workDir, '0.1.0-rc.9', os, arch);
+  const rc10 = await createFakeArchive(workDir, '0.1.0-rc.10', os, arch);
+
+  const baseURL = await startFixtureServer((req, res) => {
+    if (req.url === '/api/releases/latest') {
+      res.writeHead(404);
+      res.end('{"message":"Not Found"}');
+      return;
+    }
+    if (req.url === '/api/releases?per_page=30') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify([
+          {
+            tag_name: 'v0.1.0-rc.9',
+            draft: false,
+            prerelease: true,
+            assets: [{ name: rc9.archiveName }, { name: 'SHA256SUMS' }],
+          },
+          {
+            tag_name: 'v0.1.0-rc.8',
+            draft: false,
+            prerelease: true,
+            assets: [
+              { name: `axv_0.1.0-rc.8_${os}_${arch}.tar.gz` },
+              { name: 'SHA256SUMS' },
+            ],
+          },
+          {
+            tag_name: 'v0.1.0-rc.10',
+            draft: false,
+            prerelease: true,
+            assets: [{ name: rc10.archiveName }, { name: 'SHA256SUMS' }],
+          },
+          {
+            tag_name: 'v0.1.0-guest.3',
+            draft: false,
+            prerelease: true,
+            assets: [{ name: 'axv_guest_0.1.0-guest.3_lima_arm64.tar.gz' }],
+          },
+        ]),
+      );
+      return;
+    }
+    if (req.url === `/dl/v0.1.0-rc.10/${rc10.archiveName}`) {
+      res.writeHead(200);
+      res.end(rc10.bytes);
+      return;
+    }
+    if (req.url === '/dl/v0.1.0-rc.10/SHA256SUMS') {
+      res.writeHead(200);
+      res.end(`${rc10.sha256}  ${rc10.archiveName}\n`);
+      return;
+    }
+    if (req.url === `/dl/v0.1.0-rc.9/${rc9.archiveName}`) {
+      res.writeHead(200);
+      res.end(rc9.bytes);
+      return;
+    }
+    if (req.url === '/dl/v0.1.0-rc.9/SHA256SUMS') {
+      res.writeHead(200);
+      res.end(`${rc9.sha256}  ${rc9.archiveName}\n`);
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+
+  const baseEnv = {
+    ...process.env,
+    AXV_RELEASE_API_BASE: `${baseURL}/api`,
+    AXV_RELEASE_DOWNLOAD_BASE: `${baseURL}/dl`,
+    AXV_TEST_ALLOW_HTTP: '1',
+  };
+
+  const auto = await captureCommand(
+    'sh',
+    [join(root, 'scripts/install.sh'), '--bin-dir', autoBinDir],
+    { env: baseEnv },
+  );
+  expect(auto.stdout).toContain(
+    `Installed axv 0.1.0-rc.10 to ${autoBinDir}/axv`,
+  );
+
+  const pinned = await captureCommand(
+    'sh',
+    [join(root, 'scripts/install.sh')],
+    {
+      env: {
+        ...baseEnv,
+        AXV_VERSION: 'v0.1.0-rc.9',
+        AXV_BIN_DIR: envBinDir,
+      },
+    },
+  );
+  expect(pinned.stdout).toContain(
+    `Installed axv 0.1.0-rc.9 to ${envBinDir}/axv`,
+  );
+});
