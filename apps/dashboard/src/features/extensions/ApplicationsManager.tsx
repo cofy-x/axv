@@ -1,73 +1,17 @@
 import { useId, useRef, useState, useSyncExternalStore } from 'react';
-import {
-  Button,
-  Checkbox,
-  Field,
-  IconButton,
-  PixelIcon,
-  StatusBar,
-} from '@cofy-x/axv-nextstep';
+import { Button, Checkbox, IconButton, StatusBar } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
+import { AddPackagePanel } from './AddPackagePanel';
+import { BuiltinApplicationsSection } from './BuiltinApplicationsSection';
+import { ExtensionListSection } from './ExtensionListSection';
 import { extensionsApi } from './api';
 import { useApplicationCatalog } from './catalog';
+import { downloadJSON, readPackage } from './package-utils';
+import type { PackageReview } from './package-utils';
 import { prepareExtensionChange } from './runtime';
-import { checklistPackage } from './sample';
 import { extensionStore } from './store';
 import { extensionAppId } from './types';
 import type { ExtensionPackage, ExtensionRecord } from './types';
-
-interface PackageReview {
-  package: ExtensionPackage;
-  expectedGeneration: number;
-  storeId: string;
-}
-
-function downloadJSON(name: string, value: unknown) {
-  const url = URL.createObjectURL(
-    new Blob([JSON.stringify(value, null, 2) + '\n'], {
-      type: 'application/json',
-    }),
-  );
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = name;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-function readPackage(value: unknown): ExtensionPackage {
-  if (!value || typeof value !== 'object')
-    throw new Error('Choose an AXV extension package in JSON format.');
-  const candidate = value as Partial<ExtensionPackage>;
-  const manifest = candidate.manifest;
-  if (
-    !manifest ||
-    manifest.schemaVersion !== 1 ||
-    manifest.apiVersion !== 1 ||
-    typeof manifest.id !== 'string' ||
-    typeof manifest.title !== 'string' ||
-    typeof manifest.version !== 'string' ||
-    !Array.isArray(manifest.capabilities) ||
-    manifest.capabilities.length !== 1 ||
-    manifest.capabilities[0] !== 'storage' ||
-    typeof candidate.html !== 'string' ||
-    !candidate.html.trim()
-  )
-    throw new Error(
-      'This package needs an API 1 manifest, the storage capability and an HTML document.',
-    );
-  if (new TextEncoder().encode(candidate.html).length > 512 * 1024)
-    throw new Error('The HTML document must be no larger than 512 KiB.');
-  if (
-    manifest.icon !== undefined &&
-    manifest.icon !== 'document' &&
-    manifest.icon !== 'checklist'
-  )
-    throw new Error('The application icon must be document or checklist.');
-  return candidate as ExtensionPackage;
-}
 
 export function ApplicationsManager({ desktop }: AppWindowProps) {
   const snapshot = useSyncExternalStore(
@@ -191,6 +135,14 @@ export function ApplicationsManager({ desktop }: AppWindowProps) {
     });
     setMessage('');
     setError('');
+  }
+
+  function stageSafely(pkg: ExtensionPackage) {
+    try {
+      stage(pkg);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+    }
   }
 
   async function selectPackage(file: File) {
@@ -404,263 +356,39 @@ export function ApplicationsManager({ desktop }: AppWindowProps) {
         </div>
       )}
       <div className="applications-content">
-        <section
-          className="applications-add-panel"
-          id={panelId}
-          hidden={!addPanelOpen}
-          aria-labelledby={`${panelId}-heading`}
-        >
-          <div className="applications-panel-heading">
-            <h2 id={`${panelId}-heading`}>Add an extension</h2>
-            <Button onClick={hideAddPanel}>Close</Button>
-          </div>
-          <p className="applications-meta">
-            Install packages from the AXV host.
-          </p>
-          <Field
-            label="Extension package"
-            className="applications-package-input"
-            type="file"
-            accept=".json,application/json"
-            disabled={disabled}
-            onChange={(event) => {
-              const file = event.currentTarget.files?.[0];
-              event.currentTarget.value = '';
-              if (file) void selectPackage(file);
-            }}
-          />
-          <div className="applications-actions applications-example-actions">
-            <Button
-              disabled={disabled}
-              onClick={() => {
-                try {
-                  stage(checklistPackage);
-                } catch (failure) {
-                  setError(
-                    failure instanceof Error
-                      ? failure.message
-                      : String(failure),
-                  );
-                }
-              }}
-            >
-              Install Checklist
-            </Button>
-            <Button
-              onClick={() =>
-                downloadJSON('local.checklist-1.0.0.json', checklistPackage)
-              }
-            >
-              Download example
-            </Button>
-          </div>
-          {review && (
-            <div className="applications-review">
-              <h3>Review {review.package.manifest.title}</h3>
-              <dl className="info-list">
-                <dt>Application</dt>
-                <dd>{review.package.manifest.id}</dd>
-                <dt>Version</dt>
-                <dd>
-                  {reviewedApp?.installed && `${reviewedApp.version} → `}
-                  {review.package.manifest.version}
-                </dd>
-                <dt>Access</dt>
-                <dd>Private application storage</dd>
-              </dl>
-              <p>
-                {reviewedApp?.installed
-                  ? 'This replaces the installed package and keeps its saved data.'
-                  : 'The application will be enabled after installation.'}
-              </p>
-              {reviewStale && (
-                <p role="alert">
-                  The application changed since this review. Review again to use
-                  its current version.
-                </p>
-              )}
-              <div className="applications-actions">
-                <Button disabled={!!busy} onClick={() => setReview(undefined)}>
-                  Cancel
-                </Button>
-                {reviewStale ? (
-                  <Button
-                    disabled={disabled}
-                    onClick={() => {
-                      try {
-                        stage(review.package);
-                      } catch (failure) {
-                        setError(String(failure));
-                      }
-                    }}
-                  >
-                    Review again
-                  </Button>
-                ) : (
-                  <Button primary disabled={disabled} onClick={install}>
-                    {reviewedApp?.installed ? 'Replace package' : 'Install'}
-                  </Button>
-                )}
-              </div>
-            </div>
-          )}
-        </section>
-        <section aria-labelledby="applications-extensions-heading">
-          <div className="applications-heading">
-            <h2 id="applications-extensions-heading">Installed extensions</h2>
-            {installed.length > 0 && <span>{installed.length} installed</span>}
-          </div>
-          {installed.length ? (
-            <ul className="applications-list">
-              {installed.map((app) => (
-                <li className="applications-row" key={app.id}>
-                  <div className="applications-row-head">
-                    <div className="applications-identity">
-                      <PixelIcon name={app.icon || 'document'} size={32} />
-                      <div className="applications-identity-text">
-                        <h3>{app.title}</h3>
-                        <p className="applications-meta">
-                          {app.id} · {app.version}
-                        </p>
-                      </div>
-                    </div>
-                    <div
-                      className="applications-actions applications-row-actions"
-                      aria-label={`${app.title} actions`}
-                    >
-                      {app.enabled ? (
-                        <Button
-                          primary
-                          disabled={disabled}
-                          onClick={() => openApplication(app)}
-                        >
-                          Open
-                        </Button>
-                      ) : (
-                        <Button
-                          primary
-                          disabled={disabled}
-                          onClick={() => setEnabled(app, snapshot.storeId)}
-                        >
-                          Enable
-                        </Button>
-                      )}
-                      {moreActions(app)}
-                    </div>
-                  </div>
-                  <div className="applications-row-footer">
-                    <span className="applications-state">
-                      {snapshot.error
-                        ? 'Status unavailable'
-                        : app.enabled
-                          ? 'Enabled · Private storage'
-                          : 'Disabled · Private storage'}
-                    </span>
-                    {desktopOption(extensionAppId(app.id), app.title)}
-                  </div>
-                  {!app.enabled && (
-                    <p className="applications-meta applications-row-guidance">
-                      Enable from the computer running AXV.
-                    </p>
-                  )}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="applications-meta">
-              {snapshot.loading
-                ? 'Loading applications…'
-                : snapshot.error
-                  ? 'Application list unavailable'
-                  : 'No extensions installed'}
-            </p>
-          )}
-        </section>
-        {!!removed.length && (
-          <section aria-labelledby="applications-removed-heading">
-            <div className="applications-heading">
-              <h2 id="applications-removed-heading">
-                Uninstalled applications
-              </h2>
-              <span>{removed.length} retained</span>
-            </div>
-            <p className="applications-meta">
-              Saved data is kept. Export a copy or reinstall to use it again.
-            </p>
-            <ul className="applications-list">
-              {removed.map((app) => (
-                <li className="applications-row" key={app.id}>
-                  <div className="applications-row-head">
-                    <div className="applications-identity">
-                      <PixelIcon name={app.icon || 'document'} size={32} />
-                      <div className="applications-identity-text">
-                        <h3>{app.title}</h3>
-                        <p className="applications-meta">{app.id}</p>
-                      </div>
-                    </div>
-                    <div
-                      className="applications-actions applications-row-actions"
-                      aria-label={`${app.title} data actions`}
-                    >
-                      <Button
-                        primary
-                        disabled={disabled}
-                        onClick={() => exportData(app, snapshot.storeId)}
-                      >
-                        Export saved data
-                      </Button>
-                      {moreActions(app)}
-                    </div>
-                  </div>
-                  <div className="applications-row-footer">
-                    <span className="applications-state">
-                      {snapshot.error
-                        ? 'Status unavailable'
-                        : 'Uninstalled · Saved data kept'}
-                    </span>
-                    {desktopOption(extensionAppId(app.id), app.title)}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-        <details className="applications-builtins">
-          <summary>Built-in applications ({builtins.length})</summary>
-          <ul className="applications-list">
-            {[...builtins]
-              .sort((a, b) => a.title.localeCompare(b.title))
-              .map((app) => (
-                <li
-                  className="applications-row applications-builtin"
-                  key={app.id}
-                >
-                  <div className="applications-identity">
-                    <PixelIcon name={app.icon} size={28} />
-                    <div>
-                      <strong>{app.title}</strong>
-                      <p className="applications-meta">
-                        {app.kind === 'panel' ? 'Utility panel' : 'Application'}
-                        {!app.launchable &&
-                          ' · Opened from its owning application'}
-                      </p>
-                    </div>
-                  </div>
-                  {app.launchable && (
-                    <div className="applications-builtin-controls">
-                      {desktopOption(app.id, app.title)}
-                      <Button
-                        aria-label={`Open ${app.title}`}
-                        onClick={() => desktop.launchApp(app.id)}
-                      >
-                        Open
-                      </Button>
-                    </div>
-                  )}
-                </li>
-              ))}
-          </ul>
-        </details>
+        <AddPackagePanel
+          panelId={panelId}
+          open={addPanelOpen}
+          disabled={disabled}
+          busy={!!busy}
+          review={review}
+          reviewedApp={reviewedApp}
+          reviewStale={reviewStale}
+          onClose={hideAddPanel}
+          onSelectFile={(file) => void selectPackage(file)}
+          onStagePackage={stageSafely}
+          onCancelReview={() => setReview(undefined)}
+          onInstall={install}
+        />
+        <ExtensionListSection
+          installed={installed}
+          removed={removed}
+          loading={snapshot.loading}
+          snapshotError={snapshot.error}
+          disabled={disabled}
+          addPanelOpen={addPanelOpen}
+          onOpenAddPanel={() => setAddPanelOpen(true)}
+          onOpenApplication={openApplication}
+          onToggleEnabled={(app) => setEnabled(app, snapshot.storeId)}
+          onExportData={(app) => exportData(app, snapshot.storeId)}
+          renderMoreActions={moreActions}
+          renderDesktopOption={desktopOption}
+        />
+        <BuiltinApplicationsSection
+          builtins={builtins}
+          onOpenBuiltin={(appId) => desktop.launchApp(appId)}
+          renderDesktopOption={desktopOption}
+        />
         <p className="applications-message" role="status" aria-live="polite">
           {message}
         </p>
