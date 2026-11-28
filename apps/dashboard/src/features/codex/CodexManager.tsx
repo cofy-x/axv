@@ -61,6 +61,31 @@ import {
   subscribeSessionActivity,
 } from './activity';
 
+function sameMachinesSummary(prev: Machine[], next: Machine[]): boolean {
+  if (prev.length !== next.length) return false;
+  for (let i = 0; i < prev.length; i++) {
+    const a = prev[i]!;
+    const b = next[i]!;
+    if (
+      a.id !== b.id ||
+      a.hostId !== b.hostId ||
+      a.status !== b.status ||
+      a.ready !== b.ready ||
+      a.revision !== b.revision ||
+      a.spec.name !== b.spec.name ||
+      a.spec.volumeId !== b.spec.volumeId
+    )
+      return false;
+    const capsA = a.guestCapabilities || [];
+    const capsB = b.guestCapabilities || [];
+    if (capsA.length !== capsB.length) return false;
+    for (let j = 0; j < capsA.length; j++) {
+      if (capsA[j] !== capsB[j]) return false;
+    }
+  }
+  return true;
+}
+
 export function CodexManager({
   desktop,
   window,
@@ -216,7 +241,9 @@ export function CodexManager({
       );
       desktopDatabase.assertUnchanged();
       if (!controller.signal.aborted && mounted.current) {
-        setVmMachines(machines);
+        setVmMachines((current) =>
+          sameMachinesSummary(current, machines) ? current : machines,
+        );
         const combined = [
           ...hostResult.sessions,
           ...vmSessionBatches.flat(),

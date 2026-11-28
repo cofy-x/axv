@@ -242,3 +242,174 @@ test('unified Codex manager lists Host and VM sessions, installs VM Codex CLI, a
     'VM · dev-box',
   );
 });
+
+test('New in VM panel stays stable without re-fetching or disabling VM Project on Refresh and Re-check', async ({
+  page,
+}) => {
+  let machinePolls = 0;
+  let infoReads = 0;
+  let projectReads = 0;
+  let releaseRecheck = () => {};
+  let holdRecheck = false;
+
+  await page.route('**/api/host/codex/info', (route) =>
+    route.fulfill({
+      json: {
+        supported: true,
+        installed: true,
+        ready: true,
+        codexVersion: 'codex-cli 0.172.0',
+        tmuxVersion: 'tmux 3.4',
+        guidance: [],
+        defaultProjectPath: '/tmp/host-repo',
+        configPath: '/tmp/axv.json',
+        network: { proxySource: 'direct' },
+      },
+    }),
+  );
+  await page.route('**/api/host/codex/sessions', (route) =>
+    route.fulfill({ json: { sessions: [] } }),
+  );
+  await page.route('**/api/host/codex/projects', (route) =>
+    route.fulfill({ json: { projects: [] } }),
+  );
+  await page.route('**/api/compute/machines', (route) => {
+    machinePolls++;
+    return route.fulfill({
+      json: {
+        machines: [
+          {
+            id: machineId,
+            hostId,
+            spec: {
+              name: 'dev-box',
+              provider: 'firecracker',
+              imageId: 'axv-base',
+              kind: 'development',
+              resources: { cpus: 2, memoryMiB: 2048, diskGiB: 10 },
+              projectGiB: 10,
+              volumeId: 'vol-demo',
+              retainVolume: true,
+            },
+            revision: 1,
+            desired: 'running',
+            status: 'running',
+            ready: true,
+            guestState: 'ready',
+            guestCapabilities: ['exec', 'terminals', 'project-files', 'codex'],
+            reserved: false,
+            createdAt: '2026-11-27T09:00:00Z',
+            updatedAt: '2026-11-27T09:00:00Z',
+          },
+        ],
+      },
+    });
+  });
+  await page.route('**/api/compute/projects', (route) => {
+    projectReads++;
+    return route.fulfill({
+      json: {
+        projects: [
+          {
+            id: 'proj-demo',
+            hostId,
+            kind: 'vm',
+            name: 'demo-app',
+            volumeId: 'vol-demo',
+            root: 'demo-app',
+            rootIdentity: 'id-demo',
+            revision: 1,
+            createdAt: '2026-11-27T09:00:00Z',
+          },
+        ],
+      },
+    });
+  });
+  await page.route(
+    `**/api/compute/machines/${machineId}/guest/codex/info`,
+    async (route) => {
+      infoReads++;
+      if (holdRecheck) {
+        await new Promise<void>((resolve) => {
+          releaseRecheck = resolve;
+        });
+      }
+      await route.fulfill({
+        json: {
+          supported: true,
+          installed: true,
+          ready: true,
+          codexVersion: 'codex-cli 0.172.0',
+          tmuxVersion: 'tmux 3.4',
+          reason: '',
+          guidance: [],
+          defaultProjectPath: '/projects',
+          configPath: '',
+          network: { proxySource: 'direct' },
+          authMode: 'oauth',
+          hostProxyAvailable: false,
+          fullAutoDefault: true,
+          install: { state: 'idle', message: '' },
+        },
+      });
+    },
+  );
+  await page.route(
+    `**/api/compute/machines/${machineId}/guest/codex/sessions`,
+    (route) => route.fulfill({ json: { sessions: [] } }),
+  );
+
+  await page.goto('/');
+  await launch(page, 'codex');
+  const manager = page.locator('.ns-window', {
+    has: page.getByTestId('codex-manager'),
+  });
+  await manager.getByRole('button', { name: 'New in VM' }).click();
+  const picker = manager.getByTestId('codex-vm-picker');
+  const statusCard = picker.getByTestId('codex-vm-status');
+  const projectSelect = picker.getByRole('combobox', { name: 'VM Project' });
+  await expect(statusCard).toBeVisible();
+  await expect(projectSelect).toBeEnabled();
+  expect(infoReads).toBe(1);
+  expect(projectReads).toBe(1);
+
+  const initialBox = await statusCard.boundingBox();
+  expect(initialBox).not.toBeNull();
+
+  // Trigger manual refreshes and wait for at least 2 additional machine polls.
+  const pollsBefore = machinePolls;
+  const refreshButton = manager.getByRole('button', {
+    name: 'Refresh',
+    exact: true,
+  });
+  await refreshButton.click();
+  await expect.poll(() => machinePolls).toBeGreaterThanOrEqual(pollsBefore + 1);
+  await refreshButton.click();
+  await expect.poll(() => machinePolls).toBeGreaterThanOrEqual(pollsBefore + 2);
+
+  // Unchanged VM inventory must never re-fetch VM details or disable VM Project.
+  expect(infoReads).toBe(1);
+  expect(projectReads).toBe(1);
+  await expect(projectSelect).toBeEnabled();
+  const afterRefreshBox = await statusCard.boundingBox();
+  expect(Math.abs(afterRefreshBox!.y - initialBox!.y)).toBeLessThanOrEqual(1);
+
+  // Manual Re-check VM refreshes in place without disabling VM Project or shifting layout.
+  holdRecheck = true;
+  await picker.getByRole('button', { name: 'Re-check VM' }).click();
+  await expect.poll(() => infoReads).toBe(2);
+  await expect(
+    picker.getByRole('button', { name: 'Checking…' }),
+  ).toBeDisabled();
+  await expect(projectSelect).toBeEnabled();
+  await expect(
+    picker.getByText('Checking Codex CLI and authentication in VM…'),
+  ).toHaveCount(0);
+  const duringRecheckBox = await statusCard.boundingBox();
+  expect(Math.abs(duringRecheckBox!.y - initialBox!.y)).toBeLessThanOrEqual(1);
+
+  releaseRecheck();
+  await expect(
+    picker.getByRole('button', { name: 'Re-check VM' }),
+  ).toBeEnabled();
+});

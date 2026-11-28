@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Select } from '@cofy-x/axv-nextstep';
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
 import { machinesApi } from '../machines/api';
@@ -28,6 +28,11 @@ function vmTargetFor(machine: Machine): VMTarget {
   };
 }
 
+function vmSelectionKey(machine: Machine | null, hasCodexCap: boolean): string {
+  if (!machine) return '';
+  return `${machine.hostId}:${machine.id}:${machine.spec.volumeId || ''}:${hasCodexCap ? '1' : '0'}`;
+}
+
 export function VMNewSessionPanel({
   desktop,
   machines,
@@ -37,8 +42,12 @@ export function VMNewSessionPanel({
   onClose,
   onStarted,
 }: VMNewSessionPanelProps) {
-  const runningMachines = machines.filter(
-    (machine) => machine.status === 'running' && machine.ready,
+  const runningMachines = useMemo(
+    () =>
+      machines.filter(
+        (machine) => machine.status === 'running' && machine.ready,
+      ),
+    [machines],
   );
   const [selectedId, setSelectedId] = useState(
     () =>
@@ -51,7 +60,11 @@ export function VMNewSessionPanel({
     runningMachines[0] ||
     null;
   const hasCodexCap = !!selected?.guestCapabilities?.includes('codex');
+  const selectedKey = vmSelectionKey(selected, hasCodexCap);
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
 
+  const [loadedKey, setLoadedKey] = useState('');
   const [vmInfo, setVmInfo] = useState<GuestCodexInfo | null>(null);
   const [loadingInfo, setLoadingInfo] = useState(false);
   const [infoError, setInfoError] = useState('');
@@ -61,6 +74,7 @@ export function VMNewSessionPanel({
   const [starting, setStarting] = useState(false);
   const [openingTerminal, setOpeningTerminal] = useState(false);
   const [panelError, setPanelError] = useState('');
+  const requestController = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (
@@ -82,7 +96,16 @@ export function VMNewSessionPanel({
   }, [initialProjectId, initialProjectPath, projects]);
 
   const loadVMDetails = useCallback(
-    async (machine: Machine, signal?: AbortSignal) => {
+    async (
+      machine: Machine,
+      key: string,
+      signal?: AbortSignal,
+      preserveCurrent = false,
+    ) => {
+      if (!preserveCurrent) {
+        setVmInfo(null);
+        setProjects([]);
+      }
       setLoadingInfo(true);
       setInfoError('');
       setPanelError('');
@@ -104,10 +127,11 @@ export function VMNewSessionPanel({
             project.volumeId === machine.spec.volumeId,
         );
         setProjects(bound);
+        setLoadedKey(key);
         setInstalling(infoResult?.install?.state === 'running');
       } catch (error) {
         if (signal?.aborted) return;
-        setVmInfo(null);
+        if (!preserveCurrent) setVmInfo(null);
         setInfoError(
           error instanceof Error
             ? error.message
@@ -121,19 +145,30 @@ export function VMNewSessionPanel({
   );
 
   useEffect(() => {
-    if (!selected) {
+    requestController.current?.abort();
+    const current = selectedRef.current;
+    if (!selectedKey || !current) {
+      setLoadedKey('');
       setVmInfo(null);
       setProjects([]);
+      setLoadingInfo(false);
       return;
     }
     const controller = new AbortController();
-    void loadVMDetails(selected, controller.signal);
-    return () => controller.abort();
-  }, [selected, loadVMDetails]);
+    requestController.current = controller;
+    void loadVMDetails(current, selectedKey, controller.signal, false);
+    return () => {
+      controller.abort();
+      if (requestController.current === controller) {
+        requestController.current = null;
+      }
+    };
+  }, [selectedKey, loadVMDetails]);
 
   useEffect(() => {
-    if (!installing || !selected || !hasCodexCap) return;
-    const target = vmTargetFor(selected);
+    const current = selectedRef.current;
+    if (!installing || !selectedKey || !current || !hasCodexCap) return;
+    const target = vmTargetFor(current);
     const timer = setInterval(() => {
       void vmCodexAPI
         .installStatus(target)
@@ -141,7 +176,14 @@ export function VMNewSessionPanel({
           setVmInfo((prev) => (prev ? { ...prev, install: status } : prev));
           if (status.state !== 'running') {
             setInstalling(false);
-            if (status.state === 'succeeded') void loadVMDetails(selected);
+            if (status.state === 'succeeded' && selectedRef.current) {
+              void loadVMDetails(
+                selectedRef.current,
+                selectedKey,
+                undefined,
+                true,
+              );
+            }
             if (status.state === 'failed' && status.message)
               setPanelError(status.message);
           }
@@ -149,7 +191,20 @@ export function VMNewSessionPanel({
         .catch(() => {});
     }, 2000);
     return () => clearInterval(timer);
-  }, [installing, selected, hasCodexCap, loadVMDetails]);
+  }, [installing, selectedKey, hasCodexCap, loadVMDetails]);
+
+  const recheckVM = () => {
+    if (!selected || !selectedKey || loadingInfo || starting) return;
+    requestController.current?.abort();
+    const controller = new AbortController();
+    requestController.current = controller;
+    void loadVMDetails(
+      selected,
+      selectedKey,
+      controller.signal,
+      loadedKey === selectedKey,
+    );
+  };
 
   const startInstall = async () => {
     if (!selected || installing) return;
@@ -224,6 +279,7 @@ export function VMNewSessionPanel({
         : vmInfo?.authMode === 'api_key'
           ? 'VM API key configured'
           : 'Sign in required — run codex login in VM Terminal or set AXV_VM_CODEX_API_KEY on host';
+  const initialLoading = loadingInfo && loadedKey !== selectedKey;
 
   return (
     <section
@@ -272,7 +328,7 @@ export function VMNewSessionPanel({
               label="VM Project"
               value={projectPath}
               onChange={(event) => setProjectPath(event.target.value)}
-              disabled={starting || loadingInfo}
+              disabled={starting || initialLoading}
             >
               <option value="">/projects (workspace root)</option>
               {projects.map((project) => (
@@ -291,7 +347,7 @@ export function VMNewSessionPanel({
             </p>
           )}
 
-          {hasCodexCap && loadingInfo && (
+          {hasCodexCap && initialLoading && !vmInfo && (
             <p className="codex-note" role="status">
               Checking Codex CLI and authentication in VM…
             </p>
@@ -363,11 +419,10 @@ export function VMNewSessionPanel({
               Cancel
             </Button>
             {hasCodexCap && selected && (
-              <Button
-                disabled={loadingInfo || starting}
-                onClick={() => void loadVMDetails(selected)}
-              >
-                Re-check VM
+              <Button disabled={loadingInfo || starting} onClick={recheckVM}>
+                {loadingInfo && loadedKey === selectedKey
+                  ? 'Checking…'
+                  : 'Re-check VM'}
               </Button>
             )}
             <Button
