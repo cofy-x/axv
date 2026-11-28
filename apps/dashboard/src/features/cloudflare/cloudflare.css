@@ -12,24 +12,87 @@
   font-size: 12px;
   line-height: 1.5;
 }
+.cloudflare-overview-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cloudflare-card {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--ns-mid);
+  background: var(--ns-surface);
+  box-shadow: var(--ns-raised);
+}
+.cloudflare-subcard {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--ns-mid);
+  background: var(--ns-light);
+  box-shadow: var(--ns-recessed);
+}
+.cloudflare-empty-line {
+  margin: 0;
+}
+.cloudflare-stale-note {
+  margin: 0 0 8px;
+  color: var(--ns-shadow);
+  font-size: 11px;
+}
+.cloudflare-section-intro {
+  margin: 0 0 8px;
+}
+.cloudflare-card-body > p {
+  margin: 0 0 6px;
+}
+.cloudflare-card-body > p:last-child {
+  margin-bottom: 0;
+}
+.cloudflare-card-footer {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--ns-mid);
+}
+.cloudflare-card-footer .fine-print {
+  margin: 8px 0 0;
+}
+.cloudflare-inline-action {
+  margin: 8px 0;
+}
+.cloudflare-remote-note {
+  margin: 10px 0 0;
+}
 .cloudflare-heading {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 6px 12px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 .cloudflare-heading h2 {
   margin: 0;
   font-size: 13px;
 }
 .cloudflare-heading .cloudflare-state {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
   margin: 0;
+  padding: 2px 8px;
+  border: 1px solid var(--ns-mid);
+  background: var(--ns-light);
+  box-shadow: var(--ns-recessed);
+  font-size: 11px;
   font-weight: bold;
+}
+.cloudflare-heading .cloudflare-state.is-pending {
+  border-color: #b18429;
+  color: #7c5914;
+}
+.cloudflare-heading .cloudflare-state.is-error {
+  border-color: #a13c35;
+  color: #822c26;
 }
 .cloudflare-status-actions {
   display: flex;
@@ -46,21 +109,65 @@
 }
 .cloudflare-status-dot.is-pending {
   background: #b18429;
+  border-color: #7c5914;
 }
 .cloudflare-status-dot.is-error {
   background: #a13c35;
+  border-color: #822c26;
 }
 .cloudflare-status-dot.is-unknown {
   background: #999;
 }
+.cloudflare-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid var(--ns-mid);
+  background: var(--ns-light);
+  box-shadow: var(--ns-recessed);
+  font-size: 11px;
+  font-weight: bold;
+}
+.cloudflare-pill.is-healthy {
+  border-color: #37804d;
+  color: #275f39;
+  background: color-mix(in srgb, #37804d 9%, var(--ns-light));
+}
+.cloudflare-pill.is-pending {
+  border-color: #b18429;
+  color: #7c5914;
+  background: color-mix(in srgb, #b18429 9%, var(--ns-light));
+}
+.cloudflare-pill.is-error {
+  border-color: #a13c35;
+  color: #822c26;
+  background: color-mix(in srgb, #a13c35 9%, var(--ns-light));
+}
+.cloudflare-pill.is-unknown,
+.cloudflare-pill.is-off {
+  color: var(--ns-shadow);
+}
+.cloudflare-url-card {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--ns-mid);
+  background: var(--ns-light);
+  box-shadow: var(--ns-recessed);
+}
+.cloudflare-url-card .info-list {
+  margin: 0;
+}
 .cloudflare-url {
   display: flex;
-  align-items: flex-start;
-  gap: 5px;
+  align-items: center;
+  gap: 6px;
 }
-.cloudflare-url a {
+.cloudflare-url a,
+.cloudflare-url-card > a {
   flex: 1;
   min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
   overflow-wrap: anywhere;
 }
 .cloudflare-url .ns-icon-button {
@@ -68,7 +175,7 @@
 }
 .cloudflare-content .cloudflare-copy-status {
   min-height: 18px;
-  margin: 4px 0 0;
+  margin: 6px 0 0;
   font-size: 11px;
 }
 .cloudflare-actions {
@@ -76,17 +183,36 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 10px;
 }
-.cloudflare-disclosure,
-.cloudflare-setup-guide {
-  margin-top: 14px;
-  padding-top: 10px;
-  border-top: 1px solid var(--ns-mid);
+.cloudflare-card-footer > .cloudflare-actions:first-child {
+  margin-top: 0;
+}
+.cloudflare-disclosure {
+  padding: 10px 12px;
+  border: 1px solid var(--ns-mid);
+  background: var(--ns-surface);
+  box-shadow: var(--ns-raised);
+}
+.cloudflare-disclosure.is-nested {
+  margin-top: 12px;
+  background: var(--ns-light);
+  box-shadow: var(--ns-recessed);
 }
 .cloudflare-disclosure summary {
   cursor: pointer;
   font-weight: bold;
+}
+.cloudflare-disclosure-body {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ns-mid);
+}
+.cloudflare-disclosure-body > p:first-child {
+  margin-top: 0;
+}
+.cloudflare-setup-guide {
+  margin-top: 4px;
 }
 .cloudflare-origin-note {
   display: block;
@@ -120,18 +246,6 @@
   flex-wrap: wrap;
   gap: 6px 14px;
 }
-@media (max-width: 599px) {
-  .cloudflare-content .info-list {
-    grid-template-columns: auto minmax(0, 1fr);
-    column-gap: 9px;
-  }
-}
-@media (pointer: coarse) {
-  .cloudflare-disclosure summary {
-    min-height: 32px;
-    align-content: center;
-  }
-}
 .cloudflare-app > .ns-tabs {
   display: flex;
   flex: 1;
@@ -151,7 +265,7 @@
 }
 .cloudflare-section-heading {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 6px 12px;
@@ -165,20 +279,26 @@
   margin: 0;
   font-size: 12px;
 }
-.cloudflare-cloud-status {
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid var(--ns-mid);
+.cloudflare-tunnel-meta {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+.cloudflare-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 .cloudflare-content fieldset {
-  margin: 14px 0;
+  margin: 0;
   min-width: 0;
-  padding: 10px;
-  border: 1px solid var(--ns-shadow);
+  padding: 12px 14px;
+  border: 1px solid var(--ns-mid);
+  background: var(--ns-surface);
+  box-shadow: var(--ns-raised);
 }
 .cloudflare-content legend {
   font-weight: bold;
-  padding: 0 5px;
+  padding: 0 6px;
 }
 .cloudflare-form-grid {
   display: grid;
@@ -189,44 +309,178 @@
   min-width: 0;
 }
 .cloudflare-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
   margin: 8px 0;
 }
+.cloudflare-field .ns-field-label {
+  width: 100%;
+}
+.cloudflare-field .ns-select,
 .cloudflare-field select {
   width: 100%;
   min-width: 0;
   max-width: 100%;
 }
 .cloudflare-notice {
-  padding: 8px;
-  border: 1px solid var(--ns-shadow);
+  padding: 8px 10px;
+  margin: 8px 0;
+  border: 1px solid var(--ns-mid);
   border-left: 3px solid #b18429;
   background: var(--ns-light);
 }
+.cloudflare-notice > p:first-child {
+  margin-top: 0;
+}
+.cloudflare-notice > p:last-child {
+  margin-bottom: 0;
+}
+.cloudflare-status-banner {
+  padding: 8px 10px;
+  margin: 0;
+  border: 1px solid #37804d;
+  border-left: 3px solid #37804d;
+  background: color-mix(in srgb, #37804d 8%, var(--ns-light));
+}
+.cloudflare-status-banner > p:first-child {
+  margin-top: 0;
+}
+.cloudflare-status-banner > p:last-child {
+  margin-bottom: 0;
+}
 .cloudflare-wizard {
-  margin-top: 12px;
+  margin-top: 8px;
+}
+.cloudflare-wizard-steps {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+.cloudflare-wizard-step {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 5px;
+  border: 1px solid var(--ns-mid);
+  background: var(--ns-light);
+  color: var(--ns-shadow);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cloudflare-wizard-step.is-done {
+  border-color: #37804d;
+  color: #275f39;
+  background: color-mix(in srgb, #37804d 9%, var(--ns-light));
+}
+.cloudflare-wizard-step.is-active {
+  border-color: var(--ns-ink);
+  color: var(--ns-ink);
+  font-weight: bold;
+  box-shadow: var(--ns-recessed);
 }
 .cloudflare-step {
+  margin: 0 0 8px;
   font-weight: bold;
 }
 .is-short .cloudflare-setup.is-wizard-open > .cloudflare-setup-toolbar {
   display: none;
 }
-.is-short .cloudflare-setup.is-wizard-open > fieldset {
-  margin-top: 0;
-}
 .is-short .cloudflare-setup.is-wizard-open .cloudflare-wizard {
   margin-top: 0;
 }
-.cloudflare-publication {
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--ns-mid);
+.cloudflare-publications {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cloudflare-publication-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  min-width: 0;
+}
+.cloudflare-publication-title h3 {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.cloudflare-visibility-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border: 1px solid var(--ns-mid);
+  background: var(--ns-light);
+  font-size: 10px;
+  font-weight: bold;
+}
+.cloudflare-visibility-badge.is-public {
+  border-color: #b18429;
+  color: #7c5914;
+  background: color-mix(in srgb, #b18429 10%, var(--ns-light));
+}
+.cloudflare-visibility-badge.is-owner {
+  color: var(--ns-shadow);
+}
+.cloudflare-publication-meta {
+  margin: 0 0 6px;
+  color: var(--ns-shadow);
+  font-size: 11px;
 }
 .cloudflare-target {
   font-weight: bold;
+}
+.cloudflare-traffic-controls {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+.cloudflare-traffic-controls .cloudflare-field {
+  margin: 0;
+  min-width: 170px;
+}
+.cloudflare-traffic-controls .fine-print {
+  margin: 0;
+}
+.cloudflare-traffic-window {
+  margin: 0 0 10px;
+}
+.cloudflare-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.cloudflare-metric-card {
+  padding: 8px 10px;
+  border: 1px solid var(--ns-mid);
+  background: var(--ns-light);
+  box-shadow: var(--ns-recessed);
+}
+.cloudflare-metric-card dt {
+  margin: 0;
+  color: var(--ns-shadow);
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.cloudflare-metric-card dd {
+  margin: 4px 0 0;
+  font-size: 15px;
+  font-weight: bold;
+  color: var(--ns-ink);
+}
+.cloudflare-metric-sub {
+  display: block;
+  margin-top: 2px;
+  color: var(--ns-shadow);
+  font-size: 10px;
+  font-weight: normal;
 }
 .cloudflare-table-scroll {
   max-width: 100%;
@@ -240,25 +494,18 @@
 .cloudflare-table-scroll caption {
   text-align: left;
   font-weight: bold;
-  margin: 10px 0;
+  margin: 6px 0 8px;
 }
 .cloudflare-table-scroll th,
 .cloudflare-table-scroll td {
   padding: 6px;
   border-bottom: 1px solid var(--ns-mid);
   text-align: right;
+  white-space: nowrap;
+  overflow-wrap: normal;
 }
 .cloudflare-table-scroll th:first-child {
   text-align: left;
-}
-@media (max-width: 400px) {
-  .cloudflare-app .ns-tab-list {
-    gap: 0;
-  }
-  .cloudflare-app .ns-tab-list button {
-    padding-left: 7px;
-    padding-right: 7px;
-  }
 }
 .cloudflare-content fieldset[hidden] {
   display: none;
@@ -288,8 +535,30 @@
 .cloudflare-capability-error p {
   margin: 0 0 8px;
 }
-.cloudflare-table-scroll th,
-.cloudflare-table-scroll td {
-  white-space: nowrap;
-  overflow-wrap: normal;
+@media (max-width: 599px) {
+  .cloudflare-wizard-steps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .cloudflare-metric-grid {
+    grid-template-columns: 1fr;
+  }
+  .cloudflare-content .info-list {
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 9px;
+  }
+}
+@media (max-width: 400px) {
+  .cloudflare-app .ns-tab-list {
+    gap: 0;
+  }
+  .cloudflare-app .ns-tab-list button {
+    padding-left: 7px;
+    padding-right: 7px;
+  }
+}
+@media (pointer: coarse) {
+  .cloudflare-disclosure summary {
+    min-height: 32px;
+    align-content: center;
+  }
 }
