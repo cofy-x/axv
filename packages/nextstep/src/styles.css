@@ -140,7 +140,8 @@ select:disabled {
   z-index: 800;
   font-size: 11px;
 }
-.ns-desktop-status button {
+.ns-desktop-status > button,
+.ns-workspace-switcher > button {
   display: grid;
   place-items: center;
   flex-shrink: 0;
@@ -154,8 +155,15 @@ select:disabled {
   font-size: 12px;
   color: #111;
 }
-.ns-desktop-status button:focus-visible {
+.ns-desktop-status > button:focus-visible,
+.ns-workspace-switcher > button:focus-visible {
   outline-offset: -3px;
+}
+.ns-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 .ns-workspace-menu-button > img {
   display: block;
@@ -176,8 +184,10 @@ select:disabled {
 .ns-workspace-switcher > button:focus-visible:not([aria-pressed='true']) {
   outline-color: #a8cce9;
 }
-.ns-desktop-status button:active:not(:disabled),
-.ns-desktop-status button[aria-pressed='true'] {
+.ns-desktop-status > button:active:not(:disabled),
+.ns-desktop-status > button[aria-pressed='true'],
+.ns-workspace-switcher > button:active:not(:disabled),
+.ns-workspace-switcher > button[aria-pressed='true'] {
   background: #aaa;
   box-shadow: var(--ns-recessed);
   color: #111;

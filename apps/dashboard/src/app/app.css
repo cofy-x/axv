@@ -50,21 +50,38 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 22px;
+  width: auto;
+  height: 20px;
   padding: 0 7px;
-  background: #2f2f2f;
-  color: #f0f0f0;
-  border: 1px solid #555;
-  font: 11px var(--ns-font);
+  white-space: nowrap;
+  background: #323538;
+  color: #ececec;
+  border: 1px solid #4a4e52;
+  box-shadow: none;
+  font: 500 11px/1 var(--ns-font);
   cursor: pointer;
   flex-shrink: 0;
 }
 .desktop-quick-switcher-trigger:hover {
-  background: #3d3d3d;
+  background: #404347;
+  border-color: #64696e;
+  color: #ffffff;
+}
+.desktop-quick-switcher-trigger:active {
+  background: #1f2123;
+  border-color: #555;
+  color: #ffffff;
+}
+.desktop-quick-switcher-trigger:focus-visible {
+  outline: 2px solid #a8cce9;
+  outline-offset: -2px;
 }
 .desktop-quick-switcher-trigger kbd {
-  font: 600 10px var(--ns-mono);
-  color: #d0d0d0;
+  padding: 1px 4px;
+  background: #222426;
+  border: 1px solid #4a4e52;
+  font: 600 10px/1 var(--ns-mono);
+  color: #cfd3d7;
 }
 @media (max-width: 599px) {
   .desktop-quick-switcher-trigger kbd {
