@@ -692,7 +692,6 @@ test('application icons follow explicit desktop choices across reload, hiding an
   await openIcon(managerIcon);
   await choose(checkbox, touch);
   await expect(checklistIcon).toHaveCount(0);
-  await choose(manager.locator('.applications-builtins summary'), touch);
   const managerCheckbox = manager.getByRole('checkbox', {
     name: 'Show Application Manager on desktop',
   });
@@ -1487,4 +1486,55 @@ test('two real tabs isolate drafts for one retained window and recover a stale d
     checklistFrame(page).getByRole('textbox', { name: 'Item text' }),
   ).toHaveValue(firstText);
   await expect(checklistFrame(page).getByRole('status')).toHaveText('Saved');
+});
+
+test('Application Manager groups built-in apps, filters them and keeps internal panels collapsed', async ({
+  page,
+}, info) => {
+  const touch = info.project.use.hasTouch === true;
+  await page.route('**/api/extensions', async (route) => {
+    const response = await route.fetch();
+    const current = (await response.json()) as ExtensionCatalog;
+    await route.fulfill({ response, json: { ...current, apps: [] } });
+  });
+  await page.reload();
+  const manager = await openManager(page, touch);
+  await expect(
+    manager.getByRole('heading', { name: 'Workstation', exact: true }),
+  ).toBeVisible();
+  await expect(
+    manager.getByRole('heading', { name: 'System & Remote', exact: true }),
+  ).toBeVisible();
+  await expect(
+    manager.getByRole('button', { name: 'Open Codex', exact: true }),
+  ).toBeVisible();
+  const internalPanels = manager.locator('.applications-internal-panels');
+  await expect(internalPanels).toBeVisible();
+  await expect(internalPanels).not.toHaveAttribute('open', '');
+  const filter = manager.getByRole('searchbox', {
+    name: 'Filter built-in applications',
+    exact: true,
+  });
+  await filter.fill('Tailscale');
+  await expect(
+    manager.getByRole('button', { name: 'Open Tailscale', exact: true }),
+  ).toBeVisible();
+  await expect(
+    manager.getByRole('button', { name: 'Open Codex', exact: true }),
+  ).toHaveCount(0);
+  await choose(
+    manager.getByRole('button', { name: 'Clear', exact: true }),
+    touch,
+  );
+  await expect(
+    manager.getByRole('button', { name: 'Open Codex', exact: true }),
+  ).toBeVisible();
+  await choose(
+    manager.getByRole('button', {
+      name: 'Open package installer',
+      exact: true,
+    }),
+    touch,
+  );
+  await expect(manager.getByLabel('Extension package')).toBeVisible();
 });

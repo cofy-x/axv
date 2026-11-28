@@ -23,7 +23,6 @@ export async function showApplicationOnDesktop(
   );
   const manager = page.locator('[data-app-id="applications"]');
   await expect(manager).toBeVisible();
-  await choose(manager.locator('.applications-builtins summary'));
   const checkbox = manager.getByRole('checkbox', {
     name: `Show ${title} on desktop`,
     exact: true,
