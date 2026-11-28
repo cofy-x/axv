@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, ButtonGroup, Field, IconButton } from '@cofy-x/axv-nextstep';
+import { Button, ButtonGroup, IconButton } from '@cofy-x/axv-nextstep';
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
 import { cloudflareAPI } from './api';
+import { CloudflareAccountWizard } from './CloudflareAccountWizard';
+import { CloudflareDesktopSetupCard } from './CloudflareDesktopSetupCard';
+import { CloudflareTokenRotation } from './CloudflareTokenRotation';
 import {
   configDraft,
   configWrite,
@@ -9,24 +12,16 @@ import {
   savedDraft,
 } from './config-draft';
 import type { ConfigDraft } from './config-draft';
+import { SetupGuide } from './SetupGuide';
 import type {
   CloudflareConfig,
   CloudflareWizardResult,
   CloudflareWizardStep,
 } from './types';
 import { useResource } from './useResource';
-import { SetupGuide } from './SetupGuide';
 
 const readConfig = (signal: AbortSignal) =>
   cloudflareAPI.config({ local: true }, signal);
-const steps = [
-  'Token',
-  'Account',
-  'Zone',
-  'Tunnel',
-  'Domain',
-  'Review',
-] as const;
 
 export function CloudflareSetup({
   active,
@@ -79,6 +74,7 @@ export function CloudflareSetup({
   const configDirty =
     !!draft && !!baseline && !sameDraft(draft, configDraft(baseline));
   const dirty = !!replacementToken || configDirty;
+
   useEffect(() => {
     onDirtyChange(dirty);
   }, [dirty, onDirtyChange]);
@@ -399,15 +395,17 @@ export function CloudflareSetup({
 
   if (!allowed)
     return (
-      <p>
-        Configure Cloudflare on the computer running AXV. Publishing and traffic
-        remain available to authorized remote owners.
-      </p>
+      <div className="cloudflare-card">
+        <p className="cloudflare-empty-line">
+          Configure Cloudflare on the computer running AXV. Publishing and
+          traffic remain available to authorized remote owners.
+        </p>
+      </div>
     );
   if (!draft || !baseline)
     return (
-      <>
-        <p>
+      <div className="cloudflare-card">
+        <p className="cloudflare-empty-line">
           {resource.loading
             ? 'Loading saved settings…'
             : 'Settings are unavailable.'}
@@ -417,86 +415,23 @@ export function CloudflareSetup({
             {resource.error}
           </p>
         )}
-        <Button
-          disabled={!active || resource.loading}
-          onClick={resource.refresh}
-        >
-          Retry settings
-        </Button>
-      </>
+        <div className="cloudflare-actions">
+          <Button
+            disabled={!active || resource.loading}
+            onClick={resource.refresh}
+          >
+            Retry settings
+          </Button>
+        </div>
+      </div>
     );
+
   const disabled = !active || busy;
   const wizardOpen = selectedSection === 'account' && wizard !== undefined;
   const saveBlocked = configDirty && enabled;
   const changedElsewhere =
     resource.value && resource.value.revision !== baseline.revision;
-  const accessField = (
-    key: keyof ConfigDraft['access'],
-    label: string,
-    placeholder?: string,
-  ) => (
-    <Field
-      label={label}
-      value={draft.access[key]}
-      placeholder={placeholder}
-      disabled={disabled}
-      onChange={(event) =>
-        edit({
-          ...draft,
-          access: { ...draft.access, [key]: event.target.value },
-        })
-      }
-    />
-  );
-  const accountField = (
-    key: keyof ConfigDraft['account'],
-    label: string,
-    placeholder?: string,
-  ) => (
-    <Field
-      label={label}
-      value={draft.account[key]}
-      placeholder={placeholder}
-      disabled={disabled}
-      onChange={(event) =>
-        edit({
-          ...draft,
-          account: { ...draft.account, [key]: event.target.value },
-        })
-      }
-    />
-  );
-  const selector = (
-    key: 'accountId' | 'zoneId' | 'tunnelId',
-    label: string,
-    options?: { id: string; name: string }[],
-  ) => (
-    <>
-      {!!options?.length && (
-        <label className="cloudflare-field">
-          Choose {label.toLowerCase()}
-          <select
-            value={draft.account[key]}
-            disabled={disabled}
-            onChange={(event) =>
-              edit({
-                ...draft,
-                account: { ...draft.account, [key]: event.target.value },
-              })
-            }
-          >
-            <option value="">Select…</option>
-            {options.map((choice) => (
-              <option key={choice.id} value={choice.id}>
-                {choice.name} ({choice.id})
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-      {accountField(key, `${label} ID`)}
-    </>
-  );
+
   return (
     <div className={`cloudflare-setup ${wizardOpen ? 'is-wizard-open' : ''}`}>
       <div className="cloudflare-setup-toolbar">
@@ -529,42 +464,26 @@ export function CloudflareSetup({
         </p>
       )}
       {changedElsewhere && (
-        <p role="status">
+        <p className="cloudflare-notice" role="status">
           Saved settings changed elsewhere. Your draft is kept. Reload saved
           settings to replace it explicitly.
         </p>
       )}
-      {message && <p role="status">{message}</p>}
-      <fieldset
-        hidden={selectedSection !== 'desktop'}
-        inert={selectedSection !== 'desktop' || !active}
-      >
-        <legend>Desktop access</legend>
-        <p>
-          Protect the desktop hostname with an owner-only Access policy and MFA.
+      {message && (
+        <p className="cloudflare-status-banner" role="status">
+          {message}
         </p>
-        <div className="cloudflare-form-grid">
-          {accessField(
-            'origin',
-            'Desktop origin',
-            'https://desktop.example.com',
-          )}
-          {accessField('listen', 'Desktop origin address', '127.0.0.1:3002')}
-          {accessField(
-            'issuer',
-            'Access issuer',
-            'https://team.cloudflareaccess.com',
-          )}
-          {accessField('audience', 'Desktop application AUD')}
-          {accessField('ownerSubject', 'Owner subject (JWT sub)')}
-        </div>
-        <div className="cloudflare-actions">
-          <Button disabled={disabled} onClick={() => void validate('access')}>
-            Validate access
-          </Button>
-        </div>
-      </fieldset>
+      )}
+      <CloudflareDesktopSetupCard
+        visible={selectedSection === 'desktop'}
+        active={active}
+        disabled={disabled}
+        draft={draft}
+        onEdit={edit}
+        onValidate={() => void validate('access')}
+      />
       <fieldset
+        className="cloudflare-card"
         hidden={selectedSection !== 'account'}
         inert={selectedSection !== 'account' || !active}
       >
@@ -586,258 +505,71 @@ export function CloudflareSetup({
             <dt>Base domain</dt>
             <dd>{draft.account.domain || 'Not configured'}</dd>
           </dl>
-          {baseline.account.hasToken && (
-            <div className="cloudflare-token-rotation">
-              {!rotating ? (
-                <Button disabled={disabled} onClick={() => setRotating(true)}>
-                  Rotate token
-                </Button>
-              ) : (
-                <>
-                  <Field
-                    label="Replacement API token"
-                    type="password"
-                    autoComplete="new-password"
-                    value={replacementToken}
-                    disabled={disabled}
-                    onChange={(event) =>
-                      setReplacementToken(event.target.value)
-                    }
-                  />
-                  <p className="fine-print">
-                    Replaces only the API token. Desktop access and publications
-                    keep their settings.
-                  </p>
-                  <div className="cloudflare-actions">
-                    <Button
-                      disabled={disabled || !replacementToken.trim()}
-                      onClick={() => void rotateToken()}
-                    >
-                      Validate and rotate token
-                    </Button>
-                    <Button
-                      disabled={disabled}
-                      onClick={() => {
-                        setRotating(false);
-                        setReplacementToken('');
-                      }}
-                    >
-                      Cancel rotation
-                    </Button>
-                  </div>
-                </>
-              )}
-            </div>
+          <div className="cloudflare-actions">
+            <Button
+              primary={!baseline.account.configured}
+              disabled={disabled}
+              onClick={() => {
+                if (!baseline.account.hasToken && draft.tokenAction === 'keep')
+                  edit({ ...draft, tokenAction: 'replace' });
+                setWizard(0);
+                setResult(undefined);
+                setError('');
+              }}
+            >
+              {baseline.account.configured
+                ? 'Change connection'
+                : 'Connect account'}
+            </Button>
+            {baseline.account.hasToken && !rotating && (
+              <Button disabled={disabled} onClick={() => setRotating(true)}>
+                Rotate token
+              </Button>
+            )}
+          </div>
+          {baseline.account.hasToken && rotating && (
+            <CloudflareTokenRotation
+              disabled={disabled}
+              rotating={rotating}
+              replacementToken={replacementToken}
+              onStart={() => setRotating(true)}
+              onChangeToken={setReplacementToken}
+              onRotate={() => void rotateToken()}
+              onCancel={() => {
+                setRotating(false);
+                setReplacementToken('');
+              }}
+            />
           )}
-          <Button
-            disabled={disabled}
-            onClick={() => {
-              if (!baseline.account.hasToken && draft.tokenAction === 'keep')
-                edit({ ...draft, tokenAction: 'replace' });
-              setWizard(0);
-              setResult(undefined);
-              setError('');
-            }}
-          >
-            {baseline.account.configured
-              ? 'Change connection'
-              : 'Connect account'}
-          </Button>
         </div>
         {wizard !== undefined && (
-          <div
-            className="cloudflare-wizard"
-            aria-label="Cloudflare account setup"
-          >
-            <p className="cloudflare-step" role="status" ref={wizardHeading}>
-              Step {wizard + 1} of {steps.length}: {steps[wizard]}
-            </p>
-            {wizard === 0 && (
-              <>
-                <p>
-                  Required: Tunnel Edit, Zone Read and DNS Edit. Analytics Read
-                  is optional.
-                </p>
-                <label className="cloudflare-field">
-                  API token action
-                  <select
-                    value={draft.tokenAction}
-                    disabled={disabled}
-                    onChange={(event) =>
-                      edit({
-                        ...draft,
-                        tokenAction: event.target
-                          .value as ConfigDraft['tokenAction'],
-                        token: '',
-                      })
-                    }
-                  >
-                    <option value="keep">Keep saved token</option>
-                    <option value="replace">Replace token</option>
-                  </select>
-                </label>
-                {draft.tokenAction === 'replace' && (
-                  <Field
-                    label="Cloudflare API token"
-                    type="password"
-                    autoComplete="new-password"
-                    value={draft.token || ''}
-                    disabled={disabled}
-                    onChange={(event) =>
-                      edit({ ...draft, token: event.target.value })
-                    }
-                  />
-                )}
-                <p className="fine-print">
-                  Stored on the AXV host. Saved tokens are never shown.
-                </p>
-                <details className="cloudflare-disclosure">
-                  <summary>Token permissions</summary>
-                  <p>
-                    Scope the token to the selected account and zone. Validation
-                    checks read access; publishing also requires Tunnel and DNS
-                    edit permissions.
-                  </p>
-                </details>
-                {!baseline.account.hasToken && draft.tokenAction === 'keep' && (
-                  <p>
-                    Choose Replace token to connect an account for the first
-                    time.
-                  </p>
-                )}
-              </>
-            )}
-            {wizard === 1 && selector('accountId', 'Account', choices.accounts)}
-            {wizard === 2 && selector('zoneId', 'Zone', choices.zones)}
-            {wizard === 3 && (
-              <>
-                {selector('tunnelId', 'Tunnel', choices.tunnels)}
-                <p>
-                  Use an existing, remotely managed tunnel. Run cloudflared
-                  separately on the AXV host.
-                </p>
-              </>
-            )}
-            {wizard === 4 && (
-              <>
-                {accountField('domain', 'Base domain', 'example.net')}
-                <p>
-                  Use a registered domain separate from your desktop. Its first
-                  publication permanently reserves it.
-                </p>
-                <details className="cloudflare-disclosure">
-                  <summary>Domain isolation</summary>
-                  <p>
-                    A subdomain such as apps.example.com shares cookies with
-                    example.com and is not an independent site. Use a separate
-                    registered domain, or a Public Suffix List domain whose
-                    direct children are independent sites. A public suffix can
-                    support multiple publications; an ordinary registered domain
-                    supports one and cannot be reused after removal.
-                  </p>
-                </details>
-              </>
-            )}
-            {wizard === 5 && (
-              <>
-                <dl className="info-list">
-                  <dt>Account</dt>
-                  <dd>{draft.account.accountId}</dd>
-                  <dt>Zone</dt>
-                  <dd>{draft.account.zoneId}</dd>
-                  <dt>Tunnel</dt>
-                  <dd>{draft.account.tunnelId}</dd>
-                  <dt>Base domain</dt>
-                  <dd>{draft.account.domain}</dd>
-                </dl>
-                <div className="cloudflare-form-grid">
-                  {accountField(
-                    'listen',
-                    'Publishing origin address',
-                    '127.0.0.1:3003',
-                  )}
-                  {accountField(
-                    'audience',
-                    'Apps application AUD (owner access)',
-                  )}
-                </div>
-                <p>
-                  Owner access needs an existing Access application with your
-                  owner-only policy and this AUD.
-                </p>
-                <details className="cloudflare-disclosure">
-                  <summary>Owner access requirements</summary>
-                  <p>
-                    Cover your app hostnames using the desktop issuer and owner
-                    identity. AXV does not create the Access policy. Public
-                    publications skip Access authentication. Set the Access
-                    application session duration to 15 minutes or less; longer
-                    tokens are rejected.
-                  </p>
-                </details>
-              </>
-            )}
-            {wizard === 5 && saveBlocked && (
-              <p
-                id="cloudflare-wizard-save-blocker"
-                className="cloudflare-notice"
-              >
-                Disable desktop access in Overview to save these settings.
-              </p>
-            )}
-            <div className="cloudflare-actions">
-              <Button
-                disabled={disabled || wizard === 0}
-                onClick={() => {
-                  setWizard(wizard - 1);
-                  setResult(undefined);
-                }}
-              >
-                Back
-              </Button>
-              {wizard < 5 && (
-                <Button
-                  primary
-                  disabled={
-                    disabled || (wizard === 0 && draft.tokenAction === 'clear')
-                  }
-                  onClick={() =>
-                    void validate(
-                      steps[wizard].toLowerCase() as CloudflareWizardStep,
-                      true,
-                    )
-                  }
-                >
-                  {busy ? 'Validating…' : 'Validate and continue'}
-                </Button>
-              )}
-              {wizard === 5 && (
-                <Button
-                  primary
-                  disabled={disabled || !configDirty || enabled}
-                  aria-describedby={
-                    saveBlocked ? 'cloudflare-wizard-save-blocker' : undefined
-                  }
-                  onClick={() => void save()}
-                >
-                  Save settings
-                </Button>
-              )}
-              <Button
-                disabled={disabled}
-                onClick={() => {
-                  setWizard(undefined);
-                  setResult(undefined);
-                }}
-              >
-                Close wizard
-              </Button>
-            </div>
-          </div>
+          <CloudflareAccountWizard
+            wizard={wizard}
+            wizardHeading={wizardHeading}
+            baseline={baseline}
+            draft={draft}
+            choices={choices}
+            disabled={disabled}
+            busy={busy}
+            configDirty={configDirty}
+            enabled={enabled}
+            saveBlocked={saveBlocked}
+            onEdit={edit}
+            onBack={() => {
+              setWizard(wizard - 1);
+              setResult(undefined);
+            }}
+            onValidate={(step) => void validate(step, true)}
+            onSave={() => void save()}
+            onClose={() => {
+              setWizard(undefined);
+              setResult(undefined);
+            }}
+          />
         )}
       </fieldset>
       {result && (
-        <div role="status">
+        <div className="cloudflare-status-banner" role="status">
           <p>{result.message}</p>
           {result.warnings?.map((warning) => (
             <p className="cloudflare-notice" key={warning}>
@@ -882,11 +614,13 @@ export function CloudflareSetup({
       >
         <summary>Manual setup guide</summary>
         {guide && active && (
-          <SetupGuide
-            headingRef={heading}
-            interactive={active}
-            onClose={() => setGuide(false)}
-          />
+          <div className="cloudflare-disclosure-body">
+            <SetupGuide
+              headingRef={heading}
+              interactive={active}
+              onClose={() => setGuide(false)}
+            />
+          </div>
         )}
       </details>
     </div>

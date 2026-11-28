@@ -5,19 +5,23 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import { Button, IconButton, Tabs } from '@cofy-x/axv-nextstep';
+import { Button, Tabs } from '@cofy-x/axv-nextstep';
 import type { AppWindowProps } from '@cofy-x/axv-nextstep';
-import { cloudflareAPI, cloudflareURL } from './api';
-import { cloudflarePresentation } from './presentation';
-import { CloudflareStore } from './status-store';
-import { CloudflareDiagnosticsStore } from './diagnostics-store';
+import { cloudflareAPI } from './api';
+import { CloudflareDetails } from './CloudflareAccessCard';
+import type { AccessChange, CopyStatus } from './CloudflareAccessCard';
 import { CloudflareDiagnostics } from './CloudflareDiagnostics';
-import { CloudflareSetup } from './CloudflareSetup';
+import { CloudflareOverviewHelp } from './CloudflareOverviewHelp';
 import { CloudflarePublishing } from './CloudflarePublishing';
-import { requestedPublication } from './publishing-context';
+import { CloudflareSetup } from './CloudflareSetup';
 import { CloudflareTraffic } from './CloudflareTraffic';
+import { CloudflareTunnelCard } from './CloudflareTunnelCard';
+import { CloudflareDiagnosticsStore } from './diagnostics-store';
+import { requestedPublication } from './publishing-context';
+import { CloudflareStore } from './status-store';
 import { useResource } from './useResource';
-import type { CloudflareSnapshot } from './types';
+
+export { CloudflareDetails } from './CloudflareAccessCard';
 
 function useCloudflareStatus(interactive: boolean) {
   const [store] = useState(() => new CloudflareStore());
@@ -39,205 +43,6 @@ function useLocalDiagnostics(eligible: boolean) {
   );
   const snapshot = useSyncExternalStore(subscribe, store.getSnapshot);
   return { ...(eligible ? snapshot : {}), refresh: store.refresh };
-}
-
-interface CopyStatus {
-  message: string;
-  error: boolean;
-}
-
-type AccessChange = 'enable' | 'disable';
-
-export function CloudflareDetails({
-  snapshot,
-  interactive = true,
-  changing,
-  guideExpanded = false,
-  copyStatus = { message: '', error: false },
-  onSetEnabled,
-  onSetupGuide,
-  onViewDiagnostics,
-  onRefresh,
-  refreshing = false,
-  onCopy,
-}: {
-  snapshot: CloudflareSnapshot;
-  interactive?: boolean;
-  changing?: AccessChange;
-  guideExpanded?: boolean;
-  copyStatus?: CopyStatus;
-  onSetEnabled?: (enabled: boolean) => void;
-  onSetupGuide?: (trigger: HTMLButtonElement) => void;
-  onViewDiagnostics?: () => void;
-  onRefresh?: () => void;
-  refreshing?: boolean;
-  onCopy: (value: string) => void;
-}) {
-  const { info, error } = snapshot;
-  const presentation = cloudflarePresentation(snapshot);
-  const status = info?.cloudflare;
-  const url = interactive && !error ? cloudflareURL(status) : undefined;
-  const refreshButton = onRefresh && (
-    <IconButton
-      icon="refresh"
-      label="Refresh"
-      disabled={!interactive || refreshing || !!changing}
-      onClick={onRefresh}
-    />
-  );
-  if (!info || !status)
-    return (
-      <div className="cloudflare-heading">
-        <p>
-          {snapshot.loading
-            ? 'Checking…'
-            : 'Status unavailable. Refresh to check.'}
-        </p>
-        {refreshButton}
-      </div>
-    );
-  const needsSetup = !error && !status.configured && status.state !== 'error';
-  const retry =
-    status.enabled &&
-    status.configured &&
-    (status.state === 'error' || status.state === 'stopped');
-  return (
-    <section aria-labelledby="cloudflare-access-title">
-      <div className="cloudflare-heading">
-        <h2 id="cloudflare-access-title">Desktop access</h2>
-        <div className="cloudflare-status-actions">
-          <p className="cloudflare-state" role="status" aria-atomic="true">
-            <span
-              className={`cloudflare-status-dot is-${changing ? 'pending' : presentation.tone}`}
-              aria-hidden="true"
-            />
-            {changing === 'enable'
-              ? 'Enabling…'
-              : changing === 'disable'
-                ? 'Disabling…'
-                : presentation.label}
-          </p>
-          {refreshButton}
-        </div>
-      </div>
-      {changing ? (
-        <p>
-          {changing === 'enable'
-            ? 'Starting AXV’s tunnel entrypoint.'
-            : 'Stopping AXV’s tunnel entrypoint.'}
-        </p>
-      ) : error ? (
-        <p>Refresh to check the current entrypoint state.</p>
-      ) : status.state === 'error' ? (
-        <p>
-          {info.local
-            ? 'AXV’s entrypoint needs attention. View diagnostics for details.'
-            : status.message || 'The AXV entrypoint needs attention.'}
-        </p>
-      ) : needsSetup ? (
-        <p>
-          Open Setup to connect an existing Access application before enabling
-          desktop access.
-        </p>
-      ) : status.state === 'stopped' ? (
-        <p>
-          {info.local
-            ? 'AXV’s entrypoint has stopped. View diagnostics for details.'
-            : status.message || 'The AXV entrypoint has stopped.'}
-        </p>
-      ) : status.state === 'listening' ? (
-        <p>Public access has not been verified.</p>
-      ) : status.state === 'starting' ? (
-        <p>Starting the AXV entrypoint.</p>
-      ) : (
-        <p>Cloudflare access is configured but not enabled.</p>
-      )}
-      {info.local &&
-        onViewDiagnostics &&
-        (status.state === 'error' || status.state === 'stopped') && (
-          <Button
-            disabled={!interactive || !!changing}
-            onClick={onViewDiagnostics}
-            aria-controls="cloudflare-diagnostics"
-          >
-            View diagnostics
-          </Button>
-        )}
-      {url && (
-        <dl className="info-list">
-          <dt>Desktop URL</dt>
-          <dd>
-            <div className="cloudflare-url">
-              <a href={url} target="_blank" rel="noopener noreferrer">
-                {url}
-              </a>
-              <IconButton
-                icon="copy"
-                label="Copy Desktop URL"
-                onClick={() => onCopy(url)}
-              />
-            </div>
-          </dd>
-        </dl>
-      )}
-      {copyStatus.message && (
-        <p
-          className={`cloudflare-copy-status${copyStatus.error ? ' app-error' : ''}`}
-          role={copyStatus.error ? 'alert' : 'status'}
-        >
-          {copyStatus.message}
-        </p>
-      )}
-      {info.local && onSetEnabled && (
-        <>
-          <div className="cloudflare-actions">
-            {onSetupGuide && (
-              <Button
-                primary={needsSetup}
-                disabled={!interactive || !!changing}
-                aria-expanded={guideExpanded}
-                aria-controls="cloudflare-setup-page"
-                onClick={(event) => onSetupGuide(event.currentTarget)}
-              >
-                Open setup
-              </Button>
-            )}
-            {retry && (
-              <Button
-                primary
-                disabled={!interactive || !!error || !!changing}
-                onClick={() => onSetEnabled(true)}
-              >
-                Retry
-              </Button>
-            )}
-            <Button
-              primary={!status.enabled && status.configured}
-              disabled={
-                !interactive ||
-                !!error ||
-                !!changing ||
-                (!status.enabled && !status.configured)
-              }
-              onClick={() => onSetEnabled(!status.enabled)}
-            >
-              {status.enabled ? 'Disable' : 'Enable'}
-            </Button>
-          </div>
-          {retry && (
-            <p className="fine-print">
-              Retry restarts only AXV’s entrypoint, not your tunnel connector.
-            </p>
-          )}
-        </>
-      )}
-      {!info.local && (
-        <p className="fine-print">
-          Manage Cloudflare on the computer running AXV.
-        </p>
-      )}
-    </section>
-  );
 }
 
 export function CloudflarePanel({
@@ -465,7 +270,7 @@ export function CloudflarePanel({
             </p>
           )}
           {snapshot.error && snapshot.info && (
-            <p>
+            <p className="cloudflare-stale-note">
               Showing previous details. Current connection state is unknown.
             </p>
           )}
@@ -475,166 +280,68 @@ export function CloudflarePanel({
             </p>
           )}
           {snapshot.info?.local && (snapshot.error || changeError) && (
-            <Button
-              disabled={!interactive || !!changing}
-              onClick={openDiagnostics}
-              aria-controls="cloudflare-diagnostics"
-            >
-              View diagnostics
-            </Button>
-          )}
-          <CloudflareDetails
-            snapshot={snapshot}
-            interactive={interactive}
-            changing={changing}
-            copyStatus={copyStatus}
-            onSetEnabled={
-              canConfigure ? (enabled) => void setEnabled(enabled) : undefined
-            }
-            onSetupGuide={
-              canConfigure ? () => selectSetup('desktop') : undefined
-            }
-            onViewDiagnostics={
-              snapshot.error || changeError ? undefined : openDiagnostics
-            }
-            onRefresh={refreshOverview}
-            refreshing={
-              snapshot.loading || (allowed?.health === true && health.loading)
-            }
-            onCopy={(url) => void copy(url)}
-          />
-          <section
-            className="cloudflare-cloud-status"
-            aria-labelledby="cloudflare-tunnel-title"
-          >
-            <div className="cloudflare-section-heading">
-              <h2 id="cloudflare-tunnel-title">Tunnel</h2>
-              <strong>
-                {health.error || !allowed?.health
-                  ? 'Unknown'
-                  : health.value
-                    ? {
-                        unconfigured: 'Not configured',
-                        healthy: 'Healthy',
-                        degraded: 'Degraded',
-                        error: 'Needs attention',
-                      }[health.value.state]
-                    : 'Checking…'}
-              </strong>
-            </div>
-            {health.error && (
-              <p className="app-error" role="alert">
-                {health.error}
-              </p>
-            )}
-            {allowed?.health && health.value && (
-              <>
-                <p>
-                  {health.value.state === 'healthy'
-                    ? 'Token and DNS read access checked.'
-                    : health.value.message}
-                </p>
-                {health.value.tunnelName && (
-                  <p>
-                    Tunnel: {health.value.tunnelName}
-                    {health.value.tunnelStatus &&
-                    health.value.state !== 'healthy'
-                      ? ` · ${health.value.tunnelStatus}`
-                      : ''}
-                  </p>
-                )}
-                <p className="fine-print">
-                  Checked{' '}
-                  <time
-                    dateTime={health.value.checkedAt}
-                    title={new Date(health.value.checkedAt).toLocaleString()}
-                  >
-                    {new Date(health.value.checkedAt).toLocaleString(
-                      undefined,
-                      {
-                        dateStyle: 'medium',
-                        timeStyle: 'short',
-                      },
-                    )}
-                  </time>
-                </p>
-                {health.value.state === 'healthy' &&
-                  snapshot.info?.cloudflare.state !== 'listening' && (
-                    <p className="fine-print">
-                      Public access has not been verified.
-                    </p>
-                  )}
-              </>
-            )}
-            <div className="cloudflare-actions">
+            <div className="cloudflare-inline-action">
               <Button
-                disabled={!interactive || !allowed?.publish}
-                onClick={() => selectTab('publishing')}
+                disabled={!interactive || !!changing}
+                onClick={openDiagnostics}
+                aria-controls="cloudflare-diagnostics"
               >
-                Publish a service
+                View diagnostics
               </Button>
             </div>
-          </section>
-          {snapshot.info?.local && (
-            <details
-              id="cloudflare-diagnostics"
-              ref={diagnostics}
-              className="cloudflare-disclosure"
-              open={expanded}
-              onToggle={(event) => setExpanded(event.currentTarget.open)}
-            >
-              <summary>Diagnostics</summary>
-              {expanded && interactive && (
-                <CloudflareDiagnostics
-                  status={detail.status}
-                  error={detail.error}
-                  unavailable={!!snapshot.error}
-                />
-              )}
-            </details>
           )}
-          <details className="cloudflare-disclosure">
-            <summary>Help</summary>
-            <p>
-              AXV manages its desktop entrypoint and can publish VM services
-              using your connected account. Create the Cloudflare Tunnel and
-              Access applications separately, and run your tunnel connector on
-              the AXV host.
-            </p>
-            <p>
-              Closing this window keeps access enabled. Enable and disable
-              choices are saved for future launches.
-            </p>
-            <p>
-              Tunnel health checks verify the token, DNS read access and
-              connector status. They do not verify public URL reachability, DNS
-              write permissions or WAF protection.
-            </p>
-            <p>
-              When your Access session expires, its connections close: host
-              shells end and Codex views detach while Codex runs and VMs
-              continue. Use an Access application session of 15 minutes or less.
-              Provider logout or policy changes are not detected immediately;
-              the original token expiry still limits an open connection. Sign in
-              again to reconnect.
-            </p>
-            <p className="cloudflare-guide-links">
-              <a
-                href="https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/"
-                target="_blank"
-                rel="noopener noreferrer"
+          <div className="cloudflare-overview-stack">
+            <CloudflareDetails
+              snapshot={snapshot}
+              interactive={interactive}
+              changing={changing}
+              copyStatus={copyStatus}
+              onSetEnabled={
+                canConfigure ? (enabled) => void setEnabled(enabled) : undefined
+              }
+              onSetupGuide={
+                canConfigure ? () => selectSetup('desktop') : undefined
+              }
+              onViewDiagnostics={
+                snapshot.error || changeError ? undefined : openDiagnostics
+              }
+              onRefresh={refreshOverview}
+              refreshing={
+                snapshot.loading || (allowed?.health === true && health.loading)
+              }
+              onCopy={(url) => void copy(url)}
+            />
+            <CloudflareTunnelCard
+              interactive={interactive}
+              canPublish={allowed?.publish === true}
+              canHealth={allowed?.health === true}
+              healthValue={health.value}
+              healthError={health.error}
+              desktopListening={snapshot.info?.cloudflare.state === 'listening'}
+              onPublish={() => selectTab('publishing')}
+            />
+            {snapshot.info?.local && (
+              <details
+                id="cloudflare-diagnostics"
+                ref={diagnostics}
+                className="cloudflare-disclosure"
+                open={expanded}
+                onToggle={(event) => setExpanded(event.currentTarget.open)}
               >
-                Cloudflare Access guide
-              </a>
-              <a
-                href="https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/local-management/configuration-file/"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Cloudflare Tunnel guide
-              </a>
-            </p>
-          </details>
+                <summary>Diagnostics</summary>
+                {expanded && interactive && (
+                  <div className="cloudflare-disclosure-body">
+                    <CloudflareDiagnostics
+                      status={detail.status}
+                      error={detail.error}
+                      unavailable={!!snapshot.error}
+                    />
+                  </div>
+                )}
+              </details>
+            )}
+            <CloudflareOverviewHelp />
+          </div>
         </div>
         <section
           id="cloudflare-setup-page"

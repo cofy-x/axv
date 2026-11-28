@@ -4,7 +4,7 @@ import type { AppWindowProps } from '@cofy-x/axv-nextstep';
 import { canAuthorize, connectionAPI, readyURL } from './api';
 import { useConnectionStatus } from './useConnectionStatus';
 import { connectionPresentation } from './presentation';
-import type { ConnectionSnapshot } from './types';
+import type { ConnectionSnapshot, RemoteState } from './types';
 
 interface Authorization {
   loading?: boolean;
@@ -15,6 +15,30 @@ interface Authorization {
 interface CopyStatus {
   message: string;
   error: boolean;
+}
+
+type StepStatus = 'done' | 'active' | 'pending';
+
+function connectionSteps(
+  enabled: boolean,
+  state: RemoteState,
+): { id: string; label: string; status: StepStatus }[] {
+  const enableStatus: StepStatus = enabled ? 'done' : 'active';
+  const signedIn =
+    enabled &&
+    (state === 'needs-https' || state === 'ready' || state === 'stopped');
+  const signInStatus: StepStatus = signedIn
+    ? 'done'
+    : enabled && (state === 'starting' || state === 'needs-login')
+      ? 'active'
+      : 'pending';
+  const httpsStatus: StepStatus =
+    state === 'ready' ? 'done' : state === 'needs-https' ? 'active' : 'pending';
+  return [
+    { id: 'enable', label: '1. Enable', status: enableStatus },
+    { id: 'signin', label: '2. Sign in', status: signInStatus },
+    { id: 'https', label: '3. HTTPS', status: httpsStatus },
+  ];
 }
 
 function useAuthorization(
@@ -119,162 +143,197 @@ export function TailscaleDetails({
   const authorize = !error && !changing && canAuthorize(info);
   if (!info)
     return (
-      <p>
-        {snapshot.loading
-          ? 'Checking…'
-          : 'Status unavailable. Refresh to check.'}
-      </p>
+      <div className="tailscale-card">
+        <p className="tailscale-empty">
+          {snapshot.loading
+            ? 'Checking…'
+            : 'Status unavailable. Refresh to check.'}
+        </p>
+      </div>
     );
   const { remote } = info;
+  const steps = remote.supported
+    ? connectionSteps(remote.enabled, remote.state)
+    : [];
   return (
     <section
       aria-labelledby="tailscale-axv-title"
       className="tailscale-section"
     >
-      <div className="tailscale-heading">
-        <h2 id="tailscale-axv-title">Remote access</h2>
-        <p className="tailscale-state" role="status" aria-atomic="true">
-          <span
-            className={`tailscale-status-dot is-${status.remoteTone}`}
-            aria-hidden="true"
-          />
-          {status.remote}
-        </p>
-      </div>
-      {remote.message &&
-        !['disabled', 'starting', 'needs-login', 'needs-https'].includes(
-          remote.state,
-        ) && <p>{remote.message}</p>}
-      {!remote.supported ? (
-        <p>Requires an AXV server running macOS or Linux.</p>
-      ) : remote.state === 'disabled' ? (
-        <p>Access AXV from your other devices.</p>
-      ) : remote.state === 'stopped' || remote.state === 'error' ? (
-        <p>Retry to reconnect.</p>
-      ) : null}
-      {remote.state === 'needs-https' && (
-        <>
-          <p>
-            Enable MagicDNS and HTTPS certificates in{' '}
-            <a
-              href="https://login.tailscale.com/admin/dns"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Tailscale DNS settings
-            </a>
-            . AXV continues automatically.
+      <div className="tailscale-card">
+        <div className="tailscale-heading">
+          <h2 id="tailscale-axv-title">Remote access</h2>
+          <p
+            className={`tailscale-state is-${status.remoteTone}`}
+            role="status"
+            aria-atomic="true"
+          >
+            <span
+              className={`tailscale-status-dot is-${status.remoteTone}`}
+              aria-hidden="true"
+            />
+            {status.remote}
           </p>
-          <p className="fine-print">
-            The hostname appears in public certificate logs. Access stays
-            private.
-          </p>
-        </>
-      )}
-      {remote.state === 'needs-login' && info.local && (
-        <>
-          <p>Sign in with your Tailscale account.</p>
-          {authorize && authorization.loading && (
-            <p role="status">Loading authorization…</p>
-          )}
-          {authorize && authorization.error && (
-            <p className="app-error" role="alert">
-              {authorization.error}
-            </p>
-          )}
-        </>
-      )}
-      {url && (
-        <dl className="info-list">
-          <dt>HTTPS URL</dt>
-          <dd>
-            <div className="tailscale-url">
-              <a href={url} target="_blank" rel="noopener noreferrer">
-                {url}
-              </a>
-              <IconButton
-                icon="copy"
-                label="Copy HTTPS URL"
-                onClick={() => onCopy('HTTPS URL', url)}
-              />
-            </div>
-          </dd>
-        </dl>
-      )}
-      {(url || copyStatus.message) && (
-        <p
-          className={`tailscale-copy-status${copyStatus.error ? ' app-error' : ''}`}
-          role={copyStatus.error ? 'alert' : 'status'}
-        >
-          {copyStatus.message}
-        </p>
-      )}
-      {info.local && remote.supported && onSetEnabled && (
-        <>
-          <div className="tailscale-actions">
-            {authorize && authorization.url && (
-              <a
-                className="ns-button ns-default tailscale-authorize"
-                href={authorization.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                referrerPolicy="no-referrer"
+        </div>
+        {steps.length > 0 && (
+          <ol className="tailscale-steps" aria-label="Setup progress">
+            {steps.map((step) => (
+              <li
+                key={step.id}
+                className={`tailscale-step is-${step.status}`}
+                aria-current={step.status === 'active' ? 'step' : undefined}
               >
-                Authorize
-              </a>
-            )}
-            {remote.enabled &&
-              (remote.state === 'error' || remote.state === 'stopped') && (
-                <Button
-                  primary
-                  disabled={!!error || changing}
-                  onClick={() => onSetEnabled(true)}
+                <span className="tailscale-step-marker" aria-hidden="true">
+                  {step.status === 'done' ? '✓' : '·'}
+                </span>
+                <span>{step.label}</span>
+              </li>
+            ))}
+          </ol>
+        )}
+        <div className="tailscale-summary">
+          {remote.message &&
+            !['disabled', 'starting', 'needs-login', 'needs-https'].includes(
+              remote.state,
+            ) && <p>{remote.message}</p>}
+          {!remote.supported ? (
+            <p>Requires an AXV server running macOS or Linux.</p>
+          ) : remote.state === 'disabled' ? (
+            <p>Access AXV from your other devices.</p>
+          ) : remote.state === 'stopped' || remote.state === 'error' ? (
+            <p>Retry to reconnect.</p>
+          ) : null}
+          {remote.state === 'needs-https' && (
+            <div className="tailscale-callout">
+              <p>
+                Enable MagicDNS and HTTPS certificates in{' '}
+                <a
+                  href="https://login.tailscale.com/admin/dns"
+                  target="_blank"
+                  rel="noopener noreferrer"
                 >
-                  Retry
-                </Button>
+                  Tailscale DNS settings
+                </a>
+                . AXV continues automatically.
+              </p>
+              <p className="fine-print">
+                The hostname appears in public certificate logs. Access stays
+                private.
+              </p>
+            </div>
+          )}
+          {remote.state === 'needs-login' && info.local && (
+            <div className="tailscale-callout">
+              <p>Sign in with your Tailscale account.</p>
+              {authorize && authorization.loading && (
+                <p role="status">Loading authorization…</p>
               )}
-            <Button
-              primary={!remote.enabled}
-              disabled={!!error || changing}
-              onClick={() => onSetEnabled(!remote.enabled)}
-            >
-              {remote.enabled ? 'Disable' : 'Enable'}
-            </Button>
-            {changing && <span role="status">Saving…</span>}
+              {authorize && authorization.error && (
+                <p className="app-error" role="alert">
+                  {authorization.error}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+        {url && (
+          <div className="tailscale-url-card">
+            <dl className="info-list">
+              <dt>HTTPS URL</dt>
+              <dd>
+                <div className="tailscale-url">
+                  <a href={url} target="_blank" rel="noopener noreferrer">
+                    {url}
+                  </a>
+                  <IconButton
+                    icon="copy"
+                    label="Copy HTTPS URL"
+                    onClick={() => onCopy('HTTPS URL', url)}
+                  />
+                </div>
+              </dd>
+            </dl>
           </div>
-          <p className="fine-print">
-            {remote.enabled
-              ? 'Starts with AXV. Disabling keeps authorization.'
-              : 'Enabling is saved for future launches.'}
+        )}
+        {(url || copyStatus.message) && (
+          <p
+            className={`tailscale-copy-status${copyStatus.error ? ' app-error' : ''}`}
+            role={copyStatus.error ? 'alert' : 'status'}
+          >
+            {copyStatus.message}
           </p>
-        </>
-      )}
-      {!info.local && (
-        <p className="fine-print">
-          Manage remote access on the computer running AXV.
-        </p>
-      )}
+        )}
+        {info.local && remote.supported && onSetEnabled && (
+          <div className="tailscale-controls">
+            <div className="tailscale-actions">
+              {authorize && authorization.url && (
+                <a
+                  className="ns-button ns-default tailscale-authorize"
+                  href={authorization.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  referrerPolicy="no-referrer"
+                >
+                  Authorize
+                </a>
+              )}
+              {remote.enabled &&
+                (remote.state === 'error' || remote.state === 'stopped') && (
+                  <Button
+                    primary
+                    disabled={!!error || changing}
+                    onClick={() => onSetEnabled(true)}
+                  >
+                    Retry
+                  </Button>
+                )}
+              <Button
+                primary={!remote.enabled}
+                disabled={!!error || changing}
+                onClick={() => onSetEnabled(!remote.enabled)}
+              >
+                {remote.enabled ? 'Disable' : 'Enable'}
+              </Button>
+              {changing && <span role="status">Saving…</span>}
+            </div>
+            <p className="fine-print">
+              {remote.enabled
+                ? 'Starts with AXV. Disabling keeps authorization.'
+                : 'Enabling is saved for future launches.'}
+            </p>
+          </div>
+        )}
+        {!info.local && (
+          <p className="fine-print tailscale-remote-note">
+            Manage remote access on the computer running AXV.
+          </p>
+        )}
+      </div>
       <details className="tailscale-help">
         <summary>Connect another device</summary>
-        <ol>
-          <li>
-            <a
-              href="https://tailscale.com/download"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Install Tailscale
-            </a>{' '}
-            on the device you want to connect from.
-          </li>
-          <li>Connect with the same Tailscale account that authorized AXV.</li>
-          <li>When AXV is ready, open its HTTPS URL on that device.</li>
-        </ol>
-        <p>
-          Tailscale is built into AXV. No system installation is needed on the
-          AXV server; its DNS, routes and firewall stay unchanged.
-        </p>
-        <p>The desktop uses this workstation’s files, agents and VMs.</p>
+        <div className="tailscale-help-body">
+          <ol>
+            <li>
+              <a
+                href="https://tailscale.com/download"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Install Tailscale
+              </a>{' '}
+              on the device you want to connect from.
+            </li>
+            <li>
+              Connect with the same Tailscale account that authorized AXV.
+            </li>
+            <li>When AXV is ready, open its HTTPS URL on that device.</li>
+          </ol>
+          <p>
+            Tailscale is built into AXV. No system installation is needed on the
+            AXV server; its DNS, routes and firewall stay unchanged.
+          </p>
+          <p>The desktop uses this workstation’s files, agents and VMs.</p>
+        </div>
       </details>
     </section>
   );
@@ -409,7 +468,9 @@ export function TailscalePanel({
           </p>
         )}
         {snapshot.error && snapshot.info && (
-          <p>Showing previous details. Current connection state is unknown.</p>
+          <p className="tailscale-stale-note">
+            Showing previous details. Current connection state is unknown.
+          </p>
         )}
         {(changeError || localError) && (
           <p className="app-error" role="alert">

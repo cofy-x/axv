@@ -1,27 +1,26 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, Field, IconButton } from '@cofy-x/axv-nextstep';
+import { Button, IconButton } from '@cofy-x/axv-nextstep';
 import type { DesktopAPI } from '@cofy-x/axv-nextstep';
 import { request } from '../../shared/api/http';
 import type { VMProject, VMProjectBinding } from '../project-files/vm-api';
 import { cloudflareAPI } from './api';
-import type { CloudflarePublication, CloudflarePublishTarget } from './types';
-import { useResource } from './useResource';
+import { CloudflarePublicationCard } from './CloudflarePublicationCard';
+import {
+  CloudflarePublicationForm,
+  targetLabel,
+} from './CloudflarePublicationForm';
+import type { PublishDraft } from './CloudflarePublicationForm';
+import { publicationActionReview } from './publication-action';
+import { unconfirmedPublicationRequest } from './publication-outcome';
 import {
   allocatedPublicationHostname,
   checkPublicationActionReceipt,
   checkPublicationReceipt,
   publicationName,
 } from './publication-receipt';
-import { unconfirmedPublicationRequest } from './publication-outcome';
-import { publicationActionReview } from './publication-action';
 import type { RequestedPublication } from './publishing-context';
-
-interface PublishDraft {
-  target?: CloudflarePublishTarget;
-  name: string;
-  visibility: 'owner' | 'public';
-  requestId: string;
-}
+import type { CloudflarePublication } from './types';
+import { useResource } from './useResource';
 
 const newDraft = (): PublishDraft => ({
   name: '',
@@ -48,19 +47,6 @@ async function readProjects(signal: AbortSignal) {
       'X-AXV-Compute-Generation': String(runtime.generation),
     },
   });
-}
-
-const stateLabels: Record<CloudflarePublication['state'], string> = {
-  provisioning: 'Publishing…',
-  published: 'Published',
-  unavailable: 'Target unavailable',
-  removing: 'Removing…',
-  removed: 'Removed',
-  error: 'Needs attention',
-};
-
-function targetLabel(target: CloudflarePublishTarget) {
-  return `Project ${target.binding.projectId} · VM ${target.binding.machineId} · port ${target.port}`;
 }
 
 export function publicationPhase(record: CloudflarePublication) {
@@ -137,6 +123,7 @@ export function CloudflarePublishing({
     readProjects,
     active && allowed && editing && !draft.target,
   );
+
   useEffect(() => {
     onDirtyChange(dirty);
   }, [dirty, onDirtyChange]);
@@ -346,7 +333,14 @@ export function CloudflarePublishing({
     }
   }
 
-  if (!allowed) return <p>Publishing is unavailable for this connection.</p>;
+  if (!allowed)
+    return (
+      <div className="cloudflare-card">
+        <p className="cloudflare-empty-line">
+          Publishing is unavailable for this connection.
+        </p>
+      </div>
+    );
   const disabled = !active || busy;
   const name = draft.name.trim().toLowerCase();
   const validName = publicationName(name);
@@ -361,399 +355,167 @@ export function CloudflarePublishing({
     records.value?.publications.some(
       (record) => record.requestId === draft.requestId,
     );
-  const canSubmit =
+  const canSubmit = Boolean(
     !records.error &&
-    !!records.value?.domain &&
-    (records.value.supported || originalRetained);
+    records.value?.domain &&
+    (records.value.supported || originalRetained),
+  );
+
   return (
-    <div>
-      <div className="cloudflare-section-heading">
-        <h2>Publishing</h2>
-        <IconButton
-          icon="refresh"
-          label="Refresh publications"
-          disabled={disabled || records.loading}
-          onClick={records.refresh}
-        />
-      </div>
-      <p>Publish a VM project’s service through your Cloudflare tunnel.</p>
-      {(error || records.error) && (
-        <p className="app-error" role="alert">
-          {error || records.error}
-        </p>
-      )}
-      {records.error && records.value && (
-        <p>
-          Showing previous publications. Status is unknown; links are hidden.
-        </p>
-      )}
-      {message && <p role="status">{message}</p>}
-      {records.value && !records.value.supported && (
-        <div className="cloudflare-notice">
-          <p>
-            {records.value.reason ||
-              'App publishing needs an account connection.'}
-          </p>
-          <Button disabled={disabled} onClick={onSetup}>
-            Open setup
-          </Button>
+    <div className="cloudflare-overview-stack">
+      <div className="cloudflare-card">
+        <div className="cloudflare-section-heading">
+          <h2>Publishing</h2>
+          <IconButton
+            icon="refresh"
+            label="Refresh publications"
+            disabled={disabled || records.loading}
+            onClick={records.refresh}
+          />
         </div>
-      )}
-      {incoming && (
-        <div className="cloudflare-notice" role="status">
-          <p>
-            A project requested publishing: {targetLabel(incoming)}. Your
-            current draft is kept.
+        <p className="cloudflare-section-intro">
+          Publish a VM project’s service through your Cloudflare tunnel.
+        </p>
+        {(error || records.error) && (
+          <p className="app-error" role="alert">
+            {error || records.error}
           </p>
-          <div className="cloudflare-actions">
-            <Button
-              disabled={disabled}
-              onClick={() => {
-                setDraft({
-                  ...newDraft(),
-                  target: {
-                    binding: { ...incoming.binding },
-                    port: incoming.port,
-                  },
-                });
-                setEditing(true);
-                setReviewing(false);
-                setIncoming(undefined);
-                setError('');
-              }}
-            >
-              Use requested project
-            </Button>
-            <Button disabled={disabled} onClick={() => setIncoming(undefined)}>
-              Keep current draft
-            </Button>
+        )}
+        {records.error && records.value && (
+          <p className="cloudflare-stale-note">
+            Showing previous publications. Status is unknown; links are hidden.
+          </p>
+        )}
+        {message && (
+          <p className="cloudflare-status-banner" role="status">
+            {message}
+          </p>
+        )}
+        {records.value && !records.value.supported && (
+          <div className="cloudflare-notice">
+            <p>
+              {records.value.reason ||
+                'App publishing needs an account connection.'}
+            </p>
+            <div className="cloudflare-actions">
+              <Button disabled={disabled} onClick={onSetup}>
+                Open setup
+              </Button>
+            </div>
           </div>
-        </div>
-      )}
-      {!editing ? (
-        <Button
-          primary
-          disabled={disabled || !records.value?.supported || !canSubmit}
-          onClick={() => {
-            setEditing(true);
-            setDraft(newDraft());
-            setError('');
-            setMessage('');
-          }}
-        >
-          New publication
-        </Button>
-      ) : (
-        <fieldset>
-          <legend>
-            {reviewing ? 'Review publication' : 'New publication'}
-          </legend>
-          {draft.target ? (
-            <p className="cloudflare-target">{targetLabel(draft.target)}</p>
-          ) : (
-            <>
-              {projects.error && (
-                <p className="app-error" role="alert">
-                  {projects.error}
-                </p>
-              )}
-              <label className="cloudflare-field">
-                VM project
-                <select
-                  disabled={disabled || projects.loading}
-                  value={projectId}
-                  onChange={(event) => setProjectId(event.target.value)}
-                >
-                  <option value="">Select a project…</option>
-                  {projects.value?.projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name || project.id}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <Field
-                label="Service port"
-                type="number"
-                min={1024}
-                max={65535}
-                value={port}
-                disabled={disabled}
-                onChange={(event) => setPort(event.target.value)}
-              />
-              <div className="cloudflare-actions">
-                <Button
-                  disabled={
-                    disabled ||
-                    !projectId ||
-                    !Number.isInteger(Number(port)) ||
-                    Number(port) < 1024 ||
-                    Number(port) > 65535
-                  }
-                  onClick={() => void chooseProject()}
-                >
-                  Use project target
-                </Button>
-                <Button
-                  disabled={disabled || projects.loading}
-                  onClick={projects.refresh}
-                >
-                  Refresh projects
-                </Button>
-              </div>
-            </>
-          )}
-          {!reviewing ? (
-            <>
-              <Field
-                label="Name"
-                placeholder="editor"
-                maxLength={24}
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                aria-invalid={!!draft.name && !validName}
-                aria-describedby="cloudflare-publication-name-hint"
-                value={draft.name}
-                disabled={disabled}
-                onChange={(event) =>
-                  setDraft({ ...draft, name: event.target.value })
-                }
-              />
-              <p
-                id="cloudflare-publication-name-hint"
-                className={
-                  draft.name && !validName ? 'app-error' : 'fine-print'
-                }
-              >
-                {draft.name && !validName
-                  ? 'Use 1–24 letters, numbers or internal hyphens; do not start with xn--.'
-                  : 'A unique URL is assigned when you publish.'}
-              </p>
-              <label className="cloudflare-field">
-                Access
-                <select
-                  value={draft.visibility}
-                  disabled={disabled}
-                  onChange={(event) =>
-                    setDraft({
-                      ...draft,
-                      visibility: event.target
-                        .value as PublishDraft['visibility'],
-                    })
-                  }
-                >
-                  <option value="owner">
-                    Owner only — require Cloudflare Access
-                  </option>
-                  <option value="public">
-                    Public — anyone on the internet
-                  </option>
-                </select>
-              </label>
-              <p className="fine-print">
-                Owner access needs an existing Access application and its
-                publishing audience (AUD).
-              </p>
-            </>
-          ) : (
-            <>
-              <dl className="info-list">
-                <dt>Name</dt>
-                <dd>{name}</dd>
-                <dt>Allocation domain</dt>
-                <dd>{reviewed?.domain}</dd>
-                <dt>Access</dt>
-                <dd>
-                  {draft.visibility === 'public'
-                    ? 'Public — anyone on the internet'
-                    : 'Owner only — Cloudflare Access required'}
-                </dd>
-              </dl>
-              <p>A unique URL is assigned when you publish.</p>
-              {reviewed?.mode === 'dedicated-site' && (
-                <p className="fine-print">
-                  This registered domain is permanently reserved for this
-                  publication, even after removal.
-                </p>
-              )}
-              <p
-                className={
-                  draft.visibility === 'public' ? 'cloudflare-notice' : ''
-                }
-              >
-                {draft.visibility === 'public'
-                  ? 'Anyone on the internet can reach this service. Keep its own authentication and security enabled. Publish only if intended.'
-                  : 'Your Access application must cover the assigned hostname; AXV requires your configured owner identity.'}
-              </p>
-              <p className="fine-print">
-                Published status does not verify public reachability or WAF
-                protection.
-              </p>
-            </>
-          )}
-          {reviewChanged && (
-            <p className="cloudflare-notice" role="status">
-              Publishing settings changed. Go Back and review the allocation
-              domain again. Your draft is kept.
+        )}
+        {incoming && (
+          <div className="cloudflare-notice" role="status">
+            <p>
+              A project requested publishing: {targetLabel(incoming)}. Your
+              current draft is kept.
             </p>
-          )}
-          {unconfirmedRequestId === draft.requestId && (
-            <p className="cloudflare-notice" role="status">
-              {busy
-                ? 'Waiting for a publication receipt.'
-                : 'Publication is unconfirmed. Refresh and inspect the original publication before retrying or starting another request.'}{' '}
-              Request ID: {draft.requestId}
-            </p>
-          )}
-          <div className="cloudflare-actions">
-            {reviewing ? (
-              <>
-                <Button disabled={disabled} onClick={() => setReviewing(false)}>
-                  Back
-                </Button>
-                <Button
-                  primary
-                  disabled={disabled || !canSubmit || reviewChanged}
-                  onClick={() => void publish()}
-                >
-                  {busy ? 'Publishing…' : 'Publish'}
-                </Button>
-              </>
-            ) : (
+            <div className="cloudflare-actions">
               <Button
-                primary
-                disabled={disabled || !draft.target || !validName || !canSubmit}
+                disabled={disabled}
                 onClick={() => {
-                  if (!records.value?.domain) return;
-                  setReviewed({
-                    instanceId: records.value.instanceId,
-                    domain: records.value.domain,
-                    mode: records.value.isolation?.mode,
+                  setDraft({
+                    ...newDraft(),
+                    target: {
+                      binding: { ...incoming.binding },
+                      port: incoming.port,
+                    },
                   });
-                  setReviewing(true);
+                  setEditing(true);
+                  setReviewing(false);
+                  setIncoming(undefined);
+                  setError('');
                 }}
               >
-                Review publication
+                Use requested project
               </Button>
-            )}
+              <Button
+                disabled={disabled}
+                onClick={() => setIncoming(undefined)}
+              >
+                Keep current draft
+              </Button>
+            </div>
+          </div>
+        )}
+        {!editing && (
+          <div className="cloudflare-actions">
             <Button
-              disabled={disabled}
+              primary
+              disabled={disabled || !records.value?.supported || !canSubmit}
               onClick={() => {
-                setEditing(false);
-                setReviewing(false);
+                setEditing(true);
                 setDraft(newDraft());
+                setError('');
+                setMessage('');
               }}
             >
-              Cancel draft
+              New publication
             </Button>
           </div>
-          <details className="cloudflare-disclosure">
-            <summary>Details</summary>
-            <dl className="info-list">
-              {unconfirmedRequestId !== draft.requestId && (
-                <>
-                  <dt>Request ID</dt>
-                  <dd>{draft.requestId}</dd>
-                </>
-              )}
-              {draft.target && (
-                <>
-                  <dt>Host</dt>
-                  <dd>{draft.target.binding.hostId}</dd>
-                  <dt>Boot</dt>
-                  <dd>{draft.target.binding.bootId}</dd>
-                </>
-              )}
-            </dl>
-            <p className="fine-print">
-              Recovery reuses this request and its original target. Inspect the
-              publication before starting another request if its outcome is
-              uncertain.
-            </p>
-          </details>
-        </fieldset>
+        )}
+      </div>
+      {editing && (
+        <CloudflarePublicationForm
+          draft={draft}
+          reviewing={reviewing}
+          reviewed={reviewed}
+          disabled={disabled}
+          busy={busy}
+          canSubmit={canSubmit}
+          validName={validName}
+          normalizedName={name}
+          reviewChanged={reviewChanged}
+          unconfirmedRequestId={unconfirmedRequestId}
+          projectsLoading={projects.loading}
+          projectsError={projects.error}
+          projects={projects.value?.projects}
+          projectId={projectId}
+          port={port}
+          onChangeProjectId={setProjectId}
+          onChangePort={setPort}
+          onChooseProject={() => void chooseProject()}
+          onRefreshProjects={projects.refresh}
+          onChangeDraft={setDraft}
+          onBack={() => setReviewing(false)}
+          onReview={() => {
+            if (!records.value?.domain) return;
+            setReviewed({
+              instanceId: records.value.instanceId,
+              domain: records.value.domain,
+              mode: records.value.isolation?.mode,
+            });
+            setReviewing(true);
+          }}
+          onPublish={() => void publish()}
+          onCancel={() => {
+            setEditing(false);
+            setReviewing(false);
+            setDraft(newDraft());
+          }}
+        />
       )}
       <div className="cloudflare-publications" aria-label="Publications">
-        {!records.value && records.loading && <p>Loading publications…</p>}
+        {!records.value && records.loading && (
+          <div className="cloudflare-card">
+            <p className="cloudflare-empty-line">Loading publications…</p>
+          </div>
+        )}
         {records.value && !records.value.publications.length && (
-          <p>No published services.</p>
+          <div className="cloudflare-card">
+            <p className="cloudflare-empty-line">No published services.</p>
+          </div>
         )}
         {records.value?.publications.map((record) => (
-          <article className="cloudflare-publication" key={record.id}>
-            <div className="cloudflare-section-heading">
-              <h3>{record.hostname}</h3>
-              <strong>
-                {records.error ? 'Unknown' : stateLabels[record.state]}
-              </strong>
-            </div>
-            <p>
-              {targetLabel(record)} ·{' '}
-              {record.visibility === 'public' ? 'Public' : 'Owner only'}
-            </p>
-            {publicationPhase(record) && (
-              <p className="fine-print">{publicationPhase(record)}</p>
-            )}
-            {record.error && <p className="app-error">{record.error}</p>}
-            {record.cleanupPending && (
-              <p>
-                Cloudflare cleanup is pending. Retry cleanup removes only this
-                publication’s cloud resources; AXV access stays closed.
-              </p>
-            )}
-            {!records.error &&
-              record.state === 'published' &&
-              safePublicationURL(record) && (
-                <p>
-                  <a
-                    href={safePublicationURL(record)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Open {record.hostname}
-                  </a>
-                </p>
-              )}
-            <div className="cloudflare-actions">
-              {record.state !== 'removed' && record.state !== 'removing' && (
-                <Button
-                  disabled={disabled}
-                  onClick={() => void act(record, 'unpublish')}
-                >
-                  Unpublish
-                </Button>
-              )}
-              {(record.state === 'error' ||
-                record.state === 'unavailable' ||
-                record.cleanupPending) && (
-                <Button
-                  disabled={disabled}
-                  onClick={() => void act(record, 'retry')}
-                >
-                  {record.cleanupPending
-                    ? 'Retry cleanup'
-                    : record.phase === 'restart-required'
-                      ? 'Resume'
-                      : 'Retry'}
-                </Button>
-              )}
-            </div>
-            <details className="cloudflare-disclosure">
-              <summary>Details</summary>
-              <dl className="info-list">
-                <dt>Name</dt>
-                <dd>{record.name}</dd>
-                <dt>Allocation domain</dt>
-                <dd>{record.domain}</dd>
-                <dt>Request ID</dt>
-                <dd>{record.requestId}</dd>
-                <dt>Host</dt>
-                <dd>{record.binding.hostId}</dd>
-                <dt>Boot</dt>
-                <dd>{record.binding.bootId}</dd>
-              </dl>
-            </details>
-          </article>
+          <CloudflarePublicationCard
+            key={record.id}
+            record={record}
+            listError={!!records.error}
+            disabled={disabled}
+            phase={publicationPhase(record)}
+            url={safePublicationURL(record)}
+            onAction={(item, action) => void act(item, action)}
+          />
         ))}
       </div>
     </div>
